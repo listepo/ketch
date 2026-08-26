@@ -67,6 +67,9 @@ pub enum Command {
     /// Search GitHub for installable repositories
     Search(SearchArgs),
 
+    /// Refresh the package registry (see `upgrade` for installed packages)
+    Update,
+
     /// Upgrade installed packages to their latest release
     Upgrade(UpgradeArgs),
 

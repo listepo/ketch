@@ -3,6 +3,7 @@
 //! Everything crossing a module boundary is defined here so sources, platforms,
 //! extractors and commands agree on shapes without depending on each other.
 
+use crate::error::{Error, Result};
 use serde::de::{self, Deserializer};
 use serde::{Deserialize, Serialize, Serializer};
 use std::cmp::Ordering;
@@ -16,6 +17,8 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+// `MacOs` reads as `Os::MacOs` at every call site, which is the point.
+#[allow(clippy::enum_variant_names)]
 pub enum Os {
     MacOs,
     Linux,
@@ -55,7 +58,14 @@ pub enum Arch {
 impl Arch {
     pub fn tokens(self) -> &'static [&'static str] {
         match self {
-            Arch::Aarch64 => &["aarch64", "arm64", "armv8", "apple-silicon", "silicon", "m1"],
+            Arch::Aarch64 => &[
+                "aarch64",
+                "arm64",
+                "armv8",
+                "apple-silicon",
+                "silicon",
+                "m1",
+            ],
             Arch::X86_64 => &["x86_64", "x8664", "amd64", "x64", "intel", "64bit"],
             Arch::Universal => &["universal", "universal2", "fat", "all"],
         }
@@ -110,6 +120,7 @@ impl fmt::Display for TargetSpec {
 /// A fully-qualified package location: which source, and an id that source
 /// understands. For GitHub the id is `owner/repo`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
 pub struct PackageRef {
     pub scheme: String,
     pub id: String,
@@ -142,7 +153,9 @@ impl PackageRef {
         if let Some((scheme, rest)) = text.split_once(':') {
             let looks_like_scheme = !scheme.is_empty()
                 && !scheme.contains('/')
-                && scheme.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
+                && scheme
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-');
             if looks_like_scheme && !rest.is_empty() {
                 return Some(PackageRef::new(scheme.to_ascii_lowercase(), rest));
             }
@@ -156,6 +169,24 @@ impl PackageRef {
     /// Last path segment — the natural default package name.
     pub fn short_name(&self) -> &str {
         self.id.rsplit('/').next().unwrap_or(&self.id)
+    }
+}
+
+/// `PackageRef` is written as the `scheme:id` string everywhere it is stored,
+/// so manifests and the state file read the same way a user would type it.
+impl TryFrom<String> for PackageRef {
+    type Error = String;
+
+    fn try_from(text: String) -> std::result::Result<Self, Self::Error> {
+        PackageRef::parse(&text).ok_or_else(|| {
+            format!("`{text}` is not a package reference; expected `scheme:id` or `owner/repo`")
+        })
+    }
+}
+
+impl From<PackageRef> for String {
+    fn from(value: PackageRef) -> Self {
+        value.to_string()
     }
 }
 
@@ -187,6 +218,8 @@ impl fmt::Display for VersionSpec {
 /// `github:cli/cli`, `myplugin:some-id@2.0`.
 #[derive(Debug, Clone)]
 pub struct PackageSpec {
+    /// Part of the public surface, with no reader in the tree yet.
+    #[allow(dead_code)]
     pub raw: String,
     /// Set when the input names a source explicitly or looks like `owner/repo`.
     pub reference: Option<PackageRef>,
@@ -226,6 +259,8 @@ impl PackageSpec {
     }
 
     /// Best available human label before a manifest is resolved.
+    // Part of the public surface, with no caller in the tree yet.
+    #[allow(dead_code)]
     pub fn label(&self) -> String {
         match (&self.alias, &self.reference) {
             (Some(a), _) => a.clone(),
@@ -300,7 +335,13 @@ fn relaxed_semver(text: &str) -> Option<semver::Version> {
         // Normalise separators semver rejects inside a prerelease tag.
         let cleaned: String = suffix
             .chars()
-            .map(|c| if c.is_ascii_alphanumeric() || c == '.' { c } else { '.' })
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '.' {
+                    c
+                } else {
+                    '.'
+                }
+            })
             .collect();
         format!("{base}-{}", cleaned.trim_matches('.'))
     };
@@ -348,7 +389,12 @@ fn natural_cmp(a: &str, b: &str) -> Ordering {
 impl Ord for Version {
     fn cmp(&self, other: &Self) -> Ordering {
         match (&self.sem, &other.sem) {
-            (Some(a), Some(b)) => a.cmp(b),
+            // Relaxing to semver is lossy: `1.2.3.4` and `1.2.3.5` both become
+            // `1.2.3`, and semver ignores build metadata outright. Falling back
+            // to the raw strings keeps two genuinely different releases from
+            // comparing equal, which would leave `max_by` picking whichever it
+            // happened to see first — sometimes the older one.
+            (Some(a), Some(b)) => a.cmp(b).then_with(|| natural_cmp(&self.raw, &other.raw)),
             _ => natural_cmp(&self.raw, &other.raw),
         }
     }
@@ -432,6 +478,8 @@ pub struct Release {
 }
 
 impl Release {
+    // Part of the public surface, with no caller in the tree yet.
+    #[allow(dead_code)]
     pub fn asset(&self, name: &str) -> Option<&ReleaseAsset> {
         self.assets.iter().find(|a| a.name == name)
     }
@@ -486,6 +534,8 @@ pub struct AssetSelector {
 }
 
 impl AssetSelector {
+    // Part of the public surface, with no caller in the tree yet.
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.include.is_empty() && self.exclude.is_empty() && self.target.is_empty()
     }
@@ -504,7 +554,12 @@ pub struct BinSpec {
 }
 
 /// How to install one package.
+///
+/// `deny_unknown_fields` is deliberate: a manifest is hand-written, often by
+/// someone else, and a misspelt key that is silently ignored produces a package
+/// that installs the wrong thing with no complaint anywhere.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Manifest {
     pub name: String,
     pub source: PackageRef,
@@ -537,10 +592,58 @@ pub struct Manifest {
 }
 
 impl Manifest {
+    /// Check what serde cannot: that the names in this manifest are usable.
+    ///
+    /// Two of them become paths — `name` is a directory in the store and each
+    /// `bin.name` is a link in the bin directory — so this is the trust
+    /// boundary between a manifest ketch did not write and the user's disk.
+    /// Names that would need sanitising are refused rather than rewritten: a
+    /// package that installs somewhere other than where it says is worse than
+    /// one that refuses to install.
+    pub fn validate(&self) -> Result<()> {
+        usable_file_name("package name", &self.name)?;
+        for spec in &self.bin {
+            if let Some(name) = &spec.name {
+                usable_file_name("binary name", name)?;
+            }
+            if let Some(path) = &spec.path {
+                contained_path("binary path", path)?;
+            }
+            if spec.name.is_none() && spec.path.is_none() {
+                return Err(Error::msg(
+                    "a `bin` entry needs `name`, `path`, or both".to_string(),
+                ));
+            }
+        }
+        for path in &self.extra_paths {
+            contained_path("extra path", path)?;
+        }
+        // Each level costs a directory listing of the payload, and no real
+        // archive nests its wrapper directories this deep.
+        if self.strip_prefix.is_some_and(|n| n > MAX_STRIP_PREFIX) {
+            return Err(Error::msg(format!(
+                "`strip_prefix` must be at most {MAX_STRIP_PREFIX}"
+            )));
+        }
+        for alias in &self.provides {
+            if alias.trim().is_empty() || alias.chars().any(char::is_whitespace) {
+                return Err(Error::msg(format!(
+                    "`{alias}` cannot be an alias: it is not something anyone can type"
+                )));
+            }
+        }
+        Ok(())
+    }
+
     /// The manifest ketch uses when nobody wrote one: everything inferred.
+    ///
+    /// The name is sanitized rather than validated. It becomes a directory in
+    /// the store and a key in the state file, and nobody authored it — so a
+    /// reference whose last segment is unusable gets a usable name instead of
+    /// failing an install the user had every right to expect to work.
     pub fn inferred(source: PackageRef) -> Self {
         Manifest {
-            name: normalize_name(source.short_name()),
+            name: crate::config::sanitize_component(&normalize_name(source.short_name())),
             source,
             description: None,
             homepage: None,
@@ -554,6 +657,30 @@ impl Manifest {
             extra_paths: Vec::new(),
         }
     }
+}
+
+/// How many wrapper directories a manifest may ask to strip.
+const MAX_STRIP_PREFIX: usize = 8;
+
+/// Reject a name that could not be used verbatim as one path component.
+///
+/// `sanitize_component` already knows every character that is unsafe here, so
+/// asking whether it would change the value is the whole check.
+fn usable_file_name(what: &str, value: &str) -> Result<()> {
+    if crate::config::sanitize_component(value) == value {
+        Ok(())
+    } else {
+        Err(Error::msg(format!(
+            "{what} `{value}` is not usable as a file name"
+        )))
+    }
+}
+
+/// Reject a path that would reach outside the payload it is relative to.
+fn contained_path(what: &str, value: &str) -> Result<()> {
+    crate::extract::safe_member_path(std::path::Path::new(value))
+        .map(|_| ())
+        .map_err(|_| Error::msg(format!("{what} `{value}` must stay inside the package")))
 }
 
 /// Lowercase a package name and strip decoration people put in repo names.
@@ -571,6 +698,8 @@ pub fn normalize_name(raw: &str) -> String {
 pub enum ManifestOrigin {
     /// Shipped inside the ketch binary.
     Builtin,
+    /// A package folder in the fetched registry.
+    Registry(PathBuf),
     /// A `.toml` in the user's manifest directory.
     User(PathBuf),
     /// Nobody wrote one; ketch guessed.
@@ -678,6 +807,48 @@ mod tests {
     use super::*;
 
     #[test]
+    fn validate_refuses_names_that_would_escape_their_directory() {
+        let base = Manifest::inferred(PackageRef::github("a/b"));
+        assert!(base.validate().is_ok());
+
+        let bad_package = Manifest {
+            name: "../evil".into(),
+            ..base.clone()
+        };
+        assert!(bad_package.validate().is_err());
+
+        let bad_link = Manifest {
+            bin: vec![BinSpec {
+                name: Some("../../.zshrc".into()),
+                path: None,
+            }],
+            ..base.clone()
+        };
+        assert!(bad_link.validate().is_err());
+
+        let bad_path = Manifest {
+            bin: vec![BinSpec {
+                name: Some("x".into()),
+                path: Some("../../../x".into()),
+            }],
+            ..base.clone()
+        };
+        assert!(bad_path.validate().is_err());
+
+        let empty_bin = Manifest {
+            bin: vec![BinSpec::default()],
+            ..base.clone()
+        };
+        assert!(empty_bin.validate().is_err());
+
+        let untypeable_alias = Manifest {
+            provides: vec!["two words".into()],
+            ..base
+        };
+        assert!(untypeable_alias.validate().is_err());
+    }
+
+    #[test]
     fn parses_bare_repo_as_github() {
         let r = PackageRef::parse("BurntSushi/ripgrep").unwrap();
         assert_eq!(r.scheme, "github");
@@ -726,6 +897,43 @@ mod tests {
     }
 
     #[test]
+    fn versions_that_differ_only_past_semver_still_order() {
+        // Both relax to `1.2.3`, so semver alone calls them equal and `max_by`
+        // is free to hand back the older release.
+        assert!(Version::parse("1.2.3.5") > Version::parse("1.2.3.4"));
+        assert!(Version::parse("1.2.3.10") > Version::parse("1.2.3.9"));
+        let releases = [
+            Version::parse("1.2.3.4"),
+            Version::parse("1.2.3.5"),
+            Version::parse("1.2.3.2"),
+        ];
+        assert_eq!(releases.iter().max().unwrap().raw, "1.2.3.5");
+    }
+
+    #[test]
+    fn an_inferred_name_is_always_usable_as_a_directory() {
+        let odd = Manifest::inferred(PackageRef::github("owner/.."));
+        assert!(odd.validate().is_ok(), "name was {:?}", odd.name);
+    }
+
+    #[test]
+    fn strip_prefix_is_bounded() {
+        let base = Manifest::inferred(PackageRef::github("a/b"));
+        assert!(Manifest {
+            strip_prefix: Some(2),
+            ..base.clone()
+        }
+        .validate()
+        .is_ok());
+        assert!(Manifest {
+            strip_prefix: Some(usize::MAX),
+            ..base
+        }
+        .validate()
+        .is_err());
+    }
+
+    #[test]
     fn tag_matching_ignores_v_prefix() {
         assert!(Version::parse("v14.1.0").matches_request("14.1.0"));
         assert!(Version::parse("14.1.0").matches_request("v14.1.0"));
@@ -734,7 +942,10 @@ mod tests {
 
     #[test]
     fn glob_matches_asset_names() {
-        assert!(glob_match("*-aarch64-apple-darwin.tar.gz", "rg-14-aarch64-apple-darwin.tar.gz"));
+        assert!(glob_match(
+            "*-aarch64-apple-darwin.tar.gz",
+            "rg-14-aarch64-apple-darwin.tar.gz"
+        ));
         assert!(glob_match("*.zip", "Tool-Universal.ZIP"));
         assert!(!glob_match("*.zip", "tool.tar.gz"));
         assert!(glob_match("rg?.tar.gz", "rg1.tar.gz"));

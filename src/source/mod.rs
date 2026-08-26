@@ -57,12 +57,23 @@ pub trait Source: Send + Sync {
     /// The default walks `list_releases`, which is correct for every source.
     /// Override only to use a cheaper endpoint (GitHub does, for `latest`).
     fn resolve(&self, id: &str, want: &VersionSpec, opts: &ListOpts) -> Result<Release> {
-        let releases = self.list_releases(id, opts)?;
-        pick(id, releases, want, opts)
+        let opts = opts_for(want, opts);
+        let releases = self.list_releases(id, &opts)?;
+        pick(id, releases, want, &opts)
     }
 
     /// Checksums published alongside a release, keyed by asset file name.
-    fn checksums(&self, _id: &str, _release: &Release) -> Result<BTreeMap<String, String>> {
+    ///
+    /// `wanted` is the asset actually being installed. A source that pays per
+    /// file for this — GitHub publishes one sidecar per asset — should look
+    /// that one up first, so its own request limits can never be what leaves
+    /// this install unverified.
+    fn checksums(
+        &self,
+        _id: &str,
+        _release: &Release,
+        _wanted: &str,
+    ) -> Result<BTreeMap<String, String>> {
         Ok(BTreeMap::new())
     }
 
@@ -85,6 +96,19 @@ pub trait Source: Send + Sync {
     }
 }
 
+/// Listing options widened for an exact request.
+///
+/// Naming a tag is explicit consent to install that release, prerelease or not.
+/// The consent has to be applied to the *listing*: sources drop prereleases
+/// before `pick` ever sees them, so filtering afterwards means an exact request
+/// for a prerelease could never be satisfied at all.
+pub fn opts_for(want: &VersionSpec, opts: &ListOpts) -> ListOpts {
+    ListOpts {
+        include_prerelease: opts.include_prerelease || matches!(want, VersionSpec::Exact(_)),
+        ..opts.clone()
+    }
+}
+
 /// Shared release-selection logic, so every source picks versions the same way.
 pub fn pick(
     id: &str,
@@ -96,8 +120,8 @@ pub fn pick(
     match want {
         VersionSpec::Exact(tag) => releases
             .into_iter()
-            // An exact request is explicit consent to install a prerelease, so
-            // the prerelease filter is deliberately not applied here.
+            // No prerelease filter: `opts_for` has already made sure the
+            // listing this ran over includes them.
             .find(|r| r.tag.eq_ignore_ascii_case(tag) || r.version.matches_request(tag))
             .ok_or_else(|| Error::NoRelease(format!("{id}@{tag}"))),
         VersionSpec::Latest => {
@@ -166,6 +190,8 @@ impl SourceRegistry {
         self.get(&reference.scheme)
     }
 
+    // Part of the public surface, with no caller in the tree yet.
+    #[allow(dead_code)]
     pub fn schemes(&self) -> Vec<&str> {
         self.sources.iter().map(|s| s.scheme()).collect()
     }

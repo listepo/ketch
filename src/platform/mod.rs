@@ -32,6 +32,8 @@ pub struct AssetScore {
 /// Everything the platform needs to place an extracted payload.
 pub struct Placement<'a> {
     pub name: &'a str,
+    // Part of the public surface, with no caller in the tree yet.
+    #[allow(dead_code)]
     pub version: &'a str,
     /// Directory holding the extracted release payload.
     pub payload_dir: &'a Path,
@@ -42,8 +44,16 @@ pub struct Placement<'a> {
     pub kind: PackageKind,
     /// Explicit binaries from the manifest. Empty means "discover them".
     pub bin_specs: &'a [BinSpec],
+    /// Links recorded for the version being replaced, which still exist:
+    /// placement runs before the old version is retired. A destination listed
+    /// here is ketch's own to overwrite. Anything else occupying a destination
+    /// belongs to another package or to the user.
+    pub replacing: &'a [LinkRecord],
     /// Symlink `.app` bundles rather than copying them.
     pub link_apps: bool,
+    /// Create user-visible links. False still moves the payload into the
+    /// store, so `ketch relink` can expose it later without re-downloading.
+    pub link: bool,
 }
 
 /// Result of a local trust check on downloaded code.
@@ -92,7 +102,11 @@ impl DoctorCheck {
             fix: None,
         }
     }
-    pub fn warn(name: impl Into<String>, detail: impl Into<String>, fix: impl Into<String>) -> Self {
+    pub fn warn(
+        name: impl Into<String>,
+        detail: impl Into<String>,
+        fix: impl Into<String>,
+    ) -> Self {
         DoctorCheck {
             name: name.into(),
             status: CheckStatus::Warn,
@@ -100,7 +114,11 @@ impl DoctorCheck {
             fix: Some(fix.into()),
         }
     }
-    pub fn fail(name: impl Into<String>, detail: impl Into<String>, fix: impl Into<String>) -> Self {
+    pub fn fail(
+        name: impl Into<String>,
+        detail: impl Into<String>,
+        fix: impl Into<String>,
+    ) -> Self {
         DoctorCheck {
             name: name.into(),
             status: CheckStatus::Fail,
@@ -110,9 +128,21 @@ impl DoctorCheck {
     }
 }
 
+/// Present so `ketch doctor` can colour a summary without re-deriving it.
+pub fn worst_status(checks: &[DoctorCheck]) -> CheckStatus {
+    if checks.iter().any(|c| c.status == CheckStatus::Fail) {
+        CheckStatus::Fail
+    } else if checks.iter().any(|c| c.status == CheckStatus::Warn) {
+        CheckStatus::Warn
+    } else {
+        CheckStatus::Ok
+    }
+}
+
 /// The host operating system's rules.
 pub trait Platform: Send + Sync {
     /// Stable identifier, e.g. `macos`.
+    #[allow(dead_code)]
     fn id(&self) -> &str;
 
     fn target(&self) -> TargetSpec;
@@ -151,6 +181,7 @@ pub trait Platform: Send + Sync {
     fn path_setup_hint(&self, bin_dir: &Path) -> String;
 
     /// Files this platform treats as app bundles rather than executables.
+    #[allow(dead_code)]
     fn app_bundle_extension(&self) -> Option<&str> {
         None
     }
@@ -183,20 +214,65 @@ pub fn host() -> Result<Arc<dyn Platform>> {
 /// Shared by every platform, because signature and checksum sidecars look the
 /// same everywhere.
 pub const SIDECAR_SUFFIXES: &[&str] = &[
-    ".sha256", ".sha512", ".sha1", ".md5", ".asc", ".sig", ".sigstore", ".pem", ".crt", ".sbom",
-    ".sbom.json", ".spdx.json", ".intoto.jsonl", ".pubkey", ".minisig", ".cert",
+    ".sha256",
+    ".sha512",
+    ".sha1",
+    ".md5",
+    ".asc",
+    ".sig",
+    ".sigstore",
+    ".pem",
+    ".crt",
+    ".sbom",
+    ".sbom.json",
+    ".spdx.json",
+    ".intoto.jsonl",
+    ".pubkey",
+    ".minisig",
+    ".cert",
 ];
 
 /// Substrings that mark a file as source code or metadata, not a build.
 pub const NON_BINARY_TOKENS: &[&str] = &[
-    "checksum", "checksums", "sha256sums", "sha512sums", "source-code", "sources", "src.tar",
-    "-src-", "vendor", "manifest", "provenance", "attestation", "changelog", "release-notes",
+    "checksum",
+    "checksums",
+    "sha256sums",
+    "sha512sums",
+    "source-code",
+    "sources",
+    "src.tar",
+    "-src-",
+    "vendor",
+    "manifest",
+    "provenance",
+    "attestation",
+    "changelog",
+    "release-notes",
 ];
 
 /// Extensions that never contain a runnable macOS/Linux payload.
 pub const REJECTED_EXTENSIONS: &[&str] = &[
-    ".txt", ".md", ".json", ".yaml", ".yml", ".xml", ".csv", ".log", ".deb", ".rpm", ".apk",
-    ".msi", ".exe", ".appimage", ".snap", ".flatpak", ".nupkg", ".jar", ".war", ".whl", ".gem",
+    ".txt",
+    ".md",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".xml",
+    ".csv",
+    ".log",
+    ".deb",
+    ".rpm",
+    ".apk",
+    ".msi",
+    ".exe",
+    ".appimage",
+    ".snap",
+    ".flatpak",
+    ".nupkg",
+    ".jar",
+    ".war",
+    ".whl",
+    ".gem",
 ];
 
 /// True when `name` ends with any known sidecar suffix.

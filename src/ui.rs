@@ -18,7 +18,16 @@ pub fn init(color: Option<bool>, quiet: bool, verbose: bool) {
             && std::env::var("TERM").map(|t| t != "dumb").unwrap_or(true)
     });
     COLOR.store(enabled, Ordering::Relaxed);
-    LEVEL.store(if quiet { 0 } else if verbose { 2 } else { 1 }, Ordering::Relaxed);
+    LEVEL.store(
+        if quiet {
+            0
+        } else if verbose {
+            2
+        } else {
+            1
+        },
+        Ordering::Relaxed,
+    );
 }
 
 pub fn color_enabled() -> bool {
@@ -113,11 +122,30 @@ pub fn out(line: &str) {
 /// Ask a yes/no question. Returns `default` when stdin is not a terminal, so
 /// scripts never hang waiting for input that will not come.
 pub fn confirm(question: &str, default: bool) -> bool {
-    if !std::io::stdin().is_terminal() || is_quiet() {
+    let answered = ask(question, default);
+    if !answered {
+        // Callers return Ok(()) on a decline, which is indistinguishable from
+        // success. Say why nothing happened — especially when the decline came
+        // from a non-interactive stdin rather than from a person. Printed even
+        // under `--quiet`: "it did nothing and said nothing" is not quiet, it
+        // is a bug report waiting to happen.
+        eprintln!("{} {question}", blue(&format!("{:>10}", "cancelled")));
+    }
+    answered
+}
+
+/// `--quiet` deliberately does not reach here. It asks for less output, not for
+/// consent: silently taking the default answer to "remove this?" is not a
+/// quieter version of asking, it is a different program.
+fn ask(question: &str, default: bool) -> bool {
+    if !std::io::stdin().is_terminal() {
         return default;
     }
     let suffix = if default { "[Y/n]" } else { "[y/N]" };
-    eprint!("{} {question} {suffix} ", yellow(&format!("{:>10}", "confirm")));
+    eprint!(
+        "{} {question} {suffix} ",
+        yellow(&format!("{:>10}", "confirm"))
+    );
     let _ = std::io::stderr().flush();
     let mut answer = String::new();
     if std::io::stdin().read_line(&mut answer).is_err() {
@@ -203,7 +231,8 @@ impl ProgressSink for BarProgress {
         }
         self.bar.set_style(style);
         self.bar.set_message(truncate(label, 28));
-        self.bar.set_draw_target(indicatif::ProgressDrawTarget::stderr());
+        self.bar
+            .set_draw_target(indicatif::ProgressDrawTarget::stderr());
         self.bar.set_position(0);
     }
 

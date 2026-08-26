@@ -97,23 +97,6 @@ pub fn safe_member_path(raw: &Path) -> Result<PathBuf> {
     Ok(safe)
 }
 
-/// Drop `count` leading path components, as `tar --strip-components` does.
-pub fn strip_components(path: &Path, count: usize) -> Option<PathBuf> {
-    if count == 0 {
-        return Some(path.to_path_buf());
-    }
-    let mut parts = path.components();
-    for _ in 0..count {
-        parts.next()?;
-    }
-    let rest: PathBuf = parts.collect();
-    if rest.as_os_str().is_empty() {
-        None
-    } else {
-        Some(rest)
-    }
-}
-
 /// If the payload is a single wrapper directory, return it.
 ///
 /// Almost every release tarball unpacks to `tool-1.2.3-target/`; treating that
@@ -165,14 +148,6 @@ mod tests {
     fn rejects_windows_style_names() {
         assert!(safe_member_path(Path::new("C:windows")).is_err());
         assert!(safe_member_path(Path::new("a\\b")).is_err());
-    }
-
-    #[test]
-    fn strips_leading_components() {
-        let p = Path::new("rg-14.1.0/bin/rg");
-        assert_eq!(strip_components(p, 1).unwrap(), PathBuf::from("bin/rg"));
-        assert_eq!(strip_components(p, 0).unwrap(), p);
-        assert!(strip_components(Path::new("only"), 1).is_none());
     }
 
     #[test]
