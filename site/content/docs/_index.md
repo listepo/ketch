@@ -1,6 +1,6 @@
 ---
 title: "Documentation"
-description: "How ketch resolves a name, picks a release asset, verifies it, and puts it on your PATH — plus the manifest schema, the registry layout and the source-plugin protocol."
+description: "How ketch resolves a name, picks a release asset and verifies it — plus the manifest schema, the registry layout and the source-plugin protocol."
 ---
 
 ketch installs command-line tools and macOS apps directly from GitHub releases.

@@ -52,8 +52,7 @@ PAGES = [
         "Roadmap",
         50,
         "What ketch does not do yet and what it would take: Linux and Windows "
-        "backends, signature verification, man pages and completions — and what "
-        "is deliberately out of scope.",
+        "backends, signature verification, man pages and shell completions.",
     ),
     (
         "AGENTS.md",
