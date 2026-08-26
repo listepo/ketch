@@ -555,6 +555,28 @@ fn a_batch_installs_every_package_and_reports_them_in_the_order_asked() {
     let mut installed: Vec<&str> = listed.lines().collect();
     installed.sort_unstable();
     assert_eq!(installed, ["alpha", "bravo", "charlie", "delta"]);
+
+    // Every download and every unpack is staged in the cache. Concurrency is
+    // exactly where a leaked staging directory would start being invisible.
+    let left: Vec<String> = std::fs::read_dir(sandbox.root().join("cache"))
+        .expect("cache dir")
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .collect();
+    assert!(left.is_empty(), "left behind in the cache: {left:?}");
+}
+
+/// Two spellings of one package in a single batch. They resolve to the same
+/// name and the same asset, so before each download was staged in a directory
+/// of its own they raced for one path in the cache.
+#[test]
+fn the_same_package_asked_for_two_ways_installs_cleanly() {
+    let sandbox = Sandbox::new();
+    publish_tool(&sandbox, "1.0.0");
+
+    sandbox.ok(&["install", "test:testtool", "test:testtool@1.0.0", "--yes"]);
+    assert_eq!(run(&sandbox.bin().join("testtool")), "testtool 1.0.0");
+    assert_eq!(sandbox.ok(&["list", "--names-only"]).trim(), "testtool");
 }
 
 /// A batch is not all-or-nothing: the packages that resolved are installed and

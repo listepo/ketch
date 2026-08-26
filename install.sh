@@ -140,7 +140,9 @@ if [ -z "${VERSION}" ]; then
   fi
 
   # Parse tag_name without jq using grep/sed
-  VERSION="$(printf '%s\n' "${RELEASE_JSON}" | grep '"tag_name"' | sed 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' | head -1)"
+  # `|| true`: a grep that matches nothing exits 1, and under `set -e` with
+  # `pipefail` that would abort here instead of reaching the check below.
+  VERSION="$(printf '%s\n' "${RELEASE_JSON}" | grep '"tag_name"' | sed 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' | head -1 || true)"
 
   if [ -z "${VERSION}" ]; then
     echo "${RED}Error: Could not determine latest version.${NC}" >&2
@@ -187,8 +189,14 @@ fi
 # Verify checksum
 echo "Verifying checksum..."
 # shasum output: "hash  filename"
-EXPECTED_HASH="$(grep "ketch-${TARBALL_ARCH}-apple-darwin.tar.gz" SHA256SUMS | awk '{print $1}')"
+EXPECTED_HASH="$(grep "ketch-${TARBALL_ARCH}-apple-darwin.tar.gz" SHA256SUMS | awk '{print $1}' || true)"
 ACTUAL_HASH="$(shasum -a 256 ketch.tar.gz | awk '{print $1}')"
+
+if [ -z "${EXPECTED_HASH}" ]; then
+  echo "${RED}Error: SHA256SUMS does not list ketch-${TARBALL_ARCH}-apple-darwin.tar.gz.${NC}" >&2
+  echo "Refusing to install an unverified binary." >&2
+  exit 1
+fi
 
 if [ "${EXPECTED_HASH}" != "${ACTUAL_HASH}" ]; then
   echo "${RED}Error: Checksum verification failed!${NC}" >&2
@@ -209,7 +217,7 @@ elif [ -f "ketch/${BINARY_NAME}" ]; then
   BINARY_PATH="./ketch/${BINARY_NAME}"
 else
   # Try to find it
-  BINARY_PATH="$(find . -name "${BINARY_NAME}" -type f 2>/dev/null | head -1)"
+  BINARY_PATH="$(find . -name "${BINARY_NAME}" -type f 2>/dev/null | head -1 || true)"
   if [ -z "${BINARY_PATH}" ]; then
     echo "${RED}Error: Could not find ${BINARY_NAME} binary in archive.${NC}" >&2
     exit 1

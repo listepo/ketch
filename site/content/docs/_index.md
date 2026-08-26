@@ -10,7 +10,7 @@ cover the cases where it does, and the formats you would write when it does.
 ## Installing
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/listepo/ketch/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/listepo/ketch/main/install.sh | bash
 ```
 
 Then put `~/.ketch/bin` on your `PATH`. `ketch doctor` reports whether it is,

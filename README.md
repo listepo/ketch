@@ -33,7 +33,7 @@ ketch install sharkdp/fd@v10.2.0     # or an exact version
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/listepo/ketch/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/listepo/ketch/main/install.sh | bash
 ```
 
 Then make sure `~/.ketch/bin` is on your `PATH`. `ketch doctor` will tell you if

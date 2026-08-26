@@ -158,14 +158,15 @@ pub fn prepare(
 
     // --- download -----------------------------------------------------------
     std::fs::create_dir_all(&cfg.cache_dir).map_err(|e| Error::io(&cfg.cache_dir, e))?;
-    let download_path = cfg.cache_dir.join(format!(
-        "{}-{}",
-        sanitize_component(&manifest.name),
-        sanitize_component(&asset.name)
-    ));
+    // A directory of its own, not a name under the cache. Two `prepare`s run
+    // side by side, and an alias and a repo path naming the same package would
+    // pick the same file name: they would overwrite each other's archive,
+    // extract whichever landed last, and delete it from under each other. The
+    // archive is staging, never a cache — it is deleted as soon as the payload
+    // is unpacked — so a unique directory costs nothing.
+    let staging = tempfile::tempdir_in(&cfg.cache_dir).map_err(|e| Error::io(&cfg.cache_dir, e))?;
+    let download_path = staging.path().join(sanitize_component(&asset.name));
     let sha256 = source.download(&asset, &download_path, progress)?;
-    // The cache entry has served its purpose once the payload is in the store.
-    let _cleanup = ScopedFile(download_path.clone());
 
     // --- checksum -----------------------------------------------------------
     // A lockfile's hash is checked first and separately. The source's own
@@ -635,16 +636,6 @@ fn remove_store_dir(cfg: &Config, prefix: &Path) {
     }
     if let Some(parent) = prefix.parent().filter(|p| *p != cfg.store_dir) {
         let _ = std::fs::remove_dir(parent); // only succeeds when empty
-    }
-}
-
-/// Deletes a path when dropped, so a failure mid-pipeline does not leave the
-/// downloaded archive behind.
-struct ScopedFile(PathBuf);
-
-impl Drop for ScopedFile {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.0);
     }
 }
 
