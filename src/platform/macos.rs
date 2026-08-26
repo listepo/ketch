@@ -233,7 +233,7 @@ fn is_inside_bundle(path: &Path, root: &Path) -> bool {
             ancestors.components().any(|c| {
                 c.as_os_str()
                     .to_str()
-                    .is_some_and(|s| s.ends_with(".app") || s.ends_with(".framework"))
+                    .is_some_and(crate::extract::is_bundle_name)
             })
         })
 }

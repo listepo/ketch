@@ -17,7 +17,8 @@ backend means implementing the `Platform` trait — nothing above it changes.
 ## Commands
 
 ```bash
-cargo test                       # the whole suite; fast, no network
+cargo test                       # unit tests and the end-to-end suite; no network
+cargo test --test install        # just the end-to-end suite
 cargo clippy --all-targets       # must be clean
 cargo fmt                        # must be clean
 cargo build                      # debug binary at target/debug/ketch
@@ -48,6 +49,8 @@ pass before a change is done.
 | `src/model.rs` | every type that crosses a module boundary |
 | `src/state.rs` | the installed-package record and the process lock |
 | `src/ui.rs` | all terminal output |
+| `tests/` | end-to-end tests that drive the real binary |
+| `scripts/package.sh` | the release tarball, shared by CI and the release workflow |
 
 The rule that keeps `cmd/` thin: anything touching the install tree belongs in
 `install.rs`, `state.rs`, or a trait implementation, so the same logic serves
@@ -74,6 +77,11 @@ These are observed throughout; match them rather than introducing your own.
 - **Tests live in `#[cfg(test)] mod tests` at the bottom of the file they
   test**, and are named as sentences: `latest_prefers_highest_stable`,
   `drafts_are_never_selected`. A test name should read as the claim it proves.
+- **`tests/` is the exception**, and only for what a unit test cannot reach:
+  the pipeline end to end, through the real binary. `tests/support/` builds a
+  throwaway root, fixture archives and a source plugin that serves them, so the
+  suite stays offline. Add a case there when a bug could pass every unit test
+  in the tree — most of them could.
 - **Best-effort where a partial answer beats no answer.** A broken plugin, an
   unreadable manifest or one unreachable source is warned about and skipped,
   never fatal. A malformed *built-in* registry is a ketch bug and does fail.
@@ -112,6 +120,19 @@ delete the guard deliberately and say why in the commit.
   protocol is `docs/PLUGINS.md`; changing it means bumping `PROTOCOL_VERSION`.
 - **A new command** → a variant in `cli.rs`, a thin body in `cmd/`, and the
   work itself in `install.rs` or a trait.
+
+## Releasing
+
+`git tag v0.2.0 && git push --tags`. The release workflow re-runs the whole
+gate, refuses a tag that disagrees with `Cargo.toml` (`ketch self update`
+compares the two, so a mismatched tag breaks upgrades for everyone already
+installed), builds both macOS architectures, and publishes the tarballs with an
+aggregate `SHA256SUMS`.
+
+Asset names are load-bearing: `install.sh` and `ketch self update` both look for
+`ketch-<target>.tar.gz` and `SHA256SUMS`. Renaming either strips the upgrade
+path from every copy already out there. CI runs the same `scripts/package.sh` on
+every pull request so packaging breaks before a tag is pushed, not after.
 
 ## Before you call it done
 

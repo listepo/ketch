@@ -5,9 +5,9 @@ IFS=$'\n\t'
 
 # Colors for output (only when stdout is a TTY)
 if [ -t 1 ]; then
-  RED='\033[0;31m'
-  GREEN='\033[0;32m'
-  NC='\033[0m'  # No Color
+  RED=$'\033[0;31m'
+  GREEN=$'\033[0;32m'
+  NC=$'\033[0m'  # No Color
 else
   RED=''
   GREEN=''
@@ -262,7 +262,7 @@ if [ "${NO_MODIFY_PATH}" -eq 0 ]; then
   # For bash (if .bash_profile exists)
   if [ -f "${HOME}/.bash_profile" ]; then
     EXPORT_LINE="export PATH=\"${INSTALL_DIR}:\$PATH\""
-    if ! grep -q "export PATH=\"${INSTALL_DIR}" "${HOME}/.bash_profile}" 2>/dev/null; then
+    if ! grep -q "export PATH=\"${INSTALL_DIR}" "${HOME}/.bash_profile" 2>/dev/null; then
       printf '\n%s\n' "${EXPORT_LINE}" >> "${HOME}/.bash_profile"
     fi
   fi
