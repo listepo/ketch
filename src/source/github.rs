@@ -4,6 +4,7 @@
 //! private repositories.
 
 use super::{ListOpts, Source};
+use crate::config::validate_repo;
 use crate::error::Result;
 use crate::http::Http;
 use crate::model::{Checksum, Release, ReleaseAsset, SourceInfo, Version, VersionSpec};
@@ -39,8 +40,9 @@ impl GitHubSource {
         }
     }
 
-    fn repo_url(&self, id: &str, suffix: &str) -> String {
-        format!("{}/repos/{}{}", self.api, id.trim_matches('/'), suffix)
+    fn repo_url(&self, id: &str, suffix: &str) -> Result<String> {
+        let repo = validate_repo("GitHub repository", id.to_string())?;
+        Ok(format!("{}/repos/{}{}", self.api, repo, suffix))
     }
 }
 
@@ -231,13 +233,13 @@ impl Source for GitHubSource {
     }
 
     fn describe(&self, id: &str) -> Result<Option<SourceInfo>> {
-        let repo: Option<GhRepo> = self.http.get_json_opt(&self.repo_url(id, ""), true)?;
+        let repo: Option<GhRepo> = self.http.get_json_opt(&self.repo_url(id, "")?, true)?;
         Ok(repo.map(SourceInfo::from))
     }
 
     fn list_releases(&self, id: &str, opts: &ListOpts) -> Result<Vec<Release>> {
         let per_page = opts.limit.clamp(1, 100);
-        let url = self.repo_url(id, &format!("/releases?per_page={per_page}"));
+        let url = self.repo_url(id, &format!("/releases?per_page={per_page}"))?;
         let raw: Vec<GhRelease> = self.http.get_json(&url, true)?;
 
         let mut releases: Vec<Release> = raw
@@ -260,12 +262,14 @@ impl Source for GitHubSource {
         // the selection server-side; the listing walk is the fallback.
         let direct = match want {
             VersionSpec::Latest if !opts.include_prerelease => Some("/releases/latest".to_string()),
-            VersionSpec::Exact(tag) => Some(format!("/releases/tags/{tag}")),
+            VersionSpec::Exact(tag) => {
+                Some(format!("/releases/tags/{}", urlencode_path_segment(tag)))
+            }
             VersionSpec::Latest => None,
         };
         if let Some(suffix) = direct {
             let found: Option<GhRelease> =
-                self.http.get_json_opt(&self.repo_url(id, &suffix), true)?;
+                self.http.get_json_opt(&self.repo_url(id, &suffix)?, true)?;
             if let Some(release) = found.filter(|r| !r.draft) {
                 return Ok(Release::from(release));
             }
@@ -362,12 +366,13 @@ impl Source for GitHubSource {
     }
 
     fn web_url(&self, id: &str) -> Option<String> {
+        let repo = validate_repo("GitHub repository", id.to_string()).ok()?;
         let host = self
             .api
             .strip_prefix("https://api.")
             .map(|rest| format!("https://{rest}"))
             .unwrap_or_else(|| self.api.trim_end_matches("/api/v3").to_string());
-        Some(format!("{host}/{}", id.trim_matches('/')))
+        Some(format!("{host}/{repo}"))
     }
 }
 
@@ -382,6 +387,22 @@ fn urlencode(raw: &str) -> String {
                 out.push(byte as char)
             }
             b' ' => out.push('+'),
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
+}
+
+/// Percent-encode a value placed in one URL path segment. Unlike a query,
+/// spaces are `%20` and slashes must not become path separators: release tags
+/// are allowed to contain both.
+fn urlencode_path_segment(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    for byte in raw.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char)
+            }
             _ => out.push_str(&format!("%{byte:02X}")),
         }
     }
@@ -436,6 +457,23 @@ not-a-hash                                                          junk.txt
         assert_eq!(
             source.web_url("BurntSushi/ripgrep").as_deref(),
             Some("https://github.com/BurntSushi/ripgrep")
+        );
+    }
+
+    #[test]
+    fn validates_repository_ids_before_building_api_urls() {
+        let source = GitHubSource {
+            http: Arc::new(Http::anonymous()),
+            api: DEFAULT_API.to_string(),
+        };
+        assert!(source.repo_url("https://attacker.invalid/x", "").is_err());
+    }
+
+    #[test]
+    fn encodes_release_tags_as_one_path_segment() {
+        assert_eq!(
+            urlencode_path_segment("release/v1 beta?"),
+            "release%2Fv1%20beta%3F"
         );
     }
 }

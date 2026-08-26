@@ -68,6 +68,8 @@ impl Config {
         let root = root_override
             .or_else(|| std::env::var_os("KETCH_ROOT").map(PathBuf::from))
             .map(|p| expand_tilde(&p))
+            .map(|p| absolute_path(&p))
+            .transpose()?
             .unwrap_or_else(default_root);
 
         let config_file = root.join("config.toml");
@@ -201,6 +203,15 @@ fn default_root() -> PathBuf {
         .join(".ketch")
 }
 
+fn absolute_path(path: &Path) -> Result<PathBuf> {
+    if path.is_absolute() {
+        return Ok(path.to_path_buf());
+    }
+    std::env::current_dir()
+        .map(|cwd| cwd.join(path))
+        .map_err(|e| Error::io(Path::new("."), e))
+}
+
 fn expand_tilde(path: &Path) -> PathBuf {
     let text = path.to_string_lossy();
     if let Some(rest) = text.strip_prefix("~/") {
@@ -299,5 +310,12 @@ mod tests {
         assert_eq!(sanitize_component("../../etc"), "etc");
         assert_eq!(sanitize_component(".."), "unknown");
         assert_eq!(sanitize_component(""), "unknown");
+    }
+
+    #[test]
+    fn resolves_relative_roots_against_the_current_directory() {
+        let root = absolute_path(Path::new("scratch")).unwrap();
+        assert!(root.is_absolute());
+        assert_eq!(root, std::env::current_dir().unwrap().join("scratch"));
     }
 }

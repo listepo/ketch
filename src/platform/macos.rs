@@ -12,6 +12,7 @@ use crate::extract::archive::is_program_head;
 use crate::extract::macos::copy_tree;
 use crate::extract::Extractor;
 use crate::model::{glob_match, Arch, BinSpec, LinkKind, LinkRecord, Os, PackageKind, TargetSpec};
+use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -214,7 +215,7 @@ fn ensure_executable(path: &Path) -> Result<()> {
     if mode & 0o111 != 0 {
         return Ok(());
     }
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode | 0o755))
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode | 0o111))
         .map_err(|e| Error::io(path, e))
 }
 
@@ -381,15 +382,97 @@ fn is_ours(link: &Path, owned: &Path, recorded: &[LinkRecord]) -> bool {
 
 /// Clear a destination, or explain who already has it.
 fn clear_destination(link: &Path, owned: &Path, recorded: &[LinkRecord]) -> Result<()> {
+    destination_available(link, owned, recorded)?;
+    remove_any(link).map_err(|e| Error::io(link, e))
+}
+
+fn destination_available(link: &Path, owned: &Path, recorded: &[LinkRecord]) -> Result<()> {
     match std::fs::symlink_metadata(link) {
         Ok(_) if !is_ours(link, owned, recorded) => Err(Error::msg(format!(
             "{} already exists and was not installed by ketch for this package; \
              move it aside first",
             link.display()
         ))),
-        Ok(_) => remove_any(link).map_err(|e| Error::io(link, e)),
+        Ok(_) => Ok(()),
         Err(_) => Ok(()),
     }
+}
+
+/// Check all destinations before replacing any old links. A multi-binary
+/// upgrade must not install its first link and only then discover that its
+/// second name belongs to another package.
+fn preflight_destinations(
+    platform: &MacOsPlatform,
+    plan: &Placement<'_>,
+    owned: &Path,
+) -> Result<()> {
+    let bundles = if plan.kind != PackageKind::Binary {
+        find_app_bundles(plan.payload_dir)
+    } else {
+        Vec::new()
+    };
+    let want_binaries = match plan.kind {
+        PackageKind::App => false,
+        PackageKind::Binary => true,
+        PackageKind::Auto => bundles.is_empty(),
+    };
+    let binaries = if want_binaries {
+        if plan.bin_specs.is_empty() {
+            let found = discover_executables(platform, plan.payload_dir);
+            let sole = found.len() == 1;
+            found
+                .into_iter()
+                .map(|path| {
+                    let file_name = path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .into_owned();
+                    if sole && looks_like_build_artifact(&file_name) {
+                        plan.name.to_string()
+                    } else {
+                        file_name
+                    }
+                })
+                .collect()
+        } else {
+            resolve_bin_specs(plan.payload_dir, plan.bin_specs)?
+                .into_iter()
+                .map(|(_, name)| name)
+                .collect()
+        }
+    } else {
+        Vec::new()
+    };
+
+    let mut destinations = HashSet::new();
+    for bundle in bundles {
+        let Some(name) = bundle.file_name() else {
+            continue;
+        };
+        let link = plan.apps_dir.join(name);
+        if !destinations.insert(link.clone()) {
+            return Err(Error::msg(format!(
+                "multiple payload entries want to create {}",
+                link.display()
+            )));
+        }
+        destination_available(&link, owned, plan.replacing)?;
+    }
+    for name in binaries {
+        let link = plan.bin_dir.join(name);
+        if !destinations.insert(link.clone()) {
+            return Err(Error::msg(format!(
+                "multiple payload entries want to create {}",
+                link.display()
+            )));
+        }
+        destination_available(&link, owned, plan.replacing)?;
+    }
+    if destinations.is_empty() {
+        return Err(Error::EmptyPayload(plan.payload_dir.to_path_buf()));
+    }
+    Ok(())
 }
 
 fn link_binary(
@@ -537,6 +620,10 @@ impl Platform for MacOsPlatform {
     }
 
     fn place(&self, plan: &Placement<'_>) -> Result<Vec<LinkRecord>> {
+        let package_dir = plan.store_dir.parent().unwrap_or(plan.store_dir);
+        if plan.link {
+            preflight_destinations(self, plan, package_dir)?;
+        }
         move_into_store(plan.payload_dir, plan.store_dir)?;
         if !plan.link {
             return Ok(Vec::new());
@@ -545,7 +632,6 @@ impl Platform for MacOsPlatform {
         // Every version of this package lives under here. The version being
         // replaced still owns its links at this point: install retires them
         // only once placement has succeeded.
-        let package_dir = plan.store_dir.parent().unwrap_or(plan.store_dir);
 
         if plan.kind != PackageKind::Binary {
             for bundle in find_app_bundles(plan.store_dir) {
@@ -867,6 +953,19 @@ mod tests {
     }
 
     #[test]
+    fn making_a_binary_executable_does_not_grant_read_access() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("tool");
+        std::fs::write(&path, b"#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+
+        ensure_executable(&path).unwrap();
+
+        let mode = std::fs::metadata(path).unwrap().permissions().mode() & 0o7777;
+        assert_eq!(mode, 0o711);
+    }
+
+    #[test]
     fn app_bundles_are_found_but_their_helpers_are_not() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
@@ -934,6 +1033,83 @@ mod tests {
         std::os::unix::fs::symlink(old.join("tool"), bin.join("tool")).unwrap();
         let record = link_binary(&target, &bin, "tool", &mine, &[]).unwrap();
         assert_eq!(std::fs::read_link(&record.link).unwrap(), target);
+    }
+
+    #[test]
+    fn placement_checks_all_binary_destinations_before_replacing_any() {
+        let tmp = tempfile::tempdir().unwrap();
+        let payload = tmp.path().join("payload");
+        std::fs::create_dir_all(&payload).unwrap();
+        for name in ["first", "second"] {
+            let path = payload.join(name);
+            std::fs::write(&path, b"#!/bin/sh\n").unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+
+        let bin = tmp.path().join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let external = tmp.path().join("external");
+        std::fs::write(&external, b"#!/bin/sh\n").unwrap();
+        std::os::unix::fs::symlink(&external, bin.join("second")).unwrap();
+
+        let store = tmp.path().join("store/pkg/1.0");
+        let apps = tmp.path().join("Applications");
+        let package_dir = store.parent().unwrap();
+        let plan = Placement {
+            name: "pkg",
+            version: "1.0",
+            payload_dir: &payload,
+            store_dir: &store,
+            bin_dir: &bin,
+            apps_dir: &apps,
+            kind: PackageKind::Binary,
+            bin_specs: &[],
+            replacing: &[],
+            link_apps: false,
+            link: true,
+        };
+
+        assert!(preflight_destinations(&MacOsPlatform::new(), &plan, package_dir).is_err());
+        assert!(
+            !bin.join("first").exists(),
+            "preflight must not create links"
+        );
+    }
+
+    #[test]
+    fn placement_preflight_checks_the_package_name_for_a_single_build_artifact() {
+        let tmp = tempfile::tempdir().unwrap();
+        let payload = tmp.path().join("payload");
+        std::fs::create_dir_all(&payload).unwrap();
+        let artifact = payload.join("tool-macos-arm64");
+        std::fs::write(&artifact, b"#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&artifact, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let bin = tmp.path().join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let external = tmp.path().join("external");
+        std::fs::write(&external, b"#!/bin/sh\n").unwrap();
+        std::os::unix::fs::symlink(&external, bin.join("tool")).unwrap();
+
+        let store = tmp.path().join("store/tool/1.0");
+        let apps = tmp.path().join("Applications");
+        let plan = Placement {
+            name: "tool",
+            version: "1.0",
+            payload_dir: &payload,
+            store_dir: &store,
+            bin_dir: &bin,
+            apps_dir: &apps,
+            kind: PackageKind::Binary,
+            bin_specs: &[],
+            replacing: &[],
+            link_apps: false,
+            link: true,
+        };
+
+        assert!(
+            preflight_destinations(&MacOsPlatform::new(), &plan, store.parent().unwrap()).is_err()
+        );
     }
 
     #[test]

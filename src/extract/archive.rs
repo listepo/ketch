@@ -267,18 +267,8 @@ impl Extractor for TarBz2Extractor {
         head.starts_with(BZ2_MAGIC)
     }
     fn extract(&self, src: &Path, dest: &Path) -> Result<()> {
-        // Rare enough that a bzip2 crate is not worth the dependency; every
-        // supported host ships a tar that reads it.
-        crate::extract::macos::run_tool(
-            "/usr/bin/tar",
-            &[
-                std::ffi::OsStr::new("-xjf"),
-                src.as_os_str(),
-                std::ffi::OsStr::new("-C"),
-                dest.as_os_str(),
-            ],
-        )
-        .map(|_| ())
+        let file = File::open(src).map_err(|e| Error::io(src, e))?;
+        unpack_tar(bzip2::read::BzDecoder::new(BufReader::new(file)), dest)
     }
 }
 
@@ -522,6 +512,40 @@ mod tests {
             std::fs::metadata(&binary).unwrap().permissions().mode() & 0o111,
             0
         );
+    }
+
+    #[test]
+    fn bzip2_archives_use_the_same_traversal_guard_as_tar() {
+        let mut builder = tar::Builder::new(Vec::new());
+        symlink_entry(&mut builder, "a/b/c/d/link", "../../../..");
+        symlink_entry(
+            &mut builder,
+            "a/b/c/d/link/e/f/g/h/esc",
+            "../../../../../../../../..",
+        );
+        let mut header = tar::Header::new_gnu();
+        header.set_size(5);
+        header.set_mode(0o644);
+        builder
+            .append_data(
+                &mut header,
+                "a/b/c/d/link/e/f/g/h/esc/victim",
+                &b"pwned"[..],
+            )
+            .unwrap();
+        let plain = builder.into_inner().unwrap();
+        let mut encoder = bzip2::write::BzEncoder::new(Vec::new(), bzip2::Compression::fast());
+        encoder.write_all(&plain).unwrap();
+        let archive = encoder.finish().unwrap();
+
+        let outer = tempfile::tempdir().unwrap();
+        let src = outer.path().join("payload.tar.bz2");
+        std::fs::write(&src, archive).unwrap();
+        let dest = outer.path().join("dest");
+        std::fs::create_dir_all(&dest).unwrap();
+
+        assert!(TarBz2Extractor.extract(&src, &dest).is_err());
+        assert!(!outer.path().join("e").exists());
     }
 
     #[test]

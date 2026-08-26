@@ -38,6 +38,7 @@ pub fn current_exe() -> Result<PathBuf> {
 
 /// Fetch the latest ketch release and replace this binary.
 pub fn update(cfg: &Config, force: bool, dry_run: bool) -> Result<SelfUpdate> {
+    let _lock = Lock::acquire(cfg)?;
     let from = current_version();
 
     // Built-in sources only: a third-party plugin must never be in a position
