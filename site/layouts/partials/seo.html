@@ -47,7 +47,7 @@
   "programmingLanguage" "Rust"
   "author" (dict "@type" "Person" "name" site.Params.author)
   "offers" (dict "@type" "Offer" "price" "0" "priceCurrency" "USD")
-  | jsonify (dict "indent" "  ")
+  | jsonify (dict "indent" "  ") | safeJS
 }}
 </script>
 {{- else -}}
@@ -60,7 +60,7 @@
   "url" .Permalink
   "author" (dict "@type" "Person" "name" site.Params.author)
   "isPartOf" (dict "@type" "WebSite" "name" site.Title "url" site.BaseURL)
-  | jsonify (dict "indent" "  ")
+  | jsonify (dict "indent" "  ") | safeJS
 }}
 </script>
 {{- end -}}
