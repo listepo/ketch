@@ -243,28 +243,17 @@ chmod 755 "${INSTALL_PATH}" || {
 # Strip quarantine xattr (tolerate if not present)
 xattr -d com.apple.quarantine "${INSTALL_PATH}" 2>/dev/null || true
 
-# Wire up PATH
+# Wire up PATH. ketch owns this: `ketch path install` knows bash, zsh and fish,
+# quotes the directory properly, and can undo itself — which is more than this
+# script should be reimplementing.
+PATH_SET=0
 if [ "${NO_MODIFY_PATH}" -eq 0 ]; then
   echo "Setting up PATH..."
-
-  # For zsh (macOS default)
-  if [ -f "${HOME}/.zshrc" ]; then
-    EXPORT_LINE="export PATH=\"${INSTALL_DIR}:\$PATH\""
-    if ! grep -q "export PATH=\"${INSTALL_DIR}" "${HOME}/.zshrc" 2>/dev/null; then
-      printf '\n%s\n' "${EXPORT_LINE}" >> "${HOME}/.zshrc"
-    fi
+  # The root is the bin dir's parent, which is how ketch itself derives it.
+  if KETCH_ROOT="$(dirname "${INSTALL_DIR}")" "${INSTALL_PATH}" path install; then
+    PATH_SET=1
   else
-    # Create .zshrc if it doesn't exist
-    EXPORT_LINE="export PATH=\"${INSTALL_DIR}:\$PATH\""
-    printf '%s\n' "${EXPORT_LINE}" > "${HOME}/.zshrc"
-  fi
-
-  # For bash (if .bash_profile exists)
-  if [ -f "${HOME}/.bash_profile" ]; then
-    EXPORT_LINE="export PATH=\"${INSTALL_DIR}:\$PATH\""
-    if ! grep -q "export PATH=\"${INSTALL_DIR}" "${HOME}/.bash_profile" 2>/dev/null; then
-      printf '\n%s\n' "${EXPORT_LINE}" >> "${HOME}/.bash_profile"
-    fi
+    echo "${RED}Could not set up PATH automatically.${NC}" >&2
   fi
 fi
 
@@ -275,15 +264,12 @@ echo ""
 echo "Installed to: ${INSTALL_PATH}"
 echo ""
 
-if [ "${NO_MODIFY_PATH}" -eq 0 ]; then
-  echo "PATH updated. To use ketch immediately, run:"
-  if command -v zsh >/dev/null 2>&1; then
-    echo "  ${GREEN}exec zsh${NC}"
-  else
-    echo "  ${GREEN}source ~/.zshrc${NC}"
-  fi
+if [ "${PATH_SET}" -eq 1 ]; then
+  echo "PATH updated. Open a new shell, or run:"
+  echo "  ${GREEN}exec \$SHELL${NC}"
 else
-  echo "To use ketch, add ${INSTALL_DIR} to your PATH."
+  echo "To use ketch, add ${INSTALL_DIR} to your PATH:"
+  echo "  ${GREEN}${INSTALL_PATH} path install${NC}"
 fi
 
 echo ""

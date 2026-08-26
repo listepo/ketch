@@ -221,3 +221,95 @@ fn doctor_reports_a_healthy_tree() {
     // Exit status is the assertion: doctor fails when the tree is broken.
     sandbox.ok(&["doctor"]);
 }
+
+/// A shell startup file is the one thing ketch writes outside its own root, so
+/// the guarantee worth proving end to end is that the user's own file survives
+/// being written, rewritten and taken back out.
+#[test]
+fn path_install_edits_a_shell_config_and_can_undo_itself() {
+    let sandbox = Sandbox::new();
+    let zshrc = sandbox.home().join(".zshrc");
+    let original = "# mine\nexport EDITOR=vi\n";
+    std::fs::write(&zshrc, original).expect("write zshrc");
+
+    sandbox.ok(&["path", "install", "--shell", "zsh"]);
+    let after = std::fs::read_to_string(&zshrc).expect("read zshrc");
+    assert!(
+        after.starts_with(original),
+        "the user's own lines moved:\n{after}"
+    );
+    assert!(
+        after.contains(&sandbox.bin().display().to_string()),
+        "bin dir missing from:\n{after}"
+    );
+
+    // Twice must not mean two blocks.
+    sandbox.ok(&["path", "install", "--shell", "zsh"]);
+    let twice = std::fs::read_to_string(&zshrc).expect("read zshrc");
+    assert_eq!(twice, after, "a second install changed the file");
+
+    sandbox.ok(&["path", "uninstall", "--shell", "zsh"]);
+    let restored = std::fs::read_to_string(&zshrc).expect("read zshrc");
+    assert_eq!(restored, original, "uninstall did not restore the file");
+}
+
+#[test]
+fn a_dry_run_says_what_it_would_do_and_writes_nothing() {
+    let sandbox = Sandbox::new();
+    // Progress goes to stderr, so output stays pipeable — see `ui`.
+    let out = sandbox.ketch(&["path", "install", "--shell", "fish", "--dry-run"]);
+    let said = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{said}");
+    assert!(said.contains("would add"), "{said}");
+    assert!(
+        !sandbox.home().join(".config/fish/config.fish").exists(),
+        "a dry run created the file"
+    );
+}
+
+/// The whole point of `--fix`: a PATH that no shell knows about is the one
+/// doctor failure the user should not have to act on themselves.
+#[test]
+fn doctor_fixes_a_path_no_shell_knows_about() {
+    let sandbox = Sandbox::new();
+
+    let failed = sandbox.ketch_off_path(&["doctor"]);
+    assert!(
+        !failed.status.success(),
+        "doctor passed without PATH set up"
+    );
+    let text = String::from_utf8_lossy(&failed.stdout);
+    assert!(text.contains("is not on PATH"), "{text}");
+
+    let fixed = sandbox.ketch_off_path(&["doctor", "--fix"]);
+    let text = String::from_utf8_lossy(&fixed.stdout);
+    assert!(
+        fixed.status.success(),
+        "doctor --fix still failed:\n{text}\n{}",
+        String::from_utf8_lossy(&fixed.stderr)
+    );
+    // Fixed, but not in *this* process: the check has to say so rather than
+    // reporting the same failure it just repaired.
+    assert!(text.contains("but not in this shell"), "{text}");
+
+    let zshrc = std::fs::read_to_string(sandbox.home().join(".zshrc")).expect("read zshrc");
+    assert!(
+        zshrc.contains(&sandbox.bin().display().to_string()),
+        "{zshrc}"
+    );
+}
+
+#[test]
+fn a_path_the_user_wired_up_by_hand_is_never_duplicated() {
+    let sandbox = Sandbox::new();
+    let zshrc = sandbox.home().join(".zshrc");
+    let mine = format!("export PATH=\"{}:$PATH\"\n", sandbox.bin().display());
+    std::fs::write(&zshrc, &mine).expect("write zshrc");
+
+    sandbox.ok(&["path", "install", "--shell", "zsh"]);
+    assert_eq!(
+        std::fs::read_to_string(&zshrc).expect("read zshrc"),
+        mine,
+        "ketch added a second copy of a line the user already had"
+    );
+}

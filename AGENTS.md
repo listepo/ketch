@@ -44,6 +44,7 @@ pass before a change is done.
 | `src/source/` | where releases come from: GitHub built in, plugins external |
 | `src/extract/` | archive formats, selected by sniffing content not file names |
 | `src/platform/` | OS-specific placement, linking, trust checks |
+| `src/shell.rs` | putting the bin dir on PATH in bash, zsh and fish |
 | `src/registry.rs` | the fetched package registry (see `docs/REGISTRY.md`) |
 | `src/manifest.rs` | resolving a name to a `Manifest` across four tiers |
 | `src/model.rs` | every type that crosses a module boundary |
@@ -57,6 +58,13 @@ The rule that keeps `cmd/` thin: anything touching the install tree belongs in
 `install.rs`, `state.rs`, or a trait implementation, so the same logic serves
 every command. If you are about to write install logic inside a command, you
 are in the wrong file.
+
+`src/shell.rs` is the one module that writes outside the ketch root, and it
+does so only when asked: `ketch path install` and `ketch doctor --fix`. It edits
+a shell startup file between two markers, so the block can be found again,
+rewritten when the root moves, and removed without guessing which line was
+ketch's. It follows a symlinked startup file to its target before writing,
+because that file is very often a link into a dotfiles repository.
 
 ## Conventions
 

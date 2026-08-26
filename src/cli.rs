@@ -86,7 +86,13 @@ pub enum Command {
     Unlink(NameArgs),
 
     /// Check the environment and the install tree
-    Doctor,
+    Doctor(DoctorArgs),
+
+    /// Put the ketch bin directory on your shell's PATH
+    Path {
+        #[command(subcommand)]
+        command: Option<PathCommand>,
+    },
 
     /// Manage source plugins
     Plugin {
@@ -220,6 +226,48 @@ pub struct UpgradeArgs {
 pub struct NameArgs {
     #[arg(required = true, value_name = "NAME")]
     pub names: Vec<String>,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct DoctorArgs {
+    /// Repair what can be repaired without asking: currently the PATH setup
+    #[arg(long)]
+    pub fix: bool,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum PathCommand {
+    /// Add the bin directory to your shell's startup file
+    Install(PathInstallArgs),
+    /// Take out the block `ketch path install` added
+    Uninstall(PathArgs),
+    /// Show which shells have been set up
+    Status,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct PathArgs {
+    /// Shells to act on. Default: the ones you appear to use.
+    #[arg(long, value_name = "SHELL", value_enum)]
+    pub shell: Vec<crate::shell::Shell>,
+
+    /// Act on every shell ketch knows
+    #[arg(long, conflicts_with = "shell")]
+    pub all: bool,
+
+    /// Report what would change without touching anything
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct PathInstallArgs {
+    #[command(flatten)]
+    pub common: PathArgs,
+
+    /// Print the line to add by hand instead of editing anything
+    #[arg(long, conflicts_with_all = ["all", "dry_run"])]
+    pub print: bool,
 }
 
 #[derive(Subcommand, Debug, Clone)]

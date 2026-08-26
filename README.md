@@ -72,11 +72,33 @@ ketch update               # refresh the package registry
 ketch pin / unpin <pkg>    # hold a version, or let go
 ketch uninstall <pkg>...   # remove it
 ketch doctor               # check the environment and the install tree
+ketch doctor --fix         # and repair the PATH setup while it is there
+ketch path install         # put ~/.ketch/bin on PATH in bash, zsh and fish
 ```
 
 Everything lives under `~/.ketch`: versioned payloads in `store/`, links in
 `bin/`, and a `state.json` recording what is installed. Nothing is written
-outside that tree except the `.app` bundles that belong in `/Applications`.
+outside that tree except the `.app` bundles that belong in `/Applications`, and
+the shell startup file `ketch path install` edits when you ask it to.
+
+## Getting on PATH
+
+```bash
+ketch path              # which shells are set up, and where
+ketch path install      # edit the ones you use
+ketch path uninstall    # take the block back out
+```
+
+It detects bash, zsh and fish — the shell `$SHELL` names, plus any whose startup
+file you already keep — and writes one block between markers, so it can rewrite
+it if the root moves and remove it cleanly later. `--shell <name>` picks one,
+`--all` takes all three, `--dry-run` shows the edit without making it, and
+`--print` gives you the line to paste somewhere ketch does not know about.
+
+A line you added yourself is left alone rather than duplicated. `ketch doctor`
+reports the PATH as a failure when no shell knows about it, as a warning when a
+startup file has it but the current shell predates the edit, and `ketch doctor
+--fix` does the setup for you.
 
 ## How a package is found
 

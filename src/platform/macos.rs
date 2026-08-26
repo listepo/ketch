@@ -804,29 +804,12 @@ impl Platform for MacOsPlatform {
             .unwrap_or(false)
     }
 
-    fn path_setup_hint(&self, bin_dir: &Path) -> String {
-        format!(
-            "echo 'export PATH=\"{}:$PATH\"' >> ~/.zshrc && exec zsh",
-            bin_dir.display()
-        )
-    }
-
     fn app_bundle_extension(&self) -> Option<&str> {
         Some(".app")
     }
 
     fn doctor(&self, cfg: &Config) -> Vec<DoctorCheck> {
         let mut checks = Vec::new();
-
-        checks.push(if cfg.bin_dir_on_path() {
-            DoctorCheck::ok("PATH", format!("{} is on PATH", cfg.bin_dir.display()))
-        } else {
-            DoctorCheck::fail(
-                "PATH",
-                format!("{} is not on PATH", cfg.bin_dir.display()),
-                self.path_setup_hint(&cfg.bin_dir),
-            )
-        });
 
         for (label, dir) in [("root", &cfg.root), ("store", &cfg.store_dir)] {
             checks.push(match writable(dir) {

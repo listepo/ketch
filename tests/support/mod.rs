@@ -27,6 +27,7 @@ impl Sandbox {
             sandbox.apps(),
             sandbox.plugin_dir(),
             sandbox.assets(),
+            sandbox.home(),
         ] {
             std::fs::create_dir_all(dir).expect("create sandbox dir");
         }
@@ -50,6 +51,12 @@ impl Sandbox {
         self.root().join("store")
     }
 
+    /// A home directory of its own, so a test that edits shell startup files
+    /// cannot reach the one belonging to whoever is running the suite.
+    pub fn home(&self) -> PathBuf {
+        self.tmp.path().join("home")
+    }
+
     fn plugin_dir(&self) -> PathBuf {
         self.root().join("plugins")
     }
@@ -62,14 +69,30 @@ impl Sandbox {
     /// Run ketch against this sandbox. The environment is set per-invocation
     /// rather than process-wide, so tests stay safe to run in parallel.
     pub fn ketch(&self, args: &[&str]) -> Output {
+        // The bin dir on PATH is the configuration ketch is installed into;
+        // `doctor` is right to fail without it.
+        self.ketch_with_path(args, self.path_with_bin())
+    }
+
+    /// Run ketch with the sandbox bin dir left off PATH, which is what an
+    /// install that has not been wired into a shell yet actually looks like.
+    pub fn ketch_off_path(&self, args: &[&str]) -> Output {
+        self.ketch_with_path(args, std::env::var_os("PATH").unwrap_or_default())
+    }
+
+    fn ketch_with_path(&self, args: &[&str], path: std::ffi::OsString) -> Output {
         Command::new(env!("CARGO_BIN_EXE_ketch"))
             .args(args)
             .env("KETCH_ROOT", self.root())
             .env("KETCH_APPS_DIR", self.apps())
             .env("NO_COLOR", "1")
-            // The bin dir on PATH is the configuration ketch is installed
-            // into; `doctor` is right to fail without it.
-            .env("PATH", self.path_with_bin())
+            .env("PATH", path)
+            // Shell setup writes into `$HOME`. Pointing it at the sandbox is
+            // what keeps the suite from editing a real `.zshrc`.
+            .env("HOME", self.home())
+            .env("SHELL", "/bin/zsh")
+            .env_remove("ZDOTDIR")
+            .env_remove("XDG_CONFIG_HOME")
             // A token in the ambient environment (CI always has one) must not
             // reach a test: nothing here is allowed to touch the network.
             .env_remove("KETCH_GITHUB_TOKEN")

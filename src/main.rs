@@ -16,6 +16,7 @@ mod model;
 mod platform;
 mod registry;
 mod selfupdate;
+mod shell;
 mod source;
 mod state;
 mod ui;
@@ -78,7 +79,8 @@ fn run(cli: Cli) -> Result<()> {
         Command::Info(args) => cmd::query::info(&cfg, args),
         Command::Search(args) => cmd::query::search(&cfg, args),
         Command::Update => cmd::system::update(&cfg),
-        Command::Doctor => cmd::system::doctor(&cfg),
+        Command::Doctor(args) => cmd::system::doctor(&cfg, args),
+        Command::Path { command } => cmd::system::path(&cfg, command),
         Command::Plugin { command } => cmd::system::plugin(&cfg, command),
         Command::Zelf { command } => cmd::system::zelf(&cfg, command),
         Command::Completions(_) => unreachable!("handled above"),

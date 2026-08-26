@@ -327,7 +327,11 @@ fn path_hint(cfg: &Config, state: &State) {
         return;
     }
     ui::warn(&format!("{} is not on your PATH", cfg.bin_dir.display()));
-    if let Ok(platform) = crate::platform::host() {
-        ui::out(&platform.path_setup_hint(&cfg.bin_dir));
+    if crate::shell::configured_in(cfg).is_empty() {
+        ui::out("Run `ketch path install` to add it.");
+    } else {
+        // Already in the startup file: this shell just predates the edit, and
+        // telling them to install again would not change that.
+        ui::out("It is in your shell config already — open a new shell.");
     }
 }

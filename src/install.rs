@@ -563,9 +563,6 @@ mod tests {
         fn is_executable(&self, _path: &Path) -> bool {
             true
         }
-        fn path_setup_hint(&self, _bin: &Path) -> String {
-            String::new()
-        }
         fn doctor(&self, _cfg: &Config) -> Vec<crate::platform::DoctorCheck> {
             Vec::new()
         }
