@@ -154,6 +154,16 @@ Run the binary against a throwaway tree instead of your real `~/.ketch`:
 KETCH_ROOT=/tmp/ketch-scratch cargo run -- doctor
 ```
 
+## Releasing
+
+```bash
+scripts/release.sh 0.2.0
+```
+
+Opens a pull request bumping `Cargo.toml` and `Cargo.lock`. Merge it, then tag
+the merge commit — that is what builds both macOS architectures and publishes
+the tarballs. `--dry-run` shows what it would do.
+
 ## Contributing
 
 [AGENTS.md](AGENTS.md) documents the layout, the conventions, and the trust
