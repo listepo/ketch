@@ -1,0 +1,66 @@
+{{- $title := cond .IsHome site.Title (printf "%s · %s" .Title site.Title) -}}
+{{- $description := or .Params.description .Description site.Params.description -}}
+{{- $description = $description | plainify | truncate 160 -}}
+{{- $image := absURL site.Params.ogImage -}}
+
+<title>{{ $title }}</title>
+<meta name="description" content="{{ $description }}">
+<link rel="canonical" href="{{ .Permalink }}">
+{{ with site.Params.keywords }}<meta name="keywords" content="{{ delimit . ", " }}">{{ end }}
+<meta name="author" content="{{ site.Params.author }}">
+
+<meta property="og:type" content="{{ cond .IsHome "website" "article" }}">
+<meta property="og:site_name" content="{{ site.Title }}">
+<meta property="og:title" content="{{ $title }}">
+<meta property="og:description" content="{{ $description }}">
+<meta property="og:url" content="{{ .Permalink }}">
+<meta property="og:image" content="{{ $image }}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:locale" content="en_US">
+
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{{ $title }}">
+<meta name="twitter:description" content="{{ $description }}">
+<meta name="twitter:image" content="{{ $image }}">
+
+{{ with .OutputFormats.Get "rss" }}
+  <link rel="alternate" type="application/rss+xml" href="{{ .Permalink }}" title="{{ site.Title }}">
+{{ end }}
+
+{{/* Structured data. The home page is the software itself; a doc page is an
+     article about it. Both name the same repository so they are understood as
+     one project rather than two things that happen to share a domain. */}}
+{{- if .IsHome -}}
+<script type="application/ld+json">
+{{ dict
+  "@context" "https://schema.org"
+  "@type" "SoftwareApplication"
+  "name" "ketch"
+  "description" $description
+  "url" site.BaseURL
+  "applicationCategory" "DeveloperApplication"
+  "operatingSystem" "macOS"
+  "softwareVersion" (site.Params.version | default "0.1.0")
+  "license" "https://opensource.org/licenses/MIT"
+  "codeRepository" site.Params.repo
+  "programmingLanguage" "Rust"
+  "author" (dict "@type" "Person" "name" site.Params.author)
+  "offers" (dict "@type" "Offer" "price" "0" "priceCurrency" "USD")
+  | jsonify (dict "indent" "  ")
+}}
+</script>
+{{- else -}}
+<script type="application/ld+json">
+{{ dict
+  "@context" "https://schema.org"
+  "@type" "TechArticle"
+  "headline" .Title
+  "description" $description
+  "url" .Permalink
+  "author" (dict "@type" "Person" "name" site.Params.author)
+  "isPartOf" (dict "@type" "WebSite" "name" site.Title "url" site.BaseURL)
+  | jsonify (dict "indent" "  ")
+}}
+</script>
+{{- end -}}
