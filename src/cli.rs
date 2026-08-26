@@ -64,6 +64,9 @@ pub enum Command {
     #[command(visible_alias = "show")]
     Info(InfoArgs),
 
+    /// Show what changed: the package's own changelog, or its release notes
+    Changelog(ChangelogArgs),
+
     /// Search GitHub for installable repositories
     Search(SearchArgs),
 
@@ -193,6 +196,25 @@ pub struct InfoArgs {
     /// List the release's assets and how each one scored
     #[arg(long)]
     pub assets: bool,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct ChangelogArgs {
+    /// An installed name, an alias, or `owner/repo` — may carry `@version`
+    #[arg(value_name = "PKG")]
+    pub package: String,
+
+    /// Show the newest release instead of the installed one
+    #[arg(long)]
+    pub latest: bool,
+
+    /// Only read the changelog file the package ships
+    #[arg(long, conflicts_with_all = ["release", "latest"])]
+    pub file: bool,
+
+    /// Only read the notes published with the release
+    #[arg(long)]
+    pub release: bool,
 }
 
 #[derive(Args, Debug, Clone)]

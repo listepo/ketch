@@ -68,6 +68,7 @@ ketch outdated             # what has a newer release
 ketch upgrade              # bring everything unpinned up to date
 ketch info <pkg>           # details, including --assets and why each scored
 ketch search <query>       # the registry and GitHub
+ketch changelog <pkg>      # what changed: the shipped file, or the release notes
 ketch update               # refresh the package registry
 ketch pin / unpin <pkg>    # hold a version, or let go
 ketch uninstall <pkg>...   # remove it
@@ -82,6 +83,23 @@ Everything lives under `~/.ketch`: versioned payloads in `store/`, links in
 `bin/`, and a `state.json` recording what is installed. Nothing is written
 outside that tree except the `.app` bundles that belong in `/Applications`, and
 the shell startup file `ketch path install` edits when you ask it to.
+
+## Seeing what changed
+
+```bash
+ketch changelog rg            # the entry for the version you have
+ketch changelog rg --latest   # the release you would get by upgrading
+ketch changelog rg --release  # the notes on the release, not the shipped file
+```
+
+Most releases carry their history twice: a `CHANGELOG.md` inside the archive
+and the notes attached to the release. ketch prefers the file — it is already
+on disk, so this works with no network — and falls back to the notes when the
+file has no entry for that version, which is what happens whenever a project
+tags before writing the heading.
+
+The changelog goes to stdout and everything else to stderr, so
+`ketch changelog rg > NOTES.md` leaves nothing but the markdown.
 
 ## Reproducing a machine
 

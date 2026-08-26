@@ -184,6 +184,7 @@ impl Sandbox {
 pub struct Release {
     version: String,
     assets: Vec<Asset>,
+    notes: Option<String>,
 }
 
 impl Release {
@@ -191,14 +192,26 @@ impl Release {
         Release {
             version: version.to_string(),
             assets,
+            notes: None,
         }
+    }
+
+    /// Notes published alongside the release, the way a forge serves them.
+    pub fn with_notes(mut self, notes: &str) -> Release {
+        self.notes = Some(notes.to_string());
+        self
     }
 
     fn to_json(&self) -> String {
         let assets: Vec<String> = self.assets.iter().map(Asset::to_json).collect();
+        let notes = match &self.notes {
+            Some(text) => format!(r#","notes":"{}""#, json_escape(text)),
+            None => String::new(),
+        };
         format!(
-            r#"{{"version":"{v}","tag":"v{v}","prerelease":false,"draft":false,"assets":[{a}]}}"#,
+            r#"{{"version":"{v}","tag":"v{v}","prerelease":false,"draft":false{n},"assets":[{a}]}}"#,
             v = self.version,
+            n = notes,
             a = assets.join(",")
         )
     }
@@ -304,6 +317,18 @@ fn write_zip(dest: &Path, entries: &[Entry]) {
         zip.write_all(&entry.body).expect("write file");
     }
     zip.finish().expect("finish zip");
+}
+
+/// Enough of a JSON string escape for fixture text.
+fn json_escape(text: &str) -> String {
+    text.chars()
+        .flat_map(|c| match c {
+            '"' => "\\\"".chars().collect::<Vec<_>>(),
+            '\\' => "\\\\".chars().collect(),
+            '\n' => "\\n".chars().collect(),
+            c => vec![c],
+        })
+        .collect()
 }
 
 fn sha256_file(path: &Path) -> String {

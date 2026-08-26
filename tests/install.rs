@@ -22,8 +22,23 @@ fn tool_archive(version: &str) -> Archive {
             &format!("testtool {version}"),
         ),
         Entry::file(&format!("testtool-{version}/README.md"), "# testtool\n"),
+        Entry::file(&format!("testtool-{version}/CHANGELOG.md"), CHANGELOG),
     ])
 }
+
+/// The same changelog whatever version ships it, so a test can prove the
+/// section that gets printed is the one for the version installed.
+const CHANGELOG: &str = "\
+# Changelog
+
+## [2.0.0] - 2024-06-01
+
+- the second one
+
+## [1.0.0] - 2024-05-01
+
+- the first one
+";
 
 /// A macOS app, shaped like a real release zip: the bundle alone at the root.
 fn app_archive(version: &str) -> Archive {
@@ -51,7 +66,11 @@ fn publish_tool(sandbox: &Sandbox, version: &str) {
         &format!("testtool-{version}-{arch}-unknown-linux-gnu.tar.gz"),
         tool_archive("linux-decoy"),
     );
-    sandbox.publish("testtool", &[Release::new(version, vec![linux, native])]);
+    sandbox.publish(
+        "testtool",
+        &[Release::new(version, vec![linux, native])
+            .with_notes(&format!("published notes for {version}"))],
+    );
 }
 
 fn run(path: &std::path::Path) -> String {
@@ -450,4 +469,37 @@ fn a_lockfile_naming_a_path_instead_of_a_package_is_refused() {
 
     let said = sandbox.fails(&["sync", "--file", &lock.display().to_string()]);
     assert!(said.contains("not a usable package name"), "{said}");
+}
+
+/// The changelog a package ships is preferred over the notes on the release,
+/// and the section printed is the one for the version actually installed.
+#[test]
+fn changelog_prints_the_section_for_the_installed_version() {
+    let sandbox = Sandbox::new();
+    publish_tool(&sandbox, "1.0.0");
+    sandbox.ok(&["install", "test:testtool", "--yes"]);
+
+    let out = sandbox.ok(&["changelog", "testtool"]);
+    assert!(out.contains("the first one"), "no 1.0.0 section:\n{out}");
+    assert!(
+        !out.contains("the second one"),
+        "ran past 1.0.0 into 2.0.0:\n{out}"
+    );
+
+    let notes = sandbox.ok(&["changelog", "testtool", "--release"]);
+    assert!(
+        notes.contains("published notes for 1.0.0"),
+        "release notes not reached:\n{notes}"
+    );
+    assert!(!notes.contains("the first one"), "read the file:\n{notes}");
+}
+
+/// A package that is not installed has no file to read, so `--file` says so
+/// rather than quietly printing the notes instead.
+#[test]
+fn changelog_for_a_package_with_no_file_says_where_to_look() {
+    let sandbox = Sandbox::new();
+    publish_tool(&sandbox, "1.0.0");
+    let err = sandbox.fails(&["changelog", "test:testtool", "--file"]);
+    assert!(err.contains("not installed"), "{err}");
 }

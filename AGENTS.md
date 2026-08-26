@@ -10,6 +10,24 @@ apps straight from GitHub releases. No taps, no formulae, no build step: it
 downloads what a project already ships, verifies it, unpacks it into a store,
 and links it onto `PATH`.
 
+### Host app, client app
+
+Two words used throughout this file and the code, because "app" alone is
+ambiguous in a package manager:
+
+- **host app** — ketch itself: this repository, the binary in `target/`, the
+  thing being changed. Its own version, release process and `~/.ketch` tree are
+  the host's.
+- **client app** — anything ketch installs and manages: ripgrep, a `.app`
+  bundle, whatever a `Manifest` names. It is written by someone else, so
+  everything about it — asset names, archive members, `CHANGELOG.md`, release
+  notes — is untrusted input, not ketch's own data.
+
+Where the distinction matters most: `ketch self update` upgrades the host,
+`ketch upgrade` upgrades clients; `scripts/release.sh` releases the host,
+`ketch.lock` pins clients; `src/changelog.rs` reads a client's changelog, while
+the host's history is git.
+
 macOS is the only implemented platform. `src/platform/mod.rs` gates it with
 `#[cfg(target_os = "macos")]` and returns a clear error elsewhere, so a Linux
 backend means implementing the `Platform` trait — nothing above it changes.
@@ -49,6 +67,7 @@ pass before a change is done.
 | `src/manifest.rs` | resolving a name to a `Manifest` across four tiers |
 | `src/model.rs` | every type that crosses a module boundary |
 | `src/state.rs` | the installed-package record and the process lock |
+| `src/changelog.rs` | finding and slicing a client app's changelog |
 | `src/lockfile.rs` | `ketch.lock`: what is installed, pinned to exact releases |
 | `src/ui.rs` | all terminal output |
 | `tests/` | end-to-end tests that drive the real binary |
@@ -100,8 +119,9 @@ These are observed throughout; match them rather than introducing your own.
 
 Most of what ketch handles was written by someone else: GitHub API responses,
 release asset names and bytes, archive member paths, registry `ketch.toml`
-files, and source-plugin subprocess output. Anything from those reaching a
-filesystem path, a URL, or a process is a trust boundary.
+files, and source-plugin subprocess output — everything about a client app, in
+other words. Anything from those reaching a filesystem path, a URL, a process
+or the user's terminal is a trust boundary.
 
 Reuse the guards that exist rather than writing new ones:
 
@@ -114,6 +134,9 @@ Reuse the guards that exist rather than writing new ones:
 - `Manifest::validate` — the single guard every manifest tier passes through
   (registry, user manifests, built-in). Add new checks there, not at a caller.
 - `config::validate_repo` — anything that becomes `github.com/owner/repo`.
+- `changelog::sanitize` — drops escape sequences and bidi overrides from client
+  prose before it is printed. A changelog is the one place ketch shows a whole
+  file someone else wrote; an unfiltered one can rewrite the screen above it.
 
 Simplicity never removes one of these. If a change makes a guard unnecessary,
 delete the guard deliberately and say why in the commit.

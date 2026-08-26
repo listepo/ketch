@@ -4,6 +4,7 @@
 //! `Config`, and hand off to a command. Every failure path converges here so a
 //! single place decides how errors are shown and what the process exits with.
 
+mod changelog;
 mod cli;
 mod cmd;
 mod config;
@@ -78,6 +79,7 @@ fn run(cli: Cli) -> Result<()> {
         Command::List(args) => cmd::query::list(&cfg, args),
         Command::Outdated(args) => cmd::query::outdated(&cfg, args),
         Command::Info(args) => cmd::query::info(&cfg, args),
+        Command::Changelog(args) => cmd::query::changelog(&cfg, args),
         Command::Search(args) => cmd::query::search(&cfg, args),
         Command::Update => cmd::system::update(&cfg),
         Command::Lock(args) => cmd::lock::lock(&cfg, args),

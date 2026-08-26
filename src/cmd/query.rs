@@ -4,7 +4,8 @@
 //! through `ui::out`/`ui::table` so it can be piped while progress and warnings
 //! stay on stderr.
 
-use crate::cli::{InfoArgs, ListArgs, OutdatedArgs, SearchArgs};
+use crate::changelog::{self, Entry, Origin};
+use crate::cli::{ChangelogArgs, InfoArgs, ListArgs, OutdatedArgs, SearchArgs};
 use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::install;
@@ -266,6 +267,137 @@ pub fn info(cfg: &Config, args: InfoArgs) -> Result<()> {
                 .collect();
             ui::table(&["asset", "size", "score", "why"], &rows);
         }
+    }
+    Ok(())
+}
+
+/// Print what changed in a release.
+///
+/// The file the package ships is preferred over the notes the release
+/// published: it needs no network, and it is the history of the version
+/// actually on disk. A file with no section for that version is not an answer
+/// about it, though — plenty of projects cut a release before the heading is
+/// written — so that falls through to the notes, and back to the whole file
+/// only when there are none to fall through to.
+pub fn changelog(cfg: &Config, args: ChangelogArgs) -> Result<()> {
+    let state = State::load(cfg)?;
+    let spec = PackageSpec::parse(&args.package);
+    let installed = state.find(&args.package).cloned();
+    // Only the installed version has a file; any other release is the source's
+    // to answer for.
+    let elsewhere = args.latest || matches!(spec.version, VersionSpec::Exact(_));
+
+    let mut whole_file = None;
+    if !args.release {
+        if let Some(pkg) = installed.as_ref().filter(|_| !elsewhere) {
+            let version = pkg.version.to_string();
+            match changelog::find_file(&pkg.prefix) {
+                Some(path) => {
+                    let entry = changelog::from_file(&path, Some(&version))?;
+                    if entry.heading.is_some() || args.file {
+                        return show(&entry, &pkg.name, &version);
+                    }
+                    ui::debug(&format!("{} has no entry for {version}", path.display()));
+                    whole_file = Some((entry, pkg.name.clone(), version));
+                }
+                None => ui::debug(&format!("no changelog under {}", pkg.prefix.display())),
+            }
+        }
+    }
+    if args.file {
+        return Err(Error::msg(match &installed {
+            Some(pkg) => format!(
+                "{} ships no changelog file; `ketch changelog {} --release` reads the published notes",
+                pkg.name, pkg.name
+            ),
+            None => format!("{} is not installed, so there is no file to read", args.package),
+        }));
+    }
+
+    match published_notes(cfg, &spec, installed, args.latest) {
+        Ok((name, version, entry)) => show(&entry, &name, &version),
+        Err(e) => match whole_file {
+            Some((entry, name, version)) => {
+                ui::warn(&e.to_string());
+                show(&entry, &name, &version)
+            }
+            None => Err(e),
+        },
+    }
+}
+
+/// The notes the source published for the release being asked about.
+fn published_notes(
+    cfg: &Config,
+    spec: &PackageSpec,
+    installed: Option<InstalledPackage>,
+    latest: bool,
+) -> Result<(String, String, Entry)> {
+    let manifest = match Resolver::new(cfg)?.resolve(spec) {
+        Ok((m, _)) => m,
+        Err(e) => match &installed {
+            Some(pkg) => pkg
+                .manifest
+                .clone()
+                .unwrap_or_else(|| Manifest::inferred(pkg.source.clone())),
+            None => return Err(e),
+        },
+    };
+    // Without `--latest` or an explicit version, the notes wanted are the ones
+    // for the release that is installed, not whatever is newest.
+    let want = match &spec.version {
+        VersionSpec::Exact(v) => VersionSpec::Exact(v.clone()),
+        VersionSpec::Latest if latest => VersionSpec::Latest,
+        VersionSpec::Latest => installed
+            .map(|pkg| VersionSpec::Exact(pkg.tag))
+            .unwrap_or(VersionSpec::Latest),
+    };
+
+    let sources = SourceRegistry::load(cfg);
+    let source = sources.for_ref(&manifest.source)?;
+    let opts = ListOpts {
+        include_prerelease: cfg.prerelease || manifest.prerelease,
+        ..Default::default()
+    };
+    let release = source.resolve(&manifest.source.id, &want, &opts)?;
+    let version = release.version.to_string();
+    changelog::from_release(release.notes.as_deref())
+        .map(|entry| (manifest.name.clone(), version.clone(), entry))
+        .ok_or_else(|| {
+            Error::msg(format!(
+                "{} {version} published no release notes",
+                manifest.name
+            ))
+        })
+}
+
+/// The changelog itself goes to stdout; where it came from goes to stderr, so
+/// `ketch changelog rg > NOTES.md` leaves nothing but the markdown.
+fn show(entry: &Entry, name: &str, version: &str) -> Result<()> {
+    match &entry.origin {
+        Origin::File(path) => {
+            ui::step(
+                "changelog",
+                &format!("{name} {version} · {}", path.display()),
+            );
+            // Saying nothing here would pass a whole file off as one release.
+            if entry.heading.is_none() {
+                ui::warn(&format!(
+                    "no entry for {version} in {}; showing the whole file",
+                    path.display()
+                ));
+            }
+        }
+        Origin::Release => ui::step("changelog", &format!("{name} {version} · release notes")),
+    }
+    if let Some(heading) = &entry.heading {
+        ui::out(&ui::bold(heading));
+        ui::out("");
+    }
+    if entry.body.is_empty() {
+        ui::out(&ui::dim("(nothing recorded)"));
+    } else {
+        ui::out(&entry.body);
     }
     Ok(())
 }
