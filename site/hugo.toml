@@ -5,7 +5,7 @@
 # drifts from it.
 
 baseURL = "https://listepo.github.io/ketch/"
-languageCode = "en-us"
+locale = "en-us"
 title = "ketch"
 enableRobotsTXT = true
 

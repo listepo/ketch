@@ -71,10 +71,13 @@ jobs:
           done
           # The SEO tags are the point of the landing page; a template that
           # silently renders nothing would still produce a valid-looking site.
-          grep -q '<meta name="description"' index.html
+          # --minify drops quotes around attribute values, so match either form.
+          grep -qE '<meta name="?description"?' index.html
+          grep -qE '<link rel="?canonical"?' index.html
           grep -q 'og:image' index.html
           grep -q 'application/ld+json' index.html
-          grep -q '<link rel="canonical"' index.html
+          grep -q 'SoftwareApplication' index.html
+          grep -q 'TechArticle' docs/manifests/index.html
           echo "site ok: $(find . -name '*.html' | wc -l) pages"
 
       - uses: actions/upload-pages-artifact@v3
