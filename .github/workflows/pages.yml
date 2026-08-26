@@ -80,6 +80,14 @@ jobs:
           grep -q 'ld+json>{' index.html
           grep -q 'SoftwareApplication' index.html
           grep -q 'TechArticle' docs/manifests/index.html
+          # Hugo truncates an over-long description with an ellipsis, which is
+          # what a search result would then show. Catch it here rather than on
+          # the deployed page.
+          if grep -rq 'name=description content="[^"]*…"' .; then
+            echo "a meta description was truncated; keep it under 160 characters:" >&2
+            grep -rl 'name=description content="[^"]*…"' . >&2
+            exit 1
+          fi
           echo "site ok: $(find . -name '*.html' | wc -l) pages"
 
       - uses: actions/upload-pages-artifact@v3
