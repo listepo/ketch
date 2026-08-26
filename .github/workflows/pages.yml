@@ -75,7 +75,9 @@ jobs:
           grep -qE '<meta name="?description"?' index.html
           grep -qE '<link rel="?canonical"?' index.html
           grep -q 'og:image' index.html
-          grep -q 'application/ld+json' index.html
+          # `ld+json>{` and not `ld+json>"`: Go escapes a string in a script
+          # context into a JS string literal, which is not parseable JSON-LD.
+          grep -q 'ld+json>{' index.html
           grep -q 'SoftwareApplication' index.html
           grep -q 'TechArticle' docs/manifests/index.html
           echo "site ok: $(find . -name '*.html' | wc -l) pages"

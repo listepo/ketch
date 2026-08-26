@@ -14,7 +14,7 @@ enableRobotsTXT = true
 disableKinds = ["taxonomy", "term"]
 
 [params]
-  description = "Install command-line tools and macOS apps straight from GitHub releases. No taps, no formulae, no build step — ketch downloads what a project already ships, verifies it, and puts it on your PATH."
+  description = "Install command-line tools and macOS apps straight from GitHub releases. No taps, no formulae, no build step — just what the project already ships, verified."
   tagline = "Catch releases straight from GitHub."
   author = "Ivan Tugay"
   repo = "https://github.com/listepo/ketch"
