@@ -49,6 +49,7 @@ pass before a change is done.
 | `src/manifest.rs` | resolving a name to a `Manifest` across four tiers |
 | `src/model.rs` | every type that crosses a module boundary |
 | `src/state.rs` | the installed-package record and the process lock |
+| `src/lockfile.rs` | `ketch.lock`: what is installed, pinned to exact releases |
 | `src/ui.rs` | all terminal output |
 | `tests/` | end-to-end tests that drive the real binary |
 | `scripts/package.sh` | the release tarball, shared by CI and the release workflow |
@@ -129,6 +130,9 @@ delete the guard deliberately and say why in the commit.
   protocol is `docs/PLUGINS.md`; changing it means bumping `PROTOCOL_VERSION`.
 - **A new command** → a variant in `cli.rs`, a thin body in `cmd/`, and the
   work itself in `install.rs` or a trait.
+- **A field in `ketch.lock`** → `src/lockfile.rs`, and a row in
+  `docs/LOCKFILE.md`. Anything a lockfile can say has to pass `validate`
+  first: it is a file a colleague may have written.
 
 ## Releasing
 

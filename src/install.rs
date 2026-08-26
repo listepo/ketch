@@ -32,11 +32,13 @@ pub struct InstallRequest {
     pub require_checksum: bool,
     /// Exact asset file name, bypassing scoring.
     pub asset_override: Option<String>,
+    /// SHA-256 this asset is already known to have, from a lockfile. Checked
+    /// before anything is unpacked.
+    pub expected_sha256: Option<String>,
 }
 
 impl InstallRequest {
-    // Part of the public surface, with no caller in the tree yet.
-    #[allow(dead_code)]
+    /// A plain install of one package: latest, linked, nothing overridden.
     pub fn new(spec: PackageSpec) -> Self {
         InstallRequest {
             spec,
@@ -45,6 +47,7 @@ impl InstallRequest {
             link: true,
             require_checksum: false,
             asset_override: None,
+            expected_sha256: None,
         }
     }
 }
@@ -129,6 +132,22 @@ pub fn install(
     let _cleanup = ScopedFile(download_path.clone());
 
     // --- checksum -----------------------------------------------------------
+    // A lockfile's hash is checked first and separately. The source's own
+    // checksum says the download was not corrupted; this says the release is
+    // still the one that was locked, and a release that changed under a tag it
+    // already published is exactly what a lockfile exists to catch.
+    if let Some(expected) = &req.expected_sha256 {
+        if !expected.eq_ignore_ascii_case(&sha256) {
+            return Err(Error::msg(format!(
+                "{}: {} does not match the lockfile\n  locked {expected}\n  got    {sha256}\n\
+                 The release was replaced after the lock was written. Install it \
+                 deliberately and re-run `ketch lock` rather than accepting a payload \
+                 nobody recorded.",
+                manifest.name, asset.name
+            )));
+        }
+    }
+
     let checksum_verified = verify_checksum(
         source.as_ref(),
         &manifest.source.id,

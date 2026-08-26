@@ -11,6 +11,7 @@ mod error;
 mod extract;
 mod http;
 mod install;
+mod lockfile;
 mod manifest;
 mod model;
 mod platform;
@@ -79,6 +80,8 @@ fn run(cli: Cli) -> Result<()> {
         Command::Info(args) => cmd::query::info(&cfg, args),
         Command::Search(args) => cmd::query::search(&cfg, args),
         Command::Update => cmd::system::update(&cfg),
+        Command::Lock(args) => cmd::lock::lock(&cfg, args),
+        Command::Sync(args) => cmd::lock::sync(&cfg, args),
         Command::Doctor(args) => cmd::system::doctor(&cfg, args),
         Command::Path { command } => cmd::system::path(&cfg, command),
         Command::Plugin { command } => cmd::system::plugin(&cfg, command),

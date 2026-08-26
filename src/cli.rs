@@ -85,6 +85,12 @@ pub enum Command {
     /// Remove the links for an installed package, keeping it installed
     Unlink(NameArgs),
 
+    /// Write or check `ketch.lock`, a reproducible record of what is installed
+    Lock(LockArgs),
+
+    /// Install everything `ketch.lock` names, at the versions it names
+    Sync(SyncArgs),
+
     /// Check the environment and the install tree
     Doctor(DoctorArgs),
 
@@ -226,6 +232,36 @@ pub struct UpgradeArgs {
 pub struct NameArgs {
     #[arg(required = true, value_name = "NAME")]
     pub names: Vec<String>,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct LockArgs {
+    /// Lockfile to write (default: ./ketch.lock)
+    #[arg(long, short, value_name = "FILE")]
+    pub file: Option<PathBuf>,
+
+    /// Report how the tree differs from the lockfile, and write nothing
+    #[arg(long)]
+    pub check: bool,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct SyncArgs {
+    /// Lockfile to read (default: ./ketch.lock)
+    #[arg(long, short, value_name = "FILE")]
+    pub file: Option<PathBuf>,
+
+    /// Also remove installed packages the lockfile does not name
+    #[arg(long)]
+    pub prune: bool,
+
+    /// Report what would change without installing anything
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// Answer yes to every prompt
+    #[arg(long, short = 'y')]
+    pub yes: bool,
 }
 
 #[derive(Args, Debug, Clone)]

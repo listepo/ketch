@@ -46,6 +46,7 @@ pub fn install(cfg: &Config, args: InstallArgs) -> Result<()> {
             link: !args.no_link,
             require_checksum: args.require_checksum || cfg.require_checksums,
             asset_override: args.asset.clone(),
+            expected_sha256: None,
         };
         match install::install(cfg, &sources, &mut state, &req) {
             Ok(out) => {
@@ -217,6 +218,7 @@ pub fn upgrade(cfg: &Config, args: UpgradeArgs) -> Result<()> {
             link: !pkg.links.is_empty(),
             require_checksum: cfg.require_checksums,
             asset_override: None,
+            expected_sha256: None,
         };
         match install::install(cfg, &sources, &mut state, &req) {
             Ok(out) => {

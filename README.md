@@ -71,6 +71,8 @@ ketch search <query>       # the registry and GitHub
 ketch update               # refresh the package registry
 ketch pin / unpin <pkg>    # hold a version, or let go
 ketch uninstall <pkg>...   # remove it
+ketch lock                 # write ketch.lock from what is installed
+ketch sync                 # install what ketch.lock names, at those versions
 ketch doctor               # check the environment and the install tree
 ketch doctor --fix         # and repair the PATH setup while it is there
 ketch path install         # put ~/.ketch/bin on PATH in bash, zsh and fish
@@ -80,6 +82,21 @@ Everything lives under `~/.ketch`: versioned payloads in `store/`, links in
 `bin/`, and a `state.json` recording what is installed. Nothing is written
 outside that tree except the `.app` bundles that belong in `/Applications`, and
 the shell startup file `ketch path install` edits when you ask it to.
+
+## Reproducing a machine
+
+```bash
+ketch lock            # write ./ketch.lock from what is installed
+ketch lock --check    # has anything drifted?
+ketch sync            # make this machine match the lockfile
+```
+
+Commit `ketch.lock` next to your dotfiles and a new machine is one command
+behind the old one. The tag is what reproduces everywhere; the recorded
+checksum is enforced on a machine of the same target, and elsewhere ketch picks
+the asset that fits and verifies it against the source. `--prune` removes what
+the lockfile does not name, `--dry-run` shows the plan first. See
+[docs/LOCKFILE.md](docs/LOCKFILE.md).
 
 ## Getting on PATH
 
@@ -153,6 +170,7 @@ ketch does not do yet.
 | [docs/MANIFESTS.md](docs/MANIFESTS.md) | The package config: every field, and when you need one |
 | [docs/REGISTRY.md](docs/REGISTRY.md) | The registry layout, and how to add a package to it |
 | [docs/PLUGINS.md](docs/PLUGINS.md) | The source-plugin protocol, for sources other than GitHub |
+| [docs/LOCKFILE.md](docs/LOCKFILE.md) | `ketch.lock`: pinning a machine's tools to exact releases |
 | [ROADMAP.md](ROADMAP.md) | What is missing, and what is deliberately out of scope |
 | [AGENTS.md](AGENTS.md) | The layout, the conventions and the trust boundaries |
 

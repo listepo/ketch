@@ -47,6 +47,15 @@ PAGES = [
         "working example.",
     ),
     (
+        "docs/LOCKFILE.md",
+        "lockfile",
+        "The lockfile",
+        45,
+        "ketch.lock pins one machine's tools to exact releases: what it "
+        "records, what reproduces on another machine and what does not, and "
+        "how sync catches up.",
+    ),
+    (
         "ROADMAP.md",
         "roadmap",
         "Roadmap",

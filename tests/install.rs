@@ -313,3 +313,141 @@ fn a_path_the_user_wired_up_by_hand_is_never_duplicated() {
         "ketch added a second copy of a line the user already had"
     );
 }
+
+/// Where the lockfile goes in a test: inside the sandbox, never the cwd the
+/// suite happens to run from.
+fn lock_at(sandbox: &Sandbox) -> std::path::PathBuf {
+    sandbox.home().join("ketch.lock")
+}
+
+#[test]
+fn a_lockfile_records_what_is_installed_and_sync_puts_it_back() {
+    let sandbox = Sandbox::new();
+    publish_tool(&sandbox, "1.0.0");
+    let lock = lock_at(&sandbox);
+    let lock_arg = lock.display().to_string();
+
+    sandbox.ok(&["install", "test:testtool", "--yes"]);
+    sandbox.ok(&["lock", "--file", &lock_arg]);
+
+    let text = std::fs::read_to_string(&lock).expect("read lockfile");
+    assert!(text.contains("name = \"testtool\""), "{text}");
+    assert!(text.contains("tag = \"v1.0.0\""), "{text}");
+    assert!(text.contains("source = \"test:testtool\""), "{text}");
+
+    sandbox.ok(&["lock", "--check", "--file", &lock_arg]);
+
+    // Wipe it, then let the lockfile put it back.
+    sandbox.ok(&["uninstall", "testtool", "--yes"]);
+    assert!(!sandbox.bin().join("testtool").exists());
+    sandbox.fails(&["lock", "--check", "--file", &lock_arg]);
+
+    sandbox.ok(&["sync", "--file", &lock_arg]);
+    assert_eq!(run(&sandbox.bin().join("testtool")), "testtool 1.0.0");
+    sandbox.ok(&["lock", "--check", "--file", &lock_arg]);
+}
+
+/// The reason to write versions down: a newer release exists and sync must
+/// still produce the one that was locked.
+#[test]
+fn sync_installs_the_locked_tag_not_the_latest_one() {
+    let sandbox = Sandbox::new();
+    publish_tool(&sandbox, "1.0.0");
+    let lock = lock_at(&sandbox);
+    let lock_arg = lock.display().to_string();
+
+    sandbox.ok(&["install", "test:testtool", "--yes"]);
+    sandbox.ok(&["lock", "--file", &lock_arg]);
+
+    // A newer release lands, and the machine takes it.
+    let arch = host_arch();
+    let newer = sandbox.asset(
+        &format!("testtool-2.0.0-{arch}-apple-darwin.tar.gz"),
+        tool_archive("2.0.0"),
+    );
+    let older = sandbox.asset(
+        &format!("testtool-1.0.0-{arch}-apple-darwin.tar.gz"),
+        tool_archive("1.0.0"),
+    );
+    sandbox.publish(
+        "testtool",
+        &[
+            Release::new("2.0.0", vec![newer]),
+            Release::new("1.0.0", vec![older]),
+        ],
+    );
+    sandbox.ok(&["upgrade", "--yes"]);
+    assert_eq!(run(&sandbox.bin().join("testtool")), "testtool 2.0.0");
+
+    sandbox.fails(&["lock", "--check", "--file", &lock_arg]);
+    sandbox.ok(&["sync", "--file", &lock_arg]);
+    assert_eq!(run(&sandbox.bin().join("testtool")), "testtool 1.0.0");
+}
+
+/// A release replaced under a tag it already published is the thing a lockfile
+/// exists to catch, and it must be caught before anything is unpacked.
+#[test]
+fn sync_refuses_a_payload_that_is_not_the_one_that_was_locked() {
+    let sandbox = Sandbox::new();
+    publish_tool(&sandbox, "1.0.0");
+    let lock = lock_at(&sandbox);
+    let lock_arg = lock.display().to_string();
+
+    sandbox.ok(&["install", "test:testtool", "--yes"]);
+    sandbox.ok(&["lock", "--file", &lock_arg]);
+    sandbox.ok(&["uninstall", "testtool", "--yes"]);
+
+    // Same tag, different bytes — exactly what a re-tagged release looks like.
+    let text = std::fs::read_to_string(&lock).expect("read lockfile");
+    let recorded = text
+        .split_once("sha256 = \"")
+        .and_then(|(_, rest)| rest.split_once('"'))
+        .map(|(hash, _)| hash.to_string())
+        .expect("a sha256 in the lockfile");
+    std::fs::write(&lock, text.replace(&recorded, &"b".repeat(64))).expect("rewrite lockfile");
+
+    let said = sandbox.fails(&["sync", "--file", &lock_arg]);
+    assert!(said.contains("does not match the lockfile"), "{said}");
+    assert!(
+        !sandbox.bin().join("testtool").exists(),
+        "a payload that did not match the lock was installed anyway"
+    );
+}
+
+#[test]
+fn prune_removes_what_the_lockfile_does_not_name() {
+    let sandbox = Sandbox::new();
+    publish_tool(&sandbox, "1.0.0");
+    let asset = sandbox.asset("TestApp-1.0.0-macos.zip", app_archive("1.0.0"));
+    sandbox.publish("testapp", &[Release::new("1.0.0", vec![asset])]);
+    let lock_arg = lock_at(&sandbox).display().to_string();
+
+    sandbox.ok(&["install", "test:testtool", "--yes"]);
+    sandbox.ok(&["lock", "--file", &lock_arg]);
+    sandbox.ok(&["install", "test:testapp", "--yes"]);
+
+    // An extra is not drift on its own — only `--prune` treats it as such.
+    sandbox.ok(&["lock", "--check", "--file", &lock_arg]);
+    sandbox.ok(&["sync", "--prune", "--yes", "--file", &lock_arg]);
+    assert!(!sandbox.apps().join("TestApp.app").exists());
+    assert_eq!(run(&sandbox.bin().join("testtool")), "testtool 1.0.0");
+}
+
+#[test]
+fn a_lockfile_naming_a_path_instead_of_a_package_is_refused() {
+    let sandbox = Sandbox::new();
+    let lock = lock_at(&sandbox);
+    std::fs::write(
+        &lock,
+        format!(
+            "version = 1\n\n[[package]]\nname = \"../../.zshrc\"\nsource = \"test:testtool\"\n\
+             version = \"1.0.0\"\ntag = \"1.0.0\"\ntarget = \"macos-aarch64\"\n\
+             asset = \"t.tar.gz\"\nsha256 = \"{}\"\n",
+            "a".repeat(64)
+        ),
+    )
+    .expect("write lockfile");
+
+    let said = sandbox.fails(&["sync", "--file", &lock.display().to_string()]);
+    assert!(said.contains("not a usable package name"), "{said}");
+}
