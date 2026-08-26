@@ -51,6 +51,7 @@ pass before a change is done.
 | `src/ui.rs` | all terminal output |
 | `tests/` | end-to-end tests that drive the real binary |
 | `scripts/package.sh` | the release tarball, shared by CI and the release workflow |
+| `scripts/release.sh` | the version bump and the release pull request |
 
 The rule that keeps `cmd/` thin: anything touching the install tree belongs in
 `install.rs`, `state.rs`, or a trait implementation, so the same logic serves
@@ -123,11 +124,32 @@ delete the guard deliberately and say why in the commit.
 
 ## Releasing
 
-`git tag v0.2.0 && git push --tags`. The release workflow re-runs the whole
-gate, refuses a tag that disagrees with `Cargo.toml` (`ketch self update`
-compares the two, so a mismatched tag breaks upgrades for everyone already
-installed), builds both macOS architectures, and publishes the tarballs with an
-aggregate `SHA256SUMS`.
+```bash
+scripts/release.sh 0.2.0          # --dry-run to see it first
+```
+
+Run it on a clean, up-to-date default branch. It bumps `Cargo.toml` and
+`Cargo.lock` on a `release/v0.2.0` branch, pushes it, and opens a pull request
+whose body lists the commits since the last tag and gives the tag command to
+publish. It refuses a version that goes backwards, one that is already current,
+and one written with a leading `v`; it rewrites only the version inside
+`[package]`, and re-reads the result through `cargo metadata` before pushing, so
+a bad rewrite fails with nothing published.
+
+Merging the pull request does not release anything. Tagging the merge commit
+does:
+
+```bash
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+The release workflow then re-runs the whole gate, refuses a tag that disagrees
+with `Cargo.toml` (`ketch self update` compares the two, so a mismatched tag
+breaks upgrades for everyone already installed), builds both macOS
+architectures, and publishes the tarballs with an aggregate `SHA256SUMS`.
+
+Bumping the version by hand is what `scripts/release.sh` exists to stop: the
+version is written in one place and checked in two, and the two must agree.
 
 Asset names are load-bearing: `install.sh` and `ketch self update` both look for
 `ketch-<target>.tar.gz` and `SHA256SUMS`. Renaming either strips the upgrade
