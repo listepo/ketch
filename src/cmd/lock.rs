@@ -85,9 +85,28 @@ pub fn sync(cfg: &Config, args: SyncArgs) -> Result<()> {
     let mut failed: Vec<String> = Vec::new();
     let mut done = 0usize;
 
-    for entry in &wanted {
-        match install_locked(cfg, &sources, &mut state, entry, &target) {
-            Ok(()) => done += 1,
+    let reqs = wanted
+        .iter()
+        .map(|entry| request_for(cfg, entry, &target))
+        .collect::<Result<Vec<_>>>()?;
+    let jobs = crate::cmd::pkg::jobs(cfg, args.jobs);
+    for (entry, outcome) in wanted
+        .iter()
+        .zip(install::batch(cfg, &sources, &mut state, &reqs, jobs))
+    {
+        match outcome {
+            Ok(out) => {
+                done += 1;
+                // A pin is part of what the lockfile records, so restore it
+                // rather than leaving the fresh install quietly upgradeable.
+                if let Some(installed) = state.get_mut(&out.package.name) {
+                    installed.pinned = entry.pinned;
+                }
+                ui::success(
+                    "installed",
+                    &format!("{} {}", out.package.name, out.package.version),
+                );
+            }
             Err(e) => {
                 ui::error(&e);
                 failed.push(entry.name.clone());
@@ -126,14 +145,8 @@ pub fn sync(cfg: &Config, args: SyncArgs) -> Result<()> {
     Ok(())
 }
 
-/// Install one locked entry at exactly the tag recorded for it.
-fn install_locked(
-    cfg: &Config,
-    sources: &SourceRegistry,
-    state: &mut State,
-    entry: &LockedPackage,
-    target: &str,
-) -> Result<()> {
+/// One install request for a locked entry, at exactly the tag recorded for it.
+fn request_for(cfg: &Config, entry: &LockedPackage, target: &str) -> Result<InstallRequest> {
     let mut req = InstallRequest::new(spec_for(cfg, entry)?);
     req.require_checksum = cfg.require_checksums;
     // The recorded hash describes an asset for the machine that wrote the
@@ -147,18 +160,7 @@ fn install_locked(
             entry.name, entry.target
         ));
     }
-
-    let out = install::install(cfg, sources, state, &req)?;
-    // A pin is part of what the lockfile records, so restore it rather than
-    // leaving the fresh install unpinned and quietly upgradeable.
-    if let Some(installed) = state.get_mut(&out.package.name) {
-        installed.pinned = entry.pinned;
-    }
-    ui::success(
-        "installed",
-        &format!("{} {}", out.package.name, out.package.version),
-    );
-    Ok(())
+    Ok(req)
 }
 
 /// How to ask for a locked package.

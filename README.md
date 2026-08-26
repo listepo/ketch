@@ -62,7 +62,7 @@ versioned store, and links it onto your `PATH`.
 ## Using it
 
 ```bash
-ketch install <pkg>...     # install; --pre for prereleases, @version to pin one
+ketch install <pkg>...     # install; concurrent by default, --jobs N to change
 ketch list                 # what is installed
 ketch outdated             # what has a newer release
 ketch upgrade              # bring everything unpinned up to date
@@ -100,6 +100,38 @@ tags before writing the heading.
 
 The changelog goes to stdout and everything else to stderr, so
 `ketch changelog rg > NOTES.md` leaves nothing but the markdown.
+
+## Installing several at once
+
+```bash
+ketch install rg fd bat jq      # four downloads at a time, four progress bars
+ketch install rg fd --jobs 1    # one at a time
+```
+
+Downloads run concurrently by default and spend their time waiting, so a batch
+takes about as long as its slowest package rather than the sum of all of them.
+Only the downloading and unpacking overlap: packages are placed into the store
+one at a time, in the order you asked for them, so the install tree sees the
+same sequence of writes it would have seen anyway.
+
+`upgrade` and `sync` work the same way. `--jobs N` sets the width for any of
+them; `jobs` in the config file sets the default.
+
+## The log
+
+Every run is written to `~/.ketch/logs/ketch.log` — including the lines
+`--quiet` swallowed and the debug detail `--verbose` would have shown. A failed
+command prints where to find it.
+
+```
+2026-08-27T09:12:33Z [4218] INFO  ketch 0.1.0 · install rg fd
+2026-08-27T09:12:34Z [4218] ERROR HTTP 404 from https://api.github.com/...
+```
+
+Set `log_format = "json"` for JSON Lines instead, `log_level` to `debug` for
+everything or `off` for nothing. The file rotates to `ketch.log.1` at 5 MiB, so
+it never needs pruning by hand. `ketch doctor` prints where it is and how big
+it has grown.
 
 ## Reproducing a machine
 
@@ -168,6 +200,9 @@ release required. See [docs/PLUGINS.md](docs/PLUGINS.md).
 | `require_checksums` | `KETCH_REQUIRE_CHECKSUMS` | `false` |
 | `strip_quarantine` | `KETCH_STRIP_QUARANTINE` | `true` |
 | `registry` | `KETCH_REGISTRY` | `listepo/ketch-registry` |
+| `jobs` | `KETCH_JOBS` | `4` |
+| `log_level` | `KETCH_LOG_LEVEL` | `info` |
+| `log_format` | `KETCH_LOG_FORMAT` | `text` |
 
 The root itself is `KETCH_ROOT` or `--root`; it cannot be set from the config
 file, because the file lives inside it.

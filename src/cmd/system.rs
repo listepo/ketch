@@ -33,6 +33,7 @@ pub fn doctor(cfg: &Config, args: DoctorArgs) -> Result<()> {
             "This build of ketch does not support this operating system.",
         )),
     }
+    checks.push(log_check(cfg));
     checks.push(registry_check(cfg));
     checks.extend(store_checks(cfg));
 
@@ -101,6 +102,25 @@ pub fn update(cfg: &Config) -> Result<()> {
         &format!("{count} packages from {}", cfg.registry),
     );
     Ok(())
+}
+
+/// Where this machine's log is, so nobody has to be told twice.
+fn log_check(cfg: &Config) -> DoctorCheck {
+    if cfg.log_level == crate::log::Level::Off {
+        return DoctorCheck::ok("log", "off".to_string());
+    }
+    let size = std::fs::metadata(&cfg.log_file)
+        .map(|m| format!(" · {}", ui::bytes(m.len())))
+        .unwrap_or_default();
+    DoctorCheck::ok(
+        "log",
+        format!(
+            "{} ({}, {}){size}",
+            cfg.log_file.display(),
+            cfg.log_level,
+            cfg.log_format
+        ),
+    )
 }
 
 fn registry_check(cfg: &Config) -> DoctorCheck {

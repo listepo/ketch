@@ -57,6 +57,16 @@ impl Sandbox {
         self.tmp.path().join("home")
     }
 
+    /// Where the run's log lands.
+    pub fn log(&self) -> String {
+        std::fs::read_to_string(self.root().join("logs").join("ketch.log")).unwrap_or_default()
+    }
+
+    /// Write `config.toml` for this root, for settings with no flag.
+    pub fn configure(&self, toml: &str) {
+        std::fs::write(self.root().join("config.toml"), toml).expect("write config");
+    }
+
     fn plugin_dir(&self) -> PathBuf {
         self.root().join("plugins")
     }

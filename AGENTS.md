@@ -67,6 +67,7 @@ pass before a change is done.
 | `src/manifest.rs` | resolving a name to a `Manifest` across four tiers |
 | `src/model.rs` | every type that crosses a module boundary |
 | `src/state.rs` | the installed-package record and the process lock |
+| `src/log.rs` | the log file, in text or JSON Lines |
 | `src/changelog.rs` | finding and slicing a client app's changelog |
 | `src/lockfile.rs` | `ketch.lock`: what is installed, pinned to exact releases |
 | `src/ui.rs` | all terminal output |
@@ -97,7 +98,9 @@ These are observed throughout; match them rather than introducing your own.
   failure that motivated the shape of the code.
 - **All output goes through `ui::`.** There is no `println!` outside `ui.rs`.
   Data goes to stdout via `ui::out`/`ui::table`; progress, warnings and errors
-  go to stderr, so output can be piped.
+  go to stderr, so output can be piped. `ui.rs` is also the only caller of
+  `log::record`, so a new command cannot forget to be logged, and a status line
+  written any other way is invisible to whoever reads the log afterwards.
 - **Errors are `crate::error::Error`**, built with `Error::msg`/`io`/`parse`.
   The `Result<T>` alias is from the same module.
 - **No `unwrap`, `expect`, `panic!`, `todo!` or `unimplemented!` outside

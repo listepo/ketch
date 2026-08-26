@@ -4,12 +4,36 @@
 //! through the `ProgressSink` trait, so nothing below this module needs to know
 //! whether a human, a pipe, or a test is watching.
 
-use indicatif::{ProgressBar, ProgressStyle};
+use crate::log;
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::io::{IsTerminal, Write};
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::Mutex;
 
 static COLOR: AtomicBool = AtomicBool::new(false);
 static LEVEL: AtomicU8 = AtomicU8::new(1); // 0 quiet, 1 normal, 2 verbose
+
+/// The bars currently sharing the terminal, while a batch is running.
+static BARS: Mutex<Option<MultiProgress>> = Mutex::new(None);
+
+/// Every status line leaves through here.
+///
+/// While progress bars are on screen they own the bottom of the terminal, and
+/// a bare `eprintln!` lands in the middle of one. `indicatif` knows how to
+/// print above them, so when a batch is running it does the writing.
+fn emit(line: &str) {
+    match held().as_ref() {
+        // `suspend` takes the bars off the screen, lets the line be written
+        // normally, and redraws them underneath it. `println` queues the line
+        // for the next redraw, and the last line of a batch never gets one.
+        Some(bars) => bars.suspend(|| eprintln!("{line}")),
+        None => eprintln!("{line}"),
+    }
+}
+
+fn held() -> std::sync::MutexGuard<'static, Option<MultiProgress>> {
+    BARS.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 pub fn init(color: Option<bool>, quiet: bool, verbose: bool) {
     let enabled = color.unwrap_or_else(|| {
@@ -74,40 +98,82 @@ pub fn cyan(t: &str) -> String {
 
 /// Status line for a step that is happening now.
 pub fn step(verb: &str, detail: &str) {
+    // Logged before the level check: `--quiet` is about this terminal, and the
+    // whole point of the log is to still have the run afterwards.
+    log::record(log::Level::Info, &format!("{verb} {detail}"));
     if is_quiet() {
         return;
     }
-    eprintln!("{} {}", blue(&format!("{verb:>10}")), detail);
+    emit(&format!("{} {}", blue(&format!("{verb:>10}")), detail));
 }
 
 /// Something finished well.
 pub fn success(verb: &str, detail: &str) {
+    log::record(log::Level::Info, &format!("{verb} {detail}"));
     if is_quiet() {
         return;
     }
-    eprintln!("{} {}", green(&format!("{verb:>10}")), detail);
+    emit(&format!("{} {}", green(&format!("{verb:>10}")), detail));
 }
 
 /// Something the user should know but that does not stop the run.
 pub fn warn(detail: &str) {
-    eprintln!("{} {}", yellow(&format!("{:>10}", "warning")), detail);
+    log::record(log::Level::Warn, detail);
+    emit(&format!(
+        "{} {}",
+        yellow(&format!("{:>10}", "warning")),
+        detail
+    ));
 }
 
-/// Only shown with `--verbose`.
+/// An aside: true, worth saying once, and not a problem.
+pub fn note(detail: &str) {
+    log::record(log::Level::Info, detail);
+    if is_quiet() {
+        return;
+    }
+    emit(&format!(
+        "{} {}",
+        dim(&format!("{:>10}", "note")),
+        dim(detail)
+    ));
+}
+
+/// Only shown with `--verbose`, but always written to the log.
 pub fn debug(detail: &str) {
+    log::record(log::Level::Debug, detail);
     if is_verbose() {
-        eprintln!("{} {}", dim(&format!("{:>10}", "debug")), dim(detail));
+        emit(&format!(
+            "{} {}",
+            dim(&format!("{:>10}", "debug")),
+            dim(detail)
+        ));
     }
 }
 
 /// Fatal error rendering, including details and a hint when we have one.
 pub fn error(err: &crate::error::Error) {
-    eprintln!("{} {}", red(&format!("{:>10}", "error")), err);
-    for line in err.details() {
-        eprintln!("{} {}", " ".repeat(10), dim(&line));
+    let details = err.details();
+    let hint = err.hint();
+    // One record, so a failure is one entry in the log rather than three lines
+    // a reader has to piece back together.
+    let mut logged = err.to_string();
+    for line in &details {
+        logged.push('\n');
+        logged.push_str(line);
     }
-    if let Some(hint) = err.hint() {
-        eprintln!("{} {}", cyan(&format!("{:>10}", "hint")), hint);
+    if let Some(hint) = &hint {
+        logged.push_str("\nhint: ");
+        logged.push_str(hint);
+    }
+    log::record(log::Level::Error, &logged);
+
+    emit(&format!("{} {err}", red(&format!("{:>10}", "error"))));
+    for line in &details {
+        emit(&format!("{} {}", " ".repeat(10), dim(line)));
+    }
+    if let Some(hint) = &hint {
+        emit(&format!("{} {hint}", cyan(&format!("{:>10}", "hint"))));
     }
 }
 
@@ -198,6 +264,11 @@ impl ProgressSink for SilentProgress {
 /// A real terminal progress bar.
 pub struct BarProgress {
     bar: ProgressBar,
+    /// The group this bar belongs to, when it is one of several on screen.
+    group: Option<MultiProgress>,
+    /// What to call the work, when the caller knows better than the download
+    /// does. Four bars all labelled by asset file name say very little.
+    label: Option<String>,
 }
 
 impl Default for BarProgress {
@@ -210,6 +281,16 @@ impl BarProgress {
     pub fn new() -> Self {
         BarProgress {
             bar: ProgressBar::hidden(),
+            group: None,
+            label: None,
+        }
+    }
+
+    fn in_group(group: MultiProgress, label: &str) -> Self {
+        BarProgress {
+            bar: ProgressBar::hidden(),
+            group: Some(group),
+            label: Some(label.to_string()),
         }
     }
 }
@@ -230,9 +311,18 @@ impl ProgressSink for BarProgress {
             None => self.bar.set_length(0),
         }
         self.bar.set_style(style);
-        self.bar.set_message(truncate(label, 28));
         self.bar
-            .set_draw_target(indicatif::ProgressDrawTarget::stderr());
+            .set_message(truncate(self.label.as_deref().unwrap_or(label), 28));
+        match &self.group {
+            // `add` gives the bar its draw target, and the group keeps the
+            // bars from overwriting one another.
+            Some(group) => {
+                group.add(self.bar.clone());
+            }
+            None => self
+                .bar
+                .set_draw_target(indicatif::ProgressDrawTarget::stderr()),
+        }
         self.bar.set_position(0);
     }
 
@@ -242,8 +332,62 @@ impl ProgressSink for BarProgress {
 
     fn finish(&self, message: &str) {
         self.bar.finish_and_clear();
-        if !message.is_empty() && !is_quiet() {
-            eprintln!("{} {}", green(&format!("{:>10}", "fetched")), message);
+        if let Some(group) = &self.group {
+            group.remove(&self.bar);
+        }
+        if message.is_empty() {
+            return;
+        }
+        log::record(log::Level::Info, &format!("fetched {message}"));
+        // In a batch the download is one step of several and `installed X`
+        // follows it directly; a line per asset just pushes that off screen.
+        if !is_quiet() && self.group.is_none() {
+            emit(&format!(
+                "{} {}",
+                green(&format!("{:>10}", "fetched")),
+                message
+            ));
+        }
+    }
+}
+
+/// A terminal shared by several progress bars at once.
+///
+/// Held for the length of a batch. While it lives every status line is printed
+/// through `indicatif` rather than straight to stderr, so a bar being redrawn
+/// never lands in the middle of a warning.
+pub struct Bars {
+    group: Option<MultiProgress>,
+}
+
+/// Start a group of bars for concurrent work.
+pub fn bars() -> Bars {
+    if is_quiet() || !std::io::stderr().is_terminal() {
+        return Bars { group: None };
+    }
+    let group = MultiProgress::new();
+    *held() = Some(group.clone());
+    Bars { group: Some(group) }
+}
+
+impl Bars {
+    /// One bar in this group, named for the work it is doing.
+    pub fn sink(&self, label: &str) -> Box<dyn ProgressSink> {
+        match &self.group {
+            Some(group) => Box::new(BarProgress::in_group(group.clone(), label)),
+            None => Box::new(SilentProgress),
+        }
+    }
+}
+
+impl Drop for Bars {
+    fn drop(&mut self) {
+        // The global goes first, so the two locks are only ever taken in this
+        // order: `emit` holds this one while it suspends the bars, and nothing
+        // is left that could want them the other way round.
+        let group = held().take();
+        if let Some(group) = group.or_else(|| self.group.take()) {
+            group.clear().ok();
         }
     }
 }

@@ -13,6 +13,7 @@ mod extract;
 mod http;
 mod install;
 mod lockfile;
+mod log;
 mod manifest;
 mod model;
 mod platform;
@@ -41,6 +42,14 @@ fn main() {
 
     if let Err(err) = run(cli) {
         ui::error(&err);
+        // What npm and cargo do, and for the same reason: the terminal shows
+        // the failure, the log shows the run that led to it.
+        if let Some(path) = log::path() {
+            ui::note(&format!(
+                "the full log of this run is in {}",
+                path.display()
+            ));
+        }
         std::process::exit(err.exit_code());
     }
 }
@@ -57,6 +66,7 @@ fn run(cli: Cli) -> Result<()> {
 
     let cfg = config::Config::load(cli.global.root.clone())?;
     cfg.ensure_dirs()?;
+    log::init(&cfg);
     ui::debug(&format!(
         "root {} · target {} · token {}",
         cfg.root.display(),

@@ -503,3 +503,151 @@ fn changelog_for_a_package_with_no_file_says_where_to_look() {
     let err = sandbox.fails(&["changelog", "test:testtool", "--file"]);
     assert!(err.contains("not installed"), "{err}");
 }
+
+/// One tool per name, so a batch has several distinct packages to install.
+fn publish_named(sandbox: &Sandbox, name: &str, version: &str) {
+    let asset = sandbox.asset(
+        &format!("{name}-{version}-{}-apple-darwin.tar.gz", host_arch()),
+        Archive::TarGz(vec![Entry::program(
+            &format!("{name}-{version}/bin/{name}"),
+            &format!("{name} {version}"),
+        )]),
+    );
+    sandbox.publish(name, &[Release::new(version, vec![asset])]);
+}
+
+/// A batch install runs its downloads concurrently, so this proves the part
+/// that concurrency could break: every package ends up placed, runnable and
+/// recorded, and the results are reported in the order they were asked for.
+#[test]
+fn a_batch_installs_every_package_and_reports_them_in_the_order_asked() {
+    let sandbox = Sandbox::new();
+    let names = ["delta", "alpha", "charlie", "bravo"];
+    for name in names {
+        publish_named(&sandbox, name, "1.0.0");
+    }
+
+    let out = sandbox.ketch(&[
+        "install",
+        "test:delta",
+        "test:alpha",
+        "test:charlie",
+        "test:bravo",
+        "--yes",
+    ]);
+    assert!(out.status.success(), "install failed");
+    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+
+    let reported: Vec<&str> = stderr
+        .lines()
+        .filter_map(|line| {
+            line.split_whitespace()
+                .nth(1)
+                .filter(|_| line.contains("installed"))
+        })
+        .collect();
+    assert_eq!(reported, names, "reported out of order:\n{stderr}");
+
+    for name in names {
+        assert_eq!(run(&sandbox.bin().join(name)), format!("{name} 1.0.0"));
+    }
+    let listed = sandbox.ok(&["list", "--names-only"]);
+    let mut installed: Vec<&str> = listed.lines().collect();
+    installed.sort_unstable();
+    assert_eq!(installed, ["alpha", "bravo", "charlie", "delta"]);
+}
+
+/// A batch is not all-or-nothing: the packages that resolved are installed and
+/// the one that did not is named.
+#[test]
+fn one_bad_package_in_a_batch_does_not_lose_the_good_ones() {
+    let sandbox = Sandbox::new();
+    publish_named(&sandbox, "alpha", "1.0.0");
+    publish_named(&sandbox, "bravo", "1.0.0");
+
+    let err = sandbox.fails(&[
+        "install",
+        "test:alpha",
+        "test:nothing-published-here",
+        "test:bravo",
+        "--yes",
+    ]);
+    assert!(err.contains("nothing-published-here"), "{err}");
+
+    let listed = sandbox.ok(&["list", "--names-only"]);
+    let mut installed: Vec<&str> = listed.lines().collect();
+    installed.sort_unstable();
+    assert_eq!(installed, ["alpha", "bravo"], "good packages were lost");
+}
+
+/// `--jobs 1` is the escape hatch, and has to install exactly the same tree.
+#[test]
+fn a_batch_with_one_job_installs_the_same_thing() {
+    let sandbox = Sandbox::new();
+    publish_named(&sandbox, "alpha", "1.0.0");
+    publish_named(&sandbox, "bravo", "1.0.0");
+
+    sandbox.ok(&[
+        "install",
+        "test:alpha",
+        "test:bravo",
+        "--jobs",
+        "1",
+        "--yes",
+    ]);
+    assert_eq!(run(&sandbox.bin().join("alpha")), "alpha 1.0.0");
+    assert_eq!(run(&sandbox.bin().join("bravo")), "bravo 1.0.0");
+}
+
+/// The log is what is left after the terminal scrolls away, so a run has to be
+/// in it — and a failure has to say where to find it.
+#[test]
+fn every_run_is_logged_and_a_failure_says_where_the_log_is() {
+    let sandbox = Sandbox::new();
+    publish_tool(&sandbox, "1.0.0");
+
+    sandbox.ok(&["install", "test:testtool", "--yes"]);
+    let log = sandbox.log();
+    assert!(log.contains("INFO"), "no records:\n{log}");
+    assert!(log.contains("install test:testtool"), "no command:\n{log}");
+    assert!(
+        log.contains("installed testtool 1.0.0"),
+        "no result:\n{log}"
+    );
+
+    let err = sandbox.fails(&["install", "test:not-published", "--yes"]);
+    assert!(err.contains("ketch.log"), "no pointer to the log:\n{err}");
+    let log = sandbox.log();
+    assert!(log.contains("ERROR"), "the failure was not logged:\n{log}");
+    assert!(
+        log.lines().all(|line| !line.is_empty()),
+        "a record was split across lines:\n{log}"
+    );
+}
+
+/// The other half of "a common log format": JSON Lines, for anything that is
+/// not a person reading it.
+#[test]
+fn the_log_can_be_json_lines_instead() {
+    let sandbox = Sandbox::new();
+    sandbox.configure("log_format = \"json\"\nlog_level = \"debug\"\n");
+    sandbox.ok(&["list"]);
+
+    let log = sandbox.log();
+    let first = log.lines().next().expect("a record");
+    let parsed: serde_json::Value = serde_json::from_str(first).expect("valid JSON Lines");
+    assert_eq!(parsed["level"], "info");
+    assert!(parsed["msg"].as_str().is_some_and(|m| m.contains("list")));
+    assert!(parsed["time"].as_str().is_some_and(|t| t.ends_with('Z')));
+    assert!(log.lines().any(|line| line.contains("\"debug\"")), "{log}");
+}
+
+/// A bad setting is the user's own file, and has to say which one.
+#[test]
+fn an_unreadable_log_setting_is_refused_by_name() {
+    let sandbox = Sandbox::new();
+    sandbox.configure("log_level = \"chatty\"\n");
+    let err = sandbox.fails(&["list"]);
+    assert!(err.contains("chatty"), "{err}");
+    assert!(err.contains("config.toml"), "{err}");
+}

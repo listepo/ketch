@@ -146,6 +146,10 @@ pub struct InstallArgs {
     #[arg(long, value_name = "NAME")]
     pub asset: Option<String>,
 
+    /// Packages to work on at once (default: 4, or `jobs` in config.toml)
+    #[arg(long, short = 'j', value_name = "N")]
+    pub jobs: Option<usize>,
+
     /// Answer yes to every prompt
     #[arg(long, short = 'y')]
     pub yes: bool,
@@ -245,6 +249,10 @@ pub struct UpgradeArgs {
     #[arg(long)]
     pub force: bool,
 
+    /// Packages to work on at once (default: 4, or `jobs` in config.toml)
+    #[arg(long, short = 'j', value_name = "N")]
+    pub jobs: Option<usize>,
+
     /// Answer yes to every prompt
     #[arg(long, short = 'y')]
     pub yes: bool,
@@ -280,6 +288,10 @@ pub struct SyncArgs {
     /// Report what would change without installing anything
     #[arg(long)]
     pub dry_run: bool,
+
+    /// Packages to work on at once (default: 4, or `jobs` in config.toml)
+    #[arg(long, short = 'j', value_name = "N")]
+    pub jobs: Option<usize>,
 
     /// Answer yes to every prompt
     #[arg(long, short = 'y')]
