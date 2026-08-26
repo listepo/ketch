@@ -1,0 +1,20 @@
+{{ define "main" }}
+<div class="docs-layout">
+  {{ partial "docs-nav.html" . }}
+
+  <article class="docs-body">
+    <h1>{{ .Title }}</h1>
+    {{ with .Params.description }}<p class="lede">{{ . }}</p>{{ end }}
+    {{ .Content }}
+
+    <div class="doc-cards">
+      {{ range .Pages.ByWeight }}
+        <a class="doc-card" href="{{ .Permalink }}">
+          <h2>{{ .Title }}</h2>
+          <p>{{ .Params.description | default (.Summary | plainify | truncate 140) }}</p>
+        </a>
+      {{ end }}
+    </div>
+  </article>
+</div>
+{{ end }}

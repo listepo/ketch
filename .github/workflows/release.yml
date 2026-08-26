@@ -1,0 +1,122 @@
+name: release
+
+# Tagging is the trigger, so cutting a release is `git tag v0.2.0 && git push
+# --tags` and nothing else. The manual trigger exists to re-run a publish that
+# failed after the tag was already pushed.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build and publish"
+        required: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Nothing is published unless the same gate CI applies is green. A release is
+  # the one build people cannot re-run themselves.
+  verify:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - run: rustup component add rustfmt clippy
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all -- --check
+
+      - name: Lint
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Test
+        run: cargo test --all-targets --locked
+
+      # `ketch self update` compares the running binary's version against the
+      # release tag. A tag that disagrees with Cargo.toml makes every installed
+      # copy either miss the update or reinstall forever.
+      - name: Tag matches Cargo.toml
+        run: |
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          crate="v$(cargo metadata --no-deps --format-version 1 \
+            | sed -n 's/.*"name":"ketch","version":"\([^"]*\)".*/\1/p')"
+          if [ "$tag" != "$crate" ]; then
+            echo "tag $tag does not match Cargo.toml version $crate" >&2
+            exit 1
+          fi
+          echo "$tag matches Cargo.toml"
+
+  build:
+    needs: verify
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        target: [aarch64-apple-darwin, x86_64-apple-darwin]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Package
+        run: scripts/package.sh ${{ matrix.target }} dist
+
+      # The arm64 runner can build the x86_64 slice but cannot run it, so only
+      # the native one is smoke-tested here.
+      - name: Smoke test
+        if: matrix.target == 'aarch64-apple-darwin'
+        run: |
+          tar -xzf dist/ketch-${{ matrix.target }}.tar.gz -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/ketch" --version
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: staging
+
+      - name: Collect assets and checksums
+        run: |
+          mkdir -p dist
+          find staging -name '*.tar.gz' -exec mv {} dist/ \;
+          cd dist
+          # One aggregate file, named so `ketch self update` recognises it and
+          # install.sh can grep it. Sorted, so the file is reproducible.
+          shasum -a 256 $(ls *.tar.gz | sort) > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/* --clobber
+          else
+            gh release create "$tag" dist/* \
+              --title "$tag" \
+              --generate-notes \
+              --verify-tag
+          fi

@@ -45,6 +45,8 @@ impl Http {
         Http { agent, token: None }
     }
 
+    // Part of the public surface, with no caller in the tree yet.
+    #[allow(dead_code)]
     pub fn has_token(&self) -> bool {
         self.token.is_some()
     }
@@ -73,9 +75,10 @@ impl Http {
 
     fn get_string(&self, url: &str, accept: &str, authed: bool) -> Result<String> {
         crate::ui::debug(&format!("GET {url}"));
-        let response = self.request(url, accept, authed).call().map_err(|e| {
-            classify(url, e)
-        })?;
+        let response = self
+            .request(url, accept, authed)
+            .call()
+            .map_err(|e| classify(url, e))?;
         let mut body = String::new();
         response
             .into_reader()
@@ -129,7 +132,8 @@ impl Http {
             std::fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
         }
         let parent = dest.parent().unwrap_or(Path::new("."));
-        let mut staged = tempfile::NamedTempFile::new_in(parent).map_err(|e| Error::io(parent, e))?;
+        let mut staged =
+            tempfile::NamedTempFile::new_in(parent).map_err(|e| Error::io(parent, e))?;
 
         let mut reader = response.into_reader();
         let mut hasher = Sha256::new();
@@ -159,9 +163,7 @@ impl Http {
             }
         }
 
-        staged
-            .persist(dest)
-            .map_err(|e| Error::io(dest, e.error))?;
+        staged.persist(dest).map_err(|e| Error::io(dest, e.error))?;
         progress.finish(&format!("{label} ({})", crate::ui::bytes(written)));
         Ok(hex::encode(hasher.finalize()))
     }
@@ -235,7 +237,10 @@ mod tests {
 
     #[test]
     fn falls_back_to_body_snippet() {
-        assert_eq!(extract_message("bad gateway").as_deref(), Some("bad gateway"));
+        assert_eq!(
+            extract_message("bad gateway").as_deref(),
+            Some("bad gateway")
+        );
         assert_eq!(extract_message("   "), None);
     }
 

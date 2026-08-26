@@ -45,8 +45,16 @@ impl State {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(State::default()),
             Err(e) => return Err(Error::io(path, e)),
         };
+        // An absent file means nothing has been installed yet. An empty one
+        // means a write was lost, and every package on disk is about to be
+        // forgotten — say so rather than quietly starting over.
         if text.trim().is_empty() {
-            return Ok(State::default());
+            return Err(Error::msg(format!(
+                "{} is empty, which usually means an interrupted write. Anything \
+                 already installed is still in the store; remove the file to start \
+                 a fresh record, then `ketch relink` each package.",
+                path.display()
+            )));
         }
         let state: State = serde_json::from_str(&text)
             .map_err(|e| Error::parse(path.display().to_string(), e.to_string()))?;
@@ -78,7 +86,20 @@ impl State {
             .write_all(b"\n")
             .map_err(|e| Error::io(staged.path(), e))?;
         staged.flush().map_err(|e| Error::io(staged.path(), e))?;
+        // The rename is atomic, but only over whatever the file actually
+        // contains. Without this the kernel is free to record the rename and
+        // lose the bytes, leaving a zero-length state file — which is to say,
+        // an empty list of installed packages.
+        staged
+            .as_file()
+            .sync_all()
+            .map_err(|e| Error::io(staged.path(), e))?;
         staged.persist(path).map_err(|e| Error::io(path, e.error))?;
+        // Then make the rename itself durable. Best effort: some filesystems
+        // refuse to fsync a directory, and that is not a reason to fail a save.
+        if let Ok(dir) = std::fs::File::open(parent) {
+            let _ = dir.sync_all();
+        }
         Ok(())
     }
 
@@ -115,15 +136,9 @@ impl State {
         self.packages.values().find(|p| {
             p.source.id.eq_ignore_ascii_case(query)
                 || p.source.to_string().eq_ignore_ascii_case(query)
-                || p.binaries().any(|b| b.link.file_name().is_some_and(|n| n == query))
+                || p.binaries()
+                    .any(|b| b.link.file_name().is_some_and(|n| n == query))
         })
-    }
-
-    /// Every package that must be resolved before `name` can be removed.
-    /// Nothing depends on anything today; the hook exists so `uninstall` has
-    /// one place to grow a real check.
-    pub fn dependents(&self, _name: &str) -> Vec<&InstalledPackage> {
-        Vec::new()
     }
 }
 
@@ -181,9 +196,13 @@ impl Lock {
                         Some(pid) if process_alive(pid) => {
                             return Err(Error::Locked(format!("pid {pid}")))
                         }
-                        // A crashed run left the file behind. Clear it once and
-                        // retry; if we lose the race the next pass reports the
-                        // new holder rather than stealing from it.
+                        // A crashed run left the file behind. Reclaim it by
+                        // renaming rather than unlinking: `rename` fails if the
+                        // file is already gone, so of two processes that both
+                        // judge the lock stale exactly one can claim it. Plain
+                        // `remove_file` succeeds for both — including for the
+                        // one that would delete the winner's fresh lock — and
+                        // they would then both proceed.
                         other => {
                             if attempt == 0 {
                                 crate::ui::debug(&format!(
@@ -193,7 +212,10 @@ impl Lock {
                                         .map(|p| format!("pid {p} is gone"))
                                         .unwrap_or_else(|| "unreadable".into())
                                 ));
-                                let _ = std::fs::remove_file(path);
+                                let reclaimed = path.with_extension(format!("stale.{me}"));
+                                if std::fs::rename(path, &reclaimed).is_ok() {
+                                    let _ = std::fs::remove_file(&reclaimed);
+                                }
                                 continue;
                             }
                             return Err(Error::Locked(path.display().to_string()));
@@ -218,10 +240,17 @@ impl Drop for Lock {
 /// Is that pid still running? Only consulted when a lock file already exists,
 /// so shelling out costs nothing on the normal path and keeps the crate free of
 /// a libc dependency.
+///
+/// `ps` rather than `kill -0`: signalling a process owned by another user fails
+/// with EPERM, which is indistinguishable from "no such process" through an
+/// exit status alone — and reading it as "gone" steals a lock that is very much
+/// still held.
 fn process_alive(pid: u32) -> bool {
-    std::process::Command::new("/bin/kill")
-        .arg("-0")
+    std::process::Command::new("/bin/ps")
+        .arg("-p")
         .arg(pid.to_string())
+        .arg("-o")
+        .arg("pid=")
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
@@ -251,6 +280,49 @@ mod tests {
             origin: ManifestOrigin::Inferred,
             manifest: None,
         }
+    }
+
+    #[test]
+    fn an_empty_state_file_is_not_an_empty_install() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        std::fs::write(&path, "").unwrap();
+        assert!(State::load_path(&path).is_err(), "corruption must be loud");
+
+        std::fs::remove_file(&path).unwrap();
+        assert!(State::load_path(&path).unwrap().packages.is_empty());
+    }
+
+    #[test]
+    fn a_lock_left_by_a_dead_process_is_reclaimed_without_residue() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("lock");
+        // Above the pid ceiling, so it can never name a running process.
+        std::fs::write(&path, "999999").unwrap();
+
+        let lock = Lock::acquire_path(&path).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            std::process::id().to_string()
+        );
+        drop(lock);
+
+        let left: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name())
+            .collect();
+        assert!(left.is_empty(), "reclaim left {left:?} behind");
+    }
+
+    #[test]
+    fn a_lock_held_by_another_users_process_is_not_stolen() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("lock");
+        // pid 1 is running and is not ours to signal — the case that reads as
+        // "process is gone" if aliveness is judged by `kill -0` alone.
+        std::fs::write(&path, "1").unwrap();
+        assert!(matches!(Lock::acquire_path(&path), Err(Error::Locked(_))));
     }
 
     #[test]

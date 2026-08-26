@@ -34,6 +34,10 @@ dirs = "5"
 thiserror = "1"
 indicatif = "0.17"
 
+# There is no unsafe code in ketch and there is no reason for any to appear.
+[lints.rust]
+unsafe_code = "forbid"
+
 [profile.release]
 opt-level = "z"
 lto = true

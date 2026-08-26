@@ -14,6 +14,7 @@ mod install;
 mod manifest;
 mod model;
 mod platform;
+mod registry;
 mod selfupdate;
 mod source;
 mod state;
@@ -26,7 +27,11 @@ use error::Result;
 fn main() {
     let cli = Cli::parse();
     ui::init(
-        if cli.global.no_color { Some(false) } else { None },
+        if cli.global.no_color {
+            Some(false)
+        } else {
+            None
+        },
         cli.global.quiet,
         cli.global.verbose,
     );
@@ -53,7 +58,11 @@ fn run(cli: Cli) -> Result<()> {
         "root {} · target {} · token {}",
         cfg.root.display(),
         cfg.target,
-        if cfg.github_token.is_some() { "yes" } else { "no" }
+        if cfg.github_token.is_some() {
+            "yes"
+        } else {
+            "no"
+        }
     ));
 
     match cli.command {
@@ -68,6 +77,7 @@ fn run(cli: Cli) -> Result<()> {
         Command::Outdated(args) => cmd::query::outdated(&cfg, args),
         Command::Info(args) => cmd::query::info(&cfg, args),
         Command::Search(args) => cmd::query::search(&cfg, args),
+        Command::Update => cmd::system::update(&cfg),
         Command::Doctor => cmd::system::doctor(&cfg),
         Command::Plugin { command } => cmd::system::plugin(&cfg, command),
         Command::Zelf { command } => cmd::system::zelf(&cfg, command),

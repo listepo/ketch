@@ -1,0 +1,67 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    # macOS is the only implemented platform, so it is the only one worth gating on.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: rustup component add rustfmt clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all -- --check
+
+      - name: Lint
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      # Unit tests and the end-to-end suite in tests/, which drives the real
+      # binary against a throwaway root. Both are offline.
+      - name: Test
+        run: cargo test --all-targets --locked
+
+  # Packaging is exercised on every pull request, so it breaks here rather than
+  # at tag time — by which point the tag has already been pushed.
+  package:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Shell syntax
+        run: |
+          bash -n install.sh
+          bash -n scripts/package.sh
+
+      - name: Package the host target
+        run: scripts/package.sh aarch64-apple-darwin dist
+
+      # Everything install.sh relies on: an aggregate SHA256SUMS it can grep, a
+      # checksum that verifies, and a `ketch` binary it can find and run.
+      - name: The tarball is what install.sh expects
+        run: |
+          cd dist
+          shasum -a 256 *.tar.gz > SHA256SUMS
+          shasum -a 256 -c SHA256SUMS
+
+          tarball=ketch-aarch64-apple-darwin.tar.gz
+          expected=$(grep "$tarball" SHA256SUMS | awk '{print $1}')
+          actual=$(shasum -a 256 "$tarball" | awk '{print $1}')
+          [ "$expected" = "$actual" ] || { echo "checksum line unusable" >&2; exit 1; }
+
+          mkdir -p unpacked && tar -xzf "$tarball" -C unpacked
+          binary=$(find unpacked -name ketch -type f | head -1)
+          [ -n "$binary" ] || { echo "no ketch binary in the tarball" >&2; exit 1; }
+          "$binary" --version
