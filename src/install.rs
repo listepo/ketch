@@ -18,6 +18,8 @@ use crate::source::{ListOpts, SourceRegistry};
 use crate::state::State;
 use crate::ui;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
 
 /// One install, fully specified.
 #[derive(Debug, Clone)]
@@ -32,11 +34,13 @@ pub struct InstallRequest {
     pub require_checksum: bool,
     /// Exact asset file name, bypassing scoring.
     pub asset_override: Option<String>,
+    /// SHA-256 this asset is already known to have, from a lockfile. Checked
+    /// before anything is unpacked.
+    pub expected_sha256: Option<String>,
 }
 
 impl InstallRequest {
-    // Part of the public surface, with no caller in the tree yet.
-    #[allow(dead_code)]
+    /// A plain install of one package: latest, linked, nothing overridden.
     pub fn new(spec: PackageSpec) -> Self {
         InstallRequest {
             spec,
@@ -45,6 +49,7 @@ impl InstallRequest {
             link: true,
             require_checksum: false,
             asset_override: None,
+            expected_sha256: None,
         }
     }
 }
@@ -64,6 +69,28 @@ pub struct ScoredAsset {
     pub score: AssetScore,
 }
 
+/// Everything an install downloads, checks and unpacks, before it touches the
+/// install tree.
+///
+/// Split out from `commit` so a batch can do this part for several packages at
+/// once. Nothing here writes outside the cache, so two of these running side by
+/// side cannot collide: the store, the bin directory and `state.json` are only
+/// reached from `commit`, which stays sequential.
+pub struct Prepared {
+    manifest: crate::model::Manifest,
+    origin: crate::model::ManifestOrigin,
+    release: Release,
+    asset_name: String,
+    sha256: String,
+    checksum_verified: bool,
+    /// Carried from the request: `commit` is the only place that links.
+    link: bool,
+    /// Root of the unpacked payload, inside `unpack`.
+    payload: PathBuf,
+    /// Held so the unpacked payload outlives this function.
+    unpack: tempfile::TempDir,
+}
+
 /// Run the pipeline. Mutates `state` in memory; the caller saves it, so a batch
 /// install writes `state.json` once.
 pub fn install(
@@ -72,6 +99,19 @@ pub fn install(
     state: &mut State,
     req: &InstallRequest,
 ) -> Result<Installed> {
+    let prepared = prepare(cfg, sources, state, req, ui::progress().as_ref())?;
+    commit(cfg, state, prepared)
+}
+
+/// Resolve, download, verify and unpack — the slow half, and the safe half to
+/// run concurrently.
+pub fn prepare(
+    cfg: &Config,
+    sources: &SourceRegistry,
+    state: &State,
+    req: &InstallRequest,
+    progress: &dyn ui::ProgressSink,
+) -> Result<Prepared> {
     let platform = crate::platform::host()?;
     let (manifest, origin) = Resolver::new(cfg)?.resolve(&req.spec)?;
     let source = sources.for_ref(&manifest.source)?;
@@ -118,17 +158,33 @@ pub fn install(
 
     // --- download -----------------------------------------------------------
     std::fs::create_dir_all(&cfg.cache_dir).map_err(|e| Error::io(&cfg.cache_dir, e))?;
-    let download_path = cfg.cache_dir.join(format!(
-        "{}-{}",
-        sanitize_component(&manifest.name),
-        sanitize_component(&asset.name)
-    ));
-    let progress = ui::progress();
-    let sha256 = source.download(&asset, &download_path, progress.as_ref())?;
-    // The cache entry has served its purpose once the payload is in the store.
-    let _cleanup = ScopedFile(download_path.clone());
+    // A directory of its own, not a name under the cache. Two `prepare`s run
+    // side by side, and an alias and a repo path naming the same package would
+    // pick the same file name: they would overwrite each other's archive,
+    // extract whichever landed last, and delete it from under each other. The
+    // archive is staging, never a cache — it is deleted as soon as the payload
+    // is unpacked — so a unique directory costs nothing.
+    let staging = tempfile::tempdir_in(&cfg.cache_dir).map_err(|e| Error::io(&cfg.cache_dir, e))?;
+    let download_path = staging.path().join(sanitize_component(&asset.name));
+    let sha256 = source.download(&asset, &download_path, progress)?;
 
     // --- checksum -----------------------------------------------------------
+    // A lockfile's hash is checked first and separately. The source's own
+    // checksum says the download was not corrupted; this says the release is
+    // still the one that was locked, and a release that changed under a tag it
+    // already published is exactly what a lockfile exists to catch.
+    if let Some(expected) = &req.expected_sha256 {
+        if !expected.eq_ignore_ascii_case(&sha256) {
+            return Err(Error::msg(format!(
+                "{}: {} does not match the lockfile\n  locked {expected}\n  got    {sha256}\n\
+                 The release was replaced after the lock was written. Install it \
+                 deliberately and re-run `ketch lock` rather than accepting a payload \
+                 nobody recorded.",
+                manifest.name, asset.name
+            )));
+        }
+    }
+
     let checksum_verified = verify_checksum(
         source.as_ref(),
         &manifest.source.id,
@@ -146,6 +202,39 @@ pub fn install(
     let payload = payload_root(unpack.path(), manifest.strip_prefix)?;
 
     check_trust(platform.as_ref(), cfg, &payload, &manifest.name);
+
+    Ok(Prepared {
+        manifest,
+        origin,
+        release,
+        asset_name: asset.name,
+        sha256,
+        checksum_verified,
+        link: req.link,
+        payload,
+        unpack,
+    })
+}
+
+/// Place the payload and record it. The half that touches the install tree, so
+/// it runs on one thread with the lock held.
+pub fn commit(cfg: &Config, state: &mut State, prepared: Prepared) -> Result<Installed> {
+    let Prepared {
+        manifest,
+        origin,
+        release,
+        asset_name,
+        sha256,
+        checksum_verified,
+        link,
+        payload,
+        unpack,
+    } = prepared;
+    let platform = crate::platform::host()?;
+
+    // Read again rather than trusting what `prepare` saw: in a batch, another
+    // package may have been placed since.
+    let existing = state.get(&manifest.name).cloned();
 
     // --- place --------------------------------------------------------------
     let version = release.version.to_string();
@@ -165,8 +254,9 @@ pub fn install(
         bin_specs: &manifest.bin,
         replacing: existing.as_ref().map(|p| p.links.as_slice()).unwrap_or(&[]),
         link_apps: cfg.link_apps,
-        link: req.link,
+        link,
     })?;
+    drop(unpack);
 
     // --- retire the version we replaced -------------------------------------
     if let Some(old) = &existing {
@@ -192,7 +282,7 @@ pub fn install(
         source: manifest.source.clone(),
         tag: release.tag.clone(),
         target: platform.target(),
-        asset_name: asset.name.clone(),
+        asset_name,
         sha256,
         checksum_verified,
         installed_at: now_unix(),
@@ -209,6 +299,66 @@ pub fn install(
         package,
         replaced: existing.map(|p| p.version),
     })
+}
+
+/// Install several packages: download and unpack them concurrently, place them
+/// one at a time. One result per request, in request order.
+///
+/// The install tree is reached from `commit` alone, and exactly one thread is
+/// ever inside it — so the store, the links and `state.json` see the same
+/// sequence of writes a one-at-a-time batch would have made. What overlaps is
+/// `prepare`, which writes nothing outside the cache and spends its time
+/// waiting on a network.
+///
+/// A worker holds its slot until its package is placed, so at most `jobs`
+/// unpacked payloads sit in the cache at once rather than the whole batch.
+pub fn batch(
+    cfg: &Config,
+    sources: &SourceRegistry,
+    state: &mut State,
+    reqs: &[InstallRequest],
+    jobs: usize,
+) -> Vec<Result<Installed>> {
+    if jobs <= 1 || reqs.len() <= 1 {
+        return reqs
+            .iter()
+            .map(|req| install(cfg, sources, state, req))
+            .collect();
+    }
+
+    // `prepare` reads a snapshot taken before the batch started, which is all
+    // it needs: it decides whether an install is wanted at all. `commit` reads
+    // the live state again before it places anything.
+    let snapshot = state.clone();
+    let live = Mutex::new(state);
+    let bars = ui::bars();
+    let next = AtomicUsize::new(0);
+    let done: Mutex<Vec<(usize, Result<Installed>)>> = Mutex::new(Vec::with_capacity(reqs.len()));
+
+    // Scoped threads so `cfg`, `sources` and the snapshot are borrowed rather
+    // than cloned into an `Arc` apiece; the scope cannot outlive any of them.
+    std::thread::scope(|scope| {
+        for _ in 0..jobs.min(reqs.len()) {
+            scope.spawn(|| loop {
+                let i = next.fetch_add(1, Ordering::Relaxed);
+                let Some(req) = reqs.get(i) else { return };
+                let sink = bars.sink(&req.spec.label());
+                let result = prepare(cfg, sources, &snapshot, req, sink.as_ref()).and_then(|p| {
+                    let mut live = live.lock().unwrap_or_else(|e| e.into_inner());
+                    commit(cfg, &mut live, p)
+                });
+                done.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push((i, result));
+            });
+        }
+    });
+
+    let mut results = done.into_inner().unwrap_or_else(|e| e.into_inner());
+    // Workers finish in whatever order the network allowed. The user asked in
+    // a particular one, and that is the order everything downstream reports in.
+    results.sort_by_key(|(i, _)| *i);
+    results.into_iter().map(|(_, result)| result).collect()
 }
 
 /// Remove links and the store directory, then drop the state entry.
@@ -489,16 +639,6 @@ fn remove_store_dir(cfg: &Config, prefix: &Path) {
     }
 }
 
-/// Deletes a path when dropped, so a failure mid-pipeline does not leave the
-/// downloaded archive behind.
-struct ScopedFile(PathBuf);
-
-impl Drop for ScopedFile {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.0);
-    }
-}
-
 /// Deletes a store directory when dropped, unless the install got far enough to
 /// keep it.
 ///
@@ -562,9 +702,6 @@ mod tests {
         }
         fn is_executable(&self, _path: &Path) -> bool {
             true
-        }
-        fn path_setup_hint(&self, _bin: &Path) -> String {
-            String::new()
         }
         fn doctor(&self, _cfg: &Config) -> Vec<crate::platform::DoctorCheck> {
             Vec::new()

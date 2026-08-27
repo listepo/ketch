@@ -33,7 +33,7 @@ ketch install sharkdp/fd@v10.2.0     # or an exact version
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/listepo/ketch/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/listepo/ketch/main/install.sh | bash
 ```
 
 Then make sure `~/.ketch/bin` is on your `PATH`. `ketch doctor` will tell you if
@@ -62,21 +62,110 @@ versioned store, and links it onto your `PATH`.
 ## Using it
 
 ```bash
-ketch install <pkg>...     # install; --pre for prereleases, @version to pin one
+ketch install <pkg>...     # install; concurrent by default, --jobs N to change
 ketch list                 # what is installed
 ketch outdated             # what has a newer release
 ketch upgrade              # bring everything unpinned up to date
 ketch info <pkg>           # details, including --assets and why each scored
 ketch search <query>       # the registry and GitHub
+ketch changelog <pkg>      # what changed: the shipped file, or the release notes
 ketch update               # refresh the package registry
 ketch pin / unpin <pkg>    # hold a version, or let go
 ketch uninstall <pkg>...   # remove it
+ketch lock                 # write ketch.lock from what is installed
+ketch sync                 # install what ketch.lock names, at those versions
 ketch doctor               # check the environment and the install tree
+ketch doctor --fix         # and repair the PATH setup while it is there
+ketch path install         # put ~/.ketch/bin on PATH in bash, zsh and fish
 ```
 
 Everything lives under `~/.ketch`: versioned payloads in `store/`, links in
 `bin/`, and a `state.json` recording what is installed. Nothing is written
-outside that tree except the `.app` bundles that belong in `/Applications`.
+outside that tree except the `.app` bundles that belong in `/Applications`, and
+the shell startup file `ketch path install` edits when you ask it to.
+
+## Seeing what changed
+
+```bash
+ketch changelog rg            # the entry for the version you have
+ketch changelog rg --latest   # the release you would get by upgrading
+ketch changelog rg --release  # the notes on the release, not the shipped file
+```
+
+Most releases carry their history twice: a `CHANGELOG.md` inside the archive
+and the notes attached to the release. ketch prefers the file — it is already
+on disk, so this works with no network — and falls back to the notes when the
+file has no entry for that version, which is what happens whenever a project
+tags before writing the heading.
+
+The changelog goes to stdout and everything else to stderr, so
+`ketch changelog rg > NOTES.md` leaves nothing but the markdown.
+
+## Installing several at once
+
+```bash
+ketch install rg fd bat jq      # four downloads at a time, four progress bars
+ketch install rg fd --jobs 1    # one at a time
+```
+
+Downloads run concurrently by default and spend their time waiting, so a batch
+takes about as long as its slowest package rather than the sum of all of them.
+Only the downloading and unpacking overlap: packages are placed into the store
+one at a time, in the order you asked for them, so the install tree sees the
+same sequence of writes it would have seen anyway.
+
+`upgrade` and `sync` work the same way. `--jobs N` sets the width for any of
+them; `jobs` in the config file sets the default.
+
+## The log
+
+Every run is written to `~/.ketch/logs/ketch.log` — including the lines
+`--quiet` swallowed and the debug detail `--verbose` would have shown. A failed
+command prints where to find it.
+
+```
+2026-08-27T09:12:33Z [4218] INFO  ketch 0.1.0 · install rg fd
+2026-08-27T09:12:34Z [4218] ERROR HTTP 404 from https://api.github.com/...
+```
+
+Set `log_format = "json"` for JSON Lines instead, `log_level` to `debug` for
+everything or `off` for nothing. The file rotates to `ketch.log.1` at 5 MiB, so
+it never needs pruning by hand. `ketch doctor` prints where it is and how big
+it has grown.
+
+## Reproducing a machine
+
+```bash
+ketch lock            # write ./ketch.lock from what is installed
+ketch lock --check    # has anything drifted?
+ketch sync            # make this machine match the lockfile
+```
+
+Commit `ketch.lock` next to your dotfiles and a new machine is one command
+behind the old one. The tag is what reproduces everywhere; the recorded
+checksum is enforced on a machine of the same target, and elsewhere ketch picks
+the asset that fits and verifies it against the source. `--prune` removes what
+the lockfile does not name, `--dry-run` shows the plan first. See
+[docs/LOCKFILE.md](docs/LOCKFILE.md).
+
+## Getting on PATH
+
+```bash
+ketch path              # which shells are set up, and where
+ketch path install      # edit the ones you use
+ketch path uninstall    # take the block back out
+```
+
+It detects bash, zsh and fish — the shell `$SHELL` names, plus any whose startup
+file you already keep — and writes one block between markers, so it can rewrite
+it if the root moves and remove it cleanly later. `--shell <name>` picks one,
+`--all` takes all three, `--dry-run` shows the edit without making it, and
+`--print` gives you the line to paste somewhere ketch does not know about.
+
+A line you added yourself is left alone rather than duplicated. `ketch doctor`
+reports the PATH as a failure when no shell knows about it, as a warning when a
+startup file has it but the current shell predates the edit, and `ketch doctor
+--fix` does the setup for you.
 
 ## How a package is found
 
@@ -111,6 +200,9 @@ release required. See [docs/PLUGINS.md](docs/PLUGINS.md).
 | `require_checksums` | `KETCH_REQUIRE_CHECKSUMS` | `false` |
 | `strip_quarantine` | `KETCH_STRIP_QUARANTINE` | `true` |
 | `registry` | `KETCH_REGISTRY` | `listepo/ketch-registry` |
+| `jobs` | `KETCH_JOBS` | `4` |
+| `log_level` | `KETCH_LOG_LEVEL` | `info` |
+| `log_format` | `KETCH_LOG_FORMAT` | `text` |
 
 The root itself is `KETCH_ROOT` or `--root`; it cannot be set from the config
 file, because the file lives inside it.
@@ -131,6 +223,7 @@ ketch does not do yet.
 | [docs/MANIFESTS.md](docs/MANIFESTS.md) | The package config: every field, and when you need one |
 | [docs/REGISTRY.md](docs/REGISTRY.md) | The registry layout, and how to add a package to it |
 | [docs/PLUGINS.md](docs/PLUGINS.md) | The source-plugin protocol, for sources other than GitHub |
+| [docs/LOCKFILE.md](docs/LOCKFILE.md) | `ketch.lock`: pinning a machine's tools to exact releases |
 | [ROADMAP.md](ROADMAP.md) | What is missing, and what is deliberately out of scope |
 | [AGENTS.md](AGENTS.md) | The layout, the conventions and the trust boundaries |
 

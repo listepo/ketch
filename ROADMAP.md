@@ -68,12 +68,8 @@ Still missing:
 
 - **Rollback.** Every version stays in the store, so `ketch rollback <pkg>`
   should be little more than a relink to an older prefix.
-- **Lockfiles.** A `ketch.lock` naming exact tags and hashes would make a
-  machine's set of tools reproducible.
 - **`ketch why <pkg>`.** Explain a resolution end to end: which tier the
   manifest came from, which release matched, which asset scored highest.
-- **Parallel installs.** A batch install is sequential today. The state lock is
-  process-wide, so this needs the lock to move below the download step first.
 
 ## Deliberately out of scope
 

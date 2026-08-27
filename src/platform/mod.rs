@@ -177,9 +177,6 @@ pub trait Platform: Send + Sync {
     /// Is this file something we can execute and link onto PATH?
     fn is_executable(&self, path: &Path) -> bool;
 
-    /// Shell snippet that puts `bin_dir` on PATH.
-    fn path_setup_hint(&self, bin_dir: &Path) -> String;
-
     /// Files this platform treats as app bundles rather than executables.
     #[allow(dead_code)]
     fn app_bundle_extension(&self) -> Option<&str> {

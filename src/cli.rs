@@ -64,6 +64,9 @@ pub enum Command {
     #[command(visible_alias = "show")]
     Info(InfoArgs),
 
+    /// Show what changed: the package's own changelog, or its release notes
+    Changelog(ChangelogArgs),
+
     /// Search GitHub for installable repositories
     Search(SearchArgs),
 
@@ -85,8 +88,20 @@ pub enum Command {
     /// Remove the links for an installed package, keeping it installed
     Unlink(NameArgs),
 
+    /// Write or check `ketch.lock`, a reproducible record of what is installed
+    Lock(LockArgs),
+
+    /// Install everything `ketch.lock` names, at the versions it names
+    Sync(SyncArgs),
+
     /// Check the environment and the install tree
-    Doctor,
+    Doctor(DoctorArgs),
+
+    /// Put the ketch bin directory on your shell's PATH
+    Path {
+        #[command(subcommand)]
+        command: Option<PathCommand>,
+    },
 
     /// Manage source plugins
     Plugin {
@@ -130,6 +145,10 @@ pub struct InstallArgs {
     /// Use this release asset by exact file name instead of auto-selecting
     #[arg(long, value_name = "NAME")]
     pub asset: Option<String>,
+
+    /// Packages to work on at once (default: 4, or `jobs` in config.toml)
+    #[arg(long, short = 'j', value_name = "N")]
+    pub jobs: Option<usize>,
 
     /// Answer yes to every prompt
     #[arg(long, short = 'y')]
@@ -184,6 +203,25 @@ pub struct InfoArgs {
 }
 
 #[derive(Args, Debug, Clone)]
+pub struct ChangelogArgs {
+    /// An installed name, an alias, or `owner/repo` — may carry `@version`
+    #[arg(value_name = "PKG")]
+    pub package: String,
+
+    /// Show the newest release instead of the installed one
+    #[arg(long)]
+    pub latest: bool,
+
+    /// Only read the changelog file the package ships
+    #[arg(long, conflicts_with_all = ["release", "latest"])]
+    pub file: bool,
+
+    /// Only read the notes published with the release
+    #[arg(long)]
+    pub release: bool,
+}
+
+#[derive(Args, Debug, Clone)]
 pub struct SearchArgs {
     #[arg(required = true, value_name = "QUERY")]
     pub query: Vec<String>,
@@ -211,6 +249,10 @@ pub struct UpgradeArgs {
     #[arg(long)]
     pub force: bool,
 
+    /// Packages to work on at once (default: 4, or `jobs` in config.toml)
+    #[arg(long, short = 'j', value_name = "N")]
+    pub jobs: Option<usize>,
+
     /// Answer yes to every prompt
     #[arg(long, short = 'y')]
     pub yes: bool,
@@ -220,6 +262,82 @@ pub struct UpgradeArgs {
 pub struct NameArgs {
     #[arg(required = true, value_name = "NAME")]
     pub names: Vec<String>,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct LockArgs {
+    /// Lockfile to write (default: ./ketch.lock)
+    #[arg(long, short, value_name = "FILE")]
+    pub file: Option<PathBuf>,
+
+    /// Report how the tree differs from the lockfile, and write nothing
+    #[arg(long)]
+    pub check: bool,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct SyncArgs {
+    /// Lockfile to read (default: ./ketch.lock)
+    #[arg(long, short, value_name = "FILE")]
+    pub file: Option<PathBuf>,
+
+    /// Also remove installed packages the lockfile does not name
+    #[arg(long)]
+    pub prune: bool,
+
+    /// Report what would change without installing anything
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// Packages to work on at once (default: 4, or `jobs` in config.toml)
+    #[arg(long, short = 'j', value_name = "N")]
+    pub jobs: Option<usize>,
+
+    /// Answer yes to every prompt
+    #[arg(long, short = 'y')]
+    pub yes: bool,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct DoctorArgs {
+    /// Repair what can be repaired without asking: currently the PATH setup
+    #[arg(long)]
+    pub fix: bool,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum PathCommand {
+    /// Add the bin directory to your shell's startup file
+    Install(PathInstallArgs),
+    /// Take out the block `ketch path install` added
+    Uninstall(PathArgs),
+    /// Show which shells have been set up
+    Status,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct PathArgs {
+    /// Shells to act on. Default: the ones you appear to use.
+    #[arg(long, value_name = "SHELL", value_enum)]
+    pub shell: Vec<crate::shell::Shell>,
+
+    /// Act on every shell ketch knows
+    #[arg(long, conflicts_with = "shell")]
+    pub all: bool,
+
+    /// Report what would change without touching anything
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct PathInstallArgs {
+    #[command(flatten)]
+    pub common: PathArgs,
+
+    /// Print the line to add by hand instead of editing anything
+    #[arg(long, conflicts_with_all = ["all", "dry_run"])]
+    pub print: bool,
 }
 
 #[derive(Subcommand, Debug, Clone)]

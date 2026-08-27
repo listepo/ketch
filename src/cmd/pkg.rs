@@ -34,20 +34,34 @@ pub fn install(cfg: &Config, args: InstallArgs) -> Result<()> {
     let sources = SourceRegistry::load(cfg);
     let mut state = State::load(cfg)?;
 
-    let single = args.packages.len() == 1;
-    let mut done = 0usize;
-    let mut failed: Vec<String> = Vec::new();
-
+    // The same package twice would be downloaded twice and placed twice, with
+    // the second replacing the first for no reason. Order is the user's.
+    let mut wanted: Vec<&String> = Vec::new();
     for raw in &args.packages {
-        let req = InstallRequest {
+        if !wanted.contains(&raw) {
+            wanted.push(raw);
+        }
+    }
+    let reqs: Vec<InstallRequest> = wanted
+        .iter()
+        .map(|raw| InstallRequest {
             spec: PackageSpec::parse(raw),
             force: args.force,
             prerelease: args.prerelease,
             link: !args.no_link,
             require_checksum: args.require_checksum || cfg.require_checksums,
             asset_override: args.asset.clone(),
-        };
-        match install::install(cfg, &sources, &mut state, &req) {
+            expected_sha256: None,
+        })
+        .collect();
+
+    let single = reqs.len() == 1;
+    let mut done = 0usize;
+    let mut failed: Vec<String> = Vec::new();
+
+    let outcomes = install::batch(cfg, &sources, &mut state, &reqs, jobs(cfg, args.jobs));
+    for (raw, outcome) in wanted.iter().zip(outcomes) {
+        match outcome {
             Ok(out) => {
                 done += 1;
                 report(&out);
@@ -57,7 +71,7 @@ pub fn install(cfg: &Config, args: InstallArgs) -> Result<()> {
             // succeeded, so the failure is held until the state file is saved.
             Err(e) => {
                 ui::error(&e);
-                failed.push(raw.clone());
+                failed.push((*raw).clone());
             }
         }
     }
@@ -70,7 +84,7 @@ pub fn install(cfg: &Config, args: InstallArgs) -> Result<()> {
         return Err(Error::msg(format!(
             "{} of {} packages failed: {}",
             failed.len(),
-            args.packages.len(),
+            wanted.len(),
             failed.join(", ")
         )));
     }
@@ -199,10 +213,9 @@ pub fn upgrade(cfg: &Config, args: UpgradeArgs) -> Result<()> {
         return Ok(());
     }
 
-    let mut done = 0usize;
-    let mut failed = Vec::new();
-    for (pkg, release) in plan {
-        let req = InstallRequest {
+    let reqs: Vec<InstallRequest> = plan
+        .iter()
+        .map(|(pkg, release)| InstallRequest {
             spec: PackageSpec {
                 raw: format!("{}@{}", pkg.source, release.tag),
                 reference: Some(pkg.source.clone()),
@@ -217,8 +230,15 @@ pub fn upgrade(cfg: &Config, args: UpgradeArgs) -> Result<()> {
             link: !pkg.links.is_empty(),
             require_checksum: cfg.require_checksums,
             asset_override: None,
-        };
-        match install::install(cfg, &sources, &mut state, &req) {
+            expected_sha256: None,
+        })
+        .collect();
+
+    let mut done = 0usize;
+    let mut failed = Vec::new();
+    let outcomes = install::batch(cfg, &sources, &mut state, &reqs, jobs(cfg, args.jobs));
+    for ((pkg, _), outcome) in plan.iter().zip(outcomes) {
+        match outcome {
             Ok(out) => {
                 done += 1;
                 report(&out);
@@ -298,6 +318,12 @@ fn select(state: &State, names: &[String]) -> Result<Vec<String>> {
         .collect()
 }
 
+/// How many packages to work on at once: the flag, else the configured
+/// default, never zero and never more than there are packages.
+pub(crate) fn jobs(cfg: &Config, flag: Option<usize>) -> usize {
+    flag.filter(|n| *n > 0).unwrap_or(cfg.jobs).max(1)
+}
+
 fn report(out: &Installed) {
     let pkg = &out.package;
     let detail = match &out.replaced {
@@ -327,7 +353,11 @@ fn path_hint(cfg: &Config, state: &State) {
         return;
     }
     ui::warn(&format!("{} is not on your PATH", cfg.bin_dir.display()));
-    if let Ok(platform) = crate::platform::host() {
-        ui::out(&platform.path_setup_hint(&cfg.bin_dir));
+    if crate::shell::configured_in(cfg).is_empty() {
+        ui::out("Run `ketch path install` to add it.");
+    } else {
+        // Already in the startup file: this shell just predates the edit, and
+        // telling them to install again would not change that.
+        ui::out("It is in your shell config already — open a new shell.");
     }
 }

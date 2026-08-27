@@ -4,6 +4,7 @@
 //! `Config`, and hand off to a command. Every failure path converges here so a
 //! single place decides how errors are shown and what the process exits with.
 
+mod changelog;
 mod cli;
 mod cmd;
 mod config;
@@ -11,11 +12,14 @@ mod error;
 mod extract;
 mod http;
 mod install;
+mod lockfile;
+mod log;
 mod manifest;
 mod model;
 mod platform;
 mod registry;
 mod selfupdate;
+mod shell;
 mod source;
 mod state;
 mod ui;
@@ -38,6 +42,14 @@ fn main() {
 
     if let Err(err) = run(cli) {
         ui::error(&err);
+        // What npm and cargo do, and for the same reason: the terminal shows
+        // the failure, the log shows the run that led to it.
+        if let Some(path) = log::path() {
+            ui::note(&format!(
+                "the full log of this run is in {}",
+                path.display()
+            ));
+        }
         std::process::exit(err.exit_code());
     }
 }
@@ -54,6 +66,7 @@ fn run(cli: Cli) -> Result<()> {
 
     let cfg = config::Config::load(cli.global.root.clone())?;
     cfg.ensure_dirs()?;
+    log::init(&cfg);
     ui::debug(&format!(
         "root {} · target {} · token {}",
         cfg.root.display(),
@@ -76,9 +89,13 @@ fn run(cli: Cli) -> Result<()> {
         Command::List(args) => cmd::query::list(&cfg, args),
         Command::Outdated(args) => cmd::query::outdated(&cfg, args),
         Command::Info(args) => cmd::query::info(&cfg, args),
+        Command::Changelog(args) => cmd::query::changelog(&cfg, args),
         Command::Search(args) => cmd::query::search(&cfg, args),
         Command::Update => cmd::system::update(&cfg),
-        Command::Doctor => cmd::system::doctor(&cfg),
+        Command::Lock(args) => cmd::lock::lock(&cfg, args),
+        Command::Sync(args) => cmd::lock::sync(&cfg, args),
+        Command::Doctor(args) => cmd::system::doctor(&cfg, args),
+        Command::Path { command } => cmd::system::path(&cfg, command),
         Command::Plugin { command } => cmd::system::plugin(&cfg, command),
         Command::Zelf { command } => cmd::system::zelf(&cfg, command),
         Command::Completions(_) => unreachable!("handled above"),

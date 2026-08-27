@@ -79,7 +79,11 @@ pub fn update(cfg: &Config, force: bool, dry_run: bool) -> Result<SelfUpdate> {
 
     std::fs::create_dir_all(&cfg.cache_dir).map_err(|e| Error::io(&cfg.cache_dir, e))?;
     let work = tempfile::tempdir_in(&cfg.cache_dir).map_err(|e| Error::io(&cfg.cache_dir, e))?;
-    let download = work.path().join(&chosen.asset.name);
+    // The asset name is the release author's string, not ketch's. It reaches a
+    // path here, so it goes through the same guard every other asset name does.
+    let download = work
+        .path()
+        .join(crate::config::sanitize_component(&chosen.asset.name));
     let progress = ui::progress();
     let sha256 = source.download(&chosen.asset, &download, progress.as_ref())?;
 

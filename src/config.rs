@@ -34,6 +34,12 @@ pub struct ConfigFile {
     pub self_repo: Option<String>,
     /// `owner/repo` of the package registry.
     pub registry: Option<String>,
+    /// How many packages a batch install works on at once.
+    pub jobs: Option<usize>,
+    /// `off`, `error`, `warn`, `info` or `debug`.
+    pub log_level: Option<String>,
+    /// `text` or `json`.
+    pub log_format: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -60,6 +66,11 @@ pub struct Config {
     pub registry: String,
     pub registry_dir: PathBuf,
     pub target: TargetSpec,
+    /// Packages installed at once by a batch install. Never zero.
+    pub jobs: usize,
+    pub log_file: PathBuf,
+    pub log_level: crate::log::Level,
+    pub log_format: crate::log::Format,
 }
 
 impl Config {
@@ -132,6 +143,21 @@ impl Config {
             .or(file.github_token)
             .filter(|t| !t.trim().is_empty());
 
+        // A parse failure here is the user's own config or environment, so it
+        // is an error rather than a silent fall back to the default.
+        let log_level = parsed("KETCH_LOG_LEVEL", "log_level", file.log_level)?.unwrap_or_default();
+        let log_format =
+            parsed("KETCH_LOG_FORMAT", "log_format", file.log_format)?.unwrap_or_default();
+        let jobs = match std::env::var("KETCH_JOBS")
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+        {
+            Some(v) => Some(v.trim().parse::<usize>().map_err(|_| {
+                Error::Config(format!("KETCH_JOBS must be a whole number, not `{v}`"))
+            })?),
+            None => file.jobs,
+        };
+
         Ok(Config {
             bin_dir: root.join("bin"),
             store_dir: root.join("store"),
@@ -163,6 +189,13 @@ impl Config {
             // Deliberately not in `ensure_dirs`: the directory existing is how
             // ketch knows the registry has been fetched.
             registry_dir: root.join("registry"),
+            log_file: root.join("logs").join("ketch.log"),
+            log_level,
+            log_format,
+            // Downloads dominate an install and spend their time waiting, so
+            // the useful number is well above the core count. Capped anyway:
+            // a hundred parallel requests is how a source starts refusing them.
+            jobs: jobs.filter(|n| *n > 0).unwrap_or(4).min(16),
             target: TargetSpec::host(),
             root,
         })
@@ -220,6 +253,28 @@ fn expand_tilde(path: &Path) -> PathBuf {
         }
     }
     path.to_path_buf()
+}
+
+/// A setting that has to be parsed, from the environment or the config file.
+///
+/// A typo is reported against whichever one supplied it, because "unknown log
+/// level `verbose`" is only actionable if you know which file to fix.
+fn parsed<T: std::str::FromStr<Err = String>>(
+    env_key: &str,
+    file_key: &str,
+    from_file: Option<String>,
+) -> Result<Option<T>> {
+    let (value, where_from) = match std::env::var(env_key).ok().filter(|v| !v.trim().is_empty()) {
+        Some(v) => (v, env_key.to_string()),
+        None => match from_file {
+            Some(v) => (v, format!("`{file_key}` in config.toml")),
+            None => return Ok(None),
+        },
+    };
+    value
+        .parse()
+        .map(Some)
+        .map_err(|e: String| Error::Config(format!("{where_from}: {e}")))
 }
 
 fn env_bool(key: &str) -> Option<bool> {

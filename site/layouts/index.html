@@ -10,7 +10,7 @@
     </p>
 
     <div class="install" data-copy-root>
-      <code id="install-cmd">curl -fsSL https://raw.githubusercontent.com/listepo/ketch/main/install.sh | sh</code>
+      <code id="install-cmd">curl -fsSL https://raw.githubusercontent.com/listepo/ketch/main/install.sh | bash</code>
       <button type="button" data-copy-for="install-cmd" aria-label="Copy install command">Copy</button>
     </div>
 
@@ -99,10 +99,13 @@ ketch outdated             # what has a newer release
 ketch upgrade              # bring everything unpinned up to date
 ketch info &lt;pkg&gt;           # details, including --assets and why each scored
 ketch search &lt;query&gt;       # the registry and GitHub
+ketch changelog &lt;pkg&gt;      # what changed: the shipped file, or the release notes
 ketch update               # refresh the package registry
 ketch pin / unpin &lt;pkg&gt;    # hold a version, or let go
 ketch uninstall &lt;pkg&gt;...   # remove it
-ketch doctor               # check the environment and the install tree</code></pre>
+ketch lock / sync          # pin every tool to a release, and reproduce it
+ketch path install         # put ~/.ketch/bin on PATH in bash, zsh and fish
+ketch doctor --fix         # check the environment, and repair what it can</code></pre>
 
   <p class="note">
     Names resolve through four tiers — your own manifests, the fetched registry,
@@ -116,7 +119,7 @@ ketch doctor               # check the environment and the install tree</code></
 <section class="closing">
   <h2>Get started</h2>
   <div class="install" data-copy-root>
-    <code id="install-cmd-2">curl -fsSL https://raw.githubusercontent.com/listepo/ketch/main/install.sh | sh</code>
+    <code id="install-cmd-2">curl -fsSL https://raw.githubusercontent.com/listepo/ketch/main/install.sh | bash</code>
     <button type="button" data-copy-for="install-cmd-2" aria-label="Copy install command">Copy</button>
   </div>
   <p class="muted">
