@@ -1,14 +1,14 @@
 /** Ports of the model.rs unit tests, one claim per test. */
 
-import { describe, expect, it } from "vitest";
 import type { Manifest } from "@ketch/schemas";
+import { describe, expect, it } from "vitest";
 import {
   globMatch,
   inferredManifest,
   PackageRef,
   PackageSpec,
-  validateManifest,
   Version,
+  validateManifest,
 } from "./model.ts";
 
 describe("model", () => {

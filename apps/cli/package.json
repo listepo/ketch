@@ -4,7 +4,9 @@
   "private": true,
   "description": "Catch releases straight from GitHub: a package manager for tools and macOS apps shipped as release assets.",
   "type": "module",
-  "bin": { "ketch": "./src/main.ts" },
+  "bin": {
+    "ketch": "./src/main.ts"
+  },
   "dependencies": {
     "@clack/prompts": "^1.7.0",
     "@commander-js/extra-typings": "^15.0.0",

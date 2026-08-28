@@ -9,9 +9,9 @@
  * byte-for-byte, so this port reads the state a Rust ketch wrote.
  */
 
+import process from "node:process";
 import type { AssetSelector, LinkRecord, Manifest, ManifestOrigin } from "@ketch/schemas";
 import { asciiLowercase, normalizeName, parsePackageRef, sanitizeComponent } from "@ketch/schemas";
-import process from "node:process";
 import type { SemVer } from "semver";
 import { compareBuild, parse as semverParse } from "semver";
 import { KetchError } from "./errors.ts";

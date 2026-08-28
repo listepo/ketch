@@ -5,9 +5,12 @@
  */
 
 export { asciiLowercase, sanitizeComponent, validateRepo } from "@ketch/schemas";
+export * from "./config.ts";
 export * from "./errors.ts";
 export * from "./extract/extractor.ts";
+export * from "./log.ts";
 export * from "./model.ts";
 export * from "./platform/platform.ts";
 export * from "./progress.ts";
 export * from "./source/source.ts";
+export * from "./state.ts";

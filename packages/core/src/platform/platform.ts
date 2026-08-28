@@ -9,11 +9,11 @@
  * one line in `hostPlatform()` — no changes anywhere else in the codebase.
  */
 
+import process from "node:process";
 import { asciiLowercase } from "@ketch/schemas";
 import { KetchError } from "../errors.ts";
 import type { Extractor } from "../extract/extractor.ts";
 import type { Arch, BinSpec, LinkRecord, PackageKind, TargetSpec } from "../model.ts";
-import process from "node:process";
 
 /** Why an asset was chosen, and at what cost. */
 export interface AssetScore {
