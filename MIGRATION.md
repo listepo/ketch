@@ -50,15 +50,27 @@ spec until Phase 10 removes it.
   `changelog`/`registry`/`selfupdate`/`shell` (flat names collide).
 - [x] **Phase 4 — integration**: `tsc --build` exit 0 · vitest 238/238 ·
   oxlint exit 0 · biome clean.
-- [x] **Phase 5 — the CLI** (`apps/cli/src`) — `2b537ad`
-- [x] **Phase 6 — the e2e suite** (`apps/cli/tests`) — `2b537ad`; 26/27 green,
-  1 skip (`upgrade_stops_when_pinned` needs plugin fixed-version listing)
-- [x] **Phase 7 — the site** (`apps/web`, `apps/docs`) — `caa2b21`
-- [x] **Phase 8 — docs rewrite** — `65b7a05`
-- [x] **Phase 9 — CI + release + install.sh** — `65b7a05`
-- [x] **Phase 10 — remove the Rust implementation** — `65b7a05`
-- [x] **Phase 11 — review + runtime matrix + Perry binary** — `9e60b6f`
+- [x] **Phase 5 — the CLI** (`12f6da6`, `c968ea3`, `e02aee7`): `ui.ts` (the
+  output choke point, the only caller of `log.record`, suspend-aware multi-bar,
+  clack confirm), `cli.ts` + `main.ts` (commander with extra-typings, every
+  command and flag from `cli.rs`, one error renderer), `cmd/{pkg,lock,query,
+  system,shared}.ts`, `completions.ts` for bash/zsh/fish.
+- [x] **Phase 6 — the e2e suite** (`e02aee7`): all 27 tests from
+  `tests/install.rs`, claims intact, driving the real binary through a spawned
+  process against a throwaway root, downloads served by the offline plugin
+  fixture. **27/27 green on Node and on Bun.** The CLI's tests are inside
+  `tsc --build` now, and test discovery is scoped to sources so the `dist/`
+  copies are not collected.
+- [ ] **Phase 7 — the site** (`apps/web`, `apps/docs`)
+- [ ] **Phase 8 — docs rewrite**
+- [ ] **Phase 9 — CI + release + install.sh**
+- [ ] **Phase 10 — remove the Rust implementation**
+- [ ] **Phase 11 — review + runtime matrix + Perry binary**
 - [ ] **Phase 12 — push + PR** (only when the user says push)
+
+Gates at `e02aee7`: `tsc --build` exit 0 · vitest **267/267** across 38 files ·
+oxlint exit 0 (13 deliberate `no-await-in-loop` warnings, all sequential on
+purpose) · `biome format` clean.
 
 ## The agent contract (applies to every step)
 
@@ -70,6 +82,11 @@ spec until Phase 10 removes it.
   why; comments explain *why*, never what — port the Rust comments' reasoning.
 - Data files are JSON; every load validates through `@ketch/schemas`; every
   write stamps `$schema` via `schemaUrl(name)`.
+- **Erasable syntax only.** Node runs TypeScript by stripping types, so no
+  parameter properties, enums, namespaces or decorators — `erasableSyntaxOnly`
+  enforces it. A dependency shipped as a CommonJS bundle needs
+  `(await import("x")).default`, because Node cannot see named exports through
+  one and Bun's interop will hide the failure from you.
 - Errors: `KetchError` with the Rust display text. Guards from schemas throw
   plain `Error` — the CLI error renderer handles both.
 - Tests: colocated `*.test.ts`, Vitest, names are sentences stating the claim.
