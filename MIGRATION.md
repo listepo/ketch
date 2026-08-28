@@ -61,7 +61,11 @@ spec until Phase 10 removes it.
   fixture. **27/27 green on Node and on Bun.** The CLI's tests are inside
   `tsc --build` now, and test discovery is scoped to sources so the `dist/`
   copies are not collected.
-- [ ] **Phase 7 — the site** (`apps/web`, `apps/docs`)
+- [x] **Phase 7 — the site** (`aa4a5db`, `1546d84`): `apps/web` is the Astro 7
+  + Tailwind 4 landing page (the Hugo template's content, metadata and JSON-LD
+  carried over, base `/ketch/`); `apps/docs` is Docusaurus 3.10 in docs-only
+  mode at `/ketch/docs/`, its pages generated from the repository's Markdown by
+  `apps/docs/sync-docs.mjs`. Both build clean; `site/` is deleted in Phase 10.
 - [ ] **Phase 8 — docs rewrite**
 - [ ] **Phase 9 — CI + release + install.sh**
 - [ ] **Phase 10 — remove the Rust implementation**
