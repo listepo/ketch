@@ -1,0 +1,2 @@
+type: application
+dependsOn: ["core", "schemas"]

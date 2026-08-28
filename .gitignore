@@ -14,3 +14,9 @@
 /site/content/docs/plugins.md
 /site/content/docs/roadmap.md
 /site/content/docs/contributing.md
+
+# TypeScript monorepo
+node_modules/
+dist/
+*.tsbuildinfo
+.moon/cache/

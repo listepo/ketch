@@ -1,0 +1,5 @@
+# pnpm manages dependencies; Bun is only the runtime the dev-loop tests run
+# on, because it is the fastest one supported. CI re-runs the suite on Node
+# and smokes every runtime; nothing in the code may depend on a Bun-only API.
+node:
+  packageManager: "pnpm"

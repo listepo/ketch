@@ -1,0 +1,14 @@
+# Runtimes and tools for the ketch monorepo. `mise install` gives every
+# machine — developer, agent, CI — the same versions.
+[tools]
+node = "26"
+bun = "1.3"
+deno = "2"
+pnpm = "10"
+"npm:@moonrepo/cli" = "2.5"
+"npm:@perryts/perry" = "0.5"
+
+[env]
+# The dev loop runs on Bun because it is the fastest; CI re-runs the same
+# suite on Node and smokes the built CLI on every supported runtime.
+KETCH_DEV_RUNTIME = "bun"

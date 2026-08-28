@@ -1,0 +1,18 @@
+# Tasks every project inherits. `moon ci` runs what a change affects.
+fileGroups:
+  sources: ["src/**/*"]
+  tests: ["src/**/*.test.ts", "tests/**/*"]
+
+tasks:
+  typecheck:
+    command: "bun run tsc --build"
+    inputs: ["@group(sources)", "tsconfig.json", "/tsconfig.base.json"]
+  lint:
+    command: "bun run oxlint ."
+    inputs: ["@group(sources)", "/.oxlintrc.json"]
+  format:
+    command: "bun run biome format ."
+    inputs: ["@group(sources)", "/biome.json"]
+  test:
+    command: "bun run vitest run --root ."
+    inputs: ["@group(sources)", "@group(tests)"]

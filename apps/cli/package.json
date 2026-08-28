@@ -1,0 +1,16 @@
+{
+  "name": "@listepo/ketch",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Catch releases straight from GitHub: a package manager for tools and macOS apps shipped as release assets.",
+  "type": "module",
+  "bin": { "ketch": "./src/main.ts" },
+  "dependencies": {
+    "@clack/prompts": "^1.7.0",
+    "@commander-js/extra-typings": "^15.0.0",
+    "@ketch/core": "workspace:*",
+    "@ketch/schemas": "workspace:*",
+    "commander": "^15.0.0",
+    "picocolors": "^1.1.1"
+  }
+}
