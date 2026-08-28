@@ -11,6 +11,7 @@
 
 import process from "node:process";
 import { asciiLowercase } from "@ketch/schemas";
+import type { Config } from "../config.ts";
 import { KetchError } from "../errors.ts";
 import type { Extractor } from "../extract/extractor.ts";
 import type { Arch, BinSpec, LinkRecord, PackageKind, TargetSpec } from "../model.ts";
@@ -148,11 +149,8 @@ export interface Platform {
   /** Files this platform treats as app bundles rather than executables. */
   appBundleExtension(): string | null;
 
-  /**
-   * Environment checks for `ketch doctor`. Takes the resolved config; typed
-   * `unknown` until the config module is ported.
-   */
-  doctor(cfg: unknown): Promise<DoctorCheck[]>;
+  /** Environment checks for `ketch doctor`, against the resolved config. */
+  doctor(cfg: Config): Promise<DoctorCheck[]>;
 }
 
 /**
