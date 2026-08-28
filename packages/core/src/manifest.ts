@@ -11,6 +11,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import {
+  asciiLowercase,
   builtinPackages,
   manifestSchema,
   sanitizeComponent,
@@ -19,10 +20,9 @@ import {
 } from "@ketch/schemas";
 import type { Config } from "./config.ts";
 import { KetchError } from "./errors.ts";
-import { inferredManifest, normalizeName, PackageRef, PackageSpec } from "./model.ts";
 import type { Manifest, ManifestOrigin } from "./model.ts";
+import { inferredManifest, normalizeName, PackageRef, PackageSpec } from "./model.ts";
 import { load as loadRegistry } from "./registry.ts";
-import { asciiLowercase } from "@ketch/schemas";
 
 /**
  * Resolves specs to manifests. Built once per command.

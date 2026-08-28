@@ -13,6 +13,7 @@ import * as path from "node:path";
 import { asciiLowercase } from "@ketch/schemas";
 import type { Config } from "../config.ts";
 import { KetchError } from "../errors.ts";
+import type { Extractor } from "../extract/extractor.ts";
 import {
   copyTree,
   DmgExtractor,
@@ -28,7 +29,6 @@ import {
   TarXzExtractor,
   ZipExtractor,
 } from "../extract/index.ts";
-import type { Extractor } from "../extract/extractor.ts";
 import type { Arch, BinSpec, LinkRecord, TargetSpec } from "../model.ts";
 import { ARCH_TOKENS, globMatch, hostTarget, OS_TOKENS } from "../model.ts";
 import type { AssetScore, DoctorCheck, Placement, Platform, TrustVerdict } from "./platform.ts";

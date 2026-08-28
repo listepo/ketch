@@ -6,7 +6,7 @@ import path from "node:path";
 import { builtinPackages } from "@ketch/schemas";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { loadConfig } from "./config.ts";
-import { Resolver, parseManifestFile } from "./manifest.ts";
+import { parseManifestFile, Resolver } from "./manifest.ts";
 import type { Manifest } from "./model.ts";
 import { inferredManifest, PackageRef, PackageSpec } from "./model.ts";
 import { PACKAGE_FILE } from "./registry.ts";

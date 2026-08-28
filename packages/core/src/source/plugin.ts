@@ -28,11 +28,17 @@
  * subprocess runner instead of an in-memory stand-in.
  */
 
-import { execFile } from "node:child_process";
 import type { ExecFileException } from "node:child_process";
+import { execFile } from "node:child_process";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import type {
+  PluginCapabilities,
+  PluginRelease,
+  PluginReleaseAsset,
+  SourceInfo as PluginSourceInfo,
+} from "@ketch/schemas";
 import {
   PLUGIN_PREFIX,
   PROTOCOL_VERSION,
@@ -42,19 +48,13 @@ import {
   pluginSearchSchema,
   usableScheme,
 } from "@ketch/schemas";
-import type {
-  PluginCapabilities,
-  PluginRelease,
-  PluginReleaseAsset,
-  SourceInfo as PluginSourceInfo,
-} from "@ketch/schemas";
 import type { Config } from "../config.ts";
 import { KetchError } from "../errors.ts";
 import { Http, sha256File } from "../http.ts";
-import { Version } from "../model.ts";
 import type { Release, ReleaseAsset, SourceInfo } from "../model.ts";
-import { hostPlatform } from "../platform/platform.ts";
+import { Version } from "../model.ts";
 import type { Platform } from "../platform/platform.ts";
+import { hostPlatform } from "../platform/platform.ts";
 import type { ProgressSink } from "../progress.ts";
 import type { ListOpts, Source } from "./source.ts";
 

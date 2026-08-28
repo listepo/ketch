@@ -36,8 +36,8 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import type {
-  Lockfile as LockfileRecord,
   LockedPackage as LockedPackageRecord,
+  Lockfile as LockfileRecord,
 } from "@ketch/schemas";
 import {
   LOCK_FILE,

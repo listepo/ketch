@@ -9,12 +9,12 @@ import process from "node:process";
 import { asciiLowercase, validateRepo } from "@ketch/schemas";
 import { KetchError } from "../errors.ts";
 import type { Http } from "../http.ts";
-import { sha256Checksum, Version } from "../model.ts";
 import type { Release, ReleaseAsset, SourceInfo, VersionSpec } from "../model.ts";
+import { sha256Checksum, Version } from "../model.ts";
 import { isSidecar } from "../platform/platform.ts";
 import type { ProgressSink } from "../progress.ts";
-import { optsFor, pick } from "./source.ts";
 import type { ListOpts, Source } from "./source.ts";
+import { optsFor, pick } from "./source.ts";
 
 /** Override for GitHub Enterprise, via `KETCH_GITHUB_API`. */
 export const DEFAULT_API = "https://api.github.com";

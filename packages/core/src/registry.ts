@@ -15,17 +15,19 @@
  * collisions and the atomic swap-in.
  */
 
+import crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import process from "node:process";
 import { PACKAGE_FILE, parseRegistryPackage } from "@ketch/schemas";
 import type { Config } from "./config.ts";
 import { KetchError } from "./errors.ts";
 import { TarGzExtractor, unwrapSingleDir } from "./extract/index.ts";
 import { Http } from "./http.ts";
-import { normalizeName } from "./model.ts";
 import type { Manifest } from "./model.ts";
-import { NullProgress } from "./progress.ts";
+import { normalizeName } from "./model.ts";
 import type { ProgressSink } from "./progress.ts";
+import { NullProgress } from "./progress.ts";
 
 export { PACKAGE_FILE } from "@ketch/schemas";
 
@@ -47,6 +49,19 @@ export interface UpdateOptions {
   progress?: ProgressSink | undefined;
   warn?: ((message: string) => void) | undefined;
 }
+
+/** Filesystem operations used while atomically activating a fetched registry. */
+export interface RegistryFileOps {
+  existsSync(file: string): boolean;
+  renameSync(from: string, to: string): void;
+  rmSync(file: string, options: fs.RmDirOptions): void;
+}
+
+const registryFileOps: RegistryFileOps = {
+  existsSync: fs.existsSync,
+  renameSync: fs.renameSync,
+  rmSync: fs.rmSync,
+};
 
 /**
  * Fetch the registry and swap it in, returning how many packages it holds.
@@ -97,6 +112,7 @@ export function swapIn(
   tree: string,
   repo: string,
   warn?: (message: string) => void,
+  fileOps: RegistryFileOps = registryFileOps,
 ): number {
   const packages = loadDir(tree, warn);
   for (const problem of collisions(packages)) {
@@ -109,19 +125,49 @@ export function swapIn(
         "— leaving the current registry in place",
     );
   }
-  if (fs.existsSync(cfg.registryDir)) {
+  const previous = fileOps.existsSync(cfg.registryDir) ? backupPath(cfg.registryDir) : null;
+  if (previous !== null) {
     try {
-      fs.rmSync(cfg.registryDir, { recursive: true, force: true });
+      // Keep the current registry until the replacement is in place. Removing
+      // it first makes a transient rename failure turn a routine update into
+      // an offline-only package manager with no registry at all.
+      fileOps.renameSync(cfg.registryDir, previous);
     } catch (cause) {
       throw KetchError.io(cfg.registryDir, asError(cause));
     }
   }
   try {
-    fs.renameSync(tree, cfg.registryDir);
+    fileOps.renameSync(tree, cfg.registryDir);
   } catch (cause) {
+    if (previous !== null) {
+      try {
+        fileOps.renameSync(previous, cfg.registryDir);
+      } catch (restoreCause) {
+        throw KetchError.msg(
+          `could not replace the registry (${asError(cause).message}); ` +
+            `could not restore the previous copy (${asError(restoreCause).message})`,
+        );
+      }
+    }
     throw KetchError.io(cfg.registryDir, asError(cause));
   }
+  if (previous !== null) {
+    try {
+      fileOps.rmSync(previous, { recursive: true, force: true });
+    } catch {
+      // The new registry is already live; an orphaned backup is harmless and
+      // must not turn a successful update into a reported failure.
+    }
+  }
   return count;
+}
+
+/** A sibling name so both renames stay on the same filesystem and are atomic. */
+function backupPath(registryDir: string): string {
+  return path.join(
+    path.dirname(registryDir),
+    `.${path.basename(registryDir)}.backup-${process.pid}-${crypto.randomUUID()}`,
+  );
 }
 
 /**

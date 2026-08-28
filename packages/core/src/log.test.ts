@@ -21,9 +21,9 @@ import { loadConfig } from "./config.ts";
 import {
   init,
   levelPasses,
+  path as logPath,
   parseFormat,
   parseLevel,
-  path as logPath,
   record,
   resetForTests,
 } from "./log.ts";

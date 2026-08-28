@@ -93,4 +93,34 @@ describe("swapIn", () => {
     expect(swapIn(cfg, fresh, "someone/registry")).toBe(2);
     expect(load(cfg).map(([m]) => m.name)).toEqual(["fd", "rg"]);
   });
+
+  it("restores the current registry when activating the replacement fails", () => {
+    const cfg = loadConfig({ root: dir });
+    fs.mkdirSync(cfg.registryDir, { recursive: true });
+    write(cfg.registryDir, "jq", { source: "github:jqlang/jq" });
+
+    const fresh = path.join(dir, "fresh");
+    write(fresh, "rg", { source: "github:BurntSushi/ripgrep" });
+
+    let calls = 0;
+    const fileOps = {
+      existsSync: fs.existsSync,
+      renameSync(from: string, to: string): void {
+        calls += 1;
+        if (calls === 2) {
+          const error = new Error("simulated rename failure") as NodeJS.ErrnoException;
+          error.code = "EIO";
+          throw error;
+        }
+        fs.renameSync(from, to);
+      },
+      rmSync: fs.rmSync,
+    };
+
+    expect(() => swapIn(cfg, fresh, "someone/registry", undefined, fileOps)).toThrow(
+      /simulated rename failure/,
+    );
+    expect(load(cfg).map(([manifest]) => manifest.name)).toEqual(["jq"]);
+    expect(fs.existsSync(fresh)).toBe(true);
+  });
 });
