@@ -11,8 +11,13 @@ contract, so a plugin can be written in any language.
 
 ketch looks in `~/.ketch/plugins` first, then every directory on `PATH`. The
 first `ketch-source-<name>` found wins, so a copy in the plugins directory
-shadows one on `PATH`. `ketch plugin list` shows what was found and `ketch
-plugin dir` prints the directory.
+shadows one on `PATH`; shadowing is decided by the executable's file name, not
+its path. Within a directory, candidates are taken in sorted order, so what
+`ketch plugin list` shows is stable from run to run. Anything that is not
+executable is passed over.
+
+`ketch plugin list` shows what was found and `ketch plugin dir` prints the
+directory.
 
 Every discovered plugin is asked for its capabilities on every ketch command, so
 `capabilities` must be fast and must not touch the network.
@@ -20,18 +25,22 @@ Every discovered plugin is asked for its capabilities on every ketch command, so
 ## Subcommands
 
 ```text
-capabilities              -> {"protocol":1,"scheme":"gitlab","download":false,"search":true}
-describe <id>             -> a SourceInfo object, or null
-releases <id> [--prerelease] [--limit N]
-                          -> [ Release, ... ]
-search <query> --limit N  -> [ SourceInfo, ... ]
-download <url> <dest>     -> only when capabilities.download is true
+capabilities                     -> {"protocol":1,"scheme":"gitlab","download":false,"search":true}
+describe <id>                    -> a SourceInfo object, or null
+releases <id> --limit N [--prerelease]
+                                 -> [ Release, ... ]
+search <query> --limit N         -> [ SourceInfo, ... ]
+download <url> <dest>            -> only when capabilities.download is true
 ```
+
+`--limit` is always passed to `releases` and `search`; `--prerelease` is added
+to `releases` only when prereleases are wanted.
 
 `KETCH_PROTOCOL_VERSION` is set in the environment for each call.
 
 Exit `0` with the JSON document on stdout. Anything else is a failure, and
-whatever the plugin wrote to stderr is shown to the user.
+whatever the plugin wrote to stderr is shown to the user. The document must be
+valid UTF-8; output that is not is refused by name rather than mangled.
 
 ### `capabilities`
 
@@ -43,8 +52,11 @@ whatever the plugin wrote to stderr is shown to the user.
 | --- | --- | --- |
 | `protocol` | yes | Must equal ketch's `PROTOCOL_VERSION`, currently `1`. A mismatch is reported and the plugin is ignored. |
 | `scheme` | yes | The prefix users type: `gitlab:group/project`. ASCII letters, digits, `-` and `_` only. |
-| `download` | no | `true` if the plugin fetches assets itself. |
-| `search` | no | `true` if `search` is implemented. |
+| `download` | no | `true` if the plugin fetches assets itself. Defaults to `false`. |
+| `search` | no | `true` if `search` is implemented. Defaults to `false`. |
+
+A plugin whose `capabilities` does not parse, reports another protocol, or names
+an unusable scheme is skipped with a warning; every other source keeps working.
 
 ### `releases`
 
@@ -76,14 +88,16 @@ that ignores its flags cannot change what gets installed.
 ```
 
 Only `version`, `tag` and each asset's `name` and `url` are required; every
-other field defaults.
+other field defaults — `prerelease` and `draft` to `false`, `size` to `0`,
+`assets` and `headers` to empty, the rest to null.
 
 Asset names matter more than anything else here: ketch picks which asset to
 install by scoring the **name** against the host platform. Report the names the
 project actually publishes.
 
 `digest` is what lets ketch verify the download without extra requests. Supply
-it whenever the source knows it.
+it whenever the source knows it. `algo` is the lowercase algorithm name,
+currently always `sha256`.
 
 ### `describe` and `search`
 
@@ -101,13 +115,15 @@ Both return `SourceInfo`:
 }
 ```
 
-`describe` returns one object or `null`. `search` returns an array, empty if the
-plugin does not search.
+Only `id` and `name` are required. `describe` returns one object or `null`.
+`search` returns an array, empty if the plugin does not search — and ketch does
+not call it at all unless `capabilities.search` was `true`.
 
 ### `download`
 
 Only called when `capabilities.download` is `true`. Write the asset to `<dest>`
-and exit `0`.
+and exit `0`. A plugin that exits `0` without writing the file is reported as
+having done so; nothing is unpacked.
 
 When `download` is `false`, ketch fetches `asset.url` itself, sending
 `asset.headers` and **no ketch credentials** — a plugin's URLs never receive the
@@ -124,9 +140,13 @@ A plugin is a third-party executable run on the user's behalf, so:
   user's terminal.
 - **output is capped** at 8 MiB per stream.
 - **there is a 30-second deadline** per subcommand, after which the process is
-  killed.
+  killed with `SIGKILL`.
 - **a broken plugin is a warning, not a failure.** Discovery reports it and
   every other source keeps working.
+
+None of this is optional politeness: discovery probes every plugin before
+anything else runs, so one that hangs or floods a pipe would take down every
+ketch command rather than just its own.
 
 ## A minimal example
 
@@ -157,3 +177,14 @@ Then:
 ketch plugin list
 ketch install example:some/project
 ```
+
+The end-to-end suite in `apps/cli/tests/` drives a plugin of exactly this shape
+— `capabilities`, `describe`, `releases` and `download` in a few lines of
+`/bin/sh` — which is why the whole suite runs offline.
+
+## Changing the protocol
+
+The message shapes live in `packages/schemas/src/plugin.ts` and are what both
+ketch and its tests validate against. Changing any of them means bumping
+`PROTOCOL_VERSION` there: a plugin reporting a version ketch does not speak is
+ignored with a warning, which is the whole point of the field.
