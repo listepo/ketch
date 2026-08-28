@@ -201,3 +201,50 @@ every pull request so packaging breaks before a tag is pushed, not after.
 3. You ran the actual binary against a `KETCH_ROOT` scratch tree if the change
    touches installation, linking, or the registry.
 4. You reported what you did *not* do, if anything was skipped.
+
+## TypeScript rewrite (in progress on `ts-rewrite`) — latest info, 2026-08-28
+
+The Rust tree in `src/` is the executable spec being ported; everything above
+this heading describes it and still applies to reading it. The port lives in a
+Moon monorepo: `packages/schemas` (Zod v4 schemas + generated JSON Schema for
+every data file — TOML became JSON), `packages/core` (the pipeline and every
+module `src/` had), `apps/cli` (Commander 15 + Clack UI). The site will be
+`apps/web` (Astro 7 + Tailwind 4) and `apps/docs` (Docusaurus 3.10).
+
+### Toolchain (pinned via mise.toml and package.json — check, don't assume)
+
+| Tool | Version | Role |
+| --- | --- | --- |
+| TypeScript | 7.0.2 (native compiler) | strict everywhere; project references |
+| Node.js | 26 | canonical runtime; CI runs the suite here |
+| Bun | 1.3 | fastest runtime: the dev/agent test loop runs on it |
+| Deno | 2.9 | supported runtime, smoke-tested in CI |
+| Perry (`@perryts/perry`) | 0.5 | compiles the CLI to a native binary for releases |
+| pnpm | 10 | dependency management (workspaces in pnpm-workspace.yaml) |
+| Moon | 2.5 | task runner (`pnpm exec moon ci`) |
+| Vitest | 4 | the whole suite; colocated `*.test.ts`, names are sentences |
+| oxlint | 1.80 | the linter (no ESLint) |
+| Biome | 2.5 | the formatter (no Prettier) |
+| Zod | 4 | schemas; `z.toJSONSchema` emits the published JSON Schemas |
+| pino | 10 | the log file (JSON Lines native; pino-pretty for text) |
+
+### Rules that keep the port honest
+
+- Runtime portability is a feature: `node:` builtins only, no Bun/Deno/Perry
+  specific APIs anywhere. Run tests on Bun because it is fastest, never
+  because something only works there.
+- JSON field names match the Rust serde names byte-for-byte: the TS binary
+  must read a `state.json` the Rust binary wrote.
+- All trust-boundary guards survive the port by name: `safeMemberPath`,
+  `sanitizeComponent`, `validateRepo`, changelog `sanitize`, manifest and
+  lockfile validation.
+- Gates before done: `tsc --build`, `oxlint`, `biome format`, `vitest run` —
+  all clean, run for every package you touched.
+
+### Delegating work to agents
+
+Match the model to the thinking the task needs: **Fable 5 or Opus 5** for
+work that requires real reasoning (pipeline concurrency, parsers, security
+boundaries, architecture); **Sonnet** for straightforward well-specified
+jobs; **Haiku** for mechanical ones. When a "simple" task turns out to need
+thinking, escalate the model rather than accepting a shallow result.
