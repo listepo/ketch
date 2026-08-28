@@ -18,9 +18,28 @@
   },
   "assist": {
     "enabled": true,
-    "actions": { "source": { "organizeImports": "on" } }
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
   },
   "files": {
-    "includes": ["**", "!**/dist", "!**/node_modules", "!**/*.schema.json", "!target", "!site"]
+    "includes": [
+      "**",
+      "!**/dist",
+      "!**/build",
+      "!**/node_modules",
+      "!**/.astro",
+      "!**/.docusaurus",
+      "!**/*.schema.json",
+      "!target",
+      "!site"
+    ]
+  },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    }
   }
 }

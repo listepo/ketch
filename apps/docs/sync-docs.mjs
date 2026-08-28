@@ -80,7 +80,7 @@ const PAGES = [
 const LINKS = [
   ...PAGES.map(({ source, slug }) => [source, slug]),
   ...PAGES.map(({ source, slug }) => [path.basename(source), slug]),
-].sort((a, b) => b[0].length - a[0].length);
+].toSorted((a, b) => b[0].length - a[0].length);
 
 /**
  * Point inter-document links at the sibling page instead of at the repository.

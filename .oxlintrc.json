@@ -11,15 +11,35 @@
     "typescript/no-explicit-any": "error",
     "typescript/no-non-null-assertion": "error"
   },
-  "ignorePatterns": ["dist", "node_modules", "target", "site", "*.schema.json"],
+  "ignorePatterns": [
+    "dist",
+    "build",
+    "node_modules",
+    "target",
+    "site",
+    ".astro",
+    ".docusaurus",
+    "*.schema.json"
+  ],
   "overrides": [
     {
       "files": ["**/*.test.ts", "**/tests/**"],
-      "rules": { "no-console": "off", "typescript/no-non-null-assertion": "off" }
+      "rules": {
+        "no-console": "off",
+        "typescript/no-non-null-assertion": "off"
+      }
     },
     {
       "files": ["apps/cli/src/ui.ts", "apps/cli/src/log.ts"],
-      "rules": { "no-console": "off" }
+      "rules": {
+        "no-console": "off"
+      }
+    },
+    {
+      "files": ["**/*.astro"],
+      "rules": {
+        "import/no-unassigned-import": "off"
+      }
     }
   ]
 }
