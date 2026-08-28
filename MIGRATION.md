@@ -66,7 +66,11 @@ spec until Phase 10 removes it.
   carried over, base `/ketch/`); `apps/docs` is Docusaurus 3.10 in docs-only
   mode at `/ketch/docs/`, its pages generated from the repository's Markdown by
   `apps/docs/sync-docs.mjs`. Both build clean; `site/` is deleted in Phase 10.
-- [ ] **Phase 8 — docs rewrite**
+- [x] **Phase 8 — docs rewrite** (`bfad598`, `4206e35`): README, `docs/*.md`,
+  ROADMAP and a full AGENTS.md rewrite, every JSON example validated against
+  the Zod schema that will check it in anger. The pass also found five real
+  code defects, fixed in `4206e35` — the largest being that `state.json` was
+  the only file ketch writes without a `$schema`.
 - [ ] **Phase 9 — CI + release + install.sh**
 - [ ] **Phase 10 — remove the Rust implementation**
 - [ ] **Phase 11 — review + runtime matrix + Perry binary**
