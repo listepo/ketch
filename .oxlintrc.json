@@ -30,7 +30,7 @@
       }
     },
     {
-      "files": ["apps/cli/src/ui.ts", "apps/cli/src/log.ts"],
+      "files": ["apps/cli/src/ui.ts"],
       "rules": {
         "no-console": "off"
       }

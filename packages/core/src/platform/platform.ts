@@ -164,7 +164,7 @@ export async function hostPlatform(): Promise<Platform> {
   if (process.platform !== "darwin") {
     throw KetchError.msg(
       "ketch supports macOS only. Linux and Windows backends are planned; " +
-        "see ROADMAP.md — implementing `Platform` in src/platform/ is all that is required.",
+        "see ROADMAP.md — implementing `Platform` in packages/core/src/platform/ is all that is required.",
     );
   }
   const darwin = await import("./darwin.ts");

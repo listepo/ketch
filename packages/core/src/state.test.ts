@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
-import { STATE_VERSION } from "@ketch/schemas";
+import { schemaUrl, STATE_VERSION } from "@ketch/schemas";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { InstalledPackage } from "./model.ts";
 import { hostTarget, PackageRef, Version } from "./model.ts";
@@ -76,6 +76,18 @@ describe("state", () => {
     const file = path.join(dir, "state.json");
     fs.writeFileSync(file, "{ this is not json");
     await expect(State.loadPath(file)).rejects.toThrow(/state\.json/);
+  });
+
+  it("points the state file at its own schema", async () => {
+    const file = path.join(dir, "state.json");
+    const state = new State();
+    state.insert(pkg("rg"));
+    await state.savePath(file);
+
+    // Every file ketch writes says which schema validates it; the state file
+    // is the one an editor is least likely to be able to guess.
+    const written: unknown = JSON.parse(fs.readFileSync(file, "utf8"));
+    expect(written).toMatchObject({ $schema: schemaUrl("state") });
   });
 
   it("round trips through disk", async () => {

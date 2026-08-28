@@ -17,7 +17,13 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import type { InstalledPackage as InstalledRecord } from "@ketch/schemas";
-import { asciiLowercase, STATE_VERSION, stateSchema, validateState } from "@ketch/schemas";
+import {
+  asciiLowercase,
+  schemaUrl,
+  STATE_VERSION,
+  stateSchema,
+  validateState,
+} from "@ketch/schemas";
 import type { Config } from "./config.ts";
 import { KetchError } from "./errors.ts";
 import type { InstalledPackage } from "./model.ts";
@@ -108,7 +114,11 @@ export class State {
         packages[name] = installedRecord(pkg);
       }
     }
-    const json = `${JSON.stringify({ version: this.version, packages }, null, 2)}\n`;
+    const json = `${JSON.stringify(
+      { $schema: schemaUrl("state"), version: this.version, packages },
+      null,
+      2,
+    )}\n`;
 
     const staged = path.join(parent, `.${path.basename(file)}.${process.pid}.tmp`);
     let persisted = false;

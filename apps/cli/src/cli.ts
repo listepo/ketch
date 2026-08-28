@@ -88,7 +88,13 @@ export function build(): Command {
     if (action.name() === "completions") {
       return;
     }
-    const config = await loadConfig(global.root === undefined ? {} : { root: global.root });
+    const config = loadConfig({
+      ...(global.root === undefined ? {} : { root: global.root }),
+      // Without a sink the config loader's warnings — a `root` in the file
+      // that cannot take effect, most of all — are discarded, and the user is
+      // left wondering why their setting did nothing.
+      warn: ui.warn,
+    });
     await ensureDirs(config);
     logInit(config, VERSION);
     ui.debug(
@@ -111,7 +117,7 @@ export function build(): Command {
     .option("--asset <NAME>", "Use this release asset by exact file name instead of auto-selecting")
     .option(
       "-j, --jobs <N>",
-      "Packages to work on at once (default: 4, or `jobs` in config.toml)",
+      "Packages to work on at once (default: 4, or `jobs` in config.json)",
       (raw) => count(raw, "--jobs"),
     )
     .option("-y, --yes", "Answer yes to every prompt")
@@ -220,7 +226,7 @@ export function build(): Command {
     .option("--force", "Upgrade pinned packages too")
     .option(
       "-j, --jobs <N>",
-      "Packages to work on at once (default: 4, or `jobs` in config.toml)",
+      "Packages to work on at once (default: 4, or `jobs` in config.json)",
       (raw) => count(raw, "--jobs"),
     )
     .option("-y, --yes", "Answer yes to every prompt")
@@ -284,7 +290,7 @@ export function build(): Command {
     .option("--dry-run", "Report what would change without installing anything")
     .option(
       "-j, --jobs <N>",
-      "Packages to work on at once (default: 4, or `jobs` in config.toml)",
+      "Packages to work on at once (default: 4, or `jobs` in config.json)",
       (raw) => count(raw, "--jobs"),
     )
     .option("-y, --yes", "Answer yes to every prompt")
