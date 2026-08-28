@@ -117,7 +117,7 @@ export class Sandbox {
    * install that has not been wired into a shell yet actually looks like.
    */
   runOffPath(args: readonly string[]): RunResult {
-    return this.runWith(args, process.env.PATH ?? "");
+    return this.runWith(args, process.env["PATH"] ?? "");
   }
 
   private runWith(args: readonly string[], pathVar: string): RunResult {
@@ -138,14 +138,14 @@ export class Sandbox {
     ]) {
       delete env[key];
     }
-    env.KETCH_ROOT = this.root();
-    env.KETCH_APPS_DIR = this.apps();
-    env.NO_COLOR = "1";
-    env.PATH = pathVar;
+    env["KETCH_ROOT"] = this.root();
+    env["KETCH_APPS_DIR"] = this.apps();
+    env["NO_COLOR"] = "1";
+    env["PATH"] = pathVar;
     // Shell setup writes into `$HOME`. Pointing it at the sandbox is what
     // keeps the suite from editing a real `.zshrc`.
-    env.HOME = this.home();
-    env.SHELL = "/bin/zsh";
+    env["HOME"] = this.home();
+    env["SHELL"] = "/bin/zsh";
     const out = spawnSync(process.execPath, [CLI_MAIN, ...args], { env, encoding: "utf8" });
     if (out.error !== undefined) {
       throw new Error(`could not run ketch: ${out.error.message}`);
@@ -155,7 +155,7 @@ export class Sandbox {
 
   /** `PATH` with the sandbox bin dir in front of the inherited one. */
   private pathWithBin(): string {
-    return [this.bin(), ...(process.env.PATH ?? "").split(path.delimiter)].join(path.delimiter);
+    return [this.bin(), ...(process.env["PATH"] ?? "").split(path.delimiter)].join(path.delimiter);
   }
 
   /** Run ketch and fail the test with its full output if it did not succeed. */
@@ -229,10 +229,13 @@ export class Sandbox {
 export class Release {
   private notes: string | null = null;
 
-  constructor(
-    private readonly version: string,
-    private readonly assets: readonly Asset[],
-  ) {}
+  private readonly version: string;
+  private readonly assets: readonly Asset[];
+
+  constructor(version: string, assets: readonly Asset[]) {
+    this.version = version;
+    this.assets = assets;
+  }
 
   /** Notes published alongside the release, the way a forge serves them. */
   withNotes(notes: string): Release {
@@ -254,11 +257,15 @@ export class Release {
 
 /** A fixture asset: a real file on disk, plus the digest the plugin publishes. */
 export class Asset {
-  constructor(
-    readonly name: string,
-    readonly filePath: string,
-    private readonly digest: string | null,
-  ) {}
+  readonly name: string;
+  readonly filePath: string;
+  private readonly digest: string | null;
+
+  constructor(name: string, filePath: string, digest: string | null) {
+    this.name = name;
+    this.filePath = filePath;
+    this.digest = digest;
+  }
 
   /**
    * Publish a digest that does not match the bytes, so the install is

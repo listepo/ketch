@@ -105,7 +105,7 @@ export class State {
     for (const name of [...this.byName.keys()].toSorted()) {
       const pkg = this.byName.get(name);
       if (pkg !== undefined) {
-        packages[name] = toRecord(pkg);
+        packages[name] = installedRecord(pkg);
       }
     }
     const json = `${JSON.stringify({ version: this.version, packages }, null, 2)}\n`;
@@ -209,14 +209,17 @@ export class State {
  * advisory between ketch processes only — nothing else writes this tree.
  */
 export class Lock {
-  private constructor(
-    private readonly file: string,
-    /**
-     * False when we adopted our own process's existing lock (re-entrancy), in
-     * which case releasing must not delete it.
-     */
-    private readonly owned: boolean,
-  ) {}
+  private readonly file: string;
+  /**
+   * False when we adopted our own process's existing lock (re-entrancy), in
+   * which case releasing must not delete it.
+   */
+  private readonly owned: boolean;
+
+  private constructor(file: string, owned: boolean) {
+    this.file = file;
+    this.owned = owned;
+  }
 
   /** Take the lock, or fail with the pid currently holding it. */
   static async acquire(cfg: Config, debug?: (message: string) => void): Promise<Lock> {
@@ -321,7 +324,14 @@ async function readPid(file: string): Promise<number | undefined> {
 // Record conversion
 // ---------------------------------------------------------------------------
 
-function toRecord(pkg: InstalledPackage): InstalledRecord {
+/**
+ * The on-disk form of an installed package.
+ *
+ * Exported because `ketch list --json` must print the same field names the
+ * state file uses: two shapes for one record would mean a JSON consumer and a
+ * state reader disagreeing about what a package is.
+ */
+export function installedRecord(pkg: InstalledPackage): InstalledRecord {
   return {
     name: pkg.name,
     version: pkg.version.toString(),

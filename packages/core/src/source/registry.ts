@@ -37,7 +37,11 @@ export interface RegistryLoadOptions {
  * and its hard dependency on `GitHubSource`/plugin discovery.
  */
 export class LiveSourceRegistry implements SourceRegistry {
-  constructor(private readonly sources: readonly Source[]) {}
+  private readonly sources: readonly Source[];
+
+  constructor(sources: readonly Source[]) {
+    this.sources = sources;
+  }
 
   /** Throws `unknown_scheme` when nothing answers to `scheme`. */
   get(scheme: string): Source {

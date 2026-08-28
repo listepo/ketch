@@ -55,19 +55,37 @@ export { LOCK_FILE, LOCK_VERSION } from "@ketch/schemas";
 
 /** One package, pinned. */
 export class LockedPackage {
+  /** The install name. Used to find the same manifest again, never a path. */
+  readonly name: string;
+  readonly source: PackageRef;
+  /** Human-readable version. `tag` is what actually gets resolved. */
+  readonly version: string;
+  readonly tag: string;
+  /** The target this entry was captured on, as `<os>-<arch>`. */
+  readonly target: string;
+  readonly asset: string;
+  readonly sha256: string;
+  readonly pinned: boolean;
+
   private constructor(
-    /** The install name. Used to find the same manifest again, never a path. */
-    readonly name: string,
-    readonly source: PackageRef,
-    /** Human-readable version. `tag` is what actually gets resolved. */
-    readonly version: string,
-    readonly tag: string,
-    /** The target this entry was captured on, as `<os>-<arch>`. */
-    readonly target: string,
-    readonly asset: string,
-    readonly sha256: string,
-    readonly pinned: boolean,
-  ) {}
+    name: string,
+    source: PackageRef,
+    version: string,
+    tag: string,
+    target: string,
+    asset: string,
+    sha256: string,
+    pinned: boolean,
+  ) {
+    this.name = name;
+    this.source = source;
+    this.version = version;
+    this.tag = tag;
+    this.target = target;
+    this.asset = asset;
+    this.sha256 = sha256;
+    this.pinned = pinned;
+  }
 
   static fromInstalled(pkg: InstalledPackage): LockedPackage {
     return new LockedPackage(
@@ -129,11 +147,14 @@ export class LockedPackage {
 
 /** A whole lockfile. */
 export class Lockfile {
-  private constructor(
-    readonly version: number,
-    /** Sorted by name, so the file is stable and its diffs are readable. */
-    readonly packages: readonly LockedPackage[],
-  ) {}
+  readonly version: number;
+  /** Sorted by name, so the file is stable and its diffs are readable. */
+  readonly packages: readonly LockedPackage[];
+
+  private constructor(version: number, packages: readonly LockedPackage[]) {
+    this.version = version;
+    this.packages = packages;
+  }
 
   /** Capture what is installed right now. */
   static fromState(state: State): Lockfile {
@@ -246,16 +267,26 @@ export class Lockfile {
 
 /** What `sync` would do, and what `--check` reports. */
 export class Plan {
+  /** Not installed at all. */
+  readonly missing: readonly LockedPackage[];
+  /** Installed, at a different tag. Carries the tag actually present. */
+  readonly changed: ReadonlyArray<readonly [entry: LockedPackage, installedTag: string]>;
+  /** Installed, and the lockfile says nothing about it. */
+  readonly extra: readonly string[];
+  /** Installed at exactly the locked tag. */
+  readonly matched: number;
+
   constructor(
-    /** Not installed at all. */
-    readonly missing: readonly LockedPackage[],
-    /** Installed, at a different tag. Carries the tag actually present. */
-    readonly changed: ReadonlyArray<readonly [entry: LockedPackage, installedTag: string]>,
-    /** Installed, and the lockfile says nothing about it. */
-    readonly extra: readonly string[],
-    /** Installed at exactly the locked tag. */
-    readonly matched: number,
-  ) {}
+    missing: readonly LockedPackage[],
+    changed: ReadonlyArray<readonly [entry: LockedPackage, installedTag: string]>,
+    extra: readonly string[],
+    matched: number,
+  ) {
+    this.missing = missing;
+    this.changed = changed;
+    this.extra = extra;
+    this.matched = matched;
+  }
 
   /**
    * True when the tree already is what the lockfile describes. `--prune`

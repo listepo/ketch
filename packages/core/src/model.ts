@@ -85,10 +85,13 @@ export function targetString(target: TargetSpec): string {
  * the state file read the same way a user would type it.
  */
 export class PackageRef {
-  constructor(
-    readonly scheme: string,
-    readonly id: string,
-  ) {}
+  readonly scheme: string;
+  readonly id: string;
+
+  constructor(scheme: string, id: string) {
+    this.scheme = scheme;
+    this.id = id;
+  }
 
   static github(id: string): PackageRef {
     return new PackageRef("github", id);
@@ -143,14 +146,24 @@ export function versionSpecString(spec: VersionSpec): string {
  * `github:cli/cli`, `myplugin:some-id@2.0`.
  */
 export class PackageSpec {
+  readonly raw: string;
+  /** Set when the input names a source explicitly or looks like `owner/repo`. */
+  readonly reference: PackageRef | null;
+  /** Set when the input is a bare name to look up in the registry. */
+  readonly alias: string | null;
+  readonly version: VersionSpec;
+
   private constructor(
-    readonly raw: string,
-    /** Set when the input names a source explicitly or looks like `owner/repo`. */
-    readonly reference: PackageRef | null,
-    /** Set when the input is a bare name to look up in the registry. */
-    readonly alias: string | null,
-    readonly version: VersionSpec,
-  ) {}
+    raw: string,
+    reference: PackageRef | null,
+    alias: string | null,
+    version: VersionSpec,
+  ) {
+    this.raw = raw;
+    this.reference = reference;
+    this.alias = alias;
+    this.version = version;
+  }
 
   static parse(input: string): PackageSpec {
     const raw = input.trim();
@@ -174,6 +187,18 @@ export class PackageSpec {
     return new PackageSpec(raw, reference, alias, version);
   }
 
+  /**
+   * A spec assembled from a lockfile entry rather than typed by a user.
+   *
+   * `parse` cannot stand in for this: it splits the version off at an `@`, and
+   * a recorded tag is free to contain one.
+   */
+  static exact(body: string, tag: string): PackageSpec {
+    const reference = PackageRef.parse(body);
+    const alias = reference === null ? asciiLowercase(body) : null;
+    return new PackageSpec(body, reference, alias, { kind: "exact", value: tag });
+  }
+
   /** Best available human label before a manifest is resolved. */
   label(): string {
     if (this.alias !== null) {
@@ -195,10 +220,13 @@ export class PackageSpec {
  * reading digits when it cannot. Serialized as the raw string.
  */
 export class Version {
-  private constructor(
-    readonly raw: string,
-    readonly sem: SemVer | null,
-  ) {}
+  readonly raw: string;
+  readonly sem: SemVer | null;
+
+  private constructor(raw: string, sem: SemVer | null) {
+    this.raw = raw;
+    this.sem = sem;
+  }
 
   static parse(raw: string): Version {
     const trimmed = raw.trim();

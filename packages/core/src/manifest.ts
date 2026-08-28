@@ -33,13 +33,21 @@ import { load as loadRegistry } from "./registry.ts";
  * user shadows registry shadows built-in.
  */
 export class Resolver {
+  private readonly builtin: readonly Manifest[];
+  /** `[manifest, file]` pairs, from the fetched registry. */
+  private readonly registry: ReadonlyArray<readonly [Manifest, string]>;
+  /** `[manifest, file]` pairs, from `<root>/manifests/*.json`. */
+  private readonly user: ReadonlyArray<readonly [Manifest, string]>;
+
   constructor(
-    private readonly builtin: readonly Manifest[],
-    /** `[manifest, file]` pairs, from the fetched registry. */
-    private readonly registry: ReadonlyArray<readonly [Manifest, string]>,
-    /** `[manifest, file]` pairs, from `<root>/manifests/*.json`. */
-    private readonly user: ReadonlyArray<readonly [Manifest, string]>,
-  ) {}
+    builtin: readonly Manifest[],
+    registry: ReadonlyArray<readonly [Manifest, string]>,
+    user: ReadonlyArray<readonly [Manifest, string]>,
+  ) {
+    this.builtin = builtin;
+    this.registry = registry;
+    this.user = user;
+  }
 
   /** Load every tier from disk. A malformed entry is warned about and skipped. */
   static create(cfg: Config, warn?: (message: string) => void): Resolver {

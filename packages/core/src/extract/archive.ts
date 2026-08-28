@@ -16,7 +16,6 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as zlib from "node:zlib";
 import { Parser, type ReadEntry } from "tar";
-import { XzReadableStream } from "xz-decompress";
 import { KetchError } from "../errors.ts";
 import { type Extractor, safeMemberPath } from "./extractor.ts";
 
@@ -349,6 +348,11 @@ export class TarXzExtractor implements Extractor {
     const compressed = readWhole(src);
     let plain: Buffer;
     try {
+      // Loaded here rather than at the top of the file for two reasons: it is
+      // a CommonJS bundle, whose named exports Node cannot see through a
+      // static `import`, and it carries a WebAssembly payload no other command
+      // should pay to load.
+      const { XzReadableStream } = (await import("xz-decompress")).default;
       // The copy re-types the bytes: Buffer's backing store admits
       // SharedArrayBuffer at the type level, and Blob refuses that.
       const stream = new XzReadableStream(new Blob([new Uint8Array(compressed)]).stream());
