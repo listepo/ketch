@@ -1,0 +1,14 @@
+type: application
+language: javascript
+
+# Docs pages are generated from the repository's Markdown, so the build always
+# syncs first; nothing else in the workspace's gates applies here.
+tasks:
+  typecheck: { command: "noop", local: true }
+  lint: { command: "noop", local: true }
+  format: { command: "noop", local: true }
+  test: { command: "noop", local: true }
+  build:
+    command: "node sync-docs.mjs && pnpm exec docusaurus build"
+    inputs: ["src/**/*", "static/**/*", "docusaurus.config.ts", "sidebars.ts", "sync-docs.mjs", "/docs/**/*", "/ROADMAP.md", "/AGENTS.md"]
+    outputs: ["build"]

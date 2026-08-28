@@ -1,0 +1,17 @@
+type: application
+language: javascript
+
+# The site is not part of the TypeScript project graph: it has no `tsc
+# --build` project, no vitest suite, and Biome does not format `.astro`.
+tasks:
+  typecheck:
+    command: "pnpm exec astro check"
+    inputs: ["src/**/*", "astro.config.mjs", "tsconfig.json"]
+    options: { runDepsInParallel: false }
+  lint: { command: "noop", local: true }
+  format: { command: "noop", local: true }
+  test: { command: "noop", local: true }
+  build:
+    command: "pnpm exec astro build"
+    inputs: ["src/**/*", "public/**/*", "astro.config.mjs"]
+    outputs: ["dist"]

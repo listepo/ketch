@@ -15,6 +15,13 @@
 /site/content/docs/roadmap.md
 /site/content/docs/contributing.md
 
+# The site: Astro's build, and Docusaurus's build plus the doc pages
+# `sync-docs.mjs` generates from the Markdown in the repository.
+/apps/web/.astro/
+/apps/docs/.docusaurus/
+/apps/docs/build/
+/apps/docs/docs/
+
 # TypeScript monorepo
 node_modules/
 dist/

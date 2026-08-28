@@ -1,0 +1,23 @@
+/* The docs theme, matched to the landing page's palette. */
+:root {
+  --ifm-color-primary: #1f6feb;
+  --ifm-color-primary-dark: #1a63d4;
+  --ifm-color-primary-darker: #185dc8;
+  --ifm-color-primary-darkest: #144da5;
+  --ifm-color-primary-light: #3a7fee;
+  --ifm-color-primary-lighter: #4787ef;
+  --ifm-color-primary-lightest: #6a9df2;
+  --ifm-code-font-size: 92%;
+  --ifm-font-family-monospace: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+}
+
+[data-theme="dark"] {
+  --ifm-color-primary: #5fa8ff;
+  --ifm-color-primary-dark: #3f96ff;
+  --ifm-color-primary-darker: #2f8dff;
+  --ifm-color-primary-darkest: #0072f5;
+  --ifm-color-primary-light: #7fbaff;
+  --ifm-color-primary-lighter: #8fc3ff;
+  --ifm-color-primary-lightest: #bfdcff;
+  --ifm-background-color: #0f1621;
+}
