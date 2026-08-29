@@ -207,6 +207,46 @@ describe("archive extraction", () => {
     expect(() => new TarXzExtractor().extract(src, path.join(dir, "out"))).toThrow(src);
   });
 
+  /**
+   * `tar -C payload -czf out.tar.gz .` is how a great many projects build a
+   * release, and it writes the archive root as a `./` entry. Refusing it means
+   * refusing the whole package, so this is built by the real `tar` rather than
+   * by the header helpers above — the point is the bytes tar actually writes.
+   */
+  it("installs a tarball whose root is a ./ entry", async () => {
+    const payload = path.join(dir, "payload", "bin");
+    fs.mkdirSync(payload, { recursive: true });
+    fs.writeFileSync(path.join(payload, "tool"), "#!/bin/sh\n", { mode: 0o755 });
+
+    const src = path.join(dir, "rel.tar.gz");
+    const built = spawnSync("/usr/bin/tar", ["-C", path.join(dir, "payload"), "-czf", src, "."]);
+    expect(built.status, built.stderr?.toString("utf8")).toBe(0);
+
+    const dest = path.join(dir, "out");
+    fs.mkdirSync(dest, { recursive: true });
+    await new TarGzExtractor().extract(src, dest);
+    expect(fs.readFileSync(path.join(dest, "bin/tool"), "utf8")).toBe("#!/bin/sh\n");
+  });
+
+  it("skipping the root entry does not let an escaping directory through", () => {
+    // The skip is for the entry that names the destination itself. A directory
+    // entry that normalizes to anything else — above all one that climbs out of
+    // it — must still meet the guard.
+    const dest = path.join(dir, "dest");
+    fs.mkdirSync(dest, { recursive: true });
+
+    expect(() =>
+      unpackTar(
+        tarWith([tarBlock({ path: "../", type: "Directory", mode: 0o755 })]),
+        dest,
+        "up.tar",
+      ),
+    ).toThrow(/escapes the target/);
+    expect(() => unpackTar(tarWith([fileEntry(".", "x", 0o644)]), dest, "dot.tar")).toThrow(
+      /empty name/,
+    );
+  });
+
   it("detection separates tar gz from a lone gz", () => {
     const tarball = path.join(dir, "a.gz");
     fs.writeFileSync(tarball, tarGzWith([["x", "y", 0o644]]));

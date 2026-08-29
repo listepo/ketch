@@ -233,6 +233,18 @@ const METADATA_TYPES = new Set([
   "OldGnuLongPath",
 ]);
 
+/** Tar entry types that name a directory rather than a payload. */
+const DIRECTORY_TYPES = new Set(["Directory", "GNUDumpDir"]);
+
+/**
+ * True for the member that names the archive root itself — `.`, `./`, or the
+ * empty string once trailing slashes are gone.
+ */
+function isArchiveRoot(name: string): boolean {
+  const trimmed = name.replace(/\/+$/, "");
+  return trimmed === "" || trimmed === ".";
+}
+
 /**
  * Unpack a tar stream, validating every member path and link target.
  *
@@ -243,6 +255,15 @@ const METADATA_TYPES = new Set([
 export function unpackTar(archive: Buffer, dest: string, what: string): void {
   for (const member of readTar(archive, what)) {
     if (METADATA_TYPES.has(member.type)) {
+      continue;
+    }
+    // `tar -C dir -czf out.tar.gz .` — the most ordinary way a project builds a
+    // release — writes the archive root as a `./` directory entry. It names the
+    // destination, which already exists, so there is nothing to create and
+    // nothing to check. Passing it to `safeMemberPath` would fail the whole
+    // archive on "empty name", which is what a file entry with no name deserves
+    // and a root directory entry does not.
+    if (isArchiveRoot(member.name) && DIRECTORY_TYPES.has(member.type)) {
       continue;
     }
     const safe = safeMemberPath(member.name);

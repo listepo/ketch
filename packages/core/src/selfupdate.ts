@@ -61,10 +61,44 @@ export function currentVersion(raw: string): Version {
 }
 
 /**
+ * True when an interpreter loaded this program from a script, rather than
+ * this program being the executable itself.
+ *
+ * The entry module of a single-file executable is a virtual path with no
+ * real one behind it — Bun's is `/$bunfs/root/ketch` — so `realpathSync`
+ * throwing is the compiled case, and a script that resolves to something
+ * other than the executable is the source case.
+ */
+function loadedFromSource(): boolean {
+  const entry = process.argv[1];
+  if (entry === undefined) {
+    return false;
+  }
+  try {
+    return fs.realpathSync(entry) !== fs.realpathSync(process.execPath);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Where the running binary lives, with symlinks resolved so we replace the
  * real file rather than the link pointing at it.
+ *
+ * Rust never had to ask the question: `std::env::current_exe()` inside a
+ * compiled binary is always ketch. `process.execPath` is only ketch when
+ * ketch is the executable — run the sources through node, bun or deno and it
+ * is the interpreter, which `update` would overwrite and `uninstallSelf`
+ * would delete. There is no binary to name in that case, so this says so
+ * instead of naming the wrong one. `self version` treats the failure the way
+ * Rust's `if let Ok(exe)` does, by leaving the line out.
  */
 export function currentExe(): string {
+  if (loadedFromSource()) {
+    throw KetchError.msg(
+      "ketch is running from source, so there is no ketch binary to act on; build one first",
+    );
+  }
   const exe = process.execPath;
   try {
     return fs.realpathSync(exe);

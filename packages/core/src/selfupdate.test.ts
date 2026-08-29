@@ -18,7 +18,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { KetchError } from "./errors.ts";
-import { currentVersion, findBinary, replaceBinary } from "./selfupdate.ts";
+import { currentExe, currentVersion, findBinary, replaceBinary } from "./selfupdate.ts";
 
 function tmpDir(prefix: string): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -34,6 +34,27 @@ function scriptFile(dir: string, name: string, body: string): string {
 describe("currentVersion", () => {
   it("parses the raw string the caller supplies", () => {
     expect(currentVersion("1.2.3").toString()).toBe("1.2.3");
+  });
+});
+
+describe("currentExe", () => {
+  // The suite itself is the hostile case: vitest is a script an interpreter
+  // loaded, so `process.execPath` here is node or bun. Returning it would
+  // hand `update` the interpreter to overwrite and `uninstallSelf` the
+  // interpreter to delete. A compiled ketch has no entry file to resolve, so
+  // it takes the other branch and names itself.
+  it("refuses to name the interpreter when ketch was loaded from source", () => {
+    expect(() => currentExe()).toThrow(/running from source/);
+  });
+
+  it("never returns the running interpreter", () => {
+    let named: string | undefined;
+    try {
+      named = currentExe();
+    } catch {
+      named = undefined;
+    }
+    expect(named).not.toBe(process.execPath);
   });
 });
 

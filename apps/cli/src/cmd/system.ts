@@ -411,7 +411,13 @@ export function selfVersion(cfg: Config): void {
   ui.out(`ketch ${VERSION}`);
   ui.out(`target ${targetString(cfg.target)}`);
   ui.out(`root   ${cfg.root}`);
-  ui.out(`binary ${selfupdate.currentExe()}`);
+  // Rust prints this line only `if let Ok(exe)`; running from source is the
+  // case where there is no answer, and no line is better than the wrong one.
+  try {
+    ui.out(`binary ${selfupdate.currentExe()}`);
+  } catch {
+    /* no binary to report */
+  }
 }
 
 /** Remove ketch itself, and with `--purge` everything it installed. */

@@ -1,13 +1,6 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": [
-    "typescript",
-    "unicorn",
-    "oxc",
-    "import",
-    "promise",
-    "node"
-  ],
+  "plugins": ["typescript", "unicorn", "oxc", "import", "promise", "node"],
   "categories": {
     "correctness": "error",
     "suspicious": "error",
@@ -18,37 +11,23 @@
     "typescript/no-explicit-any": "error",
     "typescript/no-non-null-assertion": "error"
   },
-  "ignorePatterns": [
-    "dist",
-    "build",
-    "node_modules",
-    ".astro",
-    ".docusaurus",
-    "*.schema.json"
-  ],
+  "ignorePatterns": ["dist", "build", "node_modules", ".astro", ".docusaurus", "*.schema.json"],
   "overrides": [
     {
-      "files": [
-        "**/*.test.ts",
-        "**/tests/**"
-      ],
+      "files": ["**/*.test.ts", "**/tests/**"],
       "rules": {
         "no-console": "off",
         "typescript/no-non-null-assertion": "off"
       }
     },
     {
-      "files": [
-        "apps/cli/src/ui.ts"
-      ],
+      "files": ["apps/cli/src/ui.ts"],
       "rules": {
         "no-console": "off"
       }
     },
     {
-      "files": [
-        "**/*.astro"
-      ],
+      "files": ["**/*.astro"],
       "rules": {
         "import/no-unassigned-import": "off"
       }

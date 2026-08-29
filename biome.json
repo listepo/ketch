@@ -33,8 +33,7 @@
       "!**/.astro",
       "!**/.docusaurus",
       "!**/*.schema.json",
-      "!target",
-      "!site"
+      "!**/.moon/cache"
     ]
   },
   "css": {
