@@ -182,23 +182,23 @@ describe("archive extraction", () => {
    * the planted archive passes `safeMemberPath` and `checkLinkTarget`, because
    * both reason about the name while the kernel resolves the link.
    */
-  it("a planted symlink is never written through", () => {
+  it("a planted symlink is never written through", async () => {
     const dest = path.join(dir, "dest");
     fs.mkdirSync(dest, { recursive: true });
 
     // an entry named through a planted symlink must be refused
-    expect(() => unpackTar(plantedSymlinkTar(), dest, "planted.tar")).toThrow();
+    await expect(unpackTar(plantedSymlinkTar(), dest, "planted.tar")).rejects.toThrow();
     // Member 2 would have been created here had the link been followed.
     expect(fs.existsSync(path.join(dest, "e"))).toBe(false);
   });
 
-  it("ordinary symlinks inside the payload still work", () => {
+  it("ordinary symlinks inside the payload still work", async () => {
     const archive = tarWith([
       fileEntry("bin/tool", "hi", 0o755),
       symlinkEntry("bin/tool-alias", "tool"),
     ]);
 
-    unpackTar(archive, dir, "links.tar");
+    await unpackTar(archive, dir, "links.tar");
     const alias = path.join(dir, "bin/tool-alias");
     expect(fs.lstatSync(alias).isSymbolicLink()).toBe(true);
     expect(fs.readFileSync(alias, "utf8")).toBe("hi");
@@ -246,13 +246,13 @@ describe("archive extraction", () => {
    * past, which would leave the archive installing somewhere other than where
    * it says it does. The refusal proves the hostile name reached the guard.
    */
-  it("xz archives use the same traversal guard as tar", () => {
+  it("xz archives use the same traversal guard as tar", async () => {
     const src = path.join(dir, "escape.tar.xz");
     writeTarXz(src, [fileEntry("../../evil", "pwned\n", 0o644)]);
     const dest = path.join(dir, "dest");
     fs.mkdirSync(dest, { recursive: true });
 
-    expect(() => new TarXzExtractor().extract(src, dest)).toThrow(/escapes the target/);
+    await expect(new TarXzExtractor().extract(src, dest)).rejects.toThrow(/escapes the target/);
     expect(fs.existsSync(path.join(dir, "evil"))).toBe(false);
   });
 
@@ -285,21 +285,21 @@ describe("archive extraction", () => {
     expect(fs.readFileSync(path.join(dest, "bin/tool"), "utf8")).toBe("#!/bin/sh\n");
   });
 
-  it("skipping the root entry does not let an escaping directory through", () => {
+  it("skipping the root entry does not let an escaping directory through", async () => {
     // The skip is for the entry that names the destination itself. A directory
     // entry that normalizes to anything else — above all one that climbs out of
     // it — must still meet the guard.
     const dest = path.join(dir, "dest");
     fs.mkdirSync(dest, { recursive: true });
 
-    expect(() =>
+    await expect(
       unpackTar(
         tarWith([tarBlock({ path: "../", type: "Directory", mode: 0o755 })]),
         dest,
         "up.tar",
       ),
-    ).toThrow(/escapes the target/);
-    expect(() => unpackTar(tarWith([fileEntry(".", "x", 0o644)]), dest, "dot.tar")).toThrow(
+    ).rejects.toThrow(/escapes the target/);
+    await expect(unpackTar(tarWith([fileEntry(".", "x", 0o644)]), dest, "dot.tar")).rejects.toThrow(
       /empty name/,
     );
   });
@@ -333,7 +333,7 @@ describe("archive extraction", () => {
     expect(isProgramHead(bytes(""))).toBe(false);
   });
 
-  it("refuses a tar that was cut off in transit", () => {
+  it("refuses a tar that was cut off in transit", async () => {
     // Every header in these bytes parses; only the end is missing. node-tar
     // reports that as neither an error nor a warning — `strict` included — and
     // hands back the files it did manage to read, so without the check the
@@ -343,10 +343,12 @@ describe("archive extraction", () => {
       fileEntry("share/doc", "x".repeat(2048), 0o644),
     ]);
 
-    expect(() => unpackTar(whole.subarray(0, whole.length - 1024), dir, "release.tar")).toThrow(
-      /truncated/,
-    );
-    expect(fs.existsSync(path.join(dir, "bin/tool"))).toBe(false);
+    // Refused, not half-installed. Members already placed stay where they
+    // fell: the end of a stream is only knowable at the end, and every caller
+    // unpacks into a `mkdtemp` directory it throws away when this rejects.
+    await expect(
+      unpackTar(whole.subarray(0, whole.length - 1024), dir, "release.tar"),
+    ).rejects.toThrow(/truncated/);
   });
 
   it("extracts every member of a zip, however many there are", async () => {

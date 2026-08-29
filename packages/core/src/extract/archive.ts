@@ -15,6 +15,7 @@
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { Readable } from "node:stream";
 import * as zlib from "node:zlib";
 import { Parser, type ReadEntry } from "tar";
 import { KetchError } from "../errors.ts";
@@ -174,85 +175,6 @@ export function ensureParent(dest: string, out: string): void {
   }
 }
 
-/** One member of a tar stream, already read into memory. */
-interface TarMember {
-  readonly name: string;
-  readonly type: string;
-  readonly mode: number;
-  readonly linkpath: string | null;
-  readonly body: Buffer;
-}
-
-/** Every tar header and payload is padded out to this. */
-const TAR_BLOCK = 512;
-
-/**
- * True when the stream ends the way a tar must: on two blocks of zeros.
- *
- * node-tar stops at a short read and reports it as neither an error nor a
- * warning — `strict` does not change that — so a tarball cut off in transit
- * parses cleanly as a shorter archive that is simply missing files. Rust's
- * `tar` crate failed on the same bytes, its `entries()` yielding `Err` at the
- * truncation, and that is the behaviour worth keeping: a package manager that
- * unpacks most of a release and reports success has installed something
- * nobody published.
- *
- * Trailing zeros past the marker are ordinary — GNU tar pads to a 20-block
- * record — so the last two blocks are zeros in a well-formed archive whether
- * or not it was padded.
- */
-function endsWithEofMarker(archive: Buffer): boolean {
-  const marker = TAR_BLOCK * 2;
-  if (archive.length < marker || archive.length % TAR_BLOCK !== 0) {
-    return false;
-  }
-  return archive.subarray(archive.length - marker).every((byte) => byte === 0);
-}
-
-/**
- * Read every member of a tar stream.
- *
- * Parsing is the library's job; placing the results is ours, which is why the
- * members come back as data rather than being written where they fall.
- */
-function readTar(archive: Buffer, what: string): TarMember[] {
-  if (!endsWithEofMarker(archive)) {
-    throw KetchError.parse(what, "tar is truncated: it does not end where an archive should");
-  }
-  const members: TarMember[] = [];
-  let failure: Error | null = null;
-
-  const parser = new Parser({});
-  parser.on("error", (cause: Error) => {
-    failure ??= cause;
-  });
-  parser.on("entry", (entry: ReadEntry) => {
-    const chunks: Buffer[] = [];
-    entry.on("data", (chunk: Buffer) => chunks.push(chunk));
-    entry.on("end", () => {
-      members.push({
-        name: String(entry.path),
-        type: String(entry.type),
-        mode: entry.mode ?? 0o644,
-        linkpath: entry.linkpath ?? null,
-        body: Buffer.concat(chunks),
-      });
-    });
-    entry.resume();
-  });
-
-  try {
-    parser.write(archive);
-    parser.end();
-  } catch (cause) {
-    failure ??= cause as Error;
-  }
-  if (failure !== null) {
-    throw KetchError.parse(what, failure.message);
-  }
-  return members;
-}
-
 /** Extended headers carry metadata, not payload, and have no real path. */
 const METADATA_TYPES = new Set([
   "ExtendedHeader",
@@ -265,6 +187,12 @@ const METADATA_TYPES = new Set([
 /** Tar entry types that name a directory rather than a payload. */
 const DIRECTORY_TYPES = new Set(["Directory", "GNUDumpDir"]);
 
+/** Every tar header and payload is padded out to this. */
+const TAR_BLOCK = 512;
+
+/** A tar closes on two blocks of zeros. */
+const EOF_MARKER = TAR_BLOCK * 2;
+
 /**
  * True for the member that names the archive root itself — `.`, `./`, or the
  * empty string once trailing slashes are gone.
@@ -275,83 +203,214 @@ function isArchiveRoot(name: string): boolean {
 }
 
 /**
- * Unpack a tar stream, validating every member path and link target.
+ * Write one file member straight through to disk.
+ *
+ * Synchronously, chunk by chunk, which is what keeps the member out of memory
+ * and keeps the ordering a tar depends on: node-tar does not read the next
+ * header until this entry has ended, so a hard link later in the archive finds
+ * its target already written and closed.
+ */
+function writeMember(
+  entry: ReadEntry,
+  out: string,
+  mode: number,
+  fail: (cause: unknown) => void,
+): void {
+  let fd: number;
+  try {
+    fd = fs.openSync(out, "w");
+  } catch (cause) {
+    throw KetchError.io(out, cause as Error);
+  }
+  let broken = false;
+  const give = (cause: unknown): void => {
+    broken = true;
+    try {
+      fs.closeSync(fd);
+    } catch {
+      // The failure being reported is the one worth reporting.
+    }
+    fail(cause);
+  };
+
+  entry.on("data", (chunk: Buffer) => {
+    if (broken) {
+      return;
+    }
+    try {
+      fs.writeSync(fd, chunk);
+    } catch (cause) {
+      give(KetchError.io(out, cause as Error));
+    }
+  });
+  entry.on("end", () => {
+    if (broken) {
+      return;
+    }
+    try {
+      fs.closeSync(fd);
+      // Set after the fact rather than through `open`, so the umask gets no say
+      // in whether a released binary comes out executable.
+      fs.chmodSync(out, mode);
+    } catch (cause) {
+      give(KetchError.io(out, cause as Error));
+    }
+  });
+}
+
+/** Place one member, or drain it if it is not ours to place. */
+function placeMember(entry: ReadEntry, dest: string, fail: (cause: unknown) => void): void {
+  const name = String(entry.path);
+  const type = String(entry.type);
+
+  // `tar -C dir -czf out.tar.gz .` — the most ordinary way a project builds a
+  // release — writes the archive root as a `./` directory entry. It names the
+  // destination, which already exists, so there is nothing to create and
+  // nothing to check. Passing it to `safeMemberPath` would fail the whole
+  // archive on "empty name", which is what a file entry with no name deserves
+  // and a root directory entry does not.
+  if (METADATA_TYPES.has(type) || (isArchiveRoot(name) && DIRECTORY_TYPES.has(type))) {
+    entry.resume();
+    return;
+  }
+
+  const safe = safeMemberPath(name);
+  const out = path.join(dest, safe);
+  const linkpath = entry.linkpath ?? null;
+  const mode = (entry.mode ?? 0o644) & 0o7777;
+
+  switch (type) {
+    case "Directory":
+    case "GNUDumpDir": {
+      walkInside(dest, out, true);
+      break;
+    }
+    case "SymbolicLink": {
+      if (linkpath === null) {
+        throw KetchError.msg(`archive symlink ${name} has no target`);
+      }
+      checkLinkTarget(safe, linkpath);
+      ensureParent(dest, out);
+      try {
+        fs.symlinkSync(linkpath, out);
+      } catch (cause) {
+        throw KetchError.io(out, cause as Error);
+      }
+      break;
+    }
+    case "Link": {
+      // A tar hard link names its target from the archive root.
+      if (linkpath === null) {
+        throw KetchError.msg(`archive hard link ${name} has no target`);
+      }
+      // The kernel resolves the source too, so a hard link to
+      // `planted-link/.ssh/id_rsa` would pull a file from outside the payload
+      // into it.
+      const source = path.join(dest, safeMemberPath(linkpath));
+      walkInside(dest, source, false);
+      ensureParent(dest, out);
+      try {
+        fs.linkSync(source, out);
+      } catch (cause) {
+        throw KetchError.io(out, cause as Error);
+      }
+      break;
+    }
+    case "File":
+    case "OldFile":
+    case "ContiguousFile": {
+      ensureParent(dest, out);
+      // `writeMember` consumes the payload itself.
+      writeMember(entry, out, mode, fail);
+      return;
+    }
+    // Character/block devices and fifos have no place in a release.
+    default:
+      break;
+  }
+  entry.resume();
+}
+
+/**
+ * Unpack a tar as it arrives, validating every member path and link target.
  *
  * Written out rather than handing the destination to the tar library, so the
  * traversal guard is ours and applies identically to files, directories and
  * links.
+ *
+ * Nothing is collected. The first port read the archive into memory and then
+ * read every member out of it again before writing any: a 400 MB release
+ * peaked at 1.7 GB of RSS, and GitHub will serve one five times that. Rust
+ * streamed, and at that size the difference stops being a measurement and
+ * becomes whether the install happens at all.
+ *
+ * The truncation check rides along on the stream. node-tar stops at a short
+ * read and reports it as neither an error nor a warning — `strict` included —
+ * so a tarball cut off in transit parses cleanly as a shorter archive that is
+ * simply missing files, while Rust's `tar` crate failed on the same bytes.
+ * What it comes down to is the two zero blocks a tar has to end on; trailing
+ * zeros past them are ordinary, since GNU tar pads to a 20-block record.
  */
-export function unpackTar(archive: Buffer, dest: string, what: string): void {
-  for (const member of readTar(archive, what)) {
-    if (METADATA_TYPES.has(member.type)) {
-      continue;
-    }
-    // `tar -C dir -czf out.tar.gz .` — the most ordinary way a project builds a
-    // release — writes the archive root as a `./` directory entry. It names the
-    // destination, which already exists, so there is nothing to create and
-    // nothing to check. Passing it to `safeMemberPath` would fail the whole
-    // archive on "empty name", which is what a file entry with no name deserves
-    // and a root directory entry does not.
-    if (isArchiveRoot(member.name) && DIRECTORY_TYPES.has(member.type)) {
-      continue;
-    }
-    const safe = safeMemberPath(member.name);
-    const out = path.join(dest, safe);
+export function unpackTarStream(source: Readable, dest: string, what: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const parser = new Parser({});
+    let seen = 0;
+    let tail = Buffer.alloc(0);
+    let settled = false;
 
-    switch (member.type) {
-      case "Directory":
-      case "GNUDumpDir": {
-        walkInside(dest, out, true);
-        break;
+    const fail = (cause: unknown): void => {
+      if (settled) {
+        return;
       }
-      case "SymbolicLink": {
-        if (member.linkpath === null) {
-          throw KetchError.msg(`archive symlink ${member.name} has no target`);
-        }
-        checkLinkTarget(safe, member.linkpath);
-        ensureParent(dest, out);
-        try {
-          fs.symlinkSync(member.linkpath, out);
-        } catch (cause) {
-          throw KetchError.io(out, cause as Error);
-        }
-        break;
+      settled = true;
+      source.unpipe(parser);
+      source.destroy();
+      reject(cause);
+    };
+
+    parser.on("entry", (entry: ReadEntry) => {
+      if (settled) {
+        entry.resume();
+        return;
       }
-      case "Link": {
-        // A tar hard link names its target from the archive root.
-        if (member.linkpath === null) {
-          throw KetchError.msg(`archive hard link ${member.name} has no target`);
-        }
-        // The kernel resolves the source too, so a hard link to
-        // `planted-link/.ssh/id_rsa` would pull a file from outside the
-        // payload into it.
-        const source = path.join(dest, safeMemberPath(member.linkpath));
-        walkInside(dest, source, false);
-        ensureParent(dest, out);
-        try {
-          fs.linkSync(source, out);
-        } catch (cause) {
-          throw KetchError.io(out, cause as Error);
-        }
-        break;
+      try {
+        placeMember(entry, dest, fail);
+      } catch (cause) {
+        fail(cause);
       }
-      case "File":
-      case "OldFile":
-      case "ContiguousFile": {
-        ensureParent(dest, out);
-        try {
-          fs.writeFileSync(out, member.body);
-          fs.chmodSync(out, member.mode & 0o7777);
-        } catch (cause) {
-          throw KetchError.io(out, cause as Error);
-        }
-        break;
+    });
+    parser.on("error", (cause: Error) => {
+      fail(KetchError.parse(what, cause.message));
+    });
+    parser.on("end", () => {
+      if (settled) {
+        return;
       }
-      // Character/block devices and fifos have no place in a release.
-      default:
-        break;
-    }
-  }
+      if (seen < EOF_MARKER || seen % TAR_BLOCK !== 0 || tail.some((byte) => byte !== 0)) {
+        fail(KetchError.parse(what, "tar is truncated: it does not end where an archive should"));
+        return;
+      }
+      settled = true;
+      resolve();
+    });
+
+    source.on("error", (cause: Error) => {
+      fail(KetchError.io(what, cause));
+    });
+    source.on("data", (chunk: Buffer) => {
+      seen += chunk.length;
+      tail =
+        chunk.length >= EOF_MARKER
+          ? Buffer.from(chunk.subarray(chunk.length - EOF_MARKER))
+          : Buffer.concat([tail, chunk]).subarray(-EOF_MARKER);
+    });
+    source.pipe(parser);
+  });
+}
+
+/** The same, for a tar already in memory: nothing else can decompress these. */
+export function unpackTar(archive: Buffer, dest: string, what: string): Promise<void> {
+  return unpackTarStream(Readable.from([archive]), dest, what);
 }
 
 function readWhole(file: string): Buffer {
@@ -382,8 +441,7 @@ export class TarGzExtractor implements Extractor {
   }
 
   extract(src: string, dest: string): Promise<void> {
-    unpackTar(zlib.gunzipSync(readWhole(src)), dest, src);
-    return Promise.resolve();
+    return unpackTarStream(fs.createReadStream(src).pipe(zlib.createGunzip()), dest, src);
   }
 }
 
@@ -432,8 +490,7 @@ export class TarXzExtractor implements Extractor {
   }
 
   extract(src: string, dest: string): Promise<void> {
-    unpackTar(unxz(src), dest, src);
-    return Promise.resolve();
+    return unpackTar(unxz(src), dest, src);
   }
 }
 
@@ -455,7 +512,7 @@ export class TarBz2Extractor implements Extractor {
     } catch (cause) {
       throw KetchError.parse(src, (cause as Error).message);
     }
-    unpackTar(plain, dest, src);
+    await unpackTar(plain, dest, src);
   }
 }
 
@@ -468,8 +525,7 @@ export class TarExtractor implements Extractor {
   }
 
   extract(src: string, dest: string): Promise<void> {
-    unpackTar(readWhole(src), dest, src);
-    return Promise.resolve();
+    return unpackTarStream(fs.createReadStream(src), dest, src);
   }
 }
 
