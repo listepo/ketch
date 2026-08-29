@@ -183,6 +183,32 @@ interface TarMember {
   readonly body: Buffer;
 }
 
+/** Every tar header and payload is padded out to this. */
+const TAR_BLOCK = 512;
+
+/**
+ * True when the stream ends the way a tar must: on two blocks of zeros.
+ *
+ * node-tar stops at a short read and reports it as neither an error nor a
+ * warning — `strict` does not change that — so a tarball cut off in transit
+ * parses cleanly as a shorter archive that is simply missing files. Rust's
+ * `tar` crate failed on the same bytes, its `entries()` yielding `Err` at the
+ * truncation, and that is the behaviour worth keeping: a package manager that
+ * unpacks most of a release and reports success has installed something
+ * nobody published.
+ *
+ * Trailing zeros past the marker are ordinary — GNU tar pads to a 20-block
+ * record — so the last two blocks are zeros in a well-formed archive whether
+ * or not it was padded.
+ */
+function endsWithEofMarker(archive: Buffer): boolean {
+  const marker = TAR_BLOCK * 2;
+  if (archive.length < marker || archive.length % TAR_BLOCK !== 0) {
+    return false;
+  }
+  return archive.subarray(archive.length - marker).every((byte) => byte === 0);
+}
+
 /**
  * Read every member of a tar stream.
  *
@@ -190,6 +216,9 @@ interface TarMember {
  * members come back as data rather than being written where they fall.
  */
 function readTar(archive: Buffer, what: string): TarMember[] {
+  if (!endsWithEofMarker(archive)) {
+    throw KetchError.parse(what, "tar is truncated: it does not end where an archive should");
+  }
   const members: TarMember[] = [];
   let failure: Error | null = null;
 

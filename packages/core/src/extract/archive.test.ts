@@ -275,4 +275,20 @@ describe("archive extraction", () => {
     expect(isProgramHead(bytes("# Readme\n"))).toBe(false);
     expect(isProgramHead(bytes(""))).toBe(false);
   });
+
+  it("refuses a tar that was cut off in transit", () => {
+    // Every header in these bytes parses; only the end is missing. node-tar
+    // reports that as neither an error nor a warning — `strict` included — and
+    // hands back the files it did manage to read, so without the check the
+    // install would place part of a release and call it done.
+    const whole = tarWith([
+      fileEntry("bin/tool", "#!/bin/sh\n", 0o755),
+      fileEntry("share/doc", "x".repeat(2048), 0o644),
+    ]);
+
+    expect(() => unpackTar(whole.subarray(0, whole.length - 1024), dir, "release.tar")).toThrow(
+      /truncated/,
+    );
+    expect(fs.existsSync(path.join(dir, "bin/tool"))).toBe(false);
+  });
 });
