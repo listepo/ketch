@@ -90,12 +90,34 @@ spec until Phase 10 removes it.
   Rust `target/` directory (1.7 GB) and its ignore rules went too. A `git add
   -A` had swept 263 Perry object files (36 MB) into `4b575c8`; they are gone
   from this branch's history and `*.o` is now ignored.
-- [ ] **Phase 11 — review + runtime matrix + Perry binary**
+- [x] **Phase 11 — review + runtime matrix** (`88e47cd`…`2ffe4be`): every
+  finding of the adversarial review adjudicated by hand, because the workflow's
+  own verifiers had died on session limits and its empty result was not a clean
+  bill of health. Nine confirmed and fixed, each with a test that fails without
+  the fix: an ordinary `./`-rooted tarball was refused outright; `self update`
+  and `self uninstall` would have overwritten the user's node, bun or deno when
+  run from source; a tar truncated in transit installed part of a release and
+  reported success; `upgrade` lost the pin on any tag containing `/` or `@`; a
+  zip past ten members printed Node's listener-leak warning onto ketch's own
+  stderr; a download the server chose to gzip was deleted as "truncated"; an
+  unopenable log failed silently; the macOS backend's explanation for leaving a
+  link alone went to a no-op sink; and extraction held four times the payload in
+  memory, 1.7 GB for a 400 MB release, where Rust streamed — now 49 MB above
+  baseline. One finding was refuted. Two gaps were covered rather than fixed:
+  the zip reader had no tests at all, and `--require-checksum` /
+  `require_checksums` had never been exercised.
+
+  Runtime matrix: the suite passes on Node 26 and on Bun; `deno run -A
+  apps/cli/src/main.ts` runs the real CLI; and the whole end-to-end suite runs a
+  second time against the Bun-compiled binary out of `scripts/package.sh`
+  (`KETCH_E2E_BINARY`), which is how the streaming rewrite was checked on the
+  runtime that actually ships.
 - [ ] **Phase 12 — push + PR** (only when the user says push)
 
-Gates at `e02aee7`: `tsc --build` exit 0 · vitest **267/267** across 38 files ·
-oxlint exit 0 (13 deliberate `no-await-in-loop` warnings, all sequential on
-purpose) · `biome format` clean.
+Gates at `2ffe4be`: `tsc --build` exit 0 · vitest **287/287** across 38 files,
+on Node and on Bun · 33/33 end-to-end against the compiled binary · oxlint exit
+0 (13 deliberate `no-await-in-loop` warnings, all sequential on purpose) ·
+`biome format` clean.
 
 ## The agent contract (applies to every step)
 
