@@ -159,8 +159,13 @@ export interface Platform {
  * Unsupported hosts fail here with one clear message rather than misbehaving
  * deeper in the install pipeline. The macOS backend is imported lazily so the
  * error path never loads platform code that cannot run.
+ *
+ * `debug` is where the backend explains a decision it made quietly — a link it
+ * declined to remove, most of all. Rust wrote those through the global
+ * `ui::debug`; here the caller supplies the sink, and one that does not is
+ * choosing not to hear them.
  */
-export async function hostPlatform(): Promise<Platform> {
+export async function hostPlatform(debug?: (message: string) => void): Promise<Platform> {
   if (process.platform !== "darwin") {
     throw KetchError.msg(
       "ketch supports macOS only. Linux and Windows backends are planned; " +
@@ -168,7 +173,7 @@ export async function hostPlatform(): Promise<Platform> {
     );
   }
   const darwin = await import("./darwin.ts");
-  return darwin.createDarwinPlatform();
+  return darwin.createDarwinPlatform(debug === undefined ? {} : { debug });
 }
 
 /**

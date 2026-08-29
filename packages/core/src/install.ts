@@ -320,7 +320,7 @@ export async function commit(
   const { manifest, origin, release, assetName, sha256, checksumVerified, link, payload } =
     prepared;
   try {
-    const platform = await hostPlatform();
+    const platform = await hostPlatform((line) => reporter.debug(line));
 
     // Read again rather than trusting what `prepare` saw: in a batch, another
     // package may have been placed since.
@@ -492,7 +492,7 @@ export async function uninstall(
   if (pkg === undefined) {
     throw new KetchError({ kind: "not_installed", name });
   }
-  const platform = await hostPlatform();
+  const platform = await hostPlatform((line) => reporter.debug(line));
   await platform.unplace(pkg.links);
   removeStoreDir(cfg, pkg.prefix, reporter);
   state.remove(pkg.name);
@@ -500,7 +500,12 @@ export async function uninstall(
 }
 
 /** Re-create links for an already-installed package. */
-export async function relink(cfg: Config, state: State, name: string): Promise<void> {
+export async function relink(
+  cfg: Config,
+  state: State,
+  name: string,
+  reporter: InstallReporter = silentReporter,
+): Promise<void> {
   const pkg = state.find(name);
   if (pkg === undefined) {
     throw new KetchError({ kind: "not_installed", name });
@@ -508,7 +513,7 @@ export async function relink(cfg: Config, state: State, name: string): Promise<v
   if (!isDirectory(pkg.prefix)) {
     throw new KetchError({ kind: "empty_payload", path: pkg.prefix });
   }
-  const platform = await hostPlatform();
+  const platform = await hostPlatform((line) => reporter.debug(line));
   await platform.unplace(pkg.links);
 
   const manifest = pkg.manifest;
@@ -537,12 +542,17 @@ export async function relink(cfg: Config, state: State, name: string): Promise<v
 }
 
 /** Remove links but keep the package installed. */
-export async function unlink(_cfg: Config, state: State, name: string): Promise<void> {
+export async function unlink(
+  _cfg: Config,
+  state: State,
+  name: string,
+  reporter: InstallReporter = silentReporter,
+): Promise<void> {
   const pkg = state.find(name);
   if (pkg === undefined) {
     throw new KetchError({ kind: "not_installed", name });
   }
-  const platform = await hostPlatform();
+  const platform = await hostPlatform((line) => reporter.debug(line));
   await platform.unplace(pkg.links);
   const entry = state.get(pkg.name);
   if (entry !== undefined) {

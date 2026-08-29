@@ -277,4 +277,30 @@ describe("install", () => {
     },
     TIMEOUT,
   );
+
+  it(
+    "a link that was repointed is left alone, and says so under --verbose",
+    () => {
+      const sandbox = new Sandbox();
+      onTestFinished(() => sandbox.dispose());
+      publishTool(sandbox, "1.0.0");
+      sandbox.ok(["install", "test:testtool", "--yes"]);
+
+      // Something else has taken the name over since. Removing the link would
+      // break whoever owns it now, so uninstall leaves it — and the only way
+      // anyone learns that is the platform's debug line.
+      const link = path.join(sandbox.bin(), "testtool");
+      const other = path.join(sandbox.root(), "somewhere-else");
+      fs.writeFileSync(other, "#!/bin/sh\necho other\n", { mode: 0o755 });
+      fs.unlinkSync(link);
+      fs.symlinkSync(other, link);
+
+      const out = sandbox.run(["uninstall", "testtool", "--yes", "--verbose"]);
+
+      expect(out.status).toBe(0);
+      expect(out.stderr).toMatch(/leaving .*testtool: it no longer points at/);
+      expect(fs.readlinkSync(link)).toBe(other);
+    },
+    TIMEOUT,
+  );
 });

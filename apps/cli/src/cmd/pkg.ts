@@ -302,10 +302,10 @@ export async function link(cfg: Config, args: NameArgs, linked: boolean): Promis
     /* oxlint-disable no-await-in-loop -- linking is one at a time by design */
     for (const name of names) {
       if (linked) {
-        await relink(cfg, state, name);
+        await relink(cfg, state, name, ui.reporter);
         ui.success("linked", name);
       } else {
-        await unlinkPackage(cfg, state, name);
+        await unlinkPackage(cfg, state, name, ui.reporter);
         ui.success("unlinked", name);
       }
     }
