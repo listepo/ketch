@@ -112,7 +112,14 @@ spec until Phase 10 removes it.
   second time against the Bun-compiled binary out of `scripts/package.sh`
   (`KETCH_E2E_BINARY`), which is how the streaming rewrite was checked on the
   runtime that actually ships.
-- [ ] **Phase 12 — push + PR** (only when the user says push)
+- [x] **Phase 12 — push + PR** — merged as `83f4b41` via [#7](https://github.com/listepo/ketch/pull/7).
+
+  `main` carried PR #6 squashed while this branch carried the same five
+  commits unsquashed, so a plain merge conflicted on every Rust file #6
+  touched and the port later deleted. The trees were identical, so
+  `ca9f082` absorbed `main` with `-s ours`: no content changed, and the
+  pull request then fast-forwarded. CI passed on Node, Bun and Deno,
+  including the packaged binary.
 
 Gates at `2ffe4be`: `tsc --build` exit 0 · vitest **287/287** across 38 files,
 on Node and on Bun · 33/33 end-to-end against the compiled binary · oxlint exit
@@ -285,6 +292,6 @@ in the same commit — reviewability.
 
 ## Phase 12 — push + PR
 
-Push `ts-rewrite`, PR against `main` describing the port, the stack, parity
-status, and what deliberately changed (JSON data files, npm name, release
-binary via Bun with Perry blocked upstream). **Only when the user asks.**
+Done: [#7](https://github.com/listepo/ketch/pull/7), merged `83f4b41` on
+2026-08-29. The port is on `main`; this ledger is now history rather than a
+plan, and `AGENTS.md` is the document to read instead.
