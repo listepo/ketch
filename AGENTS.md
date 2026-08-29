@@ -73,11 +73,11 @@ table — it is a summary, they are the source.
 | --- | --- | --- |
 | TypeScript | 7 (native compiler) | strict everywhere; project references |
 | Node.js | 26 | canonical runtime; CI runs the suite here |
-| Bun | 1.3 | fastest runtime: the dev/agent loop runs on it |
+| Bun | 1.3 | fastest runtime: the dev/agent loop runs on it, and it compiles the released binary |
 | Deno | 2 | supported runtime, smoke-tested |
-| Perry (`@perryts/perry`) | 0.5 | compiles the CLI to a native binary for releases |
+| Perry (`@perryts/perry`) | 0.5 | the intended release compiler; blocked upstream, see Releasing |
 | pnpm | 10 | dependency management (workspaces in `pnpm-workspace.yaml`) |
-| Moon | 2.5 | task runner; tasks in `.moon/tasks.yml` |
+| Moon | 2.5 | task runner; inherited tasks in `.moon/tasks/all.yml` |
 | Vitest | 4 | the whole suite; colocated `*.test.ts` |
 | oxlint | 1.80 | the linter (no ESLint) |
 | Biome | 2.5 | the formatter (no Prettier) |
@@ -278,11 +278,10 @@ The release workflow then re-runs the whole gate, refuses a tag that disagrees
 with the declared version, and publishes the tarballs with an aggregate
 `SHA256SUMS`.
 
-`scripts/package.sh` compiles one target with `perry compile` and tars the
-result. Perry compiles for the **host** architecture only, so the script refuses
-a target that is not this machine's rather than mislabelling the binary, and the
-release workflow uses one runner per macOS architecture instead of
-cross-compiling.
+`scripts/package.sh` compiles one target with `bun build --compile` and tars
+the result. Bun cross-compiles, so either slice builds on either architecture;
+the release workflow still runs one runner per macOS architecture, because that
+is what lets it execute the binary it just built before publishing it.
 
 Asset names are load-bearing: `install.sh` and `ketch self update` both look for
 `ketch-<target>.tar.gz`, with the binary named `ketch` at the archive root, and
@@ -294,12 +293,20 @@ Bumping the version by hand is what `scripts/release.sh` exists to stop: the
 version is written in two files and checked in two more places, and all of them
 must agree.
 
-> `.github/workflows/` is the remaining Rust leg — `ci.yml` and `release.yml`
-> still run `cargo fmt`, `clippy` and `test`. Porting them to `mise` + `pnpm` +
-> `moon ci` and to the per-architecture Perry matrix the scripts now expect is a
-> pending step; see `MIGRATION.md`. Nothing above about tags, asset names or the
-> version agreement changes with it, which is why it is written down here rather
-> than in the workflows.
+### Why Bun compiles the binary and not Perry
+
+Perry is the intended compiler, and the reason this codebase is written to
+erasable-syntax and `node:`-builtins-only rules. It cannot do the job yet: as of
+0.5.1220 its prebuilt macOS `libperry_stdlib.a` references `js_ext_http_client_*`
+symbols the published package never defines, so linking fails for any program
+that calls `fetch`. It is not something ketch is doing wrong — a five-line
+`await fetch("https://example.com")` reproduces it, while the same program using
+only `node:fs` links and runs. Downloading is ketch's whole job, so the release
+path uses Bun until that is fixed upstream; `scripts/package.sh` is the one
+place to change back.
+
+Nothing else about the port depends on which compiler wins. The portability
+rules stay as they are: they are what keeps that switch a one-line change.
 
 ## Before you call it done
 
