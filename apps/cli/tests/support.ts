@@ -25,8 +25,19 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 
-/** The CLI entry the sandbox spawns. Absent until the Commands phase lands. */
+/** The CLI entry the sandbox spawns. */
 export const CLI_MAIN = path.resolve(import.meta.dirname, "..", "src", "main.ts");
+
+/**
+ * A compiled binary to exercise instead of the sources, when one is named.
+ *
+ * The released artifact is not the same program as `main.ts` handed to a
+ * runtime: it is bundled, it resolves modules differently, and it is what
+ * users actually run. Pointing the whole suite at it — rather than smoking it
+ * with `--version` — is the only way a bundling failure is found before a tag
+ * goes out instead of after.
+ */
+const COMPILED_BINARY = process.env["KETCH_E2E_BINARY"];
 
 /** What one ketch run left behind. `status` is null when a signal killed it. */
 export interface RunResult {
@@ -146,7 +157,10 @@ export class Sandbox {
     // keeps the suite from editing a real `.zshrc`.
     env["HOME"] = this.home();
     env["SHELL"] = "/bin/zsh";
-    const out = spawnSync(process.execPath, [CLI_MAIN, ...args], { env, encoding: "utf8" });
+    const out =
+      COMPILED_BINARY === undefined
+        ? spawnSync(process.execPath, [CLI_MAIN, ...args], { env, encoding: "utf8" })
+        : spawnSync(COMPILED_BINARY, args, { env, encoding: "utf8" });
     if (out.error !== undefined) {
       throw new Error(`could not run ketch: ${out.error.message}`);
     }

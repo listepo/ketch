@@ -87,12 +87,14 @@ jobs:
         run: scripts/package.sh ${{ matrix.target }} dist
 
       # Each slice is built on its own architecture, so each one can be run
-      # where it was built.
-      - name: Smoke test
+      # where it was built — and running it means the whole end-to-end suite,
+      # not `--version`. This is the last point at which a binary that compiles
+      # but cannot install anything is still catchable.
+      - name: The end-to-end suite against the packaged binary
         run: |
           tar -xzf dist/ketch-${{ matrix.target }}.tar.gz -C "$RUNNER_TEMP"
           "$RUNNER_TEMP/ketch" --version
-          "$RUNNER_TEMP/ketch" --help > /dev/null
+          KETCH_E2E_BINARY="$RUNNER_TEMP/ketch" pnpm exec vitest run --root apps/cli tests
 
       - uses: actions/upload-artifact@v4
         with:

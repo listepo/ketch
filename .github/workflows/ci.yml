@@ -132,3 +132,11 @@ jobs:
           [ -n "$binary" ] || { echo "no ketch binary in the tarball" >&2; exit 1; }
           "$binary" --version
           "$binary" --help > /dev/null
+          echo "KETCH_E2E_BINARY=$PWD/$binary" >> "$GITHUB_ENV"
+
+      # The compiled binary is a different program from `main.ts` handed to a
+      # runtime — bundled, resolving modules its own way — so the suite is
+      # pointed at the artifact itself. A bundling failure that `--version`
+      # would sail past fails here instead of after the tag is pushed.
+      - name: The end-to-end suite against the packaged binary
+        run: pnpm exec vitest run --root apps/cli tests
