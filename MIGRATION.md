@@ -83,7 +83,13 @@ spec until Phase 10 removes it.
   by Bun, not Perry (Perry 0.5.1220 cannot link a program that calls `fetch` on
   macOS — upstream, reproducible in five lines), and `.tar.xz` is decompressed
   by the OS's libarchive rather than a WebAssembly decoder.**
-- [ ] **Phase 10 — remove the Rust implementation**
+- [x] **Phase 10 — remove the Rust implementation** (`8829ae7`, `132bca8`):
+  `src/`, `tests/`, `Cargo.toml`, `Cargo.lock` and the Hugo `site/` deleted
+  after checking parity module by module — including `src/builtin.toml`, whose
+  single entry survives byte-for-byte as `packages/schemas/src/builtin.ts`. The
+  Rust `target/` directory (1.7 GB) and its ignore rules went too. A `git add
+  -A` had swept 263 Perry object files (36 MB) into `4b575c8`; they are gone
+  from this branch's history and `*.o` is now ignored.
 - [ ] **Phase 11 — review + runtime matrix + Perry binary**
 - [ ] **Phase 12 — push + PR** (only when the user says push)
 
