@@ -5,40 +5,112 @@ on:
     branches: [main]
   pull_request:
 
-env:
-  CARGO_TERM_COLOR: always
+# A superseded pull-request run is wasted macOS minutes; a main-branch run is
+# the record of what that commit did, so it is never cancelled.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  check:
-    # macOS is the only implemented platform, so it is the only one worth gating on.
+  # The four gates a developer runs before calling a change done. They are the
+  # scripts in the root package.json rather than inlined commands, so changing
+  # a gate changes it in one place.
+  gates:
+    # macOS is the only implemented platform, so it is the only one worth
+    # gating on.
     runs-on: macos-latest
     steps:
+      # Full history: `fallow audit` diffs against the merge-base with
+      # origin/main, which a depth-1 clone does not contain.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Install toolchain
-        run: rustup component add rustfmt clippy
+      # mise.toml is the single source of truth for Node, Bun, Deno and pnpm
+      # versions. Nothing here names a version, so nothing here can drift.
+      - uses: jdx/mise-action@v2
 
-      - uses: Swatinem/rust-cache@v2
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
-      - name: Format
-        run: cargo fmt --all -- --check
+      - name: Typecheck
+        run: pnpm run typecheck
 
       - name: Lint
-        run: cargo clippy --all-targets --locked -- -D warnings
+        run: pnpm run lint
 
-      # Unit tests and the end-to-end suite in tests/, which drives the real
-      # binary against a throwaway root. Both are offline.
+      - name: Format
+        run: pnpm run format:check
+
+      # Gates only findings this change introduces; the recorded backlog in
+      # .fallow-baselines/ does not fail the build.
+      - name: Fallow audit
+        run: pnpm run fallow:audit
+
+      # Unit tests and the end-to-end suite, which drives the real CLI against
+      # a throwaway root with downloads served by an offline fixture plugin.
       - name: Test
-        run: cargo test --all-targets --locked
+        run: pnpm run test
+
+  # Runtime portability is a feature, not an accident: the code uses `node:`
+  # builtins only and must behave the same on every supported runtime. Proving
+  # that needs each runtime to actually run the thing.
+  runtimes:
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Node is canonical, Bun is the dev loop — both run the whole suite.
+          - runtime: node
+            exec: node
+            suite: pnpm exec vitest run
+          - runtime: bun
+            exec: bun
+            suite: bun run vitest run
+          # Vitest does not run under Deno, so Deno gets the CLI smoke only.
+          # That still exercises config, state, logging and every platform
+          # check, which is where a runtime difference would show up.
+          - runtime: deno
+            exec: deno run --allow-all
+            suite: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: The suite on ${{ matrix.runtime }}
+        if: matrix.suite != ''
+        run: ${{ matrix.suite }}
+
+      # `doctor` reports a failed check — and exits non-zero — when the root's
+      # bin directory is not on PATH, which is correct behaviour and exactly
+      # what a fresh scratch root looks like. Putting it on PATH is what makes
+      # this a smoke test of the command rather than of the check.
+      - name: Smoke the CLI on ${{ matrix.runtime }}
+        run: |
+          root="$RUNNER_TEMP/ketch-${{ matrix.runtime }}"
+          mkdir -p "$root/bin"
+          export KETCH_ROOT="$root"
+          export PATH="$root/bin:$PATH"
+          ${{ matrix.exec }} apps/cli/src/main.ts --version
+          ${{ matrix.exec }} apps/cli/src/main.ts --help > /dev/null
+          ${{ matrix.exec }} apps/cli/src/main.ts doctor
 
   # Packaging is exercised on every pull request, so it breaks here rather than
-  # at tag time — by which point the tag has already been pushed.
+  # at tag time — by which point the tag has already been pushed. The binary
+  # built here is the binary the release ships, so building it is also the only
+  # way to find out that it still runs.
   package:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
 
-      - uses: Swatinem/rust-cache@v2
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Shell syntax
         run: |
@@ -46,6 +118,8 @@ jobs:
           bash -n scripts/package.sh
           bash -n scripts/release.sh
 
+      # The host slice, which is the one this runner can execute afterwards.
+      # The release workflow builds the x86_64 slice on an Intel runner.
       - name: Package the host target
         run: scripts/package.sh aarch64-apple-darwin dist
 
@@ -66,3 +140,12 @@ jobs:
           binary=$(find unpacked -name ketch -type f | head -1)
           [ -n "$binary" ] || { echo "no ketch binary in the tarball" >&2; exit 1; }
           "$binary" --version
+          "$binary" --help > /dev/null
+          echo "KETCH_E2E_BINARY=$PWD/$binary" >> "$GITHUB_ENV"
+
+      # The compiled binary is a different program from `main.ts` handed to a
+      # runtime — bundled, resolving modules its own way — so the suite is
+      # pointed at the artifact itself. A bundling failure that `--version`
+      # would sail past fails here instead of after the tag is pushed.
+      - name: The end-to-end suite against the packaged binary
+        run: pnpm exec vitest run --root apps/cli tests

@@ -1,0 +1,8 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "rootDir": ".", "outDir": "dist" },
+  // The e2e suite is typechecked too: it drives the CLI through a spawned
+  // process, so a mistake in it is invisible until the test misreports.
+  "include": ["src", "tests"],
+  "references": [{ "path": "../../packages/schemas" }, { "path": "../../packages/core" }]
+}

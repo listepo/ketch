@@ -1,0 +1,22 @@
+layer: application
+language: javascript
+
+# Docs pages are generated from the repository's Markdown, so the build syncs
+# first. None of the workspace's TypeScript gates apply to this project.
+workspace:
+  inheritedTasks:
+    exclude: ["typecheck", "lint", "format", "test"]
+
+tasks:
+  build:
+    script: "node sync-docs.mjs && pnpm exec docusaurus build"
+    inputs:
+      - "src/**/*"
+      - "static/**/*"
+      - "docusaurus.config.ts"
+      - "sidebars.ts"
+      - "sync-docs.mjs"
+      - "/docs/**/*"
+      - "/ROADMAP.md"
+      - "/AGENTS.md"
+    outputs: ["build"]

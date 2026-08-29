@@ -1,0 +1,122 @@
+{
+  "finding_counts": {
+    "apps/cli/src/cmd/lock.ts": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "apps/cli/src/cmd/pkg.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "apps/cli/src/cmd/query.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "complexity_moderate": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "packages/core/src/changelog.ts": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "packages/core/src/config.ts": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "packages/core/src/errors.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "packages/core/src/extract/archive.ts": {
+      "complexity_moderate": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "packages/core/src/install.ts": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "packages/core/src/model.ts": {
+      "complexity_high": {
+        "count": 1
+      }
+    },
+    "packages/core/src/platform/darwin.ts": {
+      "complexity_high": {
+        "count": 1
+      },
+      "complexity_moderate": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "packages/core/src/source/github.ts": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "packages/core/src/state.ts": {
+      "complexity_moderate": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "packages/schemas/src/lockfile.ts": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    }
+  },
+  "runtime_coverage_findings": [],
+  "target_keys": [
+    "apps/cli/src/cli.ts:circular dependency",
+    "packages/core/src/source/github.ts:complexity",
+    "packages/core/src/model.ts:complexity",
+    "packages/core/src/platform/platform.ts:circular dependency",
+    "packages/core/src/platform/darwin.ts:circular dependency",
+    "packages/core/src/errors.ts:high impact",
+    "apps/cli/src/cmd/system.ts:circular dependency",
+    "apps/cli/src/cmd/query.ts:complexity"
+  ]
+}

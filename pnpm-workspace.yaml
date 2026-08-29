@@ -1,0 +1,11 @@
+packages:
+  - "packages/*"
+  - "apps/*"
+
+# pnpm 10 runs no install script unless it is named here. Perry and Biome
+# fetch their own platform binaries, and esbuild — which Astro builds on —
+# does the same; without the approval the site has nothing to build with.
+onlyBuiltDependencies:
+  - "@perryts/perry"
+  - "@biomejs/biome"
+  - "esbuild"

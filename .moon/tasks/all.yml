@@ -1,0 +1,22 @@
+# Tasks every project inherits. `moon ci` runs what a change affects.
+fileGroups:
+  sources: ["src/**/*"]
+  tests: ["src/**/*.test.ts", "tests/**/*"]
+
+tasks:
+  # Every gate reads the tests as well as the sources: the CLI's tsconfig
+  # includes `tests/`, and oxlint and biome are pointed at the whole project.
+  # Leaving them out of the inputs let Moon serve a cached pass for a change it
+  # had never actually checked.
+  typecheck:
+    command: "bun run tsc --build"
+    inputs: ["@group(sources)", "@group(tests)", "tsconfig.json", "/tsconfig.base.json"]
+  lint:
+    command: "bun run oxlint ."
+    inputs: ["@group(sources)", "@group(tests)", "/.oxlintrc.json"]
+  format:
+    command: "bun run biome format ."
+    inputs: ["@group(sources)", "@group(tests)", "/biome.json"]
+  test:
+    command: "bun run vitest run --root ."
+    inputs: ["@group(sources)", "@group(tests)"]

@@ -1,0 +1,3 @@
+layer: application
+language: typescript
+dependsOn: ["core", "schemas"]

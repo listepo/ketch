@@ -12,9 +12,6 @@ on:
         description: "Existing tag to build and publish"
         required: true
 
-env:
-  CARGO_TERM_COLOR: always
-
 jobs:
   # Nothing is published unless the same gate CI applies is green. A release is
   # the one build people cannot re-run themselves.
@@ -25,57 +22,79 @@ jobs:
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
 
-      - run: rustup component add rustfmt clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: jdx/mise-action@v2
 
-      - name: Format
-        run: cargo fmt --all -- --check
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm run typecheck
 
       - name: Lint
-        run: cargo clippy --all-targets --locked -- -D warnings
+        run: pnpm run lint
+
+      - name: Format
+        run: pnpm run format:check
 
       - name: Test
-        run: cargo test --all-targets --locked
+        run: pnpm run test
 
       # `ketch self update` compares the running binary's version against the
-      # release tag. A tag that disagrees with Cargo.toml makes every installed
-      # copy either miss the update or reinstall forever.
-      - name: Tag matches Cargo.toml
+      # release tag. A tag that disagrees with apps/cli/package.json makes every
+      # installed copy either miss the update or reinstall forever. The version
+      # the binary prints is `VERSION` in apps/cli/src/cli.ts, which the test
+      # run above pins to this same field — so checking the manifest checks
+      # both.
+      - name: Tag matches apps/cli/package.json
         run: |
           tag="${{ github.event.inputs.tag || github.ref_name }}"
-          crate="v$(cargo metadata --no-deps --format-version 1 \
-            | sed -n 's/.*"name":"ketch","version":"\([^"]*\)".*/\1/p')"
-          if [ "$tag" != "$crate" ]; then
-            echo "tag $tag does not match Cargo.toml version $crate" >&2
+          pkg="v$(node -e 'const fs = require("node:fs");
+            const m = JSON.parse(fs.readFileSync("apps/cli/package.json", "utf8"));
+            process.stdout.write(m.version);')"
+          if [ "$tag" != "$pkg" ]; then
+            echo "tag $tag does not match apps/cli/package.json version $pkg" >&2
             exit 1
           fi
-          echo "$tag matches Cargo.toml"
+          echo "$tag matches apps/cli/package.json"
 
   build:
     needs: verify
-    runs-on: macos-latest
+    runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
-        target: [aarch64-apple-darwin, x86_64-apple-darwin]
+        include:
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+          # Bun cross-compiles, so one runner could produce both slices.
+          # Each is built on its own architecture anyway, because that is what
+          # lets the smoke step below actually run what it just built. If
+          # GitHub retires this label, replace it with whatever the current
+          # Intel macOS image is; dropping the leg would ship a release that
+          # silently abandons every Intel Mac.
+          - target: x86_64-apple-darwin
+            runner: macos-15-intel
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
 
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ matrix.target }}
+      - uses: jdx/mise-action@v2
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Package
         run: scripts/package.sh ${{ matrix.target }} dist
 
-      # The arm64 runner can build the x86_64 slice but cannot run it, so only
-      # the native one is smoke-tested here.
-      - name: Smoke test
-        if: matrix.target == 'aarch64-apple-darwin'
+      # Each slice is built on its own architecture, so each one can be run
+      # where it was built — and running it means the whole end-to-end suite,
+      # not `--version`. This is the last point at which a binary that compiles
+      # but cannot install anything is still catchable.
+      - name: The end-to-end suite against the packaged binary
         run: |
           tar -xzf dist/ketch-${{ matrix.target }}.tar.gz -C "$RUNNER_TEMP"
           "$RUNNER_TEMP/ketch" --version
+          KETCH_E2E_BINARY="$RUNNER_TEMP/ketch" pnpm exec vitest run --root apps/cli tests
 
       - uses: actions/upload-artifact@v4
         with:
@@ -106,6 +125,13 @@ jobs:
           # install.sh can grep it. Sorted, so the file is reproducible.
           shasum -a 256 $(ls *.tar.gz | sort) > SHA256SUMS
           cat SHA256SUMS
+
+          # Both architectures or nothing: a release missing one leaves those
+          # machines unable to install and unable to update.
+          for required in ketch-aarch64-apple-darwin.tar.gz \
+                          ketch-x86_64-apple-darwin.tar.gz; do
+            [ -s "$required" ] || { echo "missing asset: $required" >&2; exit 1; }
+          done
 
       - name: Publish release
         env:

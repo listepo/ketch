@@ -1,0 +1,44 @@
+---
+/**
+ * The install command, with a copy button.
+ *
+ * Progressive enhancement only: without JavaScript the command is still
+ * selectable text, which is all it ever needed to be.
+ */
+const command = "curl -fsSL https://raw.githubusercontent.com/listepo/ketch/main/install.sh | bash";
+---
+
+<div
+  class="flex items-start gap-3 rounded-lg border border-edge bg-raised px-4 py-3 font-mono text-sm"
+>
+  <!-- Wrapped, not scrolled: a command clipped mid-URL reads as a broken page,
+       and this one is the first thing a visitor is asked to trust. -->
+  <code class="min-w-0 break-all whitespace-pre-wrap" data-install>{command}</code>
+  <button
+    type="button"
+    data-copy
+    class="ml-auto shrink-0 rounded border border-edge px-2 py-1 text-xs text-muted transition hover:text-ink"
+    aria-label="Copy install command">Copy</button
+  >
+</div>
+
+<script>
+  for (const button of document.querySelectorAll<HTMLButtonElement>("[data-copy]")) {
+    button.addEventListener("click", async () => {
+      const source = button.parentElement?.querySelector("[data-install]");
+      if (source?.textContent == null) return;
+      try {
+        await navigator.clipboard.writeText(source.textContent.trim());
+        const was = button.textContent;
+        button.textContent = "Copied";
+        setTimeout(() => {
+          button.textContent = was;
+        }, 1600);
+      } catch {
+        // Clipboard blocked (insecure context, denied permission): select the
+        // text instead so the keyboard shortcut still works.
+        getSelection()?.selectAllChildren(source);
+      }
+    });
+  }
+</script>

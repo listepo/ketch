@@ -27,7 +27,7 @@ print_help() {
   cat <<EOF
 Usage: install.sh [OPTIONS]
 
-Install ketch, a Rust CLI for managing GitHub-released apps on macOS.
+Install ketch, a single-binary CLI for managing GitHub-released apps on macOS.
 
 OPTIONS:
   --version <TAG>      Install specific version (default: latest)
