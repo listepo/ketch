@@ -71,7 +71,18 @@ spec until Phase 10 removes it.
   the Zod schema that will check it in anger. The pass also found five real
   code defects, fixed in `4206e35` — the largest being that `state.json` was
   the only file ketch writes without a `$schema`.
-- [ ] **Phase 9 — CI + release + install.sh**
+- [x] **Phase 9 — CI + release + install.sh** (`cb18e3e`, `651beb5`,
+  `4b575c8`): `ci.yml` (gates + a runtime matrix that drives the real CLI on
+  node/bun/deno + a packaging job that unpacks and runs the tarball),
+  `pages.yml` (web + docs merged and checked), `release.yml` (gates, tag/version
+  agreement, one runner per architecture, aggregate `SHA256SUMS`),
+  `scripts/package.sh`, `scripts/release.sh`, `install.sh`. Moon's config was
+  moved to the layout 2.5 reads, so `moon ci` runs 21 actions instead of
+  silently finding no tasks. **Two decisions are recorded in AGENTS.md rather
+  than here, because they outlive this document: the release binary is compiled
+  by Bun, not Perry (Perry 0.5.1220 cannot link a program that calls `fetch` on
+  macOS — upstream, reproducible in five lines), and `.tar.xz` is decompressed
+  by the OS's libarchive rather than a WebAssembly decoder.**
 - [ ] **Phase 10 — remove the Rust implementation**
 - [ ] **Phase 11 — review + runtime matrix + Perry binary**
 - [ ] **Phase 12 — push + PR** (only when the user says push)
@@ -200,18 +211,33 @@ Order matters: **5.1 first**, then 5.2–5.4 in parallel (they import ui.ts).
 
 ## Phase 9 — CI + release + installer
 
-- `.github/workflows/ci.yml`: macOS runner; mise install; pnpm install;
-  `moon ci` (typecheck/lint/format/test affected); full vitest on Node AND
-  Bun; smoke the CLI under node/bun/deno (`ketch --help`, `doctor` against a
-  scratch root); `perry build` the CLI and run the binary's --help.
-- `.github/workflows/pages.yml`: build apps/web + apps/docs, merge, deploy.
-- `.github/workflows/release.yml`: on tag — gates, then Perry-compile
-  `ketch-aarch64-apple-darwin` + `ketch-x86_64-apple-darwin` tarballs +
-  SHA256SUMS (same asset names as the Rust releases — `install.sh` and
-  `selfupdate` depend on them). scripts/package.sh + release.sh adapted
-  (version from apps/cli/package.json; release.sh bumps it + lockfile).
-- install.sh: same flow, still downloads the tarball binary; version check
-  now reads package.json field.
+Done. What shipped, and where it differs from the plan above:
+
+- `ci.yml`: gates from the root scripts; a runtime matrix running the suite on
+  Node and Bun and driving the real CLI on all three; a packaging job that
+  builds the tarball, verifies its checksum, unpacks it and runs the binary.
+- `pages.yml`: web + docs built, merged, and checked for the files and SEO tags
+  that make the landing page worth having; only `main` deploys.
+- `release.yml`: gates, then the tag/`apps/cli/package.json` agreement check
+  (`ketch self update` compares them, so a mismatch breaks every installed
+  copy), then one runner per architecture, then an aggregate `SHA256SUMS`.
+- `scripts/package.sh`, `scripts/release.sh`, `install.sh` as planned.
+
+**The binary is compiled by Bun, not Perry.** Perry 0.5.1220 — the latest
+published — cannot link any program that calls `fetch` on macOS: its prebuilt
+`libperry_stdlib.a` references `js_ext_http_client_*` symbols the published
+package never defines. `await fetch("https://example.com")` alone reproduces it;
+the same program using only `node:fs` links and runs. Downloading is ketch's
+whole job. Bun cross-compiles both slices, so `package.sh` takes any target,
+and the release workflow still uses one runner per architecture so each slice is
+executed before it is published. Switching back is one command in `package.sh`;
+the erasable-syntax and `node:`-builtins-only rules are what keep it that small.
+
+**`.tar.xz` no longer goes through WebAssembly.** That was the other half of the
+same blocker. macOS `tar` is libarchive linked against liblzma, and `-c @archive`
+rewrites an archive's entries instead of extracting them, so it decompresses
+without extracting and `safeMemberPath` still sees — and still rejects — a member
+that tries to escape.
 
 ## Phase 10 — remove the Rust implementation
 
@@ -224,8 +250,8 @@ in the same commit — reviewability.
 
 - Adversarial review workflow over the whole port (find → refute per finding);
   fix confirmed issues.
-- Full gates; e2e on Node and Bun; `mise exec -- deno run` smoke; Perry
-  binary built and driven through install/list/changelog/uninstall against a
+- Full gates; e2e on Node and Bun; `mise exec -- deno run` smoke; the
+  compiled binary driven through install/list/changelog/uninstall against a
   scratch KETCH_ROOT with the offline plugin.
 - Update this ledger + engram; only then report done.
 
@@ -233,4 +259,4 @@ in the same commit — reviewability.
 
 Push `ts-rewrite`, PR against `main` describing the port, the stack, parity
 status, and what deliberately changed (JSON data files, npm name, release
-binary via Perry). **Only when the user asks.**
+binary via Bun with Perry blocked upstream). **Only when the user asks.**
