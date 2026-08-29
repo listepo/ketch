@@ -4,6 +4,7 @@
  * node-tar's `Header`, so each test states exactly the bytes it feeds in.
  */
 
+import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -16,6 +17,7 @@ import {
   isProgramHead,
   TarBz2Extractor,
   TarGzExtractor,
+  TarXzExtractor,
   unpackTar,
 } from "./archive.ts";
 import { readHead } from "./index.ts";
@@ -101,6 +103,22 @@ const PLANTED_TAR_BZ2 = Buffer.from(
   "base64",
 );
 
+/**
+ * An `.tar.xz` holding exactly the given entries.
+ *
+ * There is no xz compressor in the dependency tree — dropping the WebAssembly
+ * one is the reason `unxz` exists — so the fixture is compressed by the same
+ * libarchive `@archive` syntax the extractor decompresses with, which copies
+ * entries across verbatim and so preserves a member name no real `tar -c`
+ * would ever write.
+ */
+function writeTarXz(target: string, entries: readonly Buffer[]): void {
+  const plain = `${target}.plain.tar`;
+  fs.writeFileSync(plain, tarWith(entries));
+  const packed = spawnSync("/usr/bin/tar", ["-cJf", target, `@${plain}`]);
+  expect(packed.status, packed.stderr?.toString("utf8")).toBe(0);
+}
+
 describe("archive extraction", () => {
   /**
    * The escape this guards against is not hypothetical: every member name in
@@ -152,6 +170,41 @@ describe("archive extraction", () => {
     // fixture that failed to decode.
     expect(fs.lstatSync(path.join(dest, "a/b/c/d/link")).isSymbolicLink()).toBe(true);
     expect(fs.existsSync(path.join(dir, "e"))).toBe(false);
+  });
+
+  it("extracts a tar xz and keeps the executable bit", async () => {
+    const src = path.join(dir, "t.tar.xz");
+    writeTarXz(src, [fileEntry("rg-1/rg", "#!/bin/sh\n", 0o755)]);
+    const dest = path.join(dir, "out");
+    fs.mkdirSync(dest, { recursive: true });
+
+    await new TarXzExtractor().extract(src, dest);
+    const binary = path.join(dest, "rg-1/rg");
+    expect(fs.readFileSync(binary, "utf8")).toBe("#!/bin/sh\n");
+    expect(fs.statSync(binary).mode & 0o111).not.toBe(0);
+  });
+
+  /**
+   * Decompressing through the OS could have sanitised member names on the way
+   * past, which would leave the archive installing somewhere other than where
+   * it says it does. The refusal proves the hostile name reached the guard.
+   */
+  it("xz archives use the same traversal guard as tar", () => {
+    const src = path.join(dir, "escape.tar.xz");
+    writeTarXz(src, [fileEntry("../../evil", "pwned\n", 0o644)]);
+    const dest = path.join(dir, "dest");
+    fs.mkdirSync(dest, { recursive: true });
+
+    expect(() => new TarXzExtractor().extract(src, dest)).toThrow(/escapes the target/);
+    expect(fs.existsSync(path.join(dir, "evil"))).toBe(false);
+  });
+
+  it("reports xz it cannot decompress against the file it came from", () => {
+    const src = path.join(dir, "junk.tar.xz");
+    // Enough of an xz header for `detect` to match; nothing that decodes.
+    fs.writeFileSync(src, Buffer.from("\xfd7zXZ\x00 and then nothing usable", "latin1"));
+
+    expect(() => new TarXzExtractor().extract(src, path.join(dir, "out"))).toThrow(src);
   });
 
   it("detection separates tar gz from a lone gz", () => {

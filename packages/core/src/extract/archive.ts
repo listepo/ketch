@@ -9,9 +9,10 @@
  * Decompression is to memory and filesystem work is synchronous, mirroring the
  * Rust original: extraction is a short, CPU-bound step between two awaits, and
  * an async guard would have to be re-proved at every call site for no gain.
- * Only `extract` itself is async, because the interface and the xz decoder are.
+ * Only `extract` itself is async, because the interface is.
  */
 
+import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as zlib from "node:zlib";
@@ -336,6 +337,42 @@ export class TarGzExtractor implements Extractor {
   }
 }
 
+/**
+ * A ceiling on the decompressed size of an xz archive. xz expands by orders of
+ * magnitude, so an unbounded decode is a bomb the downloader cannot see coming;
+ * a real release, `.app` bundles included, is far below this.
+ */
+const XZ_MAX_BYTES = 1024 * 1024 * 1024;
+
+/**
+ * The plain tar stream inside an xz archive.
+ *
+ * Every JavaScript xz decoder published to npm is a WebAssembly build, and the
+ * compiler that produces the released binary ships no WebAssembly host — one in
+ * the module graph costs the release path entirely. macOS `tar` is libarchive
+ * linked against liblzma, and `-c @archive` reads an archive and rewrites its
+ * entries rather than extracting them, which is a decompressor the OS already
+ * has. It is spawned by absolute path so a `tar` earlier on `PATH` cannot stand
+ * in for it. Names, modes and link targets survive verbatim, so `unpackTar`
+ * still sees — and still rejects — a member that tries to escape.
+ *
+ * A non-macOS platform needs its own decoder here: this is GNU tar syntax for
+ * something else entirely.
+ */
+function unxz(src: string): Buffer {
+  const result = spawnSync("/usr/bin/tar", ["-cf", "-", "--format=pax", `@${path.resolve(src)}`], {
+    maxBuffer: XZ_MAX_BYTES,
+  });
+  if (result.error !== undefined) {
+    throw KetchError.parse(src, `xz could not be decompressed: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    const detail = result.stderr.toString("utf8").trim();
+    throw KetchError.parse(src, detail === "" ? "not a valid xz archive" : detail);
+  }
+  return result.stdout;
+}
+
 /** `.tar.xz` / `.txz` */
 export class TarXzExtractor implements Extractor {
   readonly id = "tar.xz";
@@ -344,23 +381,9 @@ export class TarXzExtractor implements Extractor {
     return startsWith(head, XZ_MAGIC);
   }
 
-  async extract(src: string, dest: string): Promise<void> {
-    const compressed = readWhole(src);
-    let plain: Buffer;
-    try {
-      // Loaded here rather than at the top of the file for two reasons: it is
-      // a CommonJS bundle, whose named exports Node cannot see through a
-      // static `import`, and it carries a WebAssembly payload no other command
-      // should pay to load.
-      const { XzReadableStream } = (await import("xz-decompress")).default;
-      // The copy re-types the bytes: Buffer's backing store admits
-      // SharedArrayBuffer at the type level, and Blob refuses that.
-      const stream = new XzReadableStream(new Blob([new Uint8Array(compressed)]).stream());
-      plain = Buffer.from(await new Response(stream).arrayBuffer());
-    } catch (cause) {
-      throw KetchError.parse(src, (cause as Error).message);
-    }
-    unpackTar(plain, dest, src);
+  extract(src: string, dest: string): Promise<void> {
+    unpackTar(unxz(src), dest, src);
+    return Promise.resolve();
   }
 }
 

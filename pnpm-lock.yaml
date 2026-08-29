@@ -117,9 +117,6 @@ importers:
       tar:
         specifier: ^7.5.22
         version: 7.5.22
-      xz-decompress:
-        specifier: ^0.2.3
-        version: 0.2.3
       yauzl:
         specifier: ^3.4.0
         version: 3.4.0
@@ -7043,10 +7040,6 @@ packages:
 
   xxhash-wasm@1.1.0:
     resolution: {integrity: sha512-147y/6YNh+tlp6nd/2pWq38i9h6mz/EuQ6njIrmW8D1BS5nCqs0P6DG+m6zTGnNz5I+uhZ0SHxBs9BsPrwcKDA==}
-
-  xz-decompress@0.2.3:
-    resolution: {integrity: sha512-O8v6HG8T0PrKBcpyWA13GkSYWFvncwzuzcLx5A7++l3HsE3atmoetXjIxrZ/JV/nbvSZ7WS4+3XvREZuVn+rEA==}
-    engines: {node: '>=16'}
 
   yallist@3.1.1:
     resolution: {integrity: sha512-a4UGQaWPH59mOXUYnAG2ewncQS4i4F43Tv3JoAM+s2VDAmS9NsK8GpDMLrCHPksFT7h3K6TOoUNn2pb7RoXx4g==}
@@ -15348,8 +15341,6 @@ snapshots:
       sax: 1.6.1
 
   xxhash-wasm@1.1.0: {}
-
-  xz-decompress@0.2.3: {}
 
   yallist@3.1.1: {}
 
