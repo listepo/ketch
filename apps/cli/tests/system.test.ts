@@ -196,4 +196,22 @@ describe("the log", () => {
     },
     TIMEOUT,
   );
+
+  it(
+    "says so out loud when it cannot be opened",
+    () => {
+      const sandbox = new Sandbox();
+      onTestFinished(() => sandbox.dispose());
+      // A directory standing where the log file goes. Every `ui` call after
+      // this records nothing, so a run that silently kept no log would be
+      // indistinguishable from one that kept a complete one.
+      fs.mkdirSync(path.join(sandbox.root(), "logs", "ketch.log"), { recursive: true });
+
+      const out = sandbox.run(["list"]);
+
+      expect(out.status).toBe(0);
+      expect(out.stderr).toMatch(/warning could not open .*ketch\.log/);
+    },
+    TIMEOUT,
+  );
 });

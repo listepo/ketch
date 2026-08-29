@@ -96,7 +96,14 @@ export function build(): Command {
       warn: ui.warn,
     });
     await ensureDirs(config);
-    logInit(config, VERSION);
+    // `logInit` hands back the reason rather than printing it, so that core
+    // stays off the terminal. Saying nothing would leave a run that recorded
+    // nothing looking exactly like one that recorded everything — and
+    // `ui.warn`'s own record is dropped, since the sink is what failed.
+    const logFailure = logInit(config, VERSION);
+    if (logFailure !== null) {
+      ui.warn(logFailure);
+    }
     ui.debug(
       `root ${config.root} · target ${config.target} · token ${
         config.githubToken !== null ? "yes" : "no"
