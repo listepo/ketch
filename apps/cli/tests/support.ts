@@ -300,6 +300,14 @@ export class Asset {
     return new Asset(this.name, this.filePath, "0".repeat(64));
   }
 
+  /**
+   * Publish no digest at all — which plenty of real projects do, and which is
+   * the only case `--require-checksum` and `require_checksums` are about.
+   */
+  withoutDigest(): Asset {
+    return new Asset(this.name, this.filePath, null);
+  }
+
   toJSON(): object {
     return {
       name: this.name,

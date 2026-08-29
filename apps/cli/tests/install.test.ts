@@ -303,4 +303,61 @@ describe("install", () => {
     },
     TIMEOUT,
   );
+
+  it(
+    "--require-checksum refuses a release that publishes none",
+    () => {
+      const sandbox = new Sandbox();
+      onTestFinished(() => sandbox.dispose());
+      const unsigned = sandbox
+        .asset(`testtool-1.0.0-${hostArch()}-apple-darwin.tar.gz`, toolArchive("1.0.0"))
+        .withoutDigest();
+      sandbox.publish("testtool", [new Release("1.0.0", [unsigned])]);
+
+      const stderr = sandbox.fail(["install", "test:testtool", "--yes", "--require-checksum"]);
+      expect(stderr.toLowerCase()).toContain("checksum");
+      expect(fs.existsSync(path.join(sandbox.bin(), "testtool"))).toBe(false);
+      expect(sandbox.ok(["list"])).toContain("nothing installed");
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "require_checksums in config.json refuses it too",
+    () => {
+      const sandbox = new Sandbox();
+      onTestFinished(() => sandbox.dispose());
+      // The flag and the setting are two doors onto the same decision, and a
+      // setting that quietly did nothing would be the worse of the two to get
+      // wrong: nobody retypes it on the next install to check.
+      sandbox.configure({ require_checksums: true });
+      const unsigned = sandbox
+        .asset(`testtool-1.0.0-${hostArch()}-apple-darwin.tar.gz`, toolArchive("1.0.0"))
+        .withoutDigest();
+      sandbox.publish("testtool", [new Release("1.0.0", [unsigned])]);
+
+      const stderr = sandbox.fail(["install", "test:testtool", "--yes"]);
+      expect(stderr.toLowerCase()).toContain("checksum");
+      expect(sandbox.ok(["list"])).toContain("nothing installed");
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "without either, an unchecksummed release is recorded on first use",
+    () => {
+      const sandbox = new Sandbox();
+      onTestFinished(() => sandbox.dispose());
+      const unsigned = sandbox
+        .asset(`testtool-1.0.0-${hostArch()}-apple-darwin.tar.gz`, toolArchive("1.0.0"))
+        .withoutDigest();
+      sandbox.publish("testtool", [new Release("1.0.0", [unsigned])]);
+
+      sandbox.ok(["install", "test:testtool", "--yes"]);
+
+      // Installed, but the record says plainly that nothing vouched for it.
+      expect(sandbox.ok(["list", "--json"])).toContain('"checksum_verified": false');
+    },
+    TIMEOUT,
+  );
 });
