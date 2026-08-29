@@ -8,6 +8,11 @@
 /apps/docs/build/
 /apps/docs/docs/
 
+# Compiler intermediates. `perry compile` writes its object files into the
+# directory it is run from, one per module including every dependency's —
+# 263 of them, 36MB, straight into the repository root.
+*.o
+
 # TypeScript monorepo
 node_modules/
 dist/
