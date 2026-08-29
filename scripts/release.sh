@@ -181,9 +181,8 @@ awk -v new="$VERSION" '
   { print }
 ' "$CLI_SOURCE" > "$CLI_SOURCE.new" && mv "$CLI_SOURCE.new" "$CLI_SOURCE"
 
-# pnpm-lock.yaml records the workspace member's *path*, not its version, so
-# unlike Cargo.lock it does not need regenerating for a bump. Nothing to do
-# here on purpose.
+# pnpm-lock.yaml records the workspace member's *path*, not its version, so a
+# bump does not change it. Nothing to regenerate here, on purpose.
 
 # Prove the rewrites did what they claimed rather than trusting the awk above.
 WROTE="$(manifest_version)"

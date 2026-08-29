@@ -183,6 +183,9 @@ export class Http {
       if (res.body !== null) {
         const reader = res.body.getReader();
         try {
+          // oxlint-disable-next-line no-await-in-loop -- a download is a stream:
+          // the next chunk does not exist until this one has been read, and the
+          // hash is only correct if they are written in order.
           for (;;) {
             const step = await asIo(url, () => reader.read());
             if (step.done) {
