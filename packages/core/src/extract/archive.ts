@@ -559,11 +559,38 @@ async function readZip(src: string): Promise<ZipMember[]> {
   return members;
 }
 
+/**
+ * Pull the next member, or null once the archive is exhausted.
+ *
+ * All three listeners come off together. `once` only clears the event that
+ * actually fired, so reading member by member left the `end` and `error`
+ * handlers of every previous member attached: past ten of them Node printed a
+ * MaxListenersExceededWarning to stderr, which is where ketch's own output
+ * goes and where a caller reading stderr does not expect Node's.
+ */
 function nextZipEntry(zip: import("yauzl").ZipFile): Promise<import("yauzl").Entry | null> {
   return new Promise((resolve, reject) => {
-    zip.once("entry", resolve);
-    zip.once("end", () => resolve(null));
-    zip.once("error", reject);
+    const onEntry = (entry: import("yauzl").Entry): void => {
+      detach();
+      resolve(entry);
+    };
+    const onEnd = (): void => {
+      detach();
+      resolve(null);
+    };
+    const onError = (cause: Error): void => {
+      detach();
+      reject(cause);
+    };
+    function detach(): void {
+      zip.removeListener("entry", onEntry);
+      zip.removeListener("end", onEnd);
+      zip.removeListener("error", onError);
+    }
+
+    zip.on("entry", onEntry);
+    zip.on("end", onEnd);
+    zip.on("error", onError);
     zip.readEntry();
   });
 }

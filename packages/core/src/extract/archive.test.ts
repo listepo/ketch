@@ -19,7 +19,9 @@ import {
   TarGzExtractor,
   TarXzExtractor,
   unpackTar,
+  ZipExtractor,
 } from "./archive.ts";
+import { KetchError } from "../errors.ts";
 import { readHead } from "./index.ts";
 
 let dir = "";
@@ -117,6 +119,61 @@ function writeTarXz(target: string, entries: readonly Buffer[]): void {
   fs.writeFileSync(plain, tarWith(entries));
   const packed = spawnSync("/usr/bin/tar", ["-cJf", target, `@${plain}`]);
   expect(packed.status, packed.stderr?.toString("utf8")).toBe(0);
+}
+
+/**
+ * Build a zip from a tree, the way a publisher would.
+ *
+ * `zip` is shelled out to for the same reason `/usr/bin/tar` is above: nothing
+ * in the dependency tree writes these formats, only reads them, and a fixture
+ * a real archiver produced is the one worth testing against.
+ */
+function writeZip(root: string, target: string, entries: readonly string[]): string {
+  const out = spawnSync("/usr/bin/zip", ["-qry", target, ...entries], { cwd: root });
+  if (out.status !== 0) {
+    throw new Error(`zip failed: ${out.stderr.toString("utf8")}`);
+  }
+  return target;
+}
+
+/**
+ * Rewrite a member name in place, to a name of exactly the same length.
+ *
+ * `zip` will not write `../` itself, so the hostile archive is built with a
+ * harmless name and patched afterwards. Nothing in the format covers the name,
+ * so the local header and the central directory are the only two copies, and
+ * keeping the length identical leaves every recorded offset correct.
+ */
+function renameZipMember(archive: string, from: string, to: string): void {
+  if (from.length !== to.length) {
+    throw new Error("a zip member can only be renamed to a name of the same length");
+  }
+  const raw = fs.readFileSync(archive);
+  let at = raw.indexOf(from, 0, "latin1");
+  if (at === -1) {
+    throw new Error(`${from} is not in ${archive}`);
+  }
+  while (at !== -1) {
+    raw.write(to, at, "latin1");
+    at = raw.indexOf(from, at + to.length, "latin1");
+  }
+  fs.writeFileSync(archive, raw);
+}
+
+/** Node defers `emitWarning` a tick, so the check has to wait one out. */
+async function warningsDuring(run: () => Promise<void>): Promise<string[]> {
+  const seen: string[] = [];
+  const onWarning = (warning: Error): void => {
+    seen.push(warning.name);
+  };
+  process.on("warning", onWarning);
+  try {
+    await run();
+    await new Promise((resolve) => setImmediate(resolve));
+  } finally {
+    process.off("warning", onWarning);
+  }
+  return seen;
 }
 
 describe("archive extraction", () => {
@@ -290,5 +347,57 @@ describe("archive extraction", () => {
       /truncated/,
     );
     expect(fs.existsSync(path.join(dir, "bin/tool"))).toBe(false);
+  });
+
+  it("extracts every member of a zip, however many there are", async () => {
+    const payload = path.join(dir, "payload", "bin");
+    fs.mkdirSync(payload, { recursive: true });
+    const names = Array.from({ length: 15 }, (_, i) => `m${i}`);
+    for (const name of names) {
+      fs.writeFileSync(path.join(payload, name), `#!/bin/sh\necho ${name}\n`, { mode: 0o755 });
+    }
+    const archive = writeZip(path.join(dir, "payload"), path.join(dir, "many.zip"), ["bin"]);
+    const dest = path.join(dir, "out");
+    fs.mkdirSync(dest);
+
+    // Reading member by member used to leave the previous member's `end` and
+    // `error` handlers attached, so past ten of them Node wrote a listener-leak
+    // warning to the same stderr ketch reports progress on.
+    const warnings = await warningsDuring(() => new ZipExtractor().extract(archive, dest));
+
+    expect(warnings).toEqual([]);
+    expect(fs.readdirSync(path.join(dest, "bin")).toSorted()).toEqual(names.toSorted());
+    expect(fs.statSync(path.join(dest, "bin", "m0")).mode & 0o111).not.toBe(0);
+  });
+
+  it("zip members that escape the destination are refused", async () => {
+    const payload = path.join(dir, "payload", "aa", "bb");
+    fs.mkdirSync(payload, { recursive: true });
+    fs.writeFileSync(path.join(payload, "evil"), "owned");
+    const archive = writeZip(path.join(dir, "payload"), path.join(dir, "evil.zip"), ["aa"]);
+    renameZipMember(archive, "aa/bb/evil", "../../evil");
+    const dest = path.join(dir, "out");
+    fs.mkdirSync(dest);
+
+    // yauzl refuses this one before `safeMemberPath` is reached, which is a
+    // fine place for it to die; what matters is that the archive is refused
+    // whole and nothing lands beside the destination.
+    await expect(new ZipExtractor().extract(archive, dest)).rejects.toThrow(KetchError);
+    expect(fs.existsSync(path.join(dir, "evil"))).toBe(false);
+    expect(fs.readdirSync(dest)).toEqual([]);
+  });
+
+  it("a zip symlink pointing outside the payload is refused", async () => {
+    const payload = path.join(dir, "payload");
+    fs.mkdirSync(payload, { recursive: true });
+    // Zip records a symlink as an ordinary member whose body is the target, so
+    // the guard has to run on the body, not on a member type.
+    fs.symlinkSync("/etc/passwd", path.join(payload, "secrets"));
+    const archive = writeZip(payload, path.join(dir, "link.zip"), ["secrets"]);
+    const dest = path.join(dir, "out");
+    fs.mkdirSync(dest);
+
+    await expect(new ZipExtractor().extract(archive, dest)).rejects.toThrow(/escapes the target/);
+    expect(fs.existsSync(path.join(dest, "secrets"))).toBe(false);
   });
 });
