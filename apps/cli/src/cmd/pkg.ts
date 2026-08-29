@@ -226,8 +226,10 @@ export async function upgrade(cfg: Config, args: UpgradeArgs): Promise<void> {
 
     const reqs: InstallRequest[] = plan.map((entry) => ({
       // The exact tag that was reported, so nothing can change between the plan
-      // the user approved and what is installed.
-      spec: PackageSpec.parse(`${entry.pkg.source.toString()}@${entry.tag}`),
+      // the user approved and what is installed. Assembled, not parsed: Rust
+      // built the struct literally here, and `parse` splits at an `@` and reads
+      // the last `/` as part of the id — both of which a real tag may contain.
+      spec: PackageSpec.exact(entry.pkg.source.toString(), entry.tag),
       force: true,
       prerelease,
       // A package installed with --no-link stays unlinked.

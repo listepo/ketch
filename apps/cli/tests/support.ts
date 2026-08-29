@@ -242,6 +242,7 @@ export class Sandbox {
 /** One release the plugin will report, in the wire shape of `docs/PLUGINS.md`. */
 export class Release {
   private notes: string | null = null;
+  private tag: string | null = null;
 
   private readonly version: string;
   private readonly assets: readonly Asset[];
@@ -257,10 +258,20 @@ export class Release {
     return this;
   }
 
+  /**
+   * A tag that is not just `v` and the version — a monorepo publishing
+   * `cli/v2.0.0`, say. Tags are the client app's to choose, so nothing about
+   * their shape is ketch's to assume.
+   */
+  withTag(tag: string): Release {
+    this.tag = tag;
+    return this;
+  }
+
   toJSON(): object {
     return {
       version: this.version,
-      tag: `v${this.version}`,
+      tag: this.tag ?? `v${this.version}`,
       prerelease: false,
       draft: false,
       ...(this.notes === null ? {} : { notes: this.notes }),
@@ -446,7 +457,7 @@ export function appArchive(version: string): Archive {
  * Publish `testtool` at one version, with a decoy for every other platform so
  * asset selection is doing real work rather than picking the only candidate.
  */
-export function publishTool(sandbox: Sandbox, version: string): void {
+export function publishTool(sandbox: Sandbox, version: string, tag?: string): void {
   const arch = hostArch();
   const native = sandbox.asset(
     `testtool-${version}-${arch}-apple-darwin.tar.gz`,
@@ -456,9 +467,8 @@ export function publishTool(sandbox: Sandbox, version: string): void {
     `testtool-${version}-${arch}-unknown-linux-gnu.tar.gz`,
     toolArchive("linux-decoy"),
   );
-  sandbox.publish("testtool", [
-    new Release(version, [linux, native]).withNotes(`published notes for ${version}`),
-  ]);
+  const release = new Release(version, [linux, native]).withNotes(`published notes for ${version}`);
+  sandbox.publish("testtool", [tag === undefined ? release : release.withTag(tag)]);
 }
 
 /** One tool per name, so a batch has several distinct packages to install. */

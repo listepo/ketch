@@ -52,4 +52,24 @@ describe("upgrade", () => {
     },
     TIMEOUT,
   );
+
+  it(
+    "an upgrade to a tag with a slash in it installs that tag",
+    () => {
+      const sandbox = new Sandbox();
+      onTestFinished(() => sandbox.dispose());
+      publishTool(sandbox, "1.0.0");
+      sandbox.ok(["install", "test:testtool@1.0.0", "--yes"]);
+
+      // A monorepo tag, which is a shape ketch does not get to rule out. The
+      // plan reports the tag and the install has to ask for that exact string:
+      // rebuilding `source@tag` and re-parsing it reads the tag's own slash as
+      // part of the package id and loses the pin.
+      publishTool(sandbox, "2.0.0", "cli/v2.0.0");
+      sandbox.ok(["upgrade", "--yes"]);
+
+      expect(runProgram(path.join(sandbox.bin(), "testtool"))).toBe("testtool 2.0.0");
+    },
+    TIMEOUT,
+  );
 });
