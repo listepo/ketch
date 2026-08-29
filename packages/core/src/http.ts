@@ -161,7 +161,16 @@ export class Http {
     authed: boolean,
     progress: ProgressSink,
   ): Promise<string> {
-    const res = await this.request(url, "application/octet-stream", authed, headers);
+    const res = await this.request(url, "application/octet-stream", authed, {
+      // `fetch` asks for gzip on its own and decodes what comes back, while
+      // `Content-Length` goes on describing the encoded bytes — so the
+      // short-transfer check below would be comparing two different counts. A
+      // release asset is a compressed archive already, so there was nothing to
+      // gain by having it compressed again on the wire. Rust never met this:
+      // ureq asked for no encoding either.
+      "Accept-Encoding": "identity",
+      ...headers,
+    });
 
     const total = contentLengthOf(res);
     const label = path.basename(dest) || "download";
@@ -288,6 +297,14 @@ function asError(cause: unknown): Error {
 }
 
 function contentLengthOf(res: Response): number | null {
+  // A server may encode the body whether or not it was asked to, and then
+  // `Content-Length` counts bytes nobody will ever write to disk. Unknown
+  // beats wrong: the progress bar goes indeterminate and the length check
+  // stands down, rather than deleting a download that arrived intact.
+  const encoding = res.headers.get("content-encoding");
+  if (encoding !== null && encoding.trim().toLowerCase() !== "identity") {
+    return null;
+  }
   const raw = res.headers.get("content-length");
   if (raw === null) {
     return null;
