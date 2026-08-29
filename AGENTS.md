@@ -46,7 +46,9 @@ pnpm run lint                    # oxlint
 pnpm run format                  # biome format --write
 pnpm run format:check            # the same, without writing
 pnpm run test                    # vitest: unit and end-to-end, no network
-pnpm run check                   # typecheck, lint, format:check, test
+pnpm run fallow:audit            # gate: fails only on findings your change adds
+pnpm run fallow                  # the full analysis, recorded backlog included
+pnpm run check                   # typecheck, lint, format:check, test, fallow:audit
 pnpm exec moon ci                # only the tasks your change affects
 ```
 
@@ -81,6 +83,7 @@ table — it is a summary, they are the source.
 | Vitest | 4 | the whole suite; colocated `*.test.ts` |
 | oxlint | 1.80 | the linter (no ESLint) |
 | Biome | 2.5 | the formatter (no Prettier) |
+| fallow | 3.20 | codebase intelligence: dead code, duplication, cycles, boundaries |
 | Zod | 4 | schemas; `z.toJSONSchema` emits the published JSON Schemas |
 | pino | 10 | the log file (JSON Lines native; pino-pretty for text) |
 
@@ -184,6 +187,44 @@ These are observed throughout; match them rather than introducing your own.
 - **Best-effort where a partial answer beats no answer.** A broken plugin, an
   unreadable manifest or one unreachable source is warned about and skipped,
   never fatal. A malformed *built-in* registry is a ketch bug and does fail.
+
+## Fallow
+
+`fallow` (the `.fallowrc.json` at the root) is the codebase-intelligence layer
+on top of the compiler and the linter: dead code, duplication, circular
+imports, complexity, and — most usefully here — the dependency direction as an
+enforced boundary. `schemas` may import nothing internal, `core` only
+`schemas`, `cli` both, and `apps/cli/tests` nothing at all (it drives the
+built CLI in a subprocess; importing core from there would bypass what the
+suite exists to prove). A violation is an `error`, so getting the layering
+wrong fails the gate rather than waiting for review.
+
+How to use it as an agent:
+
+- **`pnpm run fallow:audit` is the gate** and part of `pnpm run check`. It
+  fails only on findings *your change introduces*; the pre-existing backlog is
+  recorded in `.fallow-baselines/` and does not fail anything. Run it before
+  calling work done.
+- **`pnpm run fallow` is the investigation tool.** It reports the whole
+  backlog and exits 1 while any of it remains — that exit code is not a broken
+  build. Reach for it (or `fallow dead-code`, `fallow dupes`, `fallow health`)
+  when asked to clean up, deduplicate, or refactor: it answers "is this
+  export used anywhere" and "where else does this shape appear" more cheaply
+  than reading files.
+- **Shrinking the backlog moves the baselines.** After genuinely fixing
+  recorded findings, regenerate and commit them so the gate holds the new
+  line: `fallow dead-code --no-type-aware --save-baseline
+  .fallow-baselines/dead-code.json`, and the same for `health` and `dupes`
+  (no flag). The audit gate deliberately runs the syntactic pass —
+  `audit.typeAware` is `false` because its base-revision snapshot has no
+  `node_modules`, so a semantic baseline can never match it. Never *add* to a
+  baseline to get past the gate; fix the finding or suppress it at the site.
+- **Suppressions need reasons**, enforced (`require-suppression-reason`):
+  `// fallow-ignore-next-line unused-export -- kept: part of the public
+  surface, no caller in the tree yet`. Same rule as every other comment here —
+  say why.
+- **Never run `fallow watch`** — it does not exit, and an agent loop waiting
+  on it hangs forever.
 
 ## Trust boundaries
 
@@ -323,9 +364,9 @@ rules stay as they are: they are what keeps that switch a one-line change.
 
 ## Before you call it done
 
-1. `pnpm run typecheck`, `pnpm run lint`, `pnpm run format:check` and
-   `pnpm run test` all clean, for every package you touched, read from their
-   real exit codes.
+1. `pnpm run typecheck`, `pnpm run lint`, `pnpm run format:check`,
+   `pnpm run test` and `pnpm run fallow:audit` all clean, for every package
+   you touched, read from their real exit codes.
 2. Non-trivial logic left a test behind that fails if the logic breaks.
 3. You ran the actual CLI against a `KETCH_ROOT` scratch tree if the change
    touches installation, linking, or the registry.
@@ -335,11 +376,13 @@ rules stay as they are: they are what keeps that switch a one-line change.
 
 ## Delegating work to agents
 
-Match the model to the thinking the task needs: **Fable 5 or Opus 5** for
-work that requires real reasoning (pipeline concurrency, parsers, security
-boundaries, architecture); **Sonnet** for straightforward well-specified
-jobs; **Haiku** for mechanical ones. When a "simple" task turns out to need
-thinking, escalate the model rather than accepting a shallow result.
+Default to the low-cost models: **Haiku** for mechanical jobs, **Sonnet**
+for straightforward well-specified ones. Reach for **Fable 5 or Opus 5** only
+when the task genuinely requires deep reasoning — pipeline concurrency,
+parsers, security boundaries, architecture — and say so when you do. When a
+"simple" task turns out to need thinking, escalate the model rather than
+accepting a shallow result; the waste is in starting expensive, not in
+escalating late.
 
 One writer per package at a time — including a second session you did not
 start. Do not edit a shared barrel while siblings are running; list the exports

@@ -18,3 +18,6 @@ node_modules/
 dist/
 *.tsbuildinfo
 .moon/cache/
+
+# fallow's extraction cache; the committed baselines live in .fallow-baselines/
+.fallow/

@@ -1,0 +1,60 @@
+{
+  "$schema": "./node_modules/fallow/schema.json",
+  "entry": ["apps/cli/src/main.ts", "packages/schemas/src/generate.ts", "apps/docs/sync-docs.mjs"],
+  "workspaces": {
+    "patterns": ["packages/*", "apps/*"]
+  },
+  "ignorePatterns": [
+    "**/dist/**",
+    "**/.astro/**",
+    "**/.docusaurus/**",
+    ".moon/cache/**",
+    "packages/schemas/schemas/**"
+  ],
+  "ignoreDependencies": [
+    "@perryts/perry",
+    "@moonrepo/cli",
+    "@docusaurus/module-type-aliases",
+    "@mdx-js/react"
+  ],
+  "ignoreExportsUsedInFile": true,
+  "usedClassMembers": ["toJSON"],
+  "typeAware": {
+    "enabled": true
+  },
+  "duplicates": {
+    "near": true
+  },
+  "boundaries": {
+    "zones": [
+      { "name": "schemas", "patterns": ["packages/schemas/src/**"] },
+      { "name": "core", "patterns": ["packages/core/src/**"] },
+      { "name": "cli", "patterns": ["apps/cli/src/**"] },
+      { "name": "cli-tests", "patterns": ["apps/cli/tests/**"] }
+    ],
+    "rules": [
+      { "from": "schemas", "allow": [] },
+      { "from": "core", "allow": ["schemas"] },
+      { "from": "cli", "allow": ["core", "schemas"] },
+      { "from": "cli-tests", "allow": [] }
+    ]
+  },
+  "rules": {
+    "private-type-leaks": "error",
+    "unused-dev-dependencies": "error",
+    "unused-optional-dependencies": "error",
+    "type-only-dependencies": "error",
+    "test-only-dependencies": "error",
+    "dev-dependencies-in-production": "error",
+    "re-export-cycle": "error",
+    "stale-suppressions": "error",
+    "require-suppression-reason": "error"
+  },
+  "audit": {
+    "gate": "new-only",
+    "typeAware": false,
+    "deadCodeBaseline": ".fallow-baselines/dead-code.json",
+    "healthBaseline": ".fallow-baselines/health.json",
+    "dupesBaseline": ".fallow-baselines/dupes.json"
+  }
+}

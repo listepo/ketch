@@ -18,13 +18,16 @@
     "lint": "oxlint .",
     "format": "biome format --write .",
     "format:check": "biome format .",
-    "check": "bun run typecheck && bun run lint && bun run format:check && bun run test"
+    "fallow": "fallow",
+    "fallow:audit": "fallow audit",
+    "check": "bun run typecheck && bun run lint && bun run format:check && bun run test && bun run fallow:audit"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.11",
     "@moonrepo/cli": "^2.5.3",
     "@perryts/perry": "^0.5.1220",
     "@types/node": "^26.0.0",
+    "fallow": "^3.20.0",
     "oxlint": "^1.80.0",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11"

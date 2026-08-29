@@ -33,7 +33,8 @@
       "!**/.astro",
       "!**/.docusaurus",
       "!**/*.schema.json",
-      "!**/.moon/cache"
+      "!**/.moon/cache",
+      "!.fallow-baselines"
     ]
   },
   "css": {

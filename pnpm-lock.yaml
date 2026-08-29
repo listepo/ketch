@@ -20,6 +20,9 @@ importers:
       '@types/node':
         specifier: ^26.0.0
         version: 26.4.0
+      fallow:
+        specifier: ^3.20.0
+        version: 3.20.0
       oxlint:
         specifier: ^1.80.0
         version: 1.80.0
@@ -1670,6 +1673,46 @@ packages:
   '@esbuild/win32-x64@0.28.2':
     resolution: {integrity: sha512-5ebpxr3nWMzrL/rnUI755Jkuee0bHL/Gq0WTF9lvcpv73wAp5eu8MfBUgWK9bhWvZjj7yX8etf/8tI8Ney695g==}
     engines: {node: '>=18'}
+    cpu: [x64]
+    os: [win32]
+
+  '@fallow-cli/darwin-arm64@3.20.0':
+    resolution: {integrity: sha512-vGQKlYU9BgnaQlmw5yF2Oe2dgylpOAVL93Ds+MEjxF7pvhdJDmg7ZjqF5fRikk8KIhm6PWkMNNamz4BKytzJOQ==}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@fallow-cli/darwin-x64@3.20.0':
+    resolution: {integrity: sha512-Yeb9ekMCHRRefyOB/EE0i68EoqsgLjsZNf1fi6lEglmKHf/eVr2N1ejR8X/UPjUe5h3/b2pJdSZxmkkKqghpdw==}
+    cpu: [x64]
+    os: [darwin]
+
+  '@fallow-cli/linux-arm64-gnu@3.20.0':
+    resolution: {integrity: sha512-Z4YgFTi+UMEEAl8qt5uOpFVEB8b98nwEhHzTNUM1rTb++9K+cuzeYoL9SaHaMkTEUWAKZIGSNlTu2lsSeiAw4Q==}
+    cpu: [arm64]
+    os: [linux]
+
+  '@fallow-cli/linux-arm64-musl@3.20.0':
+    resolution: {integrity: sha512-gh2tmc9QDMA01jSLe53Oe/RcuDLPrrMs6m+ZCIvYNwDGPn4Daj1QZ1ZGZAWLmNuPr2rxK0DuR4Ft/wNkYcmAiw==}
+    cpu: [arm64]
+    os: [linux]
+
+  '@fallow-cli/linux-x64-gnu@3.20.0':
+    resolution: {integrity: sha512-rCcHnw5Rq+RtSdADL6u0dQrC4Lxa3AMZxLoQjnJtMFZLKYw/nGTPx8KU7WRMMAIH5kP+WssYIHtMpMyTkP92JQ==}
+    cpu: [x64]
+    os: [linux]
+
+  '@fallow-cli/linux-x64-musl@3.20.0':
+    resolution: {integrity: sha512-hZlCGMQVctrr9e1K8iDQ6hz4o+eRIRNlzeo1EL2KA8dxujPQV7RTm/GAEa+m9WKXZ2C4BNq9mr9WFs1dS8t+Mg==}
+    cpu: [x64]
+    os: [linux]
+
+  '@fallow-cli/win32-arm64-msvc@3.20.0':
+    resolution: {integrity: sha512-WPqYbUJsKsoC9O3vP2hwGrc4WCI9vhDmy6V4DVW/KupH+G/knO2yM6vDdRskR0JUUEgIUAIGOysVtsyQnjBRDA==}
+    cpu: [arm64]
+    os: [win32]
+
+  '@fallow-cli/win32-x64-msvc@3.20.0':
+    resolution: {integrity: sha512-OUU2fsFcLLwFznGAFzPaCa6Mi1HCtLCVDrVifk5d0mntXf0js6vdwWYyVGBamG/qc70MLhK41twTMDVwoI9kxg==}
     cpu: [x64]
     os: [win32]
 
@@ -3942,6 +3985,16 @@ packages:
 
   extend@3.0.2:
     resolution: {integrity: sha512-fjquC59cD7CyW6urNXK0FBufkZcoiGG80wTuPujX590cB5Ttln20E2UB4S/WARVqhXffZl2LNgS+gQdPIIim/g==}
+
+  fallow-type-aware@3.20.0:
+    resolution: {integrity: sha512-pxk6CKtDeVQSKsSWhDdJDmOj73p8Vfq2P31H5GHbcXBaP2x/jR2VYtQ/0s8z288Eqtln+FtWO2xV601o/xhJHA==}
+    engines: {node: '>=20'}
+    hasBin: true
+
+  fallow@3.20.0:
+    resolution: {integrity: sha512-yREDhz0eDvwwVD9NgmBzxRlg9DX1g6sKsHBfGKL+XcyJPmT5SgUf80m2Vu3RKE+QnzA7w1ekpcnNqUUi4avCSA==}
+    engines: {node: '>=22'}
+    hasBin: true
 
   fast-copy@4.0.4:
     resolution: {integrity: sha512-eVAiWVNPSEGIzDl5yPuLrx8fNMogScXvD9xp1Kzd41FjRIz2I3sSIcxsFeM5EzFfHAfobdvs8ZySffUopljvIA==}
@@ -9475,6 +9528,30 @@ snapshots:
   '@esbuild/win32-x64@0.28.2':
     optional: true
 
+  '@fallow-cli/darwin-arm64@3.20.0':
+    optional: true
+
+  '@fallow-cli/darwin-x64@3.20.0':
+    optional: true
+
+  '@fallow-cli/linux-arm64-gnu@3.20.0':
+    optional: true
+
+  '@fallow-cli/linux-arm64-musl@3.20.0':
+    optional: true
+
+  '@fallow-cli/linux-x64-gnu@3.20.0':
+    optional: true
+
+  '@fallow-cli/linux-x64-musl@3.20.0':
+    optional: true
+
+  '@fallow-cli/win32-arm64-msvc@3.20.0':
+    optional: true
+
+  '@fallow-cli/win32-x64-msvc@3.20.0':
+    optional: true
+
   '@hapi/hoek@9.3.0': {}
 
   '@hapi/topo@5.1.0':
@@ -11827,6 +11904,25 @@ snapshots:
       is-extendable: 0.1.1
 
   extend@3.0.2: {}
+
+  fallow-type-aware@3.20.0:
+    dependencies:
+      typescript: 7.0.2
+    optional: true
+
+  fallow@3.20.0:
+    dependencies:
+      detect-libc: 2.1.2
+    optionalDependencies:
+      '@fallow-cli/darwin-arm64': 3.20.0
+      '@fallow-cli/darwin-x64': 3.20.0
+      '@fallow-cli/linux-arm64-gnu': 3.20.0
+      '@fallow-cli/linux-arm64-musl': 3.20.0
+      '@fallow-cli/linux-x64-gnu': 3.20.0
+      '@fallow-cli/linux-x64-musl': 3.20.0
+      '@fallow-cli/win32-arm64-msvc': 3.20.0
+      '@fallow-cli/win32-x64-msvc': 3.20.0
+      fallow-type-aware: 3.20.0
 
   fast-copy@4.0.4: {}
 

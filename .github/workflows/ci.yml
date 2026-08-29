@@ -20,7 +20,11 @@ jobs:
     # gating on.
     runs-on: macos-latest
     steps:
+      # Full history: `fallow audit` diffs against the merge-base with
+      # origin/main, which a depth-1 clone does not contain.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       # mise.toml is the single source of truth for Node, Bun, Deno and pnpm
       # versions. Nothing here names a version, so nothing here can drift.
@@ -37,6 +41,11 @@ jobs:
 
       - name: Format
         run: pnpm run format:check
+
+      # Gates only findings this change introduces; the recorded backlog in
+      # .fallow-baselines/ does not fail the build.
+      - name: Fallow audit
+        run: pnpm run fallow:audit
 
       # Unit tests and the end-to-end suite, which drives the real CLI against
       # a throwaway root with downloads served by an offline fixture plugin.
