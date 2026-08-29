@@ -305,6 +305,19 @@ only `node:fs` links and runs. Downloading is ketch's whole job, so the release
 path uses Bun until that is fixed upstream; `scripts/package.sh` is the one
 place to change back.
 
+`@perryts/perry` stays a devDependency on purpose, so checking whether upstream
+has fixed it is one command rather than a setup:
+
+```bash
+printf 'const r = await fetch("https://example.com");\nconsole.log(r.status);\n' > /tmp/probe.ts
+pnpm exec perry compile /tmp/probe.ts -o /tmp/probe
+```
+
+When that links, try `perry compile apps/cli/src/main.ts`. It will also want
+`perry.compilePackages` in `apps/cli/package.json` listing every dependency that
+reaches the binary; Perry names the missing ones itself, so the list is grown by
+re-running until it stops.
+
 Nothing else about the port depends on which compiler wins. The portability
 rules stay as they are: they are what keeps that switch a one-line change.
 
