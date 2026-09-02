@@ -74,6 +74,23 @@ test that would fail without the fix.
 CI runs `fmt --check`, `clippy -D warnings` and `test` on macOS. All three must
 pass before a change is done.
 
+## Cargo cache maintenance
+
+`cargo-cache` is a developer utility, not a crate dependency. Install it once
+with `cargo install cargo-cache --locked`. This repository provides aliases in
+`.cargo/config.toml`:
+
+```bash
+cargo cache-info       # explain cache directories and safe cleanup choices
+cargo cache-dry-run    # preview removal of source and git checkouts
+cargo cache-autoclean  # remove source and git checkouts
+```
+
+Run `cargo cache-dry-run` before any cleanup. `cargo cache-autoclean` is
+destructive but safe for build correctness: Cargo will download sources again
+when needed. Do not remove registry indexes or all cached data unless the task
+explicitly requires reclaiming that space.
+
 ## Layout
 
 | Path | Owns |

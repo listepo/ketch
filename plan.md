@@ -40,3 +40,24 @@ execution, argument parsing, and output formatting.
 - Temporary files are isolated and cleaned up automatically.
 - Output assertions identify the intended stream and exit code.
 - Snapshot fixtures are reviewed as both tests and user-facing documentation.
+
+## Cargo cache maintenance
+
+Install the optional `cargo-cache` developer tool with:
+
+```bash
+cargo install cargo-cache --locked
+```
+
+Use the project aliases from `.cargo/config.toml` to inspect and clean local
+Cargo state without affecting the application:
+
+```bash
+cargo cache-info
+cargo cache-dry-run
+cargo cache-autoclean
+```
+
+Always inspect the dry run before cleanup. Cache removal only trades disk space
+for future downloads; it must not be used as a substitute for fixing build or
+test failures.

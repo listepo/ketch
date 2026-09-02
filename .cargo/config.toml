@@ -1,0 +1,5 @@
+# Local developer aliases for the optional cargo-cache subcommand.
+[alias]
+cache-info = "cache --info"
+cache-dry-run = "cache --autoclean --dry-run"
+cache-autoclean = "cache --autoclean"
