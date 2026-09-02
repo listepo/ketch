@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="apps/web/public/favicon.svg" width="72" alt="">
+<img src="site/static/img/favicon.svg" width="72" alt="">
 
 # ketch
 
@@ -36,10 +36,8 @@ ketch install sharkdp/fd@v10.2.0     # or an exact version
 curl -fsSL https://raw.githubusercontent.com/listepo/ketch/main/install.sh | bash
 ```
 
-That downloads a compiled binary for your machine — there is no runtime to
-install and nothing to build. Then make sure `~/.ketch/bin` is on your `PATH`.
-`ketch doctor` will tell you if it is not, along with anything else that needs
-attention.
+Then make sure `~/.ketch/bin` is on your `PATH`. `ketch doctor` will tell you if
+it is not, along with anything else that needs attention.
 
 ## Why
 
@@ -73,16 +71,12 @@ ketch search <query>       # the registry and GitHub
 ketch changelog <pkg>      # what changed: the shipped file, or the release notes
 ketch update               # refresh the package registry
 ketch pin / unpin <pkg>    # hold a version, or let go
-ketch link / unlink <pkg>  # re-create the links, or take them away
 ketch uninstall <pkg>...   # remove it
 ketch lock                 # write ketch.lock from what is installed
 ketch sync                 # install what ketch.lock names, at those versions
 ketch doctor               # check the environment and the install tree
 ketch doctor --fix         # and repair the PATH setup while it is there
 ketch path install         # put ~/.ketch/bin on PATH in bash, zsh and fish
-ketch plugin list          # the source plugins ketch found
-ketch completions zsh      # a completion script for bash, zsh or fish
-ketch self update          # upgrade ketch itself
 ```
 
 Everything lives under `~/.ketch`: versioned payloads in `store/`, links in
@@ -130,15 +124,14 @@ Every run is written to `~/.ketch/logs/ketch.log` — including the lines
 command prints where to find it.
 
 ```
-[2026-08-27T09:12:33Z] INFO (4218): ketch 0.2.0 · install rg fd
-[2026-08-27T09:12:34Z] ERROR (4218): HTTP 404 from https://api.github.com/...
+2026-08-27T09:12:33Z [4218] INFO  ketch 0.1.0 · install rg fd
+2026-08-27T09:12:34Z [4218] ERROR HTTP 404 from https://api.github.com/...
 ```
 
-Set `log_format` to `"json"` for JSON Lines instead — `{"level":"info","time":…,
-"pid":…,"msg":…}`, one object per line — `log_level` to `debug` for everything
-or `off` for nothing. The file rotates to `ketch.log.1` at 5 MiB, so it never
-needs pruning by hand. `ketch doctor` prints where it is and how big it has
-grown.
+Set `log_format = "json"` for JSON Lines instead, `log_level` to `debug` for
+everything or `off` for nothing. The file rotates to `ketch.log.1` at 5 MiB, so
+it never needs pruning by hand. `ketch doctor` prints where it is and how big
+it has grown.
 
 ## Reproducing a machine
 
@@ -180,14 +173,12 @@ A name is resolved against four tiers, in order:
 
 1. your own manifests in `~/.ketch/manifests/`
 2. the fetched package registry — see [docs/REGISTRY.md](docs/REGISTRY.md)
-3. the registry compiled into ketch, so common tools work offline
+3. the registry compiled into the binary, so common tools work offline
 4. inference from `owner/repo`, which is what makes an uncurated repository
    installable with no manifest at all
 
-Inference picks the release asset that matches your machine — reading the OS and
-architecture out of the file name, discarding anything that names another
-platform, and passing over signature sidecars and checksum files. It explains
-its choice under `ketch info --assets`.
+Inference picks the release asset that matches your machine — architecture,
+OS, and libc — and explains its choice under `ketch info --assets`.
 
 When it guesses wrong, a manifest says what to do instead: which asset, which
 binaries, under what names. See [docs/MANIFESTS.md](docs/MANIFESTS.md).
@@ -195,32 +186,9 @@ binaries, under what names. See [docs/MANIFESTS.md](docs/MANIFESTS.md).
 Sources other than GitHub are added as plugins — a single executable, no ketch
 release required. See [docs/PLUGINS.md](docs/PLUGINS.md).
 
-## The files ketch reads
-
-Every data file is JSON, and every one has a published JSON Schema generated
-from the Zod schema that validates it. Point a file's `$schema` at its URL and
-your editor will complete and check it as you type.
-
-| File | Schema | What it is |
-| --- | --- | --- |
-| `~/.ketch/config.json` | `config.schema.json` | your settings, all optional |
-| `~/.ketch/manifests/<name>.json` | `manifest.schema.json` | a package manifest of your own |
-| `<package>/ketch.json` | `registry.schema.json` | a registry entry — a manifest whose name comes from the folder |
-| `./ketch.lock` | `lockfile.schema.json` | what is installed, pinned to exact releases |
-| `~/.ketch/state.json` | `state.schema.json` | ketch's own record of what it installed |
-
-The URLs are
-`https://raw.githubusercontent.com/listepo/ketch/main/packages/schemas/schemas/<name>.schema.json`,
-and the schemas themselves are committed under
-[`packages/schemas/schemas/`](packages/schemas/schemas).
-
-Unknown keys are refused rather than ignored, in every one of them: a misspelt
-setting that is silently dropped is worse than one that fails.
-
 ## Configuration
 
-`~/.ketch/config.json`, with environment variables taking precedence, and
-command-line flags over those:
+`~/.ketch/config.toml`, with environment variables taking precedence:
 
 | Key | Environment | Default |
 | --- | --- | --- |
@@ -232,34 +200,21 @@ command-line flags over those:
 | `require_checksums` | `KETCH_REQUIRE_CHECKSUMS` | `false` |
 | `strip_quarantine` | `KETCH_STRIP_QUARANTINE` | `true` |
 | `registry` | `KETCH_REGISTRY` | `listepo/ketch-registry` |
-| `self_repo` | `KETCH_SELF_REPO` | `listepo/ketch` |
-| `jobs` | `KETCH_JOBS` | `4`, capped at `16` |
+| `jobs` | `KETCH_JOBS` | `4` |
 | `log_level` | `KETCH_LOG_LEVEL` | `info` |
 | `log_format` | `KETCH_LOG_FORMAT` | `text` |
 
-```json
-{
-  "$schema": "https://raw.githubusercontent.com/listepo/ketch/main/packages/schemas/schemas/config.schema.json",
-  "require_checksums": true,
-  "jobs": 8
-}
-```
-
 The root itself is `KETCH_ROOT` or `--root`; it cannot be set from the config
-file, because the file lives inside it. Setting it there is warned about rather
-than honoured silently.
+file, because the file lives inside it.
 
-The first token variable that is *set* wins even when it is empty, so an
-explicitly blank `KETCH_GITHUB_TOKEN` suppresses an inherited `GITHUB_TOKEN`
-instead of falling through to it. A token is not required, but it raises
-GitHub's rate limit considerably.
+A token is not required, but it raises GitHub's rate limit considerably.
 
 ## Platform support
 
-macOS only for now. The OS-specific parts sit behind one `Platform` interface in
-`packages/core/src/platform/`, so a Linux or Windows backend means implementing
-that interface and nothing above it. [ROADMAP.md](ROADMAP.md) says what that
-would take, along with everything else ketch does not do yet.
+macOS only for now. The OS-specific parts sit behind one `Platform` trait, so
+a Linux or Windows backend means implementing that trait and nothing above it.
+[ROADMAP.md](ROADMAP.md) says what that would take, along with everything else
+ketch does not do yet.
 
 ## Documentation
 
@@ -277,52 +232,37 @@ The same pages are published at
 site generates them from the Markdown in this repository, so the two cannot
 drift.
 
-## Developing
-
-ketch is a TypeScript monorepo: `packages/schemas` (the Zod schemas and the
-JSON Schemas they generate), `packages/core` (the install pipeline and
-everything under it), `apps/cli` (the command surface and all terminal output).
+## Building from source
 
 ```bash
-pnpm install
-pnpm run typecheck        # tsc --build across the project references
-pnpm run lint             # oxlint
-pnpm run format           # biome format --write
-pnpm run format:check     # the same, without writing
-pnpm run test             # vitest, unit and end-to-end; no network
-pnpm run check            # typecheck, lint, format:check, test — in that order
-pnpm exec moon ci         # only what your change affects
+cargo build --release          # target/release/ketch
+cargo test                     # unit tests and the end-to-end suite; no network
+cargo clippy --all-targets     # must be clean
+cargo fmt --check              # must be clean
 ```
 
-Run the CLI straight from source against a throwaway tree instead of your real
-`~/.ketch`:
+Run the binary against a throwaway tree instead of your real `~/.ketch`:
 
 ```bash
-KETCH_ROOT=/tmp/ketch-scratch node apps/cli/src/main.ts doctor
+KETCH_ROOT=/tmp/ketch-scratch cargo run -- doctor
 ```
-
-Runtimes: **Node 26** is canonical and what CI runs the suite on. **Bun 1.3** is
-the fastest and what the day-to-day loop uses — never because something only
-works there. **Deno** is supported and smoke-tested. **Perry** compiles the CLI
-to the native binary that `install.sh` downloads. That is why the code sticks to
-`node:` builtins and erasable TypeScript syntax: anything runtime-specific
-breaks one of the four. `mise install` pins every one of them.
 
 ## Releasing
 
 ```bash
-scripts/release.sh 0.2.0        # --dry-run to see it first
+scripts/release.sh 0.2.0
 ```
 
-It opens a pull request bumping the version. Merge it, then tag the merge commit
-— that is what compiles both macOS architectures and publishes the tarballs.
-[AGENTS.md](AGENTS.md) has the procedure and the reasons behind it.
+Opens a pull request bumping `Cargo.toml` and `Cargo.lock`. Merge it, then tag
+the merge commit — that is what builds both macOS architectures and publishes
+the tarballs. `--dry-run` shows what it would do.
 
 ## Contributing
 
 [AGENTS.md](AGENTS.md) documents the layout, the conventions, and the trust
-boundaries — read it before changing anything. `pnpm run check` has to be clean,
-and CI enforces the same gates on macOS.
+boundaries — read it before changing anything. `cargo test`, `cargo clippy
+--all-targets` and `cargo fmt --check` all have to be clean, and CI enforces all
+three on macOS.
 
 To add a package to the registry, see [docs/REGISTRY.md](docs/REGISTRY.md).
 

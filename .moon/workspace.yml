@@ -1,7 +1,0 @@
-# Moon workspace: which directories are projects.
-projects:
-  - "packages/*"
-  - "apps/*"
-
-vcs:
-  defaultBranch: "main"

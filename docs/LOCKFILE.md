@@ -13,67 +13,45 @@ ketch sync              # install what the lockfile names, at those versions
 It is not the lock ketch takes while it works — that one is a mutex over the
 install tree, held for the length of a command and released at the end.
 
-Despite the name it is a JSON file, validated by the same schema machinery as
-every other data file ketch reads.
-
 ## What one looks like
 
-```json
-{
-  "$schema": "https://raw.githubusercontent.com/listepo/ketch/main/packages/schemas/schemas/lockfile.schema.json",
-  "version": 1,
-  "package": [
-    {
-      "name": "fd",
-      "source": "github:sharkdp/fd",
-      "version": "10.2.0",
-      "tag": "v10.2.0",
-      "target": "macos-aarch64",
-      "asset": "fd-v10.2.0-aarch64-apple-darwin.tar.gz",
-      "sha256": "d3f0e1a5b3ee2b6d0a1a6d0dd6c72fd0e69f6bb7c5b3a2a94f0e5b9a2f8b8c11",
-      "pinned": true
-    },
-    {
-      "name": "ripgrep",
-      "source": "github:BurntSushi/ripgrep",
-      "version": "14.1.1",
-      "tag": "14.1.1",
-      "target": "macos-aarch64",
-      "asset": "ripgrep-14.1.1-aarch64-apple-darwin.tar.gz",
-      "sha256": "4cf9f2741e6c465ffdb7c26f38056a59e2a2544b51f7cc128ef28337eeae4d8e",
-      "pinned": false
-    }
-  ]
-}
+```toml
+# ketch.lock — written by `ketch lock`. Commit it.
+version = 1
+
+[[package]]
+name = "ripgrep"
+source = "github:BurntSushi/ripgrep"
+version = "14.1.1"
+tag = "14.1.1"
+target = "macos-aarch64"
+asset = "ripgrep-14.1.1-aarch64-apple-darwin.tar.gz"
+sha256 = "4cf9f2741e6c465ffdb7c26f38056a59e2a2544b51f7cc128ef28337eeae4d8e"
+
+[[package]]
+name = "fd"
+source = "github:sharkdp/fd"
+version = "10.2.0"
+tag = "v10.2.0"
+target = "macos-aarch64"
+asset = "fd-v10.2.0-aarch64-apple-darwin.tar.gz"
+sha256 = "d3f0e1a5b3ee2b6d0a1a6d0dd6c72fd0e69f6bb7c5b3a2a94f0e5b9a2f8b8c11"
+pinned = true
 ```
 
 Packages are written sorted by name, so the file is stable and its diffs are
-readable. `ketch lock` writes it atomically — staged, fsynced, then renamed —
-so an interrupted write cannot leave half a lockfile where a whole one used to
-be.
+readable. `pinned` is only written when it is true.
 
 | Key | What it is |
 | --- | --- |
-| `$schema` | the published JSON Schema, so editors can check the file |
-| `version` | the lock format version, currently `1` |
-| `package` | the entries, sorted by `name` |
-
-Each entry:
-
-| Key | Type | What it is |
-| --- | --- | --- |
-| `name` | string | the name it was installed under |
-| `source` | string | `scheme:id` — the stable identity of the package |
-| `version` | string | for humans; `tag` is what actually gets resolved |
-| `tag` | string | the exact release `ketch sync` asks for |
-| `target` | string | the machine this entry was captured on, as `<os>-<arch>` |
-| `asset` | string | the release file that was taken **on that target** |
-| `sha256` | string | of that file, 64 hex characters |
-| `pinned` | boolean | whether the package was held at this version |
-
-Every key is written on every entry, `pinned` included. Reading one back,
-`pinned` defaults to `false` when absent, so a hand-written lockfile can leave
-it out.
+| `name` | the name it was installed under |
+| `source` | `owner/repo` with its scheme — the stable identity of the package |
+| `version` | for humans; `tag` is what actually gets resolved |
+| `tag` | the exact release `ketch sync` asks for |
+| `target` | the machine this entry was captured on |
+| `asset` | the release file that was taken **on that target** |
+| `sha256` | of that file |
+| `pinned` | whether the package was held at this version |
 
 ## What is reproducible, and what is not
 
@@ -100,7 +78,6 @@ ketch sync                 # install what is missing or at the wrong version
 ketch sync --dry-run       # show the plan, change nothing
 ketch sync --prune         # also remove packages the lockfile does not name
 ketch sync --file <FILE>   # a lockfile somewhere other than ./ketch.lock
-ketch sync --jobs 1        # one package at a time instead of the configured width
 ```
 
 The plan reads as a diff:
@@ -112,10 +89,6 @@ The plan reads as a diff:
 2 already match
 ```
 
-Entries are matched against what is installed by `source`, not by `name`: a
-package can be renamed upstream, or installed under an alias, and still be the
-same thing to update.
-
 A package the lockfile does not mention is **not** drift on its own — a
 lockfile records what you want, not necessarily everything you have — so
 `ketch lock --check` ignores extras and only `--prune` removes them. Pruning
@@ -123,9 +96,6 @@ can lose work, so it asks first unless you pass `--yes`.
 
 `pinned` is restored after installing, so a package the lock recorded as held
 comes back held rather than quietly upgradeable.
-
-A missing lockfile is an error, not an empty one: `ketch sync` with nothing to
-sync from is a mistake worth naming, not a no-op to report as success.
 
 ## What ketch checks
 
@@ -138,10 +108,8 @@ pins *which release*, never *where it lands*.
 | Refused | Why |
 | --- | --- |
 | a `name` that is not usable verbatim as one path component | it is matched against installed packages and shown to you; a name that would have to be rewritten does not mean what it says |
-| an empty `name` | there is nothing to match |
 | the same package twice | only one of them could ever be installed |
-| a `source` that is not `scheme:id` or `owner/repo` | it becomes a URL, or the id handed to a plugin |
-| a `github:` source that is not a valid `owner/repo` | it becomes a URL |
+| a `source` that is not a valid `owner/repo` | it becomes a URL |
 | a `sha256` that is not 64 hex characters | it is compared against a real digest |
 | an empty `tag` | there is nothing to resolve |
 | an unknown key | a misspelt key that is silently ignored locks something other than what you wrote |

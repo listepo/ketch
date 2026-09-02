@@ -5,19 +5,9 @@ name: site
 on:
   push:
     branches: [main]
-    paths:
-      - "apps/web/**"
-      - "apps/docs/**"
-      - "docs/**"
-      - "*.md"
-      - ".github/workflows/pages.yml"
+    paths: ["site/**", "docs/**", "*.md", ".github/workflows/pages.yml"]
   pull_request:
-    paths:
-      - "apps/web/**"
-      - "apps/docs/**"
-      - "docs/**"
-      - "*.md"
-      - ".github/workflows/pages.yml"
+    paths: ["site/**", "docs/**", "*.md", ".github/workflows/pages.yml"]
   workflow_dispatch:
 
 permissions:
@@ -28,67 +18,74 @@ concurrency:
   group: pages
   cancel-in-progress: false
 
+env:
+  # Pinned so the site builds the same way next year as it does today.
+  HUGO_VERSION: 0.165.0
+
 jobs:
-  # Two builds, one site: `apps/web` is the Astro landing page and owns `/`,
-  # `apps/docs` is the Docusaurus documentation and owns `/docs/`. Each one is
-  # configured for the path it will be served from — Astro's `base` is
-  # `/ketch`, Docusaurus's `baseUrl` is `/ketch/docs/` — so merging them is a
-  # copy, not a rewrite. Nothing here is macOS-specific, so it runs on Linux.
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - uses: jdx/mise-action@v2
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      # Downloaded from the project's own release and checked against the
+      # checksum published beside it — the same thing ketch does for everything
+      # it installs.
+      - name: Install Hugo
+        run: |
+          base="https://github.com/gohugoio/hugo/releases/download/v${HUGO_VERSION}"
+          tarball="hugo_${HUGO_VERSION}_linux-amd64.tar.gz"
+          curl -fsSLO "$base/$tarball"
+          curl -fsSLO "$base/hugo_${HUGO_VERSION}_checksums.txt"
+          grep " $tarball\$" "hugo_${HUGO_VERSION}_checksums.txt" | sha256sum -c -
+          tar -xzf "$tarball" hugo
+          sudo install -m 755 hugo /usr/local/bin/hugo
+          hugo version
 
       - name: Configure Pages
         id: pages
         if: github.event_name != 'pull_request'
         uses: actions/configure-pages@v5
 
-      - name: Build the landing page
-        working-directory: apps/web
-        run: pnpm run build
+      # docs/*.md is the documentation; the site's copies are generated from it
+      # so the two can never drift.
+      - name: Mirror the Markdown into the site
+        run: python3 site/sync-docs.py
 
-      # docs/*.md in the repository is the documentation; sync-docs.mjs copies
-      # it into the Docusaurus tree so the two can never drift.
-      - name: Build the documentation
-        working-directory: apps/docs
+      - name: Build
+        env:
+          # A pull-request build has no Pages URL yet, and only needs to prove
+          # the templates compile.
+          BASE_URL: ${{ steps.pages.outputs.base_url || 'https://listepo.github.io/ketch' }}
         run: |
-          node sync-docs.mjs
-          pnpm run build
-
-      - name: Merge the two builds
-        run: |
-          rm -rf public
-          cp -R apps/web/dist public
-          # The docs build is mounted whole under /docs/; Astro is configured
-          # not to own that path, so nothing is overwritten here.
-          cp -R apps/docs/build public/docs
+          hugo --source site --minify --gc --baseURL "$BASE_URL/"
 
       - name: Check the build produced what it should
         run: |
-          cd public
-          for required in index.html favicon.svg \
-                          docs/index.html docs/sitemap.xml \
+          cd site/public
+          for required in index.html sitemap.xml robots.txt docs/index.html \
                           docs/manifests/index.html docs/registry/index.html \
-                          docs/lockfile/index.html docs/plugins/index.html \
-                          docs/roadmap/index.html; do
+                          docs/plugins/index.html docs/roadmap/index.html \
+                          css/main.css img/og.png; do
             [ -s "$required" ] || { echo "missing or empty: $required" >&2; exit 1; }
           done
           # The SEO tags are the point of the landing page; a template that
           # silently renders nothing would still produce a valid-looking site.
-          grep -q '<meta name="description"' index.html
-          grep -q '<link rel="canonical"' index.html
-          grep -q 'application/ld+json' index.html
+          # --minify drops quotes around attribute values, so match either form.
+          grep -qE '<meta name="?description"?' index.html
+          grep -qE '<link rel="?canonical"?' index.html
+          grep -q 'og:image' index.html
+          # `ld+json>{` and not `ld+json>"`: Go escapes a string in a script
+          # context into a JS string literal, which is not parseable JSON-LD.
+          grep -q 'ld+json>{' index.html
           grep -q 'SoftwareApplication' index.html
-          # A meta description an engine truncates is one a search result shows
-          # truncated. Catch it here rather than on the deployed page.
-          if grep -qE '<meta name="description" content="[^"]{161,}"' index.html; then
-            echo "the meta description is over 160 characters" >&2
+          grep -q 'TechArticle' docs/manifests/index.html
+          # Hugo truncates an over-long description with an ellipsis, which is
+          # what a search result would then show. Catch it here rather than on
+          # the deployed page.
+          if grep -rq 'name=description content="[^"]*…"' .; then
+            echo "a meta description was truncated; keep it under 160 characters:" >&2
+            grep -rl 'name=description content="[^"]*…"' . >&2
             exit 1
           fi
           echo "site ok: $(find . -name '*.html' | wc -l) pages"
@@ -96,7 +93,7 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         if: github.event_name != 'pull_request'
         with:
-          path: public
+          path: site/public
 
   deploy:
     needs: build

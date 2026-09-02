@@ -1,0 +1,47 @@
+[package]
+name = "ketch"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+description = "Catch releases straight from GitHub — a package manager for GitHub-released binaries and apps."
+license = "MIT"
+repository = "https://github.com/listepo/ketch"
+readme = "README.md"
+keywords = ["package-manager", "github", "releases", "installer", "macos"]
+categories = ["command-line-utilities", "development-tools"]
+
+[[bin]]
+name = "ketch"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive", "env", "wrap_help"] }
+clap_complete = "4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+ureq = { version = "2", features = ["json"] }
+sha2 = "0.10"
+hex = "0.4"
+flate2 = "1"
+bzip2 = "0.4"
+tar = "0.4"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+lzma-rs = "0.3"
+walkdir = "2"
+semver = "1"
+tempfile = "3"
+dirs = "5"
+thiserror = "1"
+indicatif = "0.17"
+
+# There is no unsafe code in ketch and there is no reason for any to appear.
+[lints.rust]
+unsafe_code = "forbid"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

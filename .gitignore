@@ -1,23 +1,16 @@
+/target
+**/*.rs.bk
 .DS_Store
 .serena/
 
-# The site: Astro's build, and Docusaurus's build plus the doc pages
-# `sync-docs.mjs` generates from the Markdown in the repository.
-/apps/web/.astro/
-/apps/docs/.docusaurus/
-/apps/docs/build/
-/apps/docs/docs/
-
-# Compiler intermediates. `perry compile` writes its object files into the
-# directory it is run from, one per module including every dependency's —
-# 263 of them, 36MB, straight into the repository root.
-*.o
-
-# TypeScript monorepo
-node_modules/
-dist/
-*.tsbuildinfo
-.moon/cache/
-
-# fallow's extraction cache; the committed baselines live in .fallow-baselines/
-.fallow/
+# Hugo build output, and the doc pages generated from the Markdown in the
+# repository root by site/sync-docs.py.
+/site/public/
+/site/resources/
+/site/.hugo_build.lock
+/site/content/docs/manifests.md
+/site/content/docs/registry.md
+/site/content/docs/lockfile.md
+/site/content/docs/plugins.md
+/site/content/docs/roadmap.md
+/site/content/docs/contributing.md

@@ -4,16 +4,15 @@
 #   scripts/release.sh 0.2.0
 #   scripts/release.sh 0.2.0 --dry-run
 #
-# Bumps the version in apps/cli/package.json — and in the `VERSION` constant
-# apps/cli/src/cli.ts reports, which a test pins to it — on a branch, pushes it,
-# and opens a pull request. Merging that pull request is what makes the version
+# Bumps the version in Cargo.toml and Cargo.lock on a branch, pushes it, and
+# opens a pull request. Merging that pull request is what makes the version
 # official; tagging it is what publishes it, and the pull request body says how.
 #
-# The version is written in two files and is load-bearing in two more places:
-# the release workflow refuses a tag that disagrees with apps/cli/package.json,
-# because `ketch self update` compares the running binary's version against the
-# release tag. A mismatch there breaks upgrades for everyone already installed.
-# Bumping by hand is what this command exists to stop.
+# The version lives in one place and is load-bearing in two: the release
+# workflow refuses a tag that disagrees with Cargo.toml, because `ketch self
+# update` compares the running binary's version against the release tag. A
+# mismatch there breaks upgrades for everyone already installed. Bumping by hand
+# is what this command exists to stop.
 
 set -euo pipefail
 IFS=$'\n\t'
@@ -48,20 +47,8 @@ done
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-MANIFEST="apps/cli/package.json"
-CLI_SOURCE="apps/cli/src/cli.ts"
-
 die() { echo "error: $*" >&2; exit 1; }
 step() { printf '==> %s\n' "$*"; }
-
-# The one place this script parses JSON. `node` is the canonical runtime, so it
-# is already required to build anything here; hand-rolling a JSON reader out of
-# sed to avoid depending on it would be the less reliable choice.
-manifest_version() {
-  node -e 'const fs = require("node:fs");
-    const pkg = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-    if (typeof pkg.version === "string") process.stdout.write(pkg.version);' "$MANIFEST"
-}
 
 # ---------------------------------------------------------------------------
 # Checks that are cheaper to fail now than after a branch exists
@@ -73,12 +60,14 @@ esac
 printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' \
   || die "\`$VERSION\` is not a version like 0.2.0 or 1.0.0-rc.1"
 
-command -v node >/dev/null || die "node is required to read $MANIFEST"
+CURRENT="$(awk '/^\[package\]/ { in_pkg = 1; next }
+                /^\[/          { in_pkg = 0 }
+                in_pkg && /^version[[:space:]]*=/ {
+                  split($0, q, "\""); print q[2]; exit
+                }' Cargo.toml)"
+[ -n "$CURRENT" ] || die "could not read the current version from Cargo.toml"
 
-CURRENT="$(manifest_version)"
-[ -n "$CURRENT" ] || die "could not read the current version from $MANIFEST"
-
-[ "$VERSION" != "$CURRENT" ] || die "$MANIFEST is already at $CURRENT"
+[ "$VERSION" != "$CURRENT" ] || die "Cargo.toml is already at $CURRENT"
 
 # Only the numeric core is compared. Prerelease ordering is not modelled — this
 # is here to catch a version that goes backwards, not to rank release
@@ -91,11 +80,6 @@ awk -v new="$VERSION" -v old="$CURRENT" 'BEGIN {
   }
   exit 0
 }' || die "$VERSION is older than the current $CURRENT"
-
-# The constant the binary actually prints. `version.test.ts` asserts the two
-# agree, so a bump that moved only one of them would fail the release gate.
-grep -qxF "export const VERSION = \"$CURRENT\";" "$CLI_SOURCE" \
-  || die "$CLI_SOURCE does not declare VERSION as \`$CURRENT\`; fix it by hand first"
 
 TAG="v$VERSION"
 BRANCH="release/$TAG"
@@ -139,7 +123,6 @@ CHANGES="$(git log "$RANGE" --no-merges --reverse --pretty=format:'- %s' || true
 if [ "$DRY_RUN" -eq 1 ]; then
   step "dry run: nothing will be changed"
   echo "  version   $CURRENT -> $VERSION"
-  echo "  files     $MANIFEST, $CLI_SOURCE"
   echo "  branch    $BRANCH"
   echo "  tag       $TAG (after merge)"
   echo "  changes   $SINCE"
@@ -154,42 +137,29 @@ fi
 step "branching $BRANCH"
 git checkout --quiet -b "$BRANCH"
 
-# Rewrite only the package's own `version` key. Every dependency's version is
-# the *value* of its own name, never of a key called `version`, so matching the
-# key is enough — and `!done` stops at the first one regardless. Only the value
-# after the colon is replaced, so the line keeps its indentation and its
-# trailing comma, whatever they are.
+# Rewrite only the version inside [package]. `rust-version` and every
+# dependency's inline `version =` must be left alone.
 step "setting version to $VERSION"
 awk -v new="$VERSION" '
-  !done && /^[[:space:]]*"version"[[:space:]]*:/ {
-    colon = index($0, ":")
-    head = substr($0, 1, colon)
-    tail = substr($0, colon + 1)
-    sub(/"[^"]*"/, "\"" new "\"", tail)
-    print head tail
-    done = 1; next
+  /^\[package\]/ { in_pkg = 1; print; next }
+  /^\[/          { in_pkg = 0 }
+  in_pkg && /^version[[:space:]]*=/ && !done {
+    printf "version = \"%s\"\n", new; done = 1; next
   }
   { print }
-' "$MANIFEST" > "$MANIFEST.new" && mv "$MANIFEST.new" "$MANIFEST"
+' Cargo.toml > Cargo.toml.new && mv Cargo.toml.new Cargo.toml
 
-# The constant the CLI prints, kept level with the manifest because
-# `version.test.ts` compares them and the release workflow runs that test.
-awk -v new="$VERSION" '
-  !done && /^export const VERSION = "/ {
-    printf "export const VERSION = \"%s\";\n", new; done = 1; next
-  }
-  { print }
-' "$CLI_SOURCE" > "$CLI_SOURCE.new" && mv "$CLI_SOURCE.new" "$CLI_SOURCE"
+# The lock records the crate's own version too, and `--locked` builds fail if
+# the two disagree — which is exactly what CI and the release workflow use.
+cargo update --workspace --quiet 2>/dev/null \
+  || cargo update --workspace --quiet --offline \
+  || die "could not update Cargo.lock; run \`cargo update --workspace\` and retry"
 
-# pnpm-lock.yaml records the workspace member's *path*, not its version, so a
-# bump does not change it. Nothing to regenerate here, on purpose.
-
-# Prove the rewrites did what they claimed rather than trusting the awk above.
-WROTE="$(manifest_version)"
+# Prove the rewrite did what it claimed rather than trusting the awk above.
+WROTE="$(cargo metadata --no-deps --format-version 1 --offline 2>/dev/null \
+  | sed -n 's/.*"name":"ketch","version":"\([^"]*\)".*/\1/p')"
 [ "$WROTE" = "$VERSION" ] \
-  || die "$MANIFEST now reads \`$WROTE\`, not \`$VERSION\` — nothing was pushed"
-grep -qxF "export const VERSION = \"$VERSION\";" "$CLI_SOURCE" \
-  || die "$CLI_SOURCE was not rewritten to \`$VERSION\` — nothing was pushed"
+  || die "Cargo.toml now reads \`$WROTE\`, not \`$VERSION\` — nothing was pushed"
 
 # The commit message and the pull request body are assembled with `printf %s`,
 # never interpolated into a heredoc or a double-quoted string. A commit subject
@@ -204,7 +174,7 @@ trap 'rm -rf "$TMP"' EXIT
   printf '%s\n' "$CHANGES"
 } > "$TMP/message"
 
-git add "$MANIFEST" "$CLI_SOURCE"
+git add Cargo.toml Cargo.lock
 git commit --quiet -F "$TMP/message"
 
 step "pushing $BRANCH"
@@ -212,8 +182,7 @@ git push --quiet -u origin "$BRANCH"
 
 step "opening the pull request"
 {
-  printf 'Bumps `%s` and `%s` from `%s` to `%s`.\n\n' \
-    "$MANIFEST" "$CLI_SOURCE" "$CURRENT" "$VERSION"
+  printf 'Bumps `Cargo.toml` and `Cargo.lock` from `%s` to `%s`.\n\n' "$CURRENT" "$VERSION"
   printf '## What is in it\n\nCommits %s:\n\n' "$SINCE"
   printf '%s\n\n' "$CHANGES"
   printf '## Publishing it\n\n'
@@ -223,9 +192,9 @@ step "opening the pull request"
   printf 'git tag %s && git push origin %s\n' "$TAG" "$TAG"
   printf '```\n\n'
   printf 'That runs the release workflow, which re-runs the whole gate, checks the\n'
-  printf 'tag against `%s`, builds both macOS architectures and publishes the\n' "$MANIFEST"
-  printf 'tarballs with an aggregate `SHA256SUMS`.\n\n'
-  printf 'The tag must stay level with `%s`: `ketch self update` compares\n' "$MANIFEST"
+  printf 'tag against `Cargo.toml`, builds both macOS architectures and publishes\n'
+  printf 'the tarballs with an aggregate `SHA256SUMS`.\n\n'
+  printf 'The tag must stay level with `Cargo.toml`: `ketch self update` compares\n'
   printf "the running binary's version against the release tag, so a mismatch\n"
   printf 'breaks upgrades for everyone already installed. The release workflow\n'
   printf 'refuses one, which is why this pull request exists.\n'
