@@ -6,9 +6,9 @@ execution, argument parsing, and output formatting.
 
 ## Implementation status
 
-- [x] Added `assert_cmd`, `predicates`, `assert_fs`, and `trycmd` as locked
-  development dependencies, with portable binary assertions and a literate
-  version snapshot.
+- [x] Added `assert_cmd`, `predicates`, `assert_fs`, `trycmd`, `rstest`,
+  `insta`, and `pretty_assertions` as locked development dependencies, with
+  portable binary assertions and a literate version snapshot.
 - [x] Preserved colocated unit tests and the offline, macOS install pipeline
   suite; the new binary tests cover help, invalid arguments, output streams,
   and an isolated root.
@@ -28,20 +28,29 @@ execution, argument parsing, and output formatting.
   to check CLI commands against expected output. If the CLI generates lengthy
   or complex text outputs, line-by-line assertions are inefficient; `trycmd`
   keeps those expectations readable while making the fixtures documentation.
+- **rstest** provides parameterized tests and fixtures for compact, explicit
+  test matrices such as archive formats, target tokens, and malformed input.
+- **insta** stores reviewed snapshots for stable structured values and output;
+  redact volatile paths, timestamps, and IDs instead of making assertions vague.
+- **pretty_assertions** gives useful colored diffs for non-trivial equality
+  checks; import its macros where the standard assertion would hide the cause.
 
 ## Execution plan
 
 1. [x] Keep pure business-logic tests in `#[cfg(test)]` modules beside the Rust
    source they exercise.
-2. [x] Add `assert_cmd`, `predicates`, and `assert_fs` as development dependencies
-   for integration tests in `tests/`.
+2. [x] Add `assert_cmd`, `predicates`, `assert_fs`, `trycmd`, `rstest`, `insta`,
+   and `pretty_assertions` as development dependencies for unit and integration
+   tests.
 3. [x] Cover each command's happy path, argument errors, exit status, stdout, and
    stderr by executing the real `ketch` binary.
 4. [x] Use `assert_fs` to isolate installation roots and verify filesystem state
    after install, upgrade, relink, unlink, and uninstall operations.
 5. [x] Add `trycmd` fixtures for stable, lengthy, or documentation-worthy command
    output; update snapshots only when the behavior change is intentional.
-6. [x] Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and
+6. [x] Use `rstest` for true case matrices, `insta` for stable reviewed snapshots,
+   and `pretty_assertions` for readable equality diffs.
+7. [x] Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and
    `cargo test` before committing. Run the end-to-end suite separately with
    `cargo test --test install` when changing the install pipeline.
 
@@ -52,6 +61,8 @@ execution, argument parsing, and output formatting.
 - Temporary files are isolated and cleaned up automatically.
 - Output assertions identify the intended stream and exit code.
 - Snapshot fixtures are reviewed as both tests and user-facing documentation.
+- Parameterized cases are explicit and deterministic; snapshots redact only
+  values that are inherently volatile.
 
 ## Cargo cache maintenance
 

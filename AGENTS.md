@@ -63,13 +63,21 @@ the integration layer:
   and directories.
 - `trycmd` orchestrates snapshot testing with plain-text or Markdown files so
   lengthy or complex CLI output doubles as documentation and test assertions.
+- `rstest` expresses related cases as parameterized tests and fixtures without
+  duplicating setup.
+- `insta` records reviewed snapshots for stable structured values or output;
+  use its redactions for volatile values rather than weakening the assertion.
+- `pretty_assertions` makes equality failures readable; import its `assert_eq`
+  and `assert_ne` macros in unit tests that compare non-trivial values.
 
 Keep fast, deterministic business-logic tests beside the Rust module they
 exercise. Put binary-level behavior in `tests/`, using `assert_cmd` and
 `assert_fs`; use `trycmd` for commands whose complete output is easier to
-review as a fixture. Combine `predicates` with `assert_cmd` rather than
-parsing output manually. Every bug fix should add the narrowest regression
-test that would fail without the fix.
+review as a fixture. Use `rstest` for a genuine matrix of equivalent cases,
+`insta` for stable reviewed snapshots, and `pretty_assertions` for rich value
+diffs. Combine `predicates` with `assert_cmd` rather than parsing output
+manually. Every bug fix should add the narrowest regression test that would
+fail without the fix.
 
 CI runs `fmt --check`, `clippy -D warnings` and `test` on macOS. All three must
 pass before a change is done.
