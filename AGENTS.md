@@ -95,16 +95,11 @@ explicitly requires reclaiming that space.
 
 Choose **Just** when you want a fast, lightweight, and simple command alias
 tool that feels like `make` without the baggage, or when the repository manages
-multiple languages alongside Rust. See [Rust Project Primer](https://rustprojectprimer.com/tools/tasks.html),
-[Just vs cargo-make](https://www.libhunt.com/compare/cargo-make-vs-just), and
-[Just and Cargo build scripts](https://just.systems/man/en/whats-the-relationship-between-just-and-cargo-build-scripts.html).
+multiple languages alongside Rust.
 
 Choose **cargo-make** when you need complex CI/CD build pipelines,
 cross-platform conditional flows, automated crate installations, or built-in
-scripting extensions such as duckscript tailored specifically for Rust. See
-[the Rust forum announcement](https://users.rust-lang.org/t/announcing-cargo-make-task-runner-and-build-tool-for-rust/11629),
-[Rust Project Primer](https://rustprojectprimer.com/tools/tasks.html), and
-[cargo-make documentation](https://sagiegurari.github.io/cargo-make/).
+scripting extensions such as duckscript tailored specifically for Rust.
 
 For this repository, prefer **Just** if a task runner is introduced: the
 project combines Rust with shell and site tooling, and its current commands
