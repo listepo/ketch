@@ -48,6 +48,29 @@ Run the binary against a throwaway tree instead of your real `~/.ketch`:
 KETCH_ROOT=/tmp/ketch-scratch cargo run -- doctor
 ```
 
+## Rust CLI testing
+
+Testing a Rust CLI application requires a combination of unit tests for
+internal business logic and integration tests to verify end-to-end binary
+execution, argument parsing, and output formatting. Prefer these crates for
+the integration layer:
+
+- `assert_cmd` executes the compiled CLI binary and runs assertions against
+  exit codes, stdout, and stderr.
+- `predicates` composes boolean assertions for output matching, including
+  string containment and regular expressions.
+- `assert_fs` automates setup, tear-down, and verification of temporary files
+  and directories.
+- `trycmd` orchestrates snapshot testing with plain-text or Markdown files so
+  lengthy or complex CLI output doubles as documentation and test assertions.
+
+Keep fast, deterministic business-logic tests beside the Rust module they
+exercise. Put binary-level behavior in `tests/`, using `assert_cmd` and
+`assert_fs`; use `trycmd` for commands whose complete output is easier to
+review as a fixture. Combine `predicates` with `assert_cmd` rather than
+parsing output manually. Every bug fix should add the narrowest regression
+test that would fail without the fix.
+
 CI runs `fmt --check`, `clippy -D warnings` and `test` on macOS. All three must
 pass before a change is done.
 
