@@ -10,11 +10,18 @@ use std::io::{IsTerminal, Write};
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Mutex;
 
+#[cfg(feature = "tui")]
+use std::sync::Arc;
+
 static COLOR: AtomicBool = AtomicBool::new(false);
 static LEVEL: AtomicU8 = AtomicU8::new(1); // 0 quiet, 1 normal, 2 verbose
 
 /// The bars currently sharing the terminal, while a batch is running.
 static BARS: Mutex<Option<MultiProgress>> = Mutex::new(None);
+
+/// The optional full-screen renderer while an explicit TUI session is active.
+#[cfg(feature = "tui")]
+static TUI: Mutex<Option<Arc<crate::tui::Controller>>> = Mutex::new(None);
 
 /// Every status line leaves through here.
 ///
@@ -22,6 +29,11 @@ static BARS: Mutex<Option<MultiProgress>> = Mutex::new(None);
 /// a bare `eprintln!` lands in the middle of one. `indicatif` knows how to
 /// print above them, so when a batch is running it does the writing.
 fn emit(line: &str) {
+    #[cfg(feature = "tui")]
+    if let Some(tui) = tui_controller() {
+        tui.send(crate::tui::Event::Message(strip_ansi(line)));
+        return;
+    }
     match held().as_ref() {
         // `suspend` takes the bars off the screen, lets the line be written
         // normally, and redraws them underneath it. `println` queues the line
@@ -29,6 +41,41 @@ fn emit(line: &str) {
         Some(bars) => bars.suspend(|| eprintln!("{line}")),
         None => eprintln!("{line}"),
     }
+}
+
+/// Connect terminal output and progress callbacks to an active TUI session.
+#[cfg(feature = "tui")]
+pub fn enable_tui(controller: Arc<crate::tui::Controller>) {
+    *TUI.lock().unwrap_or_else(|e| e.into_inner()) = Some(controller);
+}
+
+/// Disconnect the TUI before the session restores ordinary terminal output.
+#[cfg(feature = "tui")]
+pub fn disable_tui() {
+    *TUI.lock().unwrap_or_else(|e| e.into_inner()) = None;
+}
+
+#[cfg(feature = "tui")]
+fn tui_controller() -> Option<Arc<crate::tui::Controller>> {
+    TUI.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+#[cfg(feature = "tui")]
+fn strip_ansi(text: &str) -> String {
+    let mut output = String::with_capacity(text.len());
+    let mut chars = text.chars();
+    while let Some(ch) = chars.next() {
+        if ch == '\x1b' && chars.next() == Some('[') {
+            for code in chars.by_ref() {
+                if code.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        } else {
+            output.push(ch);
+        }
+    }
+    output
 }
 
 fn held() -> std::sync::MutexGuard<'static, Option<MultiProgress>> {
@@ -252,6 +299,23 @@ pub trait ProgressSink: Send + Sync {
     fn finish(&self, message: &str);
 }
 
+/// A typed stage of the install pipeline for progress renderers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProgressStage {
+    /// Looking up the manifest and release.
+    Resolving,
+    /// Copying the release asset locally.
+    Downloading,
+    /// Checking the asset digest.
+    Verifying,
+    /// Expanding the release archive.
+    Extracting,
+    /// Checking platform-specific trust requirements.
+    Trusting,
+    /// Putting files and links in their final locations.
+    Installing,
+}
+
 /// Discards everything. Used by tests, `--quiet`, and non-terminal output.
 pub struct SilentProgress;
 
@@ -362,6 +426,10 @@ pub struct Bars {
 
 /// Start a group of bars for concurrent work.
 pub fn bars() -> Bars {
+    #[cfg(feature = "tui")]
+    if tui_controller().is_some() {
+        return Bars { group: None };
+    }
     if is_quiet() || !std::io::stderr().is_terminal() {
         return Bars { group: None };
     }
@@ -373,6 +441,10 @@ pub fn bars() -> Bars {
 impl Bars {
     /// One bar in this group, named for the work it is doing.
     pub fn sink(&self, label: &str) -> Box<dyn ProgressSink> {
+        #[cfg(feature = "tui")]
+        if let Some(tui) = tui_controller() {
+            return Box::new(crate::tui::TuiProgress::new(tui, label));
+        }
         match &self.group {
             Some(group) => Box::new(BarProgress::in_group(group.clone(), label)),
             None => Box::new(SilentProgress),
@@ -394,10 +466,47 @@ impl Drop for Bars {
 
 /// Pick the right sink for the current run.
 pub fn progress() -> Box<dyn ProgressSink> {
+    progress_for("download")
+}
+
+/// Pick the right sink for a named unit of work.
+pub fn progress_for(label: &str) -> Box<dyn ProgressSink> {
+    #[cfg(not(feature = "tui"))]
+    let _ = label;
+    #[cfg(feature = "tui")]
+    if let Some(tui) = tui_controller() {
+        return Box::new(crate::tui::TuiProgress::new(tui, label));
+    }
     if is_quiet() || !std::io::stderr().is_terminal() {
         Box::new(SilentProgress)
     } else {
         Box::new(BarProgress::new())
+    }
+}
+
+/// Report an install pipeline stage to the optional interactive renderer.
+pub fn stage(package: &str, stage: ProgressStage) {
+    #[cfg(not(feature = "tui"))]
+    let _ = (package, stage);
+    #[cfg(feature = "tui")]
+    if let Some(tui) = tui_controller() {
+        tui.send(crate::tui::Event::Stage {
+            package: package.to_string(),
+            stage,
+        });
+    }
+}
+
+/// Report a package result to the optional interactive renderer.
+pub fn completed(package: &str, success: bool) {
+    #[cfg(not(feature = "tui"))]
+    let _ = (package, success);
+    #[cfg(feature = "tui")]
+    if let Some(tui) = tui_controller() {
+        tui.send(crate::tui::Event::Completed {
+            package: package.to_string(),
+            success,
+        });
     }
 }
 

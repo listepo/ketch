@@ -38,6 +38,7 @@ pub fn load(cfg: &Config) -> Vec<(Manifest, PathBuf)> {
 /// or truncated fetch leaves the working copy alone.
 pub fn update(cfg: &Config) -> Result<usize> {
     let repo = &cfg.registry;
+    crate::ui::stage("registry", crate::ui::ProgressStage::Downloading);
     crate::ui::step("updating", &format!("registry {repo}"));
 
     let staging = tempfile::tempdir_in(&cfg.root).map_err(|e| Error::io(&cfg.root, e))?;
@@ -62,6 +63,7 @@ pub fn update(cfg: &Config) -> Result<usize> {
 
     let unpacked = staging.path().join("tree");
     std::fs::create_dir_all(&unpacked).map_err(|e| Error::io(&unpacked, e))?;
+    crate::ui::stage("registry", crate::ui::ProgressStage::Extracting);
     TarGzExtractor.extract(&tarball, &unpacked)?;
     // GitHub wraps the tree in one `owner-repo-<sha>` directory.
     let root = unwrap_single_dir(&unpacked)?;

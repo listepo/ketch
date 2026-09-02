@@ -99,7 +99,9 @@ pub fn install(
     state: &mut State,
     req: &InstallRequest,
 ) -> Result<Installed> {
-    let prepared = prepare(cfg, sources, state, req, ui::progress().as_ref())?;
+    let label = req.spec.label();
+    let progress = ui::progress_for(&label);
+    let prepared = prepare(cfg, sources, state, req, progress.as_ref())?;
     commit(cfg, state, prepared)
 }
 
@@ -113,6 +115,8 @@ pub fn prepare(
     progress: &dyn ui::ProgressSink,
 ) -> Result<Prepared> {
     let platform = crate::platform::host()?;
+    let label = req.spec.label();
+    ui::stage(&label, ui::ProgressStage::Resolving);
     let (manifest, origin) = Resolver::new(cfg)?.resolve(&req.spec)?;
     let source = sources.for_ref(&manifest.source)?;
 
@@ -157,6 +161,7 @@ pub fn prepare(
     }
 
     // --- download -----------------------------------------------------------
+    ui::stage(&label, ui::ProgressStage::Downloading);
     std::fs::create_dir_all(&cfg.cache_dir).map_err(|e| Error::io(&cfg.cache_dir, e))?;
     // A directory of its own, not a name under the cache. Two `prepare`s run
     // side by side, and an alias and a repo path naming the same package would
@@ -185,6 +190,7 @@ pub fn prepare(
         }
     }
 
+    ui::stage(&label, ui::ProgressStage::Verifying);
     let checksum_verified = verify_checksum(
         source.as_ref(),
         &manifest.source.id,
@@ -195,12 +201,14 @@ pub fn prepare(
     )?;
 
     // --- extract ------------------------------------------------------------
+    ui::stage(&label, ui::ProgressStage::Extracting);
     let unpack = tempfile::tempdir_in(&cfg.cache_dir).map_err(|e| Error::io(&cfg.cache_dir, e))?;
     let format =
         crate::extract::extract_auto(&download_path, unpack.path(), &platform.extractors())?;
     ui::debug(&format!("unpacked {} as {format}", asset.name));
     let payload = payload_root(unpack.path(), manifest.strip_prefix)?;
 
+    ui::stage(&label, ui::ProgressStage::Trusting);
     check_trust(platform.as_ref(), cfg, &payload, &manifest.name);
 
     Ok(Prepared {
@@ -231,6 +239,7 @@ pub fn commit(cfg: &Config, state: &mut State, prepared: Prepared) -> Result<Ins
         unpack,
     } = prepared;
     let platform = crate::platform::host()?;
+    ui::stage(&manifest.name, ui::ProgressStage::Installing);
 
     // Read again rather than trusting what `prepare` saw: in a batch, another
     // package may have been placed since.

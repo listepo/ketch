@@ -97,6 +97,7 @@ pub fn sync(cfg: &Config, args: SyncArgs) -> Result<()> {
         match outcome {
             Ok(out) => {
                 done += 1;
+                ui::completed(&entry.name, true);
                 // A pin is part of what the lockfile records, so restore it
                 // rather than leaving the fresh install quietly upgradeable.
                 if let Some(installed) = state.get_mut(&out.package.name) {
@@ -108,6 +109,7 @@ pub fn sync(cfg: &Config, args: SyncArgs) -> Result<()> {
                 );
             }
             Err(e) => {
+                ui::completed(&entry.name, false);
                 ui::error(&e);
                 failed.push(entry.name.clone());
             }

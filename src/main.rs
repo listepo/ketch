@@ -22,6 +22,8 @@ mod selfupdate;
 mod shell;
 mod source;
 mod state;
+#[cfg(feature = "tui")]
+mod tui;
 mod ui;
 
 use clap::{CommandFactory, Parser};
@@ -67,6 +69,9 @@ fn run(cli: Cli) -> Result<()> {
     let cfg = config::Config::load(cli.global.root.clone())?;
     cfg.ensure_dirs()?;
     log::init(&cfg);
+
+    #[cfg(feature = "tui")]
+    let _tui = start_tui(&cli);
     ui::debug(&format!(
         "root {} · target {} · token {}",
         cfg.root.display(),
@@ -99,5 +104,34 @@ fn run(cli: Cli) -> Result<()> {
         Command::Plugin { command } => cmd::system::plugin(&cfg, command),
         Command::Zelf { command } => cmd::system::zelf(&cfg, command),
         Command::Completions(_) => unreachable!("handled above"),
+    }
+}
+
+/// Start an opt-in session only for commands that have long-running progress.
+#[cfg(feature = "tui")]
+fn start_tui(cli: &Cli) -> Option<tui::Session> {
+    if !cli.global.tui || !tui::can_start(cli.global.quiet) {
+        return None;
+    }
+    let (command, packages) = match &cli.command {
+        Command::Install(args) => ("install", args.packages.clone()),
+        Command::Upgrade(args) => ("upgrade", args.names.clone()),
+        Command::Sync(_) => ("sync", Vec::new()),
+        Command::Update => ("update", vec!["registry".to_string()]),
+        // `--tui` is global so scripts do not need a command-specific spelling,
+        // but a read-only command has no progress stream to render.
+        _ => return None,
+    };
+    match tui::Session::start(command, packages) {
+        Ok(session) => {
+            ui::enable_tui(session.controller());
+            Some(session)
+        }
+        // An explicitly requested TUI must still leave a useful CLI on a
+        // terminal that refuses raw mode or an alternate screen.
+        Err(error) => {
+            ui::debug(&format!("TUI unavailable; using line output: {error}"));
+            None
+        }
     }
 }

@@ -22,7 +22,14 @@ echo "==> building $TARGET"
 rustup target add "$TARGET" >/dev/null
 cargo build --release --locked --target "$TARGET"
 
-BINARY="target/$TARGET/release/ketch"
+# Cargo can be configured to share a target directory outside the checkout.
+# Ask Cargo for the resolved path instead of assuming the default `target/`.
+TARGET_DIR="$(cargo metadata --no-deps --format-version=1 | sed -nE 's/.*"target_directory":"([^"]+)".*/\1/p')"
+if [ -z "$TARGET_DIR" ]; then
+  echo "could not determine Cargo's target directory" >&2
+  exit 1
+fi
+BINARY="$TARGET_DIR/$TARGET/release/ketch"
 if [ ! -x "$BINARY" ]; then
   echo "no binary at $BINARY" >&2
   exit 1

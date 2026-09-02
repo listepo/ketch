@@ -64,12 +64,17 @@ pub fn install(cfg: &Config, args: InstallArgs) -> Result<()> {
         match outcome {
             Ok(out) => {
                 done += 1;
+                ui::completed(raw, true);
                 report(&out);
             }
-            Err(e) if single => return Err(e),
+            Err(e) if single => {
+                ui::completed(raw, false);
+                return Err(e);
+            }
             // One bad package must not discard the ones that already
             // succeeded, so the failure is held until the state file is saved.
             Err(e) => {
+                ui::completed(raw, false);
                 ui::error(&e);
                 failed.push((*raw).clone());
             }
@@ -241,9 +246,11 @@ pub fn upgrade(cfg: &Config, args: UpgradeArgs) -> Result<()> {
         match outcome {
             Ok(out) => {
                 done += 1;
+                ui::completed(&pkg.name, true);
                 report(&out);
             }
             Err(e) => {
+                ui::completed(&pkg.name, false);
                 ui::error(&e);
                 failed.push(pkg.name.clone());
             }

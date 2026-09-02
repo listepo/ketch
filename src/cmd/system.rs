@@ -96,7 +96,14 @@ fn fix(cfg: &Config) {
 
 /// Refresh the local copy of the package registry.
 pub fn update(cfg: &Config) -> Result<()> {
-    let count = registry::update(cfg)?;
+    let count = match registry::update(cfg) {
+        Ok(count) => count,
+        Err(error) => {
+            ui::completed("registry", false);
+            return Err(error);
+        }
+    };
+    ui::completed("registry", true);
     ui::success(
         "updated",
         &format!("{count} packages from {}", cfg.registry),

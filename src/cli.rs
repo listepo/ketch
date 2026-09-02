@@ -41,6 +41,11 @@ pub struct GlobalArgs {
     /// Never emit ANSI colour
     #[arg(long, global = true)]
     pub no_color: bool,
+
+    /// Show interactive progress in a full-screen terminal UI when available
+    #[cfg(feature = "tui")]
+    #[arg(long, global = true, conflicts_with = "quiet")]
+    pub tui: bool,
 }
 
 #[derive(Subcommand, Debug)]

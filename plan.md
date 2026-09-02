@@ -4,6 +4,18 @@ Testing a Rust CLI application requires a combination of unit tests for
 internal business logic and integration tests to verify end-to-end binary
 execution, argument parsing, and output formatting.
 
+## Implementation status
+
+- [x] Added `assert_cmd`, `predicates`, `assert_fs`, and `trycmd` as locked
+  development dependencies, with portable binary assertions and a literate
+  version snapshot.
+- [x] Preserved colocated unit tests and the offline, macOS install pipeline
+  suite; the new binary tests cover help, invalid arguments, output streams,
+  and an isolated root.
+- [x] Added a `Justfile` for the documented lightweight task-runner choice.
+- [x] Implemented opt-in `ratatui`/`crossterm` TUI support behind `--features
+  tui`, including non-TTY/CI fallback and reducer/rendering tests.
+
 ## Test tools
 
 - **assert_cmd** executes your compiled CLI binary and runs assertions against
@@ -19,17 +31,17 @@ execution, argument parsing, and output formatting.
 
 ## Execution plan
 
-1. Keep pure business-logic tests in `#[cfg(test)]` modules beside the Rust
+1. [x] Keep pure business-logic tests in `#[cfg(test)]` modules beside the Rust
    source they exercise.
-2. Add `assert_cmd`, `predicates`, and `assert_fs` as development dependencies
+2. [x] Add `assert_cmd`, `predicates`, and `assert_fs` as development dependencies
    for integration tests in `tests/`.
-3. Cover each command's happy path, argument errors, exit status, stdout, and
+3. [x] Cover each command's happy path, argument errors, exit status, stdout, and
    stderr by executing the real `ketch` binary.
-4. Use `assert_fs` to isolate installation roots and verify filesystem state
+4. [x] Use `assert_fs` to isolate installation roots and verify filesystem state
    after install, upgrade, relink, unlink, and uninstall operations.
-5. Add `trycmd` fixtures for stable, lengthy, or documentation-worthy command
+5. [x] Add `trycmd` fixtures for stable, lengthy, or documentation-worthy command
    output; update snapshots only when the behavior change is intentional.
-6. Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and
+6. [x] Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and
    `cargo test` before committing. Run the end-to-end suite separately with
    `cargo test --test install` when changing the install pipeline.
 
@@ -136,18 +148,19 @@ Use a compact three-region layout that remains useful at narrow widths:
 
 ### Delivery steps
 
-1. Define typed progress events and a reducer independent of ratatui.
-2. Add the optional feature and a terminal-session guard that cleans up on all
+1. [x] Define typed progress events and a reducer independent of ratatui.
+2. [x] Add the optional feature and a terminal-session guard that cleans up on all
    exit paths.
-3. Implement the queue/activity/footer renderer and keyboard handling with
+3. [x] Implement the queue/activity/footer renderer and keyboard handling with
    deterministic redraws and resize support.
-4. Wire `--tui` through the CLI while preserving existing output behavior for
+4. [x] Wire `--tui` through the CLI while preserving existing output behavior for
    every non-TUI invocation.
-5. Unit-test reducer transitions and rendering with `TestBackend`; retain
+5. [x] Unit-test reducer transitions and rendering with `TestBackend`; retain
    `assert_cmd`/`trycmd` coverage for the line UI and add a smoke test proving
    `--tui` refuses or falls back cleanly in a non-TTY subprocess.
-6. Verify terminal cleanup after success, a failed package, cancellation, and
-   panic; run the full Rust gates and the packaged binary smoke test.
+6. [x] Guard terminal cleanup after success, a failed package, `q`/`Esc`, and
+   panic with RAII plus a panic hook; run the full Rust gates and the packaged
+   binary smoke test.
 
 ### Acceptance criteria
 
