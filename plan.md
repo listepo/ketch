@@ -61,3 +61,23 @@ cargo cache-autoclean
 Always inspect the dry run before cleanup. Cache removal only trades disk space
 for future downloads; it must not be used as a substitute for fixing build or
 test failures.
+
+## Task runner selection
+
+Choose **Just** if you want a fast, lightweight, and simple command alias tool
+that feels like `make` without the baggage, or if the repository manages
+multiple languages alongside Rust. References: [Rust Project Primer](https://rustprojectprimer.com/tools/tasks.html),
+[Just vs cargo-make](https://www.libhunt.com/compare/cargo-make-vs-just), and
+[Just and Cargo build scripts](https://just.systems/man/en/whats-the-relationship-between-just-and-cargo-build-scripts.html).
+
+Choose **cargo-make** if you need complex CI/CD build pipelines,
+cross-platform conditional flows, automated crate installations, or built-in
+scripting extensions such as duckscript tailored specifically for Rust.
+References: [cargo-make announcement](https://users.rust-lang.org/t/announcing-cargo-make-task-runner-and-build-tool-for-rust/11629),
+[Rust Project Primer](https://rustprojectprimer.com/tools/tasks.html), and
+[cargo-make documentation](https://sagiegurari.github.io/cargo-make/).
+
+For ketch, prefer **Just** for a future task runner because the repository
+combines Rust with shell and site tooling and currently needs only simple
+aliases. Revisit cargo-make if CI grows into conditional, multi-stage Rust
+automation.

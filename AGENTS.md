@@ -91,6 +91,26 @@ destructive but safe for build correctness: Cargo will download sources again
 when needed. Do not remove registry indexes or all cached data unless the task
 explicitly requires reclaiming that space.
 
+## Task runner choice
+
+Choose **Just** when you want a fast, lightweight, and simple command alias
+tool that feels like `make` without the baggage, or when the repository manages
+multiple languages alongside Rust. See [Rust Project Primer](https://rustprojectprimer.com/tools/tasks.html),
+[Just vs cargo-make](https://www.libhunt.com/compare/cargo-make-vs-just), and
+[Just and Cargo build scripts](https://just.systems/man/en/whats-the-relationship-between-just-and-cargo-build-scripts.html).
+
+Choose **cargo-make** when you need complex CI/CD build pipelines,
+cross-platform conditional flows, automated crate installations, or built-in
+scripting extensions such as duckscript tailored specifically for Rust. See
+[the Rust forum announcement](https://users.rust-lang.org/t/announcing-cargo-make-task-runner-and-build-tool-for-rust/11629),
+[Rust Project Primer](https://rustprojectprimer.com/tools/tasks.html), and
+[cargo-make documentation](https://sagiegurari.github.io/cargo-make/).
+
+For this repository, prefer **Just** if a task runner is introduced: the
+project combines Rust with shell and site tooling, and its current commands
+are simple aliases. Use cargo-make instead only when the workflow grows into
+conditional, multi-stage Rust automation.
+
 ## Layout
 
 | Path | Owns |
