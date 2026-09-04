@@ -2,7 +2,9 @@
 name = "ketch"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.82"
+# Raised from 1.82 by Diesel 2.3, which is the floor for the statistics
+# database. Nothing else in the tree needs it.
+rust-version = "1.86"
 description = "Catch releases straight from GitHub — a package manager for GitHub-released binaries and apps."
 license = "MIT"
 repository = "https://github.com/listepo/ketch"
@@ -41,6 +43,12 @@ thiserror = "1"
 indicatif = "0.17"
 crossterm = { version = "0.28", optional = true }
 ratatui = { version = "0.29", optional = true }
+diesel = { version = "2.2.12", features = ["sqlite", "returning_clauses_for_sqlite_3_35"] }
+diesel_migrations = "2.2.0"
+# `bundled` compiles SQLite into the binary. Linking the system one would make
+# ketch's single-binary promise depend on what the host happens to ship, and
+# the release builds both macOS architectures where that answer differs.
+libsqlite3-sys = { version = "0.38.2", features = ["bundled"] }
 
 [dev-dependencies]
 assert_cmd = "2"

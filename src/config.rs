@@ -51,6 +51,9 @@ pub struct Config {
     pub manifest_dir: PathBuf,
     pub plugin_dir: PathBuf,
     pub state_file: PathBuf,
+    /// History and statistics. Unlike `state_file`, losing this loses only the
+    /// record of what happened — see `stats.rs`.
+    pub stats_db: PathBuf,
     pub lock_file: PathBuf,
     // Part of the public surface, with no caller in the tree yet.
     #[allow(dead_code)]
@@ -165,6 +168,7 @@ impl Config {
             manifest_dir: root.join("manifests"),
             plugin_dir: root.join("plugins"),
             state_file: root.join("state.json"),
+            stats_db: root.join("stats.db"),
             lock_file: root.join(".lock"),
             config_file,
             apps_dir,

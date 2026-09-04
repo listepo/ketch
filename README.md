@@ -80,9 +80,24 @@ ketch path install         # put ~/.ketch/bin on PATH in bash, zsh and fish
 ```
 
 Everything lives under `~/.ketch`: versioned payloads in `store/`, links in
-`bin/`, and a `state.json` recording what is installed. Nothing is written
-outside that tree except the `.app` bundles that belong in `/Applications`, and
-the shell startup file `ketch path install` edits when you ask it to.
+`bin/`, a `state.json` recording what is installed, and a `stats.db` recording
+what happened. Nothing is written outside that tree except the `.app` bundles
+that belong in `/Applications`, and the shell startup file `ketch path install`
+edits when you ask it to.
+
+## What you had, and when
+
+```bash
+ketch history              # every install, upgrade and removal, newest first
+ketch history rg           # just this package's versions, including old ones
+ketch stats                # how many installs, how long they take
+```
+
+`state.json` says what is installed now and is rewritten on every change, so it
+cannot answer which version you had in March. `stats.db` is the other half: an
+append-only record that outlives the packages themselves, which is why
+`ketch history rg` still works after `ketch uninstall rg`. Delete the file and
+you lose the history, never the packages.
 
 ## Seeing what changed
 

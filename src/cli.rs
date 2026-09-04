@@ -75,6 +75,12 @@ pub enum Command {
     /// Search GitHub for installable repositories
     Search(SearchArgs),
 
+    /// Show what was installed, upgraded and removed, newest first
+    History(HistoryArgs),
+
+    /// Summarise everything ketch has recorded
+    Stats(StatsArgs),
+
     /// Refresh the package registry (see `upgrade` for installed packages)
     Update,
 
@@ -190,6 +196,28 @@ pub struct OutdatedArgs {
     /// Compare against prereleases too
     #[arg(long = "pre")]
     pub prerelease: bool,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct HistoryArgs {
+    /// Limit to one package. Omit for everything, in one timeline.
+    #[arg(value_name = "PKG")]
+    pub package: Option<String>,
+
+    /// Emit JSON instead of a table
+    #[arg(long)]
+    pub json: bool,
+
+    /// How many entries to show
+    #[arg(long, short = 'n', default_value_t = 20)]
+    pub limit: u32,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct StatsArgs {
+    /// Emit JSON instead of formatted text
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Args, Debug, Clone)]

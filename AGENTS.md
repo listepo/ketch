@@ -130,6 +130,7 @@ conditional, multi-stage Rust automation.
 | `src/manifest.rs` | resolving a name to a `Manifest` across four tiers |
 | `src/model.rs` | every type that crosses a module boundary |
 | `src/state.rs` | the installed-package record and the process lock |
+| `src/stats.rs` | `stats.db`: the history of what was installed, in SQLite |
 | `src/log.rs` | the log file, in text or JSON Lines |
 | `src/changelog.rs` | finding and slicing a client app's changelog |
 | `src/lockfile.rs` | `ketch.lock`: what is installed, pinned to exact releases |
@@ -222,6 +223,15 @@ delete the guard deliberately and say why in the commit.
 - **A field in `ketch.lock`** → `src/lockfile.rs`, and a row in
   `docs/LOCKFILE.md`. Anything a lockfile can say has to pass `validate`
   first: it is a file a colleague may have written.
+- **A column in `stats.db`** → a new folder under `migrations/`, never an edit
+  to one already released: the migration is embedded in the binary and has
+  already run on other people's machines. Then the `table!` block and the two
+  structs in `src/stats.rs`, which the `check_for_backend` attribute makes the
+  compiler verify against the schema.
+- **Recording something new that happened** → a variant on `stats::Action` and
+  a call from wherever it becomes true, which for anything touching the install
+  tree is `install.rs`. Keep it best effort: `stats::record` warns and returns,
+  because a statistic is never worth failing the operation it describes.
 
 ## Releasing
 
