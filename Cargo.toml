@@ -43,8 +43,8 @@ thiserror = "1"
 indicatif = "0.17"
 crossterm = { version = "0.28", optional = true }
 ratatui = { version = "0.29", optional = true }
-diesel = { version = "2.2.12", features = ["sqlite", "returning_clauses_for_sqlite_3_35"] }
-diesel_migrations = "2.2.0"
+diesel = { version = "2.3", features = ["sqlite", "returning_clauses_for_sqlite_3_35"] }
+diesel_migrations = "2.3"
 # `bundled` compiles SQLite into the binary. Linking the system one would make
 # ketch's single-binary promise depend on what the host happens to ship, and
 # the release builds both macOS architectures where that answer differs.
