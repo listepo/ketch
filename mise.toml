@@ -1,0 +1,6 @@
+# Developer tools that are not crate dependencies, pinned so every machine and
+# every agent runs the same one. The Rust toolchain is deliberately absent: CI
+# builds on the runner's default stable, and pinning it here would let the two
+# disagree about the compiler that ships a release.
+[tools]
+"cargo:cargo-cache" = "0.8.3" # `just cache` / `just cache-autoclean`; the shared cargo home fills up

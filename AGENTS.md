@@ -42,6 +42,9 @@ cargo fmt                        # must be clean
 cargo build                      # debug binary at target/debug/ketch
 ```
 
+The Justfile wraps the same commands with `--locked`: `just fmt`, `just clippy`
+(or `just lint`), `just test`, and `just check` runs the whole CI gate.
+
 Run the binary against a throwaway tree instead of your real `~/.ketch`:
 
 ```bash
@@ -84,20 +87,26 @@ pass before a change is done.
 
 ## Cargo cache maintenance
 
-`cargo-cache` is a developer utility, not a crate dependency. Install it once
-with `cargo install cargo-cache --locked`. This repository provides aliases in
-`.cargo/config.toml`:
+`cargo-cache` is a developer utility, not a crate dependency, and it is pinned
+in `mise.toml` so every machine runs the same one. `mise install` fetches it;
+nothing else here needs mise, and the Rust toolchain is deliberately not pinned
+because CI builds on the runner's default stable.
 
 ```bash
-cargo cache-info       # explain cache directories and safe cleanup choices
-cargo cache-dry-run    # preview removal of source and git checkouts
-cargo cache-autoclean  # remove source and git checkouts
+just cache            # $CARGO_HOME sizes and the build output, no deletes
+just cache-dry-run    # preview removal of source and git checkouts
+just cache-autoclean  # remove source and git checkouts
 ```
 
-Run `cargo cache-dry-run` before any cleanup. `cargo cache-autoclean` is
+Run `just cache-dry-run` before any cleanup. `just cache-autoclean` is
 destructive but safe for build correctness: Cargo will download sources again
 when needed. Do not remove registry indexes or all cached data unless the task
 explicitly requires reclaiming that space.
+
+`just cache` reports the build output separately because `cargo-cache` does not
+count it, and on a machine that redirects `build.target-dir` the two figures
+differ by orders of magnitude — the cargo home is the small one. Set
+`CARGO_CACHE=cargo-cache` to bypass mise if you have it activated already.
 
 ## Task runner choice
 
