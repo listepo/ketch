@@ -66,8 +66,53 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
+      # The certificate goes into a keychain of its own, created for this job
+      # and deleted at the end of it, so nothing is left on the runner and the
+      # login keychain is never touched. An unsigned release is refused the
+      # same way an untagged one is: it would be discovered by whoever installs
+      # it, not here.
+      - name: Import signing certificate
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+        run: |
+          if [ -z "$MACOS_CERTIFICATE" ] || [ -z "$MACOS_CERTIFICATE_PWD" ]; then
+            echo "MACOS_CERTIFICATE and MACOS_CERTIFICATE_PWD must both be set:" >&2
+            echo "a base64-encoded Developer ID Application .p12 and its password." >&2
+            exit 1
+          fi
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          keychain_pwd="$(openssl rand -hex 16)"
+          cert="$RUNNER_TEMP/certificate.p12"
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "$cert"
+
+          security create-keychain -p "$keychain_pwd" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_pwd" "$keychain"
+          security import "$cert" -P "$MACOS_CERTIFICATE_PWD" \
+            -f pkcs12 -k "$keychain" -T /usr/bin/codesign
+          rm -f "$cert"
+          # Without this, codesign would prompt for the key and hang the job.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$keychain_pwd" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" login.keychain-db
+
+          identity="$(security find-identity -v -p codesigning "$keychain" \
+            | sed -nE 's/^ *[0-9]+\) ([0-9A-F]{40}) "Developer ID Application:.*/\1/p')"
+          if [ "$(printf '%s\n' "$identity" | grep -c .)" -ne 1 ]; then
+            echo "expected exactly one Developer ID Application identity, found:" >&2
+            security find-identity -v -p codesigning "$keychain" >&2
+            exit 1
+          fi
+          echo "KETCH_SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+          echo "SIGNING_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+
       - name: Package
         run: scripts/package.sh ${{ matrix.target }} dist
+
+      - name: Remove signing keychain
+        if: always() && env.SIGNING_KEYCHAIN != ''
+        run: security delete-keychain "$SIGNING_KEYCHAIN"
 
       # The arm64 runner can build the x86_64 slice but cannot run it, so only
       # the native one is smoke-tested here.
@@ -76,6 +121,11 @@ jobs:
         run: |
           tar -xzf dist/ketch-${{ matrix.target }}.tar.gz -C "$RUNNER_TEMP"
           "$RUNNER_TEMP/ketch" --version
+          # What was signed must still be signed after the round trip through
+          # tar, and by a Developer ID, not ad hoc.
+          codesign --verify --strict "$RUNNER_TEMP/ketch"
+          codesign --display --verbose=2 "$RUNNER_TEMP/ketch" 2>&1 \
+            | grep -q 'Authority=Developer ID Application'
 
       - uses: actions/upload-artifact@v4
         with:

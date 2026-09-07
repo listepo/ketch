@@ -257,7 +257,18 @@ update` compares the two, so a mismatched tag breaks upgrades for everyone
 already installed), builds both macOS architectures, and publishes the tarballs
 with an aggregate `SHA256SUMS`.
 
-Two things about that handoff are easy to break:
+The binaries are code-signed with a Developer ID Application certificate,
+held in two repository secrets: `MACOS_CERTIFICATE`, the `.p12` as base64, and
+`MACOS_CERTIFICATE_PWD`, its password. `release.yml` imports it into a
+throwaway keychain, hands the identity to `scripts/package.sh` as
+`KETCH_SIGN_IDENTITY`, and deletes the keychain afterwards. CI runs the same
+script without an identity and packs the binary unsigned, so a pull request
+never needs the certificate. A release with either secret missing fails rather
+than ships unsigned. The signature is not notarised: a tarball fetched with
+`curl` carries no quarantine flag, so Gatekeeper never asks, and notarisation
+would need an App Store Connect key that does not exist yet.
+
+Three things about that handoff are easy to break:
 
 - **`RELEASE_PLZ_TOKEN` must be a PAT or GitHub App token**, not the default
   `GITHUB_TOKEN`, which cannot start another workflow run. A tag pushed with
@@ -268,6 +279,9 @@ Two things about that handoff are easy to break:
 - **The tag name is a contract.** `release-plz.toml` sets `v{{ version }}` and
   `release.yml` triggers on `v*`. Changing one without the other means merging
   a release pull request publishes nothing.
+- **The certificate expires.** A Developer ID certificate lasts five years,
+  and the day after, every release fails at the import step. Replace both
+  secrets with the renewed `.p12` and re-run the workflow for the tag.
 
 release-plz does not publish to crates.io (`publish = false`) and does not
 create the GitHub release (`git_release_enable = false`); `release.yml` owns
