@@ -264,13 +264,18 @@ KETCH_ROOT=/tmp/ketch-scratch cargo run -- doctor
 
 ## Releasing
 
+Nothing is typed. [release-plz](https://release-plz.dev) keeps one pull request
+up to date on every merge to `main`, holding the next version and the
+`CHANGELOG.md` entry for it, both read off the conventional commits since the
+last tag. Merging it pushes the tag, and the tag is what builds both macOS
+architectures and publishes the tarballs.
+
 ```bash
-scripts/release.sh 0.2.0
+scripts/release.sh 0.2.0        # the same thing by hand, for a specific version
 ```
 
-Opens a pull request bumping `Cargo.toml` and `Cargo.lock`. Merge it, then tag
-the merge commit — that is what builds both macOS architectures and publishes
-the tarballs. `--dry-run` shows what it would do.
+ketch is not on crates.io — it ships as a tarball on a GitHub release, so
+release-plz bumps and tags but never publishes a crate.
 
 ## Contributing
 
