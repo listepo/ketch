@@ -17,6 +17,7 @@ mod log;
 mod manifest;
 mod model;
 mod platform;
+mod push;
 mod registry;
 mod selfupdate;
 mod shell;
@@ -112,6 +113,7 @@ fn run(cli: Cli) -> Result<()> {
         Command::Lock(args) => cmd::lock::lock(&cfg, args),
         Command::Sync(args) => cmd::lock::sync(&cfg, args),
         Command::Doctor(args) => cmd::system::doctor(&cfg, args),
+        Command::Push(args) => cmd::system::push(&cfg, args),
         Command::Path { command } => cmd::system::path(&cfg, command),
         Command::Plugin { command } => cmd::system::plugin(&cfg, command),
         Command::Zelf { command } => cmd::system::zelf(&cfg, command),

@@ -108,6 +108,9 @@ pub enum Command {
     /// Check the environment and the install tree
     Doctor(DoctorArgs),
 
+    /// Offer this project's `ketch.toml` to the registry as a pull request
+    Push(PushArgs),
+
     /// Put the ketch bin directory on your shell's PATH
     Path {
         #[command(subcommand)]
@@ -338,6 +341,21 @@ pub struct DoctorArgs {
     pub fix: bool,
 }
 
+#[derive(Args, Debug, Clone)]
+pub struct PushArgs {
+    /// Package file to push (default: ./ketch.toml)
+    #[arg(long, short, value_name = "FILE")]
+    pub file: Option<PathBuf>,
+
+    /// Registry to open the pull request against, as `owner/repo`
+    #[arg(long, value_name = "REPO")]
+    pub registry: Option<String>,
+
+    /// Show what would be pushed, and push nothing
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
 #[derive(Subcommand, Debug, Clone)]
 pub enum PathCommand {
     /// Add the bin directory to your shell's startup file
@@ -387,7 +405,13 @@ pub enum PluginCommand {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum SelfCommand {
-    /// Replace this binary with the latest release
+    /// Install this release of ketch as a package, into the store and bin dir
+    Install {
+        /// Reinstall even when this version is already the package
+        #[arg(long, short)]
+        force: bool,
+    },
+    /// Upgrade ketch to the latest release
     Update {
         /// Report what would happen without replacing anything
         #[arg(long)]

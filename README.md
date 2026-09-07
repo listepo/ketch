@@ -36,6 +36,17 @@ ketch install sharkdp/fd@v10.2.0     # or an exact version
 curl -fsSL https://raw.githubusercontent.com/listepo/ketch/main/install.sh | bash
 ```
 
+or with Homebrew:
+
+```bash
+brew install --cask listepo/tap/ketch
+```
+
+Either way ketch ends up in `~/.ketch`, installed as one of its own packages:
+`ketch list` shows it, and `ketch self update` upgrades it like anything else.
+The installer only runs `ketch self install`; Homebrew keeps nothing but the
+bootstrap binary, and `brew upgrade` hands over to `ketch self update`.
+
 Then make sure `~/.ketch/bin` is on your `PATH`. `ketch doctor` will tell you if
 it is not, along with anything else that needs attention.
 
@@ -285,7 +296,10 @@ boundaries — read it before changing anything. `cargo test`, `cargo clippy
 --all-targets` and `cargo fmt --check` all have to be clean, and CI enforces all
 three on macOS.
 
-To add a package to the registry, see [docs/REGISTRY.md](docs/REGISTRY.md).
+To add a package to the registry, put a `ketch.toml` at the root of its
+repository and run `ketch push`: it opens the pull request for you, through a
+fork if you cannot write to the registry. See
+[docs/REGISTRY.md](docs/REGISTRY.md).
 
 ## Licence
 

@@ -1,13 +1,20 @@
-//! Updating ketch with ketch.
+//! Installing and updating ketch with ketch.
 //!
-//! Deliberately stricter than a normal install: the running binary is the thing
-//! that verifies every other download, so it is replaced only against a
-//! published checksum — never on trust-on-first-use — and the previous binary is
-//! kept until the new one has proven it can run.
+//! ketch prefers to be one of its own packages: `self install` puts the running
+//! release into the store under the name `ketch` and links it from the bin dir,
+//! exactly as `ketch install listepo/ketch` would, so `list`, `history` and
+//! `doctor` see it and `self update` is an ordinary upgrade. A ketch copied flat
+//! into the bin dir by an older installer is still updated in place.
+//!
+//! Either way this is deliberately stricter than a normal install: the running
+//! binary is the thing that verifies every other download, so it is replaced
+//! only against a published checksum — never on trust-on-first-use — and, in
+//! place, the previous binary is kept until the new one has proven it can run.
 
 use crate::config::Config;
 use crate::error::{Error, Result};
-use crate::model::{AssetSelector, Version, VersionSpec};
+use crate::install::{InstallRequest, Installed};
+use crate::model::{AssetSelector, PackageSpec, Version, VersionSpec};
 use crate::source::{ListOpts, SourceRegistry};
 use crate::state::{Lock, State};
 use crate::{install, ui};
@@ -24,9 +31,61 @@ pub struct SelfUpdate {
     pub notes: Option<String>,
 }
 
+/// The package name ketch records itself under.
+pub const SELF_NAME: &str = "ketch";
+
 /// The version this binary was built as.
 pub fn current_version() -> Version {
     Version::parse(env!("CARGO_PKG_VERSION"))
+}
+
+/// Install the running release of ketch as a package.
+///
+/// The binary is fetched again from the release rather than copied from
+/// wherever this process happens to run: a copy would be whatever the installer
+/// downloaded, and this path is the one that verifies it against the published
+/// checksum. Returns `Error::AlreadyInstalled` when this version already is the
+/// package and `force` is off, like any other install.
+pub fn install_self(cfg: &Config, force: bool) -> Result<Installed> {
+    let _lock = Lock::acquire(cfg)?;
+    let mut state = State::load(cfg)?;
+    // Built-in sources only, as in `update`.
+    let sources = SourceRegistry::builtin_only(cfg);
+    let mut req = InstallRequest::new(PackageSpec::parse(&format!(
+        "{}@v{}",
+        cfg.self_repo,
+        current_version()
+    )));
+    req.force = force;
+    req.require_checksum = true;
+
+    // A ketch copied flat into the bin dir is where the link now has to go,
+    // and the platform refuses to replace a file ketch did not put there. It
+    // is moved aside rather than deleted so that a failed install still leaves
+    // a ketch on PATH; the running image survives either way.
+    let flat = cfg.bin_dir.join(SELF_NAME);
+    let aside = std::fs::symlink_metadata(&flat)
+        .is_ok_and(|m| m.is_file())
+        .then(|| flat.with_extension("old"));
+    if let Some(aside) = &aside {
+        std::fs::rename(&flat, aside).map_err(|e| Error::io(&flat, e))?;
+    }
+    let result = install::install(cfg, &sources, &mut state, &req).and_then(|out| {
+        state.save(cfg)?;
+        Ok(out)
+    });
+    if let Some(aside) = aside {
+        if result.is_ok() {
+            let _ = std::fs::remove_file(&aside);
+        } else if let Err(e) = std::fs::rename(&aside, &flat) {
+            ui::warn(&format!(
+                "could not put {} back ({e}); move it to {} by hand",
+                aside.display(),
+                flat.display()
+            ));
+        }
+    }
+    result
 }
 
 /// Where the running binary lives, with symlinks resolved so we replace the
@@ -36,10 +95,16 @@ pub fn current_exe() -> Result<PathBuf> {
     Ok(std::fs::canonicalize(&exe).unwrap_or(exe))
 }
 
-/// Fetch the latest ketch release and replace this binary.
+/// Fetch the latest ketch release and install it: as an upgrade of the `ketch`
+/// package when there is one, otherwise by replacing this binary in place.
 pub fn update(cfg: &Config, force: bool, dry_run: bool) -> Result<SelfUpdate> {
     let _lock = Lock::acquire(cfg)?;
-    let from = current_version();
+    let mut state = State::load(cfg)?;
+    // When ketch is a package, the package is what gets updated, so its
+    // version is the one that counts — not this binary's, which a Homebrew
+    // upgrade or a fresh install.sh may already have moved ahead of the store.
+    let installed = state.get(SELF_NAME).map(|p| p.version.clone());
+    let from = installed.clone().unwrap_or_else(current_version);
 
     // Built-in sources only: a third-party plugin must never be in a position
     // to hand ketch its own replacement.
@@ -63,6 +128,24 @@ pub fn update(cfg: &Config, force: bool, dry_run: bool) -> Result<SelfUpdate> {
             to,
             replaced: false,
             notes: release.notes.clone(),
+        });
+    }
+
+    if installed.is_some() {
+        let sources = SourceRegistry::builtin_only(cfg);
+        let mut req = InstallRequest::new(PackageSpec::parse(&format!(
+            "{}@{}",
+            cfg.self_repo, release.tag
+        )));
+        req.force = force;
+        req.require_checksum = true;
+        install::install(cfg, &sources, &mut state, &req)?;
+        state.save(cfg)?;
+        return Ok(SelfUpdate {
+            from,
+            to,
+            replaced: true,
+            notes: release.notes,
         });
     }
 
@@ -178,30 +261,36 @@ fn find_binary(payload: &Path) -> Result<PathBuf> {
 pub fn uninstall_self(cfg: &Config, purge: bool) -> Result<Vec<PathBuf>> {
     let mut removed = Vec::new();
 
-    if purge {
-        // Uninstall properly rather than deleting the root: links and copied
-        // app bundles live outside it and would otherwise be left dangling.
-        let lock = Lock::acquire(cfg)?;
-        let mut state = State::load(cfg)?;
-        let names: Vec<String> = state.names().into_iter().map(|n| n.to_string()).collect();
-        for name in names {
-            match install::uninstall(cfg, &mut state, &name) {
-                Ok(pkg) => removed.push(pkg.prefix),
-                Err(e) => ui::warn(&format!("{name}: {e}")),
-            }
+    // Uninstall properly rather than deleting files: links and copied app
+    // bundles live outside the root and would otherwise be left dangling.
+    let lock = Lock::acquire(cfg)?;
+    let mut state = State::load(cfg)?;
+    let names: Vec<String> = if purge {
+        state.names().into_iter().map(|n| n.to_string()).collect()
+    } else {
+        state
+            .get(SELF_NAME)
+            .map(|p| p.name.clone())
+            .into_iter()
+            .collect()
+    };
+    for name in names {
+        match install::uninstall(cfg, &mut state, &name) {
+            Ok(pkg) => removed.push(pkg.prefix),
+            Err(e) => ui::warn(&format!("{name}: {e}")),
         }
-        // Save first: if removing the tree fails, state still matches reality.
-        state.save(cfg)?;
-        drop(lock);
+    }
+    // Save first: if removing the tree fails, state still matches reality.
+    state.save(cfg)?;
+    drop(lock);
 
-        if cfg.root.is_dir() {
-            std::fs::remove_dir_all(&cfg.root).map_err(|e| Error::io(&cfg.root, e))?;
-            removed.push(cfg.root.clone());
-        }
+    if purge && cfg.root.is_dir() {
+        std::fs::remove_dir_all(&cfg.root).map_err(|e| Error::io(&cfg.root, e))?;
+        removed.push(cfg.root.clone());
     }
 
     let exe = current_exe()?;
-    // Under --purge the binary may already have gone with the root.
+    // The binary may already have gone with the package or the root.
     if exe.exists() {
         std::fs::remove_file(&exe).map_err(|e| Error::io(&exe, e))?;
         removed.push(exe);

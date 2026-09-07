@@ -170,3 +170,52 @@ jobs:
               --generate-notes \
               --verify-tag
           fi
+
+  # The Homebrew cask in listepo/homebrew-tap is generated from this release:
+  # version and both checksums. It runs after publish so `brew install` never
+  # names a tarball that is not on the releases page yet.
+  tap:
+    needs: publish
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: staging
+
+      - name: Update the cask
+        env:
+          # A token that can push to listepo/homebrew-tap. The default
+          # GITHUB_TOKEN is scoped to this repository, so it cannot.
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAP_REPO: listepo/homebrew-tap
+        run: |
+          if [ -z "$TAP_TOKEN" ]; then
+            echo "HOMEBREW_TAP_TOKEN is not set; the cask in $TAP_REPO was not updated" >&2
+            exit 1
+          fi
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          version="${tag#v}"
+          arm="$(shasum -a 256 staging/aarch64-apple-darwin/ketch-aarch64-apple-darwin.tar.gz | cut -d' ' -f1)"
+          intel="$(shasum -a 256 staging/x86_64-apple-darwin/ketch-x86_64-apple-darwin.tar.gz | cut -d' ' -f1)"
+
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/${TAP_REPO}.git" tap
+          mkdir -p tap/Casks
+          scripts/cask.sh "$version" "$arm" "$intel" > tap/Casks/ketch.rb
+          brew style tap/Casks/ketch.rb
+
+          cd tap
+          # The tap starts life empty; the first release makes its main branch.
+          git rev-parse --verify HEAD >/dev/null 2>&1 || git checkout -q -B main
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/ketch.rb
+          if git diff --cached --quiet; then
+            echo "cask already at $version"
+            exit 0
+          fi
+          git commit -m "ketch $version"
+          git push origin HEAD
