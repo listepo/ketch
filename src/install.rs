@@ -109,8 +109,47 @@ pub fn install(
     commit(cfg, state, prepared)
 }
 
-/// Resolve, download, verify and unpack — the slow half, and the safe half to
-/// run concurrently.
+/// Resolves, downloads, verifies, and unpacks a package for installation.
+///
+/// This phase does not modify the installation tree. The returned preparation
+/// can be passed to `commit` after all requested packages have been prepared.
+///
+/// # Examples
+///
+/// ```no_run
+/// # use crate::config::Config;
+/// # use crate::install::{commit, prepare, InstallRequest, Installed};
+/// # use crate::model::PackageSpec;
+/// # use crate::source::SourceRegistry;
+/// # use crate::state::State;
+/// # use crate::ui;
+/// # let cfg: Config = Config::load(None)?;
+/// # let sources: SourceRegistry = SourceRegistry::load(&cfg);
+/// # let mut state: State = State::default();
+/// # let request: InstallRequest = InstallRequest::new(PackageSpec::parse("ripgrep"));
+/// # let progress: Box<dyn ui::ProgressSink> = ui::progress();
+/// let prepared = prepare(&cfg, &sources, &state, &request, progress.as_ref())?;
+/// let installed = commit(&cfg, &mut state, prepared)?;
+/// # let _: Installed = installed;
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+///
+/// # Errors
+///
+/// Returns an error if resolution, asset selection, downloading, checksum
+/// verification, extraction, or other preparation steps fail.
+///
+/// # Parameters
+///
+/// * `cfg` - Installation configuration.
+/// * `sources` - Registered package sources.
+/// * `state` - Current installation state used to reject pinned or already-installed packages.
+/// * `req` - Package and installation options.
+/// * `progress` - Receives download progress updates.
+///
+/// # Returns
+///
+/// The verified and unpacked package data required by `commit`.
 pub fn prepare(
     cfg: &Config,
     sources: &SourceRegistry,
@@ -230,8 +269,29 @@ pub fn prepare(
     })
 }
 
-/// Place the payload and record it. The half that touches the install tree, so
-/// it runs on one thread with the lock held.
+/// Commits a prepared package installation to the install tree and records its state.
+///
+/// The package payload is placed, links are created or updated, replaced content is
+/// retired, and the resulting package is stored in `state`. Failures while placing
+/// the payload are returned; cleanup and statistics failures are reported without
+/// invalidating a successful installation.
+///
+/// # Examples
+///
+/// ```no_run
+/// let mut state = todo!();
+/// let cfg = todo!();
+/// let prepared = todo!();
+///
+/// let installed = commit(&cfg, &mut state, prepared)?;
+/// # let _: Installed = installed;
+/// # Ok::<(), anyhow::Error>(())
+/// ```
+///
+/// # Errors
+///
+/// Returns an error if the host platform cannot be resolved or the payload cannot
+/// be placed.
 pub fn commit(cfg: &Config, state: &mut State, prepared: Prepared) -> Result<Installed> {
     let Prepared {
         manifest,
@@ -394,7 +454,19 @@ pub fn batch(
     results.into_iter().map(|(_, result)| result).collect()
 }
 
-/// Remove links and the store directory, then drop the state entry.
+/// Removes a package's links and stored files, then removes its state entry.
+///
+/// # Errors
+///
+/// Returns an error if the package is not installed or its links cannot be removed.
+///
+/// # Examples
+///
+/// ```ignore
+/// let removed = uninstall(&config, &mut state, "example")?;
+/// assert_eq!(removed.name, "example");
+/// # Ok::<(), anyhow::Error>(())
+/// ```
 pub fn uninstall(cfg: &Config, state: &mut State, name: &str) -> Result<InstalledPackage> {
     let pkg = state
         .find(name)

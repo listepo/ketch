@@ -64,7 +64,17 @@ pub enum Action {
 }
 
 impl Action {
-    /// The value stored in the `action` column.
+    /// Converts the action to its stored string representation.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// assert_eq!(Action::Install.as_str(), "install");
+    /// assert_eq!(Action::Upgrade.as_str(), "upgrade");
+    /// assert_eq!(Action::Uninstall.as_str(), "uninstall");
+    /// ```
+    ///
+    /// Returns the string used to store the action in the database.
     pub fn as_str(self) -> &'static str {
         match self {
             Action::Install => "install",
@@ -137,17 +147,40 @@ pub struct Summary {
 }
 
 impl Summary {
-    /// Mean install time, or `None` before anything has been timed.
+    /// Computes the average duration in milliseconds across timed events.
     ///
-    /// Computed here rather than in SQL because `AVG` over a `BIGINT` comes
-    /// back as a decimal, and carrying a bignum dependency to divide two
-    /// integers is a poor trade.
+    /// The result uses integer division and is `None` when no events have a duration.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let summary = Summary {
+    ///     events: 2,
+    ///     installs: 2,
+    ///     upgrades: 0,
+    ///     uninstalls: 0,
+    ///     packages: 2,
+    ///     total_duration_ms: 250,
+    ///     timed: 2,
+    ///     first_at: None,
+    ///     last_at: None,
+    /// };
+    ///
+    /// assert_eq!(summary.mean_duration_ms(), Some(125));
+    /// ```
     pub fn mean_duration_ms(&self) -> Option<i64> {
         (self.timed > 0).then(|| self.total_duration_ms / self.timed)
     }
 }
 
-/// Open the database, creating and migrating it if this is the first write.
+/// Opens the SQLite statistics database, creating its parent directories and applying pending migrations.
+///
+/// # Examples
+///
+/// ```no_run
+/// let connection = open(std::path::Path::new("stats.sqlite"))?;
+/// # Ok::<(), Error>(())
+/// ```
 fn open(path: &Path) -> Result<SqliteConnection> {
     let parent = path.parent().unwrap_or(Path::new("."));
     std::fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
@@ -174,15 +207,39 @@ fn open(path: &Path) -> Result<SqliteConnection> {
     Ok(conn)
 }
 
-/// Record one event. Never fails an install: a database that cannot be written
-/// is worth a warning, not a rolled-back package.
+/// Records an event without allowing statistics failures to affect the caller.
+///
+/// Database write failures are reported as warnings.
+///
+/// # Examples
+///
+/// ```no_run
+/// # let cfg: Config = todo!();
+/// # let event: NewEvent<'_> = todo!();
+/// record(&cfg, &event);
+/// ```
 pub fn record(cfg: &Config, event: &NewEvent<'_>) {
     if let Err(e) = record_at(&cfg.stats_db, event) {
         crate::ui::warn(&format!("could not record statistics: {e}"));
     }
 }
 
-/// The same, against an explicit path, so tests need no `Config`.
+/// Records an event in the statistics database at the specified path.
+///
+/// # Errors
+///
+/// Returns an error if the database cannot be opened or the event cannot be inserted.
+///
+/// # Examples
+///
+/// ```no_run
+/// use std::path::Path;
+///
+/// # fn example(event: &NewEvent<'_>) -> Result<()> {
+/// record_at(Path::new("stats.sqlite"), event)?;
+/// # Ok(())
+/// # }
+/// ```
 pub fn record_at(path: &Path, event: &NewEvent<'_>) -> Result<()> {
     let mut conn = open(path)?;
     // Diesel binds every value as a parameter. Package names and asset names
@@ -195,11 +252,23 @@ pub fn record_at(path: &Path, event: &NewEvent<'_>) -> Result<()> {
     Ok(())
 }
 
-/// Build the event describing an install or an upgrade.
+/// Builds an event describing a package installation or upgrade. A replacement is classified as an upgrade regardless of version ordering.
 ///
-/// A package that replaced an earlier version is an upgrade even when the new
-/// version is the same or lower — what the record is for is that the installed
-/// version *changed*, not which direction it moved.
+/// # Examples
+///
+/// ```no_run
+/// # let package: &crate::model::InstalledPackage = todo!();
+/// let event = install_event(
+///     package,
+///     None,
+///     Some(250),
+///     "1.2.3",
+///     "https://example.com/package",
+///     "x86_64-unknown-linux-gnu",
+/// );
+///
+/// assert_eq!(event.action, "install");
+/// ```
 pub fn install_event<'a>(
     pkg: &'a crate::model::InstalledPackage,
     replaced: Option<&'a str>,
@@ -229,11 +298,15 @@ pub fn install_event<'a>(
     }
 }
 
-/// Build the event describing an uninstall.
+/// Builds an uninstall event for an installed package without recording a duration.
 ///
-/// No duration: an uninstall unlinks and deletes rather than going through the
-/// download pipeline, so timing it would measure a different thing than every
-/// other row and quietly skew the mean.
+/// # Examples
+///
+/// ```ignore
+/// let event = uninstall_event(&package, "1.2.3", "source", "target");
+/// assert_eq!(event.action, "uninstall");
+/// assert_eq!(event.duration_ms, None);
+/// ```
 pub fn uninstall_event<'a>(
     pkg: &'a crate::model::InstalledPackage,
     version: &'a str,
@@ -257,12 +330,40 @@ pub fn uninstall_event<'a>(
     }
 }
 
-/// A package's version history, newest first. `None` reads every package.
+/// Reads package installation history, ordered from newest to oldest.
+///
+/// # Parameters
+///
+/// * `package` filters results to one package when provided.
+/// * `limit` restricts the maximum number of returned events.
+///
+/// # Examples
+///
+/// ```ignore
+/// let events = history(&cfg, Some("example"), 10)?;
+/// ```
+///
+/// # Returns
+///
+/// The matching history events, or an error if the history cannot be read.
 pub fn history(cfg: &Config, package: Option<&str>, limit: i64) -> Result<Vec<Event>> {
     history_at(&cfg.stats_db, package, limit)
 }
 
-/// The same, against an explicit path, so tests need no `Config`.
+/// Reads package history from an explicit database path.
+///
+/// A missing database is treated as an empty history. Results are ordered from
+/// newest to oldest and may be filtered by package and limited in count.
+///
+/// # Examples
+///
+/// ```
+/// use std::path::Path;
+///
+/// let events = history_at(Path::new("history.sqlite"), None, 20)?;
+/// assert!(events.len() <= 20);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 pub fn history_at(path: &Path, package: Option<&str>, limit: i64) -> Result<Vec<Event>> {
     // Reading must not create the database. `ketch history` on a machine that
     // has never installed anything should answer "nothing" and leave no file
@@ -283,12 +384,33 @@ pub fn history_at(path: &Path, package: Option<&str>, limit: i64) -> Result<Vec<
         .map_err(|e| Error::msg(format!("could not read history: {e}")))
 }
 
-/// Aggregate statistics over everything recorded.
+/// Aggregates statistics for all events recorded in the configured statistics database.
+///
+/// # Examples
+///
+/// ```
+/// # let cfg = Config::load(None)?;
+/// let summary = summary(&cfg)?;
+/// println!("{} events recorded", summary.events);
+/// # Ok::<(), _>(())
+/// ```
 pub fn summary(cfg: &Config) -> Result<Summary> {
     summary_at(&cfg.stats_db)
 }
 
-/// The same, against an explicit path, so tests need no `Config`.
+/// Computes aggregate statistics for the events stored at a database path.
+///
+/// Returns an empty summary when the database does not exist.
+///
+/// # Examples
+///
+/// ```
+/// use std::path::Path;
+///
+/// let summary = summary_at(Path::new("missing-stats.sqlite"))?;
+/// assert_eq!(summary.events, 0);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 pub fn summary_at(path: &Path) -> Result<Summary> {
     use diesel::dsl::{count, max, min, sum};
     use diesel::expression_methods::AggregateExpressionMethods;
@@ -331,10 +453,33 @@ pub fn summary_at(path: &Path) -> Result<Summary> {
     })
 }
 
+/// Converts a Diesel read error into a descriptive statistics error.
+///
+/// # Examples
+///
+/// ```
+/// let error = read_err(diesel::result::Error::NotFound);
+/// assert!(error.to_string().starts_with("could not read statistics:"));
+/// ```
 fn read_err(e: diesel::result::Error) -> Error {
     Error::msg(format!("could not read statistics: {e}"))
 }
 
+/// Counts events with the specified action.
+///
+/// # Examples
+///
+/// ```
+/// use diesel::{Connection, connection::SimpleConnection};
+///
+/// let mut conn = diesel::sqlite::SqliteConnection::establish(":memory:").unwrap();
+/// conn.batch_execute(
+///     "CREATE TABLE events (action TEXT NOT NULL);
+///      INSERT INTO events (action) VALUES ('install');",
+/// ).unwrap();
+///
+/// assert_eq!(count_of(&mut conn, Action::Install).unwrap(), 1);
+/// ```
 fn count_of(conn: &mut SqliteConnection, action: Action) -> Result<i64> {
     events::table
         .filter(events::action.eq(action.as_str()))

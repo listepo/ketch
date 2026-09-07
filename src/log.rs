@@ -248,11 +248,13 @@ fn now() -> i64 {
         .unwrap_or(0)
 }
 
-/// Seconds since the epoch as RFC 3339 UTC, which is what every log format in
-/// common use writes and every parser in common use reads.
+/// Formats Unix seconds as an RFC 3339 UTC timestamp.
 ///
-/// Shared with `stats.rs`, which dates history entries: one calendar
-/// implementation in the tree is enough, and two would eventually disagree.
+/// # Examples
+///
+/// ```
+/// assert_eq!(timestamp(0), "1970-01-01T00:00:00Z");
+/// ```
 pub(crate) fn timestamp(secs: i64) -> String {
     let days = secs.div_euclid(86_400);
     let rest = secs.rem_euclid(86_400);
