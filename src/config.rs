@@ -90,7 +90,6 @@ impl Config {
     /// let config = Config::load(None).unwrap();
     /// assert!(config.root.is_absolute());
     /// ```
-    pub fn load(root_override: Option<PathBuf>) -> Result<Self>
     pub fn load(root_override: Option<PathBuf>) -> Result<Self> {
         let root = root_override
             .or_else(|| std::env::var_os("KETCH_ROOT").map(PathBuf::from))
@@ -186,19 +185,19 @@ impl Config {
             config_file,
             apps_dir,
             github_token,
-            prerelease: env_bool("KETCH_PRERELEASE")
+            prerelease: env_bool("KETCH_PRERELEASE")?
                 .or(file.prerelease)
                 .unwrap_or(false),
-            allow_emulation: env_bool("KETCH_ALLOW_EMULATION")
+            allow_emulation: env_bool("KETCH_ALLOW_EMULATION")?
                 .or(file.allow_emulation)
                 .unwrap_or(true),
-            link_apps: env_bool("KETCH_LINK_APPS")
+            link_apps: env_bool("KETCH_LINK_APPS")?
                 .or(file.link_apps)
                 .unwrap_or(false),
-            require_checksums: env_bool("KETCH_REQUIRE_CHECKSUMS")
+            require_checksums: env_bool("KETCH_REQUIRE_CHECKSUMS")?
                 .or(file.require_checksums)
                 .unwrap_or(false),
-            strip_quarantine: env_bool("KETCH_STRIP_QUARANTINE")
+            strip_quarantine: env_bool("KETCH_STRIP_QUARANTINE")?
                 .or(file.strip_quarantine)
                 .unwrap_or(true),
             self_repo,
@@ -294,16 +293,18 @@ fn parsed<T: std::str::FromStr<Err = String>>(
         .map_err(|e: String| Error::Config(format!("{where_from}: {e}")))
 }
 
-fn env_bool(key: &str) -> Option<bool> {
-    match std::env::var(key)
-        .ok()?
-        .trim()
-        .to_ascii_lowercase()
-        .as_str()
-    {
-        "1" | "true" | "yes" | "on" => Some(true),
-        "0" | "false" | "no" | "off" => Some(false),
-        _ => None,
+fn env_bool(key: &str) -> Result<Option<bool>> {
+    let value = match std::env::var(key) {
+        Ok(value) => value,
+        Err(std::env::VarError::NotPresent) => return Ok(None),
+        Err(e) => return Err(Error::Config(format!("{key}: {e}"))),
+    };
+    match value.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" | "on" => Ok(Some(true)),
+        "0" | "false" | "no" | "off" => Ok(Some(false)),
+        _ => Err(Error::Config(format!(
+            "{key} must be a boolean, not `{value}`"
+        ))),
     }
 }
 
@@ -389,5 +390,15 @@ mod tests {
         let root = absolute_path(Path::new("scratch")).unwrap();
         assert!(root.is_absolute());
         assert_eq!(root, std::env::current_dir().unwrap().join("scratch"));
+    }
+
+    #[test]
+    fn rejects_unrecognized_boolean_environment_values() {
+        const KEY: &str = "KETCH_TEST_BOOLEAN";
+        std::env::set_var(KEY, "sometimes");
+        let error = env_bool(KEY).unwrap_err();
+        std::env::remove_var(KEY);
+
+        assert!(error.to_string().contains(KEY));
     }
 }

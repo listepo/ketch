@@ -256,7 +256,7 @@ pub fn record_at(path: &Path, event: &NewEvent<'_>) -> Result<()> {
 ///
 /// # Examples
 ///
-/// ```
+/// ```no_run
 /// # let package: &crate::model::InstalledPackage = todo!();
 /// let event = install_event(
 ///     package,
@@ -269,7 +269,6 @@ pub fn record_at(path: &Path, event: &NewEvent<'_>) -> Result<()> {
 ///
 /// assert_eq!(event.action, "install");
 /// ```
-pub fn install_event<'a>(
 pub fn install_event<'a>(
     pkg: &'a crate::model::InstalledPackage,
     replaced: Option<&'a str>,
@@ -390,7 +389,7 @@ pub fn history_at(path: &Path, package: Option<&str>, limit: i64) -> Result<Vec<
 /// # Examples
 ///
 /// ```
-/// # let cfg = Config::default();
+/// # let cfg = Config::load(None)?;
 /// let summary = summary(&cfg)?;
 /// println!("{} events recorded", summary.events);
 /// # Ok::<(), _>(())
