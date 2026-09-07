@@ -49,6 +49,78 @@ fn an_empty_root_is_reported_without_touching_the_callers_home() {
     root.assert(predicate::path::is_dir());
 }
 
+#[test]
+fn empty_history_and_stats_json_do_not_create_a_database() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let root = temp.child("ketch-root");
+    let root_arg = root.path().to_str().unwrap();
+
+    let history = Command::cargo_bin("ketch")
+        .unwrap()
+        .args(["--root", root_arg, "history", "--json"])
+        .env("NO_COLOR", "1")
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty());
+    let history_json: serde_json::Value =
+        serde_json::from_slice(&history.get_output().stdout).expect("history JSON");
+    assert_eq!(history_json, serde_json::json!([]));
+
+    let stats = Command::cargo_bin("ketch")
+        .unwrap()
+        .args(["--root", root_arg, "stats", "--json"])
+        .env("NO_COLOR", "1")
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty());
+    let stats_json: serde_json::Value =
+        serde_json::from_slice(&stats.get_output().stdout).expect("stats JSON");
+    assert_eq!(
+        stats_json,
+        serde_json::json!({
+            "events": 0,
+            "installs": 0,
+            "upgrades": 0,
+            "uninstalls": 0,
+            "packages": 0,
+            "mean_duration_ms": null,
+            "first_at": null,
+            "last_at": null,
+        })
+    );
+
+    root.child("stats.db").assert(predicate::path::missing());
+}
+
+#[test]
+fn package_history_names_the_package_when_no_events_match() {
+    let temp = assert_fs::TempDir::new().unwrap();
+
+    Command::cargo_bin("ketch")
+        .unwrap()
+        .args([
+            "--root",
+            temp.child("root").path().to_str().unwrap(),
+            "history",
+            "ripgrep",
+        ])
+        .env("NO_COLOR", "1")
+        .assert()
+        .success()
+        .stdout("no history recorded for ripgrep\n")
+        .stderr(predicate::str::is_empty());
+}
+
+#[test]
+fn history_rejects_a_negative_limit() {
+    Command::cargo_bin("ketch")
+        .unwrap()
+        .args(["history", "--limit", "-1"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("unexpected argument '-1'"));
+}
+
 #[cfg(feature = "tui")]
 #[test]
 fn tui_request_falls_back_without_terminal_escape_sequences_in_ci() {

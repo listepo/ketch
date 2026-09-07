@@ -346,7 +346,9 @@ fn count_of(conn: &mut SqliteConnection, action: Action) -> Result<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::{InstalledPackage, ManifestOrigin, PackageRef, TargetSpec, Version};
     use pretty_assertions::assert_eq;
+    use std::path::PathBuf;
 
     /// A digest-shaped constant, so the helper need not leak a built string.
     const SHA: &str = "0000000000000000000000000000000000000000000000000000000000000000";
@@ -366,6 +368,25 @@ mod tests {
             duration_ms: Some(100),
             at: 0,
             ketch_version: "0.1.0",
+        }
+    }
+
+    fn installed_package() -> InstalledPackage {
+        InstalledPackage {
+            name: "ripgrep".to_string(),
+            version: Version::parse("14.1.0"),
+            source: PackageRef::github("BurntSushi/ripgrep"),
+            tag: "14.1.0".to_string(),
+            target: TargetSpec::host(),
+            asset_name: "ripgrep-14.1.0.tar.gz".to_string(),
+            sha256: "a".repeat(64),
+            checksum_verified: false,
+            installed_at: 0,
+            prefix: PathBuf::from("/store/ripgrep/14.1.0"),
+            links: Vec::new(),
+            pinned: false,
+            origin: ManifestOrigin::Inferred,
+            manifest: None,
         }
     }
 
@@ -434,6 +455,82 @@ mod tests {
             record_at(&path, &e).unwrap();
         }
         assert_eq!(history_at(&path, Some("ripgrep"), 2).unwrap().len(), 2);
+        assert!(
+            history_at(&path, Some("ripgrep"), 0).unwrap().is_empty(),
+            "a zero limit must return no rows"
+        );
+    }
+
+    #[test]
+    fn every_event_field_round_trips_without_loss() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("stats.db");
+        let mut written = event("unicode-☃", "2.0.0-rc.1+build.7", Action::Upgrade);
+        written.previous_version = Some("1.9.0");
+        written.tag = "release/2.0.0-rc.1";
+        written.source = "plugin:forge/package";
+        written.target = "macos-universal";
+        written.asset_name = "package 'quoted' universal.tar.gz";
+        written.sha256 = "abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd";
+        written.checksum_verified = false;
+        written.duration_ms = None;
+        written.at = -1;
+        written.ketch_version = "9.8.7-test";
+
+        record_at(&path, &written).unwrap();
+        let rows = history_at(&path, None, 1).unwrap();
+        let read = &rows[0];
+
+        assert_eq!(read.package, written.package);
+        assert_eq!(read.action, written.action);
+        assert_eq!(read.version, written.version);
+        assert_eq!(read.previous_version.as_deref(), written.previous_version);
+        assert_eq!(read.tag, written.tag);
+        assert_eq!(read.source, written.source);
+        assert_eq!(read.target, written.target);
+        assert_eq!(read.asset_name, written.asset_name);
+        assert_eq!(read.sha256, written.sha256);
+        assert_eq!(read.checksum_verified, written.checksum_verified);
+        assert_eq!(read.duration_ms, written.duration_ms);
+        assert_eq!(read.at, written.at);
+        assert_eq!(read.ketch_version, written.ketch_version);
+    }
+
+    #[test]
+    fn event_builders_distinguish_first_install_replacement_and_uninstall() {
+        let package = installed_package();
+        let source = package.source.to_string();
+        let target = package.target.to_string();
+
+        let first = install_event(&package, None, Some(250), "14.1.0", &source, &target);
+        assert_eq!(first.action, Action::Install.as_str());
+        assert_eq!(first.previous_version, None);
+        assert_eq!(first.duration_ms, Some(250));
+        assert_eq!(first.package, package.name);
+        assert_eq!(first.asset_name, package.asset_name);
+        assert_eq!(first.checksum_verified, package.checksum_verified);
+
+        // Replacing a package is an upgrade event even if the requested
+        // version moves backwards; the operation, not semver ordering, is the
+        // history fact being recorded.
+        let replacement = install_event(
+            &package,
+            Some("15.0.0"),
+            Some(1),
+            "14.1.0",
+            &source,
+            &target,
+        );
+        assert_eq!(replacement.action, Action::Upgrade.as_str());
+        assert_eq!(replacement.previous_version, Some("15.0.0"));
+
+        let removal = uninstall_event(&package, "14.1.0", &source, &target);
+        assert_eq!(removal.action, Action::Uninstall.as_str());
+        assert_eq!(removal.previous_version, None);
+        assert_eq!(removal.duration_ms, None, "removals do not affect the mean");
+        assert_eq!(removal.version, "14.1.0");
+        assert_eq!(removal.source, source);
+        assert_eq!(removal.target, target);
     }
 
     #[test]
@@ -494,5 +591,20 @@ mod tests {
         let seen = history_at(&path, Some(hostile), 10).unwrap();
         assert_eq!(seen.len(), 1, "the table should still be there");
         assert_eq!(seen[0].package, hostile);
+    }
+
+    #[test]
+    fn a_corrupt_database_is_reported_and_left_untouched() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("stats.db");
+        let corrupt = b"this is not sqlite";
+        std::fs::write(&path, corrupt).unwrap();
+
+        let history_error = history_at(&path, None, 10).unwrap_err().to_string();
+        let summary_error = summary_at(&path).unwrap_err().to_string();
+
+        assert!(history_error.contains("could not"), "{history_error}");
+        assert!(summary_error.contains("could not"), "{summary_error}");
+        assert_eq!(std::fs::read(&path).unwrap(), corrupt);
     }
 }
