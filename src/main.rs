@@ -57,6 +57,15 @@ fn main() {
     }
 }
 
+/// Runs the selected command after handling shell completions and initializing application state.
+///
+/// # Examples
+///
+/// ```no_run
+/// let cli = Cli::parse();
+/// run(cli)?;
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 fn run(cli: Cli) -> Result<()> {
     // Completions must work before any directory exists, so it is handled
     // before the config is built.

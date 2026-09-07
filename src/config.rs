@@ -77,7 +77,20 @@ pub struct Config {
 }
 
 impl Config {
-    /// Build the effective config. `root_override` comes from `--root`.
+    /// Builds the effective configuration from command-line, environment, file, and default settings.
+    ///
+    /// The optional `root_override` takes precedence over `KETCH_ROOT` and the configured default root.
+    /// Configuration-file and environment values are validated before the resolved configuration is returned.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ketch::config::Config;
+    ///
+    /// let config = Config::load(None).unwrap();
+    /// assert!(config.root.is_absolute());
+    /// ```
+    pub fn load(root_override: Option<PathBuf>) -> Result<Self>
     pub fn load(root_override: Option<PathBuf>) -> Result<Self> {
         let root = root_override
             .or_else(|| std::env::var_os("KETCH_ROOT").map(PathBuf::from))

@@ -18,6 +18,23 @@ use crate::state::State;
 use crate::stats;
 use crate::ui;
 
+/// Lists installed packages in JSON, name-only, or tabular format.
+///
+/// # Examples
+///
+/// ```no_run
+/// let cfg = Config::default();
+/// let args = ListArgs {
+///     json: false,
+///     names_only: false,
+/// };
+///
+/// list(&cfg, args)?;
+/// # Ok::<(), anyhow::Error>(())
+/// ```
+///
+/// Returns an error if the installed state cannot be loaded or JSON output
+/// cannot be serialized.
 pub fn list(cfg: &Config, args: ListArgs) -> Result<()> {
     let state = State::load(cfg)?;
     let packages: Vec<&InstalledPackage> = state.iter().collect();
@@ -464,6 +481,14 @@ pub fn search(cfg: &Config, args: SearchArgs) -> Result<()> {
     Ok(())
 }
 
+/// Formats a manifest origin for display.
+///
+/// # Examples
+///
+/// ```
+/// let origin = ManifestOrigin::Builtin;
+/// assert_eq!(describe_origin(&origin), "the built-in registry");
+/// ```
 fn describe_origin(origin: &ManifestOrigin) -> String {
     match origin {
         ManifestOrigin::Builtin => "the built-in registry".to_string(),
@@ -473,8 +498,17 @@ fn describe_origin(origin: &ManifestOrigin) -> String {
     }
 }
 
-/// What happened, newest first — the version history of one package or of the
-/// whole tree.
+/// Displays recorded package history, either for one package or for the entire tree.
+///
+/// Results are ordered from newest to oldest and can be rendered as JSON or a
+/// human-readable table. Reports when no history exists for the requested scope.
+///
+/// # Examples
+///
+/// ```text
+/// package-manager history --package ripgrep --limit 10
+/// ```
+pub fn history...
 pub fn history(cfg: &Config, args: HistoryArgs) -> Result<()> {
     let events = stats::history(cfg, args.package.as_deref(), i64::from(args.limit))?;
 
@@ -509,7 +543,19 @@ pub fn history(cfg: &Config, args: HistoryArgs) -> Result<()> {
     Ok(())
 }
 
-/// Everything recorded, totalled.
+/// Displays aggregate statistics for recorded package events.
+///
+/// # Examples
+///
+/// ```no_run
+/// # use crate::{Config, StatsArgs};
+/// # let cfg = todo!();
+/// let args = StatsArgs {
+///     json: true,
+///     ..Default::default()
+/// };
+/// crate::cmd::query::stats(&cfg, args).unwrap();
+/// ```
 pub fn stats(cfg: &Config, args: StatsArgs) -> Result<()> {
     let s = stats::summary(cfg)?;
 
@@ -554,6 +600,14 @@ pub fn stats(cfg: &Config, args: StatsArgs) -> Result<()> {
     Ok(())
 }
 
+/// Serializes a value as pretty-printed JSON and writes it to standard output.
+///
+/// # Examples
+///
+/// ```
+/// let value = serde_json::json!({"name": "example"});
+/// print_json(&value).unwrap();
+/// ```
 fn print_json<T: serde::Serialize>(value: &T) -> Result<()> {
     let text = serde_json::to_string_pretty(value)
         .map_err(|e| Error::parse("json output".to_string(), e.to_string()))?;
