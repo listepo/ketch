@@ -263,16 +263,27 @@ impl GitHub {
                  set KETCH_GITHUB_TOKEN, or `github_token` in config.toml",
             )
         })?;
+        GitHub::connect(token)
+    }
+
+    fn connect(token: String) -> Result<GitHub> {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(|e| Error::io("tokio runtime", e))?;
-        let client = Octocrab::builder()
-            .personal_token(token)
-            .base_uri(crate::source::github::api_base())
-            .map_err(github_error)?
-            .build()
-            .map_err(github_error)?;
+        // The client wraps its transport in a tower buffer that spawns a worker
+        // task as it is built, and panics when no runtime is current. Entering
+        // ours for the duration of the build is what makes `new` callable from
+        // ketch's synchronous code at all.
+        let client = {
+            let _guard = runtime.enter();
+            Octocrab::builder()
+                .personal_token(token)
+                .base_uri(crate::source::github::api_base())
+                .map_err(github_error)?
+                .build()
+                .map_err(github_error)?
+        };
         Ok(GitHub { runtime, client })
     }
 
@@ -478,6 +489,13 @@ impl Api for GitHub {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_client_is_built_from_synchronous_code_without_a_running_runtime() {
+        // octocrab's transport spawns onto the current runtime while the
+        // client is built; there is none in ketch's synchronous callers.
+        GitHub::connect("token".to_string()).unwrap();
+    }
     use pretty_assertions::assert_eq;
     use std::cell::RefCell;
 
