@@ -9,6 +9,10 @@
 # The asset name is `ketch-<target>.tar.gz`, which is what install.sh and
 # `ketch self update` both look for. Renaming it breaks upgrades for everyone
 # already installed.
+#
+# With KETCH_SIGN_IDENTITY set, the binary is code-signed with that identity
+# before it is packed. Unset, it is packed as built — which is what CI does on
+# a pull request, where no certificate is available.
 
 set -euo pipefail
 
@@ -44,6 +48,15 @@ trap 'rm -rf "$STAGE"' EXIT
 cp "$BINARY" "$STAGE/ketch"
 cp README.md LICENSE "$STAGE/"
 chmod 755 "$STAGE/ketch"
+
+if [ -n "${KETCH_SIGN_IDENTITY:-}" ]; then
+  echo "==> signing as $KETCH_SIGN_IDENTITY"
+  # Hardened runtime and a secure timestamp are what notarisation would demand
+  # later; signing that way now means a notarised release changes nothing here.
+  codesign --force --options runtime --timestamp \
+    --sign "$KETCH_SIGN_IDENTITY" "$STAGE/ketch"
+  codesign --verify --strict --verbose=2 "$STAGE/ketch"
+fi
 
 TARBALL="$OUT_DIR/ketch-$TARGET.tar.gz"
 tar -czf "$TARBALL" -C "$STAGE" ketch README.md LICENSE

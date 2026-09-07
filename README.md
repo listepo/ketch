@@ -268,7 +268,8 @@ Nothing is typed. [release-plz](https://release-plz.dev) keeps one pull request
 up to date on every merge to `main`, holding the next version and the
 `CHANGELOG.md` entry for it, both read off the conventional commits since the
 last tag. Merging it pushes the tag, and the tag is what builds both macOS
-architectures and publishes the tarballs.
+architectures, signs the binaries with a Developer ID certificate, and
+publishes the tarballs.
 
 ```bash
 scripts/release.sh 0.2.0        # the same thing by hand, for a specific version
