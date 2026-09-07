@@ -232,24 +232,27 @@ mkdir -p "${INSTALL_DIR}" || {
 
 # Check if this is an upgrade
 INSTALL_PATH="${INSTALL_DIR}/${BINARY_NAME}"
-if [ -f "${INSTALL_PATH}" ]; then
+if [ -e "${INSTALL_PATH}" ]; then
   echo "Upgrading ketch..."
 else
   echo "Installing ketch..."
 fi
 
-# Copy binary to install location
-cp "${BINARY_PATH}" "${INSTALL_PATH}" || {
-  echo "${RED}Error: Failed to copy binary to ${INSTALL_PATH}${NC}" >&2
-  exit 1
-}
-chmod 755 "${INSTALL_PATH}" || {
-  echo "${RED}Error: Failed to set permissions on binary.${NC}" >&2
-  exit 1
-}
+# The root is the bin dir's parent, which is how ketch itself derives it.
+KETCH_ROOT="$(dirname "${INSTALL_DIR}")"
+export KETCH_ROOT
 
-# Strip quarantine xattr (tolerate if not present)
-xattr -d com.apple.quarantine "${INSTALL_PATH}" 2>/dev/null || true
+# Let ketch install itself. The downloaded binary is only used to run
+# `self install`, which fetches this same release again through ketch's own
+# pipeline: verified against SHA256SUMS, unpacked into the store, linked from
+# the bin dir and recorded like any other package, so `ketch list` shows it
+# and `ketch self update` is an ordinary upgrade.
+chmod 755 "${BINARY_PATH}"
+xattr -d com.apple.quarantine "${BINARY_PATH}" 2>/dev/null || true
+"${BINARY_PATH}" self install || {
+  echo "${RED}Error: ketch could not install itself into ${INSTALL_DIR}.${NC}" >&2
+  exit 1
+}
 
 # Wire up PATH. ketch owns this: `ketch path install` knows bash, zsh and fish,
 # quotes the directory properly, and can undo itself — which is more than this
@@ -257,8 +260,7 @@ xattr -d com.apple.quarantine "${INSTALL_PATH}" 2>/dev/null || true
 PATH_SET=0
 if [ "${NO_MODIFY_PATH}" -eq 0 ]; then
   echo "Setting up PATH..."
-  # The root is the bin dir's parent, which is how ketch itself derives it.
-  if KETCH_ROOT="$(dirname "${INSTALL_DIR}")" "${INSTALL_PATH}" path install; then
+  if "${INSTALL_PATH}" path install; then
     PATH_SET=1
   else
     echo "${RED}Could not set up PATH automatically.${NC}" >&2

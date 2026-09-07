@@ -28,15 +28,22 @@ pub struct GitHubSource {
     api: String,
 }
 
+/// The API base every GitHub request is built on: `KETCH_GITHUB_API` when
+/// set, so an Enterprise host — or a test double — can stand in for github.com.
+pub fn api_base() -> String {
+    std::env::var("KETCH_GITHUB_API")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or_else(|| DEFAULT_API.to_string())
+        .trim_end_matches('/')
+        .to_string()
+}
+
 impl GitHubSource {
     pub fn new(http: Arc<Http>) -> Self {
-        let api = std::env::var("KETCH_GITHUB_API")
-            .ok()
-            .filter(|v| !v.trim().is_empty())
-            .unwrap_or_else(|| DEFAULT_API.to_string());
         GitHubSource {
             http,
-            api: api.trim_end_matches('/').to_string(),
+            api: api_base(),
         }
     }
 

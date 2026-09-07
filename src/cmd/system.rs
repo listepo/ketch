@@ -1,9 +1,12 @@
 //! Commands about ketch itself and its environment.
 
-use crate::cli::{DoctorArgs, PathArgs, PathCommand, PathInstallArgs, PluginCommand, SelfCommand};
-use crate::config::Config;
+use crate::cli::{
+    DoctorArgs, PathArgs, PathCommand, PathInstallArgs, PluginCommand, PushArgs, SelfCommand,
+};
+use crate::config::{self, Config};
 use crate::error::{Error, Result};
 use crate::platform::{self, worst_status, CheckStatus, DoctorCheck};
+use crate::push;
 use crate::registry;
 use crate::selfupdate;
 use crate::shell::{self, Outcome, Shell};
@@ -370,8 +373,60 @@ pub fn plugin(cfg: &Config, command: PluginCommand) -> Result<()> {
     }
 }
 
+/// `ketch push` — this project's package file, as a registry pull request.
+pub fn push(cfg: &Config, args: PushArgs) -> Result<()> {
+    let file = args
+        .file
+        .unwrap_or_else(|| std::path::PathBuf::from(registry::PACKAGE_FILE));
+    let proposal = push::load(&file)?;
+    let target = match args.registry {
+        Some(repo) => config::validate_repo("registry", repo)?,
+        None => cfg.registry.clone(),
+    };
+    let destination = format!("{target}:{}/{}", proposal.name, registry::PACKAGE_FILE);
+    if args.dry_run {
+        ui::step("would push", &destination);
+        // The file ends with its own newline; `out` adds one, so strip it or
+        // the dry run prints a blank line the real file does not have.
+        ui::out(proposal.body.trim_end_matches('\n'));
+        return Ok(());
+    }
+    let api = push::GitHub::new(cfg)?;
+    ui::step("pushing", &destination);
+    match push::open(&api, &target, &proposal)? {
+        push::Outcome::Unchanged => ui::success(
+            "unchanged",
+            &format!("{target} already has this {}", proposal.name),
+        ),
+        push::Outcome::Opened(pr) if pr.already_open => ui::success("already open", &pr.url),
+        push::Outcome::Opened(pr) => ui::success("opened", &pr.url),
+    }
+    Ok(())
+}
+
 pub fn zelf(cfg: &Config, command: SelfCommand) -> Result<()> {
     match command {
+        SelfCommand::Install { force } => {
+            let version = selfupdate::current_version();
+            match selfupdate::install_self(cfg, force) {
+                Ok(out) => {
+                    let detail = match &out.replaced {
+                        Some(old) if old != &out.package.version => {
+                            format!("ketch {version} (was {old})")
+                        }
+                        _ => format!("ketch {version}"),
+                    };
+                    ui::success("installed", &detail);
+                }
+                // Installers run this on every invocation; the second run is
+                // a success, not a complaint.
+                Err(Error::AlreadyInstalled { .. }) => {
+                    ui::success("already installed", &format!("ketch {version}"));
+                }
+                Err(e) => return Err(e),
+            }
+            Ok(())
+        }
         SelfCommand::Version => {
             ui::out(&format!("ketch {}", selfupdate::current_version()));
             ui::out(&format!("target {}", cfg.target));

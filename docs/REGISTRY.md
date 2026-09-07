@@ -74,6 +74,35 @@ Nothing fetches the registry implicitly: a name that resolves today keeps
 resolving offline tomorrow, and `ketch install owner/repo` never needs it at
 all. Run `ketch update` when a package is missing or out of date.
 
+## Contributing a package
+
+A `ketch.toml` at the root of a project is the same file its registry folder
+would hold, so contributing it is one command, run from that root:
+
+```bash
+KETCH_GITHUB_TOKEN=... ketch push            # opens a pull request
+ketch push --dry-run                         # shows what would be sent
+ketch push --file path/to/ketch.toml         # a file somewhere else
+ketch push --registry someone/their-registry # a registry other than the default
+```
+
+`push` validates the file exactly as the registry will, then puts it at
+`<name>/ketch.toml` on a branch called `ketch/<name>` and opens a pull request
+against the registry's default branch. With push access to the registry the
+branch is made there; without it, on a fork of the registry under your
+account, created if needed. Pushing again updates the same branch, and joins
+the pull request that is already open rather than opening a second. When the
+registry already holds the file byte for byte, nothing is sent.
+
+`name` may be left out of the file, in which case the folder it sits in names
+the package — the same rule the registry applies. The file goes up exactly as
+written, comments included.
+
+The token is the one every other command uses (`KETCH_GITHUB_TOKEN`, or
+`github_token` in `config.toml`); it needs the `repo` scope, or for a
+fine-grained token, contents and pull requests on the registry — and, if a
+fork is involved, permission to create one.
+
 ## Precedence
 
 A name is resolved against, in order:

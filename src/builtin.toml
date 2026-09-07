@@ -6,6 +6,15 @@
 #
 # See docs/MANIFESTS.md for the full schema.
 
+# ketch itself, so `self install` resolves without the registry: on a fresh
+# machine nothing has fetched it yet. The same entry lives in the registry and
+# in the repository root as ketch.toml.
+[[package]]
+name = "ketch"
+source = "github:listepo/ketch"
+description = "Catch releases straight from GitHub"
+homepage = "https://github.com/listepo/ketch"
+
 [[package]]
 name = "ripgrep"
 source = "github:BurntSushi/ripgrep"

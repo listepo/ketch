@@ -26,7 +26,9 @@ ambiguous in a package manager:
 Where the distinction matters most: `ketch self update` upgrades the host,
 `ketch upgrade` upgrades clients; `scripts/release.sh` releases the host,
 `ketch.lock` pins clients; `src/changelog.rs` reads a client's changelog, while
-the host's own `CHANGELOG.md` is written for it by release-plz.
+the host's own `CHANGELOG.md` is written for it by release-plz. The host is
+also a client of itself: `ketch self install` records it in `state.json` as
+the package `ketch`, and the root `ketch.toml` is its manifest.
 
 macOS is the only implemented platform. `src/platform/mod.rs` gates it with
 `#[cfg(target_os = "macos")]` and returns a clear error elsewhere, so a Linux
@@ -143,11 +145,16 @@ conditional, multi-stage Rust automation.
 | `src/log.rs` | the log file, in text or JSON Lines |
 | `src/changelog.rs` | finding and slicing a client app's changelog |
 | `src/lockfile.rs` | `ketch.lock`: what is installed, pinned to exact releases |
+| `src/push.rs` | `ketch push`: a project's `ketch.toml` as a registry pull request, via octocrab |
+| `src/selfupdate.rs` | `ketch self`: installing, updating and removing the host as a package |
+| `ketch.toml` | the host's own package file, what `ketch push` sends |
 | `src/ui.rs` | all terminal output |
 | `tests/` | end-to-end tests that drive the real binary |
 | `scripts/package.sh` | the release tarball, shared by CI and the release workflow |
 | `release-plz.toml` | what the release pull request bumps, tags and does not publish |
 | `scripts/release.sh` | the same version bump and pull request, by hand |
+| `scripts/cask.sh` | the Homebrew cask, generated into `listepo/homebrew-tap` on release |
+| `install.sh` | the `curl | bash` installer; only bootstraps `ketch self install` |
 
 The rule that keeps `cmd/` thin: anything touching the install tree belongs in
 `install.rs`, `state.rs`, or a trait implementation, so the same logic serves
@@ -268,7 +275,18 @@ than ships unsigned. The signature is not notarised: a tarball fetched with
 `curl` carries no quarantine flag, so Gatekeeper never asks, and notarisation
 would need an App Store Connect key that does not exist yet.
 
-Three things about that handoff are easy to break:
+After the release is published, the `tap` job regenerates the Homebrew cask
+with `scripts/cask.sh` — version and both checksums — and pushes it to
+`Casks/ketch.rb` in `listepo/homebrew-tap`. That push needs
+`HOMEBREW_TAP_TOKEN`, a token allowed to write to the tap repository; the
+workflow's own token is scoped to this one and cannot. The cask is a cask and
+not a formula because ketch lives in `~/.ketch`: a formula's `post_install`
+runs sandboxed away from `$HOME`, while a cask's install steps can be granted
+network access and one writable path under it, which is all `ketch self
+install` needs. Homebrew keeps only the bootstrap binary; the installed ketch
+is one ketch downloaded and verified itself, exactly as with `install.sh`.
+
+Four things about that handoff are easy to break:
 
 - **`RELEASE_PLZ_TOKEN` must be a PAT or GitHub App token**, not the default
   `GITHUB_TOKEN`, which cannot start another workflow run. A tag pushed with
@@ -282,6 +300,9 @@ Three things about that handoff are easy to break:
 - **The certificate expires.** A Developer ID certificate lasts five years,
   and the day after, every release fails at the import step. Replace both
   secrets with the renewed `.p12` and re-run the workflow for the tag.
+- **The cask is generated.** Editing `Casks/ketch.rb` in the tap by hand lasts
+  until the next release overwrites it; change `scripts/cask.sh` instead, and
+  run `brew style` on its output, as the `tap` job does.
 
 release-plz does not publish to crates.io (`publish = false`) and does not
 create the GitHub release (`git_release_enable = false`); `release.yml` owns
