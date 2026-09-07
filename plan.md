@@ -66,19 +66,19 @@ execution, argument parsing, and output formatting.
 
 ## Cargo cache maintenance
 
-Install the optional `cargo-cache` developer tool with:
+`cargo-cache` is pinned in `mise.toml`. Install it with:
 
 ```bash
-cargo install cargo-cache --locked
+mise install
 ```
 
-Use the project aliases from `.cargo/config.toml` to inspect and clean local
-Cargo state without affecting the application:
+Use the Just recipes to inspect and clean local Cargo state without affecting
+the application:
 
 ```bash
-cargo cache-info
-cargo cache-dry-run
-cargo cache-autoclean
+just cache
+just cache-dry-run
+just cache-autoclean
 ```
 
 Always inspect the dry run before cleanup. Cache removal only trades disk space

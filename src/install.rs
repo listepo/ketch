@@ -89,6 +89,10 @@ pub struct Prepared {
     payload: PathBuf,
     /// Held so the unpacked payload outlives this function.
     unpack: tempfile::TempDir,
+    /// When this install began. Carried through so the statistic `commit`
+    /// records covers the download and the unpack too — the parts that take the
+    /// time — rather than only the placement it can see for itself.
+    started: std::time::Instant,
 }
 
 /// Run the pipeline. Mutates `state` in memory; the caller saves it, so a batch
@@ -114,6 +118,7 @@ pub fn prepare(
     req: &InstallRequest,
     progress: &dyn ui::ProgressSink,
 ) -> Result<Prepared> {
+    let started = std::time::Instant::now();
     let platform = crate::platform::host()?;
     let label = req.spec.label();
     ui::stage(&label, ui::ProgressStage::Resolving);
@@ -221,6 +226,7 @@ pub fn prepare(
         link: req.link,
         payload,
         unpack,
+        started,
     })
 }
 
@@ -237,6 +243,7 @@ pub fn commit(cfg: &Config, state: &mut State, prepared: Prepared) -> Result<Ins
         link,
         payload,
         unpack,
+        started,
     } = prepared;
     let platform = crate::platform::host()?;
     ui::stage(&manifest.name, ui::ProgressStage::Installing);
@@ -304,10 +311,27 @@ pub fn commit(cfg: &Config, state: &mut State, prepared: Prepared) -> Result<Ins
     state.insert(package.clone());
     orphan.keep();
 
-    Ok(Installed {
-        package,
-        replaced: existing.map(|p| p.version),
-    })
+    // Everything above has already happened: the payload is placed and `state`
+    // names it. Recording is the last thing and the least important thing, so
+    // `stats::record` warns rather than returning — an install that succeeded
+    // must not report failure because a statistic did not land.
+    let replaced = existing.map(|p| p.version);
+    let previous = replaced.as_ref().map(|v| v.to_string());
+    let source = package.source.to_string();
+    let target = package.target.to_string();
+    crate::stats::record(
+        cfg,
+        &crate::stats::install_event(
+            &package,
+            previous.as_deref(),
+            i32::try_from(started.elapsed().as_millis()).ok(),
+            &version,
+            &source,
+            &target,
+        ),
+    );
+
+    Ok(Installed { package, replaced })
 }
 
 /// Install several packages: download and unpack them concurrently, place them
@@ -380,6 +404,17 @@ pub fn uninstall(cfg: &Config, state: &mut State, name: &str) -> Result<Installe
     platform.unplace(&pkg.links)?;
     remove_store_dir(cfg, &pkg.prefix);
     state.remove(&pkg.name);
+
+    // Recorded after the removal has happened, for the same reason `commit`
+    // records last: the package is gone either way.
+    let version = pkg.version.to_string();
+    let source = pkg.source.to_string();
+    let target = pkg.target.to_string();
+    crate::stats::record(
+        cfg,
+        &crate::stats::uninstall_event(&pkg, &version, &source, &target),
+    );
+
     Ok(pkg)
 }
 

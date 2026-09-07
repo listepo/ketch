@@ -250,7 +250,10 @@ fn now() -> i64 {
 
 /// Seconds since the epoch as RFC 3339 UTC, which is what every log format in
 /// common use writes and every parser in common use reads.
-fn timestamp(secs: i64) -> String {
+///
+/// Shared with `stats.rs`, which dates history entries: one calendar
+/// implementation in the tree is enough, and two would eventually disagree.
+pub(crate) fn timestamp(secs: i64) -> String {
     let days = secs.div_euclid(86_400);
     let rest = secs.rem_euclid(86_400);
     let (y, m, d) = civil_from_days(days);

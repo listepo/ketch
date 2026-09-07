@@ -26,7 +26,7 @@ ambiguous in a package manager:
 Where the distinction matters most: `ketch self update` upgrades the host,
 `ketch upgrade` upgrades clients; `scripts/release.sh` releases the host,
 `ketch.lock` pins clients; `src/changelog.rs` reads a client's changelog, while
-the host's history is git.
+the host's own `CHANGELOG.md` is written for it by release-plz.
 
 macOS is the only implemented platform. `src/platform/mod.rs` gates it with
 `#[cfg(target_os = "macos")]` and returns a clear error elsewhere, so a Linux
@@ -41,6 +41,9 @@ cargo clippy --all-targets       # must be clean
 cargo fmt                        # must be clean
 cargo build                      # debug binary at target/debug/ketch
 ```
+
+The Justfile wraps the same commands with `--locked`: `just fmt`, `just clippy`
+(or `just lint`), `just test`, and `just check` runs the whole CI gate.
 
 Run the binary against a throwaway tree instead of your real `~/.ketch`:
 
@@ -84,20 +87,26 @@ pass before a change is done.
 
 ## Cargo cache maintenance
 
-`cargo-cache` is a developer utility, not a crate dependency. Install it once
-with `cargo install cargo-cache --locked`. This repository provides aliases in
-`.cargo/config.toml`:
+`cargo-cache` is a developer utility, not a crate dependency, and it is pinned
+in `mise.toml` so every machine runs the same one. `mise install` fetches it;
+nothing else here needs mise, and the Rust toolchain is deliberately not pinned
+because CI builds on the runner's default stable.
 
 ```bash
-cargo cache-info       # explain cache directories and safe cleanup choices
-cargo cache-dry-run    # preview removal of source and git checkouts
-cargo cache-autoclean  # remove source and git checkouts
+just cache            # $CARGO_HOME sizes and the build output, no deletes
+just cache-dry-run    # preview removal of source and git checkouts
+just cache-autoclean  # remove source and git checkouts
 ```
 
-Run `cargo cache-dry-run` before any cleanup. `cargo cache-autoclean` is
+Run `just cache-dry-run` before any cleanup. `just cache-autoclean` is
 destructive but safe for build correctness: Cargo will download sources again
 when needed. Do not remove registry indexes or all cached data unless the task
 explicitly requires reclaiming that space.
+
+`just cache` reports the build output separately because `cargo-cache` does not
+count it, and on a machine that redirects `build.target-dir` the two figures
+differ by orders of magnitude — the cargo home is the small one. Set
+`CARGO_CACHE=cargo-cache` to bypass mise if you have it activated already.
 
 ## Task runner choice
 
@@ -130,13 +139,15 @@ conditional, multi-stage Rust automation.
 | `src/manifest.rs` | resolving a name to a `Manifest` across four tiers |
 | `src/model.rs` | every type that crosses a module boundary |
 | `src/state.rs` | the installed-package record and the process lock |
+| `src/stats.rs` | `stats.db`: the history of what was installed, in SQLite |
 | `src/log.rs` | the log file, in text or JSON Lines |
 | `src/changelog.rs` | finding and slicing a client app's changelog |
 | `src/lockfile.rs` | `ketch.lock`: what is installed, pinned to exact releases |
 | `src/ui.rs` | all terminal output |
 | `tests/` | end-to-end tests that drive the real binary |
 | `scripts/package.sh` | the release tarball, shared by CI and the release workflow |
-| `scripts/release.sh` | the version bump and the release pull request |
+| `release-plz.toml` | what the release pull request bumps, tags and does not publish |
+| `scripts/release.sh` | the same version bump and pull request, by hand |
 
 The rule that keeps `cmd/` thin: anything touching the install tree belongs in
 `install.rs`, `state.rs`, or a trait implementation, so the same logic serves
@@ -222,35 +233,54 @@ delete the guard deliberately and say why in the commit.
 - **A field in `ketch.lock`** → `src/lockfile.rs`, and a row in
   `docs/LOCKFILE.md`. Anything a lockfile can say has to pass `validate`
   first: it is a file a colleague may have written.
+- **A column in `stats.db`** → a new folder under `migrations/`, never an edit
+  to one already released: the migration is embedded in the binary and has
+  already run on other people's machines. Then the `table!` block and the two
+  structs in `src/stats.rs`, which the `check_for_backend` attribute makes the
+  compiler verify against the schema.
+- **Recording something new that happened** → a variant on `stats::Action` and
+  a call from wherever it becomes true, which for anything touching the install
+  tree is `install.rs`. Keep it best effort: `stats::record` warns and returns,
+  because a statistic is never worth failing the operation it describes.
 
 ## Releasing
 
-```bash
-scripts/release.sh 0.2.0          # --dry-run to see it first
-```
+Nothing is typed to cut a release. release-plz keeps one pull request up to
+date on every merge to `main`, holding the next version and the `CHANGELOG.md`
+entry for it, both derived from the conventional commits since the last tag —
+so `feat:` moves the minor, `fix:` the patch, and `docs:`/`chore:` move
+nothing. Merging that pull request pushes the tag.
 
-Run it on a clean, up-to-date default branch. It bumps `Cargo.toml` and
-`Cargo.lock` on a `release/v0.2.0` branch, pushes it, and opens a pull request
-whose body lists the commits since the last tag and gives the tag command to
-publish. It refuses a version that goes backwards, one that is already current,
-and one written with a leading `v`; it rewrites only the version inside
-`[package]`, and re-reads the result through `cargo metadata` before pushing, so
-a bad rewrite fails with nothing published.
+The tag is the only thing that publishes. `release.yml` picks it up, re-runs
+the whole gate, refuses a tag that disagrees with `Cargo.toml` (`ketch self
+update` compares the two, so a mismatched tag breaks upgrades for everyone
+already installed), builds both macOS architectures, and publishes the tarballs
+with an aggregate `SHA256SUMS`.
 
-Merging the pull request does not release anything. Tagging the merge commit
-does:
+Two things about that handoff are easy to break:
 
-```bash
-git tag v0.2.0 && git push origin v0.2.0
-```
+- **`RELEASE_PLZ_TOKEN` must be a PAT or GitHub App token**, not the default
+  `GITHUB_TOKEN`, which cannot start another workflow run. A tag pushed with
+  the default token never reaches `release.yml`, leaving a release with no
+  binaries — which is the only thing `install.sh` and `ketch self update` read.
+  `release-plz.yml` fails on the missing secret rather than letting that happen
+  quietly.
+- **The tag name is a contract.** `release-plz.toml` sets `v{{ version }}` and
+  `release.yml` triggers on `v*`. Changing one without the other means merging
+  a release pull request publishes nothing.
 
-The release workflow then re-runs the whole gate, refuses a tag that disagrees
-with `Cargo.toml` (`ketch self update` compares the two, so a mismatched tag
-breaks upgrades for everyone already installed), builds both macOS
-architectures, and publishes the tarballs with an aggregate `SHA256SUMS`.
+release-plz does not publish to crates.io (`publish = false`) and does not
+create the GitHub release (`git_release_enable = false`); `release.yml` owns
+that, because it is what attaches the assets.
 
-Bumping the version by hand is what `scripts/release.sh` exists to stop: the
-version is written in one place and checked in two, and the two must agree.
+`scripts/release.sh 0.2.0` still works and does the same job by hand — bump on
+a branch, pull request, tag afterwards — for cutting a specific version without
+waiting for the bot. Close release-plz's pull request if you use it, or the two
+will propose different versions.
+
+Bumping the version by hand in an ordinary commit is what both of these exist
+to stop: the version is written in one place and checked in two, and the two
+must agree.
 
 Asset names are load-bearing: `install.sh` and `ketch self update` both look for
 `ketch-<target>.tar.gz` and `SHA256SUMS`. Renaming either strips the upgrade

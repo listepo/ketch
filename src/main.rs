@@ -22,6 +22,7 @@ mod selfupdate;
 mod shell;
 mod source;
 mod state;
+mod stats;
 #[cfg(feature = "tui")]
 mod tui;
 mod ui;
@@ -96,6 +97,8 @@ fn run(cli: Cli) -> Result<()> {
         Command::Info(args) => cmd::query::info(&cfg, args),
         Command::Changelog(args) => cmd::query::changelog(&cfg, args),
         Command::Search(args) => cmd::query::search(&cfg, args),
+        Command::History(args) => cmd::query::history(&cfg, args),
+        Command::Stats(args) => cmd::query::stats(&cfg, args),
         Command::Update => cmd::system::update(&cfg),
         Command::Lock(args) => cmd::lock::lock(&cfg, args),
         Command::Sync(args) => cmd::lock::sync(&cfg, args),

@@ -673,3 +673,70 @@ fn an_unreadable_log_setting_is_refused_by_name() {
     assert!(err.contains("chatty"), "{err}");
     assert!(err.contains("config.toml"), "{err}");
 }
+
+// ---------------------------------------------------------------------------
+// History and statistics
+// ---------------------------------------------------------------------------
+
+/// The database is the only thing that still remembers a package once it has
+/// been removed, which is the whole reason it sits alongside `state.json`.
+#[test]
+fn history_records_an_install_an_upgrade_and_an_uninstall_newest_first() {
+    let sandbox = Sandbox::new();
+    publish_tool(&sandbox, "1.0.0");
+    sandbox.ok(&["install", "test:testtool@1.0.0", "--yes"]);
+    publish_tool(&sandbox, "2.0.0");
+    sandbox.ok(&["upgrade", "--yes"]);
+    sandbox.ok(&["uninstall", "testtool", "--yes"]);
+
+    let json = sandbox.ok(&["history", "testtool", "--json"]);
+    let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+    let events = parsed.as_array().expect("an array of events");
+
+    let actions: Vec<&str> = events.iter().filter_map(|e| e["action"].as_str()).collect();
+    assert_eq!(actions, ["uninstall", "upgrade", "install"], "{json}");
+
+    // The upgrade names both sides. That is what makes this a version history
+    // rather than a list of versions that happened to be installed.
+    assert_eq!(events[1]["version"], "2.0.0");
+    assert_eq!(events[1]["previous_version"], "1.0.0");
+    assert_eq!(
+        events[2]["previous_version"],
+        serde_json::Value::Null,
+        "a first install replaced nothing"
+    );
+
+    // `state.json` has forgotten the package entirely; the history has not.
+    assert!(sandbox.ok(&["list"]).contains("nothing installed"));
+}
+
+#[test]
+fn statistics_total_what_the_history_recorded() {
+    let sandbox = Sandbox::new();
+    publish_tool(&sandbox, "1.0.0");
+    sandbox.ok(&["install", "test:testtool@1.0.0", "--yes"]);
+    publish_tool(&sandbox, "2.0.0");
+    sandbox.ok(&["upgrade", "--yes"]);
+
+    let json = sandbox.ok(&["stats", "--json"]);
+    let s: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+    assert_eq!(s["installs"], 1, "{json}");
+    assert_eq!(s["upgrades"], 1, "{json}");
+    assert_eq!(s["uninstalls"], 0, "{json}");
+    assert_eq!(s["packages"], 1, "one package, twice: {json}");
+    // Both went through the download pipeline, so both were timed.
+    assert!(s["mean_duration_ms"].as_i64().is_some(), "{json}");
+}
+
+/// Nothing recorded is an ordinary state — a fresh machine, or a root from
+/// before the database existed — and reading it must not manufacture a file.
+#[test]
+fn history_and_stats_are_calm_about_a_root_that_has_never_installed_anything() {
+    let sandbox = Sandbox::new();
+    assert!(sandbox.ok(&["history"]).contains("no history recorded"));
+    assert!(sandbox.ok(&["stats"]).contains("no statistics recorded"));
+    assert!(
+        !sandbox.root().join("stats.db").exists(),
+        "a read created the database"
+    );
+}

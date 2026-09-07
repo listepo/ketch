@@ -5,7 +5,9 @@
 //! stay on stderr.
 
 use crate::changelog::{self, Entry, Origin};
-use crate::cli::{ChangelogArgs, InfoArgs, ListArgs, OutdatedArgs, SearchArgs};
+use crate::cli::{
+    ChangelogArgs, HistoryArgs, InfoArgs, ListArgs, OutdatedArgs, SearchArgs, StatsArgs,
+};
 use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::install;
@@ -13,6 +15,7 @@ use crate::manifest::Resolver;
 use crate::model::{InstalledPackage, Manifest, ManifestOrigin, PackageSpec, Release, VersionSpec};
 use crate::source::{ListOpts, SourceRegistry};
 use crate::state::State;
+use crate::stats;
 use crate::ui;
 
 pub fn list(cfg: &Config, args: ListArgs) -> Result<()> {
@@ -468,6 +471,87 @@ fn describe_origin(origin: &ManifestOrigin) -> String {
         ManifestOrigin::User(path) => path.display().to_string(),
         ManifestOrigin::Inferred => "inference".to_string(),
     }
+}
+
+/// What happened, newest first — the version history of one package or of the
+/// whole tree.
+pub fn history(cfg: &Config, args: HistoryArgs) -> Result<()> {
+    let events = stats::history(cfg, args.package.as_deref(), i64::from(args.limit))?;
+
+    if args.json {
+        return print_json(&events);
+    }
+    if events.is_empty() {
+        // Distinguish "this package has no history" from "nothing does": the
+        // first is a typo often enough to be worth saying out loud.
+        match &args.package {
+            Some(name) => ui::out(&format!("no history recorded for {name}")),
+            None => ui::out("no history recorded yet"),
+        }
+        return Ok(());
+    }
+
+    let rows: Vec<Vec<String>> = events
+        .iter()
+        .map(|e| {
+            vec![
+                crate::log::timestamp(e.at),
+                e.package.clone(),
+                e.action.clone(),
+                match &e.previous_version {
+                    Some(from) => format!("{from} → {}", e.version),
+                    None => e.version.clone(),
+                },
+            ]
+        })
+        .collect();
+    ui::table(&["when", "package", "action", "version"], &rows);
+    Ok(())
+}
+
+/// Everything recorded, totalled.
+pub fn stats(cfg: &Config, args: StatsArgs) -> Result<()> {
+    let s = stats::summary(cfg)?;
+
+    if args.json {
+        return print_json(&serde_json::json!({
+            "events": s.events,
+            "installs": s.installs,
+            "upgrades": s.upgrades,
+            "uninstalls": s.uninstalls,
+            "packages": s.packages,
+            "mean_duration_ms": s.mean_duration_ms(),
+            "first_at": s.first_at,
+            "last_at": s.last_at,
+        }));
+    }
+
+    if s.events == 0 {
+        ui::out("no statistics recorded yet");
+        return Ok(());
+    }
+
+    let mut rows = vec![
+        vec!["events".to_string(), s.events.to_string()],
+        vec!["packages".to_string(), s.packages.to_string()],
+        vec!["installs".to_string(), s.installs.to_string()],
+        vec!["upgrades".to_string(), s.upgrades.to_string()],
+        vec!["uninstalls".to_string(), s.uninstalls.to_string()],
+    ];
+    if let Some(mean) = s.mean_duration_ms() {
+        rows.push(vec![
+            "mean install".to_string(),
+            format!("{:.1}s", mean as f64 / 1000.0),
+        ]);
+    }
+    if let Some(first) = s.first_at {
+        rows.push(vec!["first".to_string(), crate::log::timestamp(first)]);
+    }
+    if let Some(last) = s.last_at {
+        rows.push(vec!["latest".to_string(), crate::log::timestamp(last)]);
+    }
+    ui::table(&["statistic", "value"], &rows);
+    Ok(())
 }
 
 fn print_json<T: serde::Serialize>(value: &T) -> Result<()> {

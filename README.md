@@ -80,9 +80,24 @@ ketch path install         # put ~/.ketch/bin on PATH in bash, zsh and fish
 ```
 
 Everything lives under `~/.ketch`: versioned payloads in `store/`, links in
-`bin/`, and a `state.json` recording what is installed. Nothing is written
-outside that tree except the `.app` bundles that belong in `/Applications`, and
-the shell startup file `ketch path install` edits when you ask it to.
+`bin/`, a `state.json` recording what is installed, and a `stats.db` recording
+what happened. Nothing is written outside that tree except the `.app` bundles
+that belong in `/Applications`, and the shell startup file `ketch path install`
+edits when you ask it to.
+
+## What you had, and when
+
+```bash
+ketch history              # every install, upgrade and removal, newest first
+ketch history rg           # just this package's versions, including old ones
+ketch stats                # how many installs, how long they take
+```
+
+`state.json` says what is installed now and is rewritten on every change, so it
+cannot answer which version you had in March. `stats.db` is the other half: an
+append-only record that outlives the packages themselves, which is why
+`ketch history rg` still works after `ketch uninstall rg`. Delete the file and
+you lose the history, never the packages.
 
 ## Seeing what changed
 
@@ -249,13 +264,18 @@ KETCH_ROOT=/tmp/ketch-scratch cargo run -- doctor
 
 ## Releasing
 
+Nothing is typed. [release-plz](https://release-plz.dev) keeps one pull request
+up to date on every merge to `main`, holding the next version and the
+`CHANGELOG.md` entry for it, both read off the conventional commits since the
+last tag. Merging it pushes the tag, and the tag is what builds both macOS
+architectures and publishes the tarballs.
+
 ```bash
-scripts/release.sh 0.2.0
+scripts/release.sh 0.2.0        # the same thing by hand, for a specific version
 ```
 
-Opens a pull request bumping `Cargo.toml` and `Cargo.lock`. Merge it, then tag
-the merge commit — that is what builds both macOS architectures and publishes
-the tarballs. `--dry-run` shows what it would do.
+ketch is not on crates.io — it ships as a tarball on a GitHub release, so
+release-plz bumps and tags but never publishes a crate.
 
 ## Contributing
 

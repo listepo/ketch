@@ -1,0 +1,31 @@
+# release-plz proposes the version bump and writes the changelog. The tag it
+# pushes on merge is what actually publishes ketch, through
+# `.github/workflows/release.yml`.
+#
+# Two defaults are deliberately off:
+#
+# - `publish`, because ketch is distributed as a tarball attached to a GitHub
+#   release, not as a crate. Nobody installs it with `cargo install`, and
+#   leaving this on would start publishing to crates.io on every merge.
+# - `git_release_enable`, because release.yml creates the GitHub release and
+#   attaches both tarballs and the aggregate `SHA256SUMS`. Two tools creating
+#   the same release is a race, and losing it leaves a release with no assets —
+#   which is the one thing `install.sh` and `ketch self update` both read.
+
+[workspace]
+publish = false
+git_release_enable = false
+
+# Tag only when a release pull request is merged, never on an ordinary push to
+# main. With the default, the very first run would find no `v0.1.0` tag and
+# publish whatever main happened to be, before anyone had seen a changelog or
+# a pull request for it. Every later release works the same either way: the
+# version only moves in a release pull request, so only merging one leaves an
+# untagged version behind.
+release_always = false
+
+# The other end of a coupling that is easy to miss: release.yml triggers on
+# `v*` and refuses a tag that disagrees with Cargo.toml. Changing this name
+# without changing that trigger means merging a release pull request publishes
+# nothing at all.
+git_tag_name = "v{{ version }}"
