@@ -117,9 +117,21 @@ pub fn install(
 /// # Examples
 ///
 /// ```no_run
-/// let prepared = prepare(&cfg, &sources, &state, &request, progress)?;
+/// # use crate::config::Config;
+/// # use crate::install::{commit, prepare, InstallRequest, Installed};
+/// # use crate::model::PackageSpec;
+/// # use crate::source::SourceRegistry;
+/// # use crate::state::State;
+/// # use crate::ui;
+/// # let cfg: Config = Config::load(None)?;
+/// # let sources: SourceRegistry = SourceRegistry::load(&cfg);
+/// # let mut state: State = State::default();
+/// # let request: InstallRequest = InstallRequest::new(PackageSpec::parse("ripgrep"));
+/// # let progress: Box<dyn ui::ProgressSink> = ui::progress();
+/// let prepared = prepare(&cfg, &sources, &state, &request, progress.as_ref())?;
 /// let installed = commit(&cfg, &mut state, prepared)?;
-/// # Ok::<(), anyhow::Error>(())
+/// # let _: Installed = installed;
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 ///
 /// # Errors

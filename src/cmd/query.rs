@@ -23,7 +23,7 @@ use crate::ui;
 /// # Examples
 ///
 /// ```no_run
-/// let cfg = Config::default();
+/// let cfg = Config::load(None)?;
 /// let args = ListArgs {
 ///     json: false,
 ///     names_only: false,
@@ -506,9 +506,8 @@ fn describe_origin(origin: &ManifestOrigin) -> String {
 /// # Examples
 ///
 /// ```text
-/// package-manager history --package ripgrep --limit 10
+/// ketch history ripgrep --limit 10
 /// ```
-pub fn history...
 pub fn history(cfg: &Config, args: HistoryArgs) -> Result<()> {
     let events = stats::history(cfg, args.package.as_deref(), i64::from(args.limit))?;
 

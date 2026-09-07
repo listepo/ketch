@@ -256,7 +256,6 @@ fn now() -> i64 {
 /// assert_eq!(timestamp(0), "1970-01-01T00:00:00Z");
 /// ```
 pub(crate) fn timestamp(secs: i64) -> String {
-pub(crate) fn timestamp(secs: i64) -> String {
     let days = secs.div_euclid(86_400);
     let rest = secs.rem_euclid(86_400);
     let (y, m, d) = civil_from_days(days);
