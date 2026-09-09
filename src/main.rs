@@ -19,7 +19,7 @@ mod model;
 mod platform;
 mod push;
 mod registry;
-mod selfupdate;
+mod self_update;
 mod shell;
 mod source;
 mod state;
