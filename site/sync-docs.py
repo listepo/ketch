@@ -69,8 +69,8 @@ PAGES = [
         "Plan",
         55,
         "What is being built next and in what order: platform backends, "
-        "signature verification, registry validation, rollback — with the exit "
-        "criteria for each and the traps found in the code it touches.",
+        "signature verification, registry validation and rollback, each with "
+        "its exit criteria.",
     ),
     (
         "AGENTS.md",
