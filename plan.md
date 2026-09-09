@@ -65,7 +65,14 @@ Small, and each one is a real gap rather than a nice-to-have.
    exercised by installing the cask for real. A `brew install --cask` smoke
    test on a release would have caught the recursion the `--no-brew` flag now
    prevents.
-5. **Registry CI.** `listepo/ketch-registry` accepts any `ketch.toml` that
+5. **A `tap` job that can run on its own.** It takes the tarballs from the
+   run's own build artifacts, so it cannot run without building, and a forced
+   re-run rebuilds and re-uploads the binaries — leaving the tag describing
+   source that no longer produced the shipped bytes. That is what made the
+   v0.2.0 cask failure need the next release to fix. Fetching the assets with
+   `gh release download` instead would make the job re-runnable against a
+   release that already exists.
+6. **Registry CI.** `listepo/ketch-registry` accepts any `ketch.toml` that
    parses. `ketch push` writes them, and nothing validates them before merge.
    This is Milestone 5 below, and the cheapest half of it is a workflow that
    runs the same `Manifest::validate` the client does.
