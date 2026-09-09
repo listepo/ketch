@@ -2,8 +2,11 @@ name: release-plz
 
 # Every merge to main keeps one pull request up to date: the next version, and
 # the changelog entry for it, both derived from the conventional commits since
-# the last tag. Merging that pull request pushes the tag, and the tag is what
-# release.yml turns into published tarballs.
+# the last tag. Merging that pull request is the release — release.yml builds
+# it, publishes the tarballs, and only then creates the tag.
+#
+# Nothing here tags anything. Only `release-pr` is ever run: the tag is
+# release.yml's to create, once there is something behind it.
 on:
   push:
     branches: [main]
@@ -29,11 +32,9 @@ jobs:
 
     steps:
       # A workflow run authenticated with the default GITHUB_TOKEN cannot start
-      # another workflow run, so a tag pushed with it would never reach
-      # release.yml: the tag would exist, the tarballs would not, and both
-      # install.sh and `ketch self update` read exactly those tarballs. That
-      # failure is silent at the moment it happens and only visible to people
-      # trying to install. Fail here, loudly, instead.
+      # another workflow run, so the release pull request it opens would land
+      # on main without CI ever running on it — and merging that pull request
+      # is what publishes ketch. Fail here, loudly, instead.
       #
       # See https://release-plz.dev/docs/github/token — a fine-grained PAT or a
       # GitHub App token with contents and pull-requests read/write.
@@ -58,18 +59,25 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      # Ordered, not parallel: `release` tags whatever release pull request was
-      # just merged, and only then does `release-pr` open the next one. Run the
-      # other way round and the new pull request is written against a version
-      # that has not been tagged yet.
-      - name: Tag the merged release
-        uses: release-plz/action@v0.5.133
-        with:
-          command: release
-        env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
+      # A release pull request is written against the last released version, so
+      # proposing one while a release is still being published would compare
+      # against a tag that does not exist yet and bump from the wrong place.
+      # The merge that starts a release therefore opens no pull request; the
+      # next commit after it does, by which time the tag is there.
+      - name: Is a release still being published?
+        id: pending
+        run: |
+          version="$(cargo metadata --no-deps --format-version 1 \
+            | sed -n 's/.*"name":"ketch","version":"\([^"]*\)".*/\1/p')"
+          if git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null 2>&1; then
+            echo "pending=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "pending=true" >> "$GITHUB_OUTPUT"
+            echo "v$version is not released yet; leaving the release pull request alone"
+          fi
 
       - name: Open or update the release pull request
+        if: steps.pending.outputs.pending == 'false'
         uses: release-plz/action@v0.5.133
         with:
           command: release-pr

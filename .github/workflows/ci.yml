@@ -32,7 +32,7 @@ jobs:
         run: cargo test --all-targets --locked
 
   # Packaging is exercised on every pull request, so it breaks here rather than
-  # at tag time — by which point the tag has already been pushed.
+  # halfway through a release, after the merge that started one.
   package:
     runs-on: macos-latest
     steps:
