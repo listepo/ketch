@@ -306,7 +306,7 @@ network access and one writable path under it, which is all `ketch self
 install` needs. Homebrew keeps only the bootstrap binary; the installed ketch
 is one ketch downloaded and verified itself, exactly as with `install.sh`.
 
-Five things about that handoff are easy to break:
+Six things about that handoff are easy to break:
 
 - **`RELEASE_PLZ_TOKEN` must be a PAT or GitHub App token**, not the default
   `GITHUB_TOKEN`, which cannot start another workflow run — so the release
@@ -318,10 +318,21 @@ Five things about that handoff are easy to break:
   the minutes between the merge and the tag there is none. `release-plz.yml`
   checks for the tag and leaves the pull request alone until it exists; the
   next commit after that opens it.
+- **release-plz reads the tags, not crates.io** (`git_only = true`). By
+  default it asks the registry for the last released version, and `ketch` is
+  not published there — so the lookup comes back empty, release-plz decides
+  the package has never been released, and proposes the version already in
+  `Cargo.toml`. No bump, no changelog entry, no release, and nothing fails:
+  the pull request simply never appears. It is also why `feat:` needs
+  `features_always_increment_minor`, since below 1.0 release-plz would
+  otherwise send a feature to the patch.
 - **The tag name is a contract.** `release-plz.toml` sets `v{{ version }}`,
   `release.yml` derives the same string from `Cargo.toml`, and the changelog
   links to `releases/tag/v<version>` — which `tests/release_changelog.rs`
-  checks. Change one and change all three.
+  checks. Change one and change all three. That last link is a changelog
+  postprocessor: from the second release on, release-plz would point the
+  heading at the diff against the previous tag instead of at the release
+  holding the tarballs.
 - **The certificate expires.** A Developer ID certificate lasts five years,
   and the day after, every release fails at the import step. Replace both
   secrets with the renewed `.p12` and re-run with `force`.

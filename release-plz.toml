@@ -2,8 +2,9 @@
 # pull request it opens is what releases ketch, through
 # `.github/workflows/release.yml`.
 #
-# Three defaults are deliberately off, and one command is deliberately never
-# run — `.github/workflows/release-plz.yml` runs only `release-pr`:
+# Three defaults are deliberately off, two are deliberately on, and one command
+# is deliberately never run — `.github/workflows/release-plz.yml` runs only
+# `release-pr`:
 #
 # - `publish`, because ketch is distributed as a tarball attached to a GitHub
 #   release, not as a crate. Nobody installs it with `cargo install`, and
@@ -21,8 +22,32 @@
 publish = false
 git_release_enable = false
 
+# Without this, release-plz never proposes a bump. It asks the cargo registry
+# for the last released version, and `ketch` is not on crates.io — so the
+# lookup comes back empty, release-plz concludes the package has never been
+# released, and proposes the version already in `Cargo.toml`. Git tags are the
+# only record that a ketch release happened, which release.yml now makes
+# literally true: it creates the tag by publishing the release.
+git_only = true
+
+# Below 1.0 release-plz sends a `feat:` to the patch. ketch is documented the
+# other way round — `feat:` moves the minor, `fix:` the patch — because a new
+# command is worth more than a third digit to someone deciding whether to
+# upgrade, 1.0 or not.
+features_always_increment_minor = true
+
 # Still a contract, even though nothing here creates the tag: release.yml
 # derives `v<version>` from `Cargo.toml`, and the changelog entries link to
 # `releases/tag/v<version>` — a link `tests/release_changelog.rs` checks.
 # Changing this name means changing both.
 git_tag_name = "v{{ version }}"
+
+[changelog]
+# From the second release onwards, release-plz points a version heading at the
+# diff against the previous tag. For ketch the release page is the useful
+# destination: it holds the tarballs and the `SHA256SUMS` that `install.sh` and
+# `ketch self update` fetch, so it is what someone reading the changelog is
+# looking for. `tests/release_changelog.rs` checks every heading links there.
+postprocessors = [
+  { pattern = 'https://github\.com/listepo/ketch/compare/v[^)]*\.\.\.v([0-9][^)]*)', replace = "https://github.com/listepo/ketch/releases/tag/v${1}" },
+]
