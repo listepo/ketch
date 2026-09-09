@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/listepo/ketch/releases/tag/v0.2.0) - 2026-09-09
+
+### Added
+
+- remove everything ketch installed on self uninstall
+
+### Other
+
+- make the version snapshot follow Cargo.toml ([#20](https://github.com/listepo/ketch/pull/20))
+- let release-plz read the tags instead of crates.io
+- keep the plan page's meta description under the limit
+- document uninstalling, the new release order, and a plan
+- create the tag after the release, not before it
+
 ## [0.1.0](https://github.com/listepo/ketch/releases/tag/v0.1.0) - 2026-09-07
 
 ### Added
