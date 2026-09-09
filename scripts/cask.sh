@@ -88,7 +88,8 @@ cask "ketch" do
     # take, and stays until \`zap\`. \`--no-brew\` stops ketch calling
     # \`brew uninstall --cask ketch\` from inside that very command.
     run "/bin/sh", args:           ["-c",
-                                    'eval "r=~\$1/.ketch" && KETCH_ROOT="\$r" exec "\$r/bin/ketch" self uninstall -y --keep-packages --no-brew',
+                                    'eval "r=~\$1/.ketch" && KETCH_ROOT="\$r" ' \\
+                                    'exec "\$r/bin/ketch" self uninstall -y --keep-packages --no-brew',
                                     "ketch", "{{user}}"],
                    must_succeed:   false,
                    writable_paths: [".ketch"],

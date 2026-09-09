@@ -337,8 +337,10 @@ Six things about that handoff are easy to break:
   and the day after, every release fails at the import step. Replace both
   secrets with the renewed `.p12` and re-run with `force`.
 - **The cask is generated.** Editing `Casks/ketch.rb` in the tap by hand lasts
-  until the next release overwrites it; change `scripts/cask.sh` instead, and
-  run `brew style` on its output, as the `tap` job does.
+  until the next release overwrites it; change `scripts/cask.sh` instead. CI
+  runs `brew style` on its output on every pull request, because the `tap` job
+  runs the same check *after* the release has published — where a rejected
+  cask leaves the tap a version behind and takes another release to correct.
 
 release-plz does not publish to crates.io (`publish = false`), does not create
 the GitHub release (`git_release_enable = false`), and does not tag: only its

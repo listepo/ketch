@@ -66,3 +66,18 @@ jobs:
           binary=$(find unpacked -name ketch -type f | head -1)
           [ -n "$binary" ] || { echo "no ketch binary in the tarball" >&2; exit 1; }
           "$binary" --version
+
+      # The cask is generated too, and the `tap` job checks it with `brew
+      # style` — after the release has published, where a rejected cask leaves
+      # the tap a version behind and needs a whole new release to fix. The
+      # checksums are placeholders; rubocop only reads the shape of the file.
+      # `brew style` applies its cask rules by the `Casks/` directory name.
+      - name: The generated cask passes brew style
+        run: |
+          mkdir -p cask/Casks
+          # Two different digests: rubocop rejects a cask that gives both
+          # architectures the same one, which is a real mistake worth catching
+          # and a pointless way to fail this check.
+          scripts/cask.sh 0.0.0 "$(printf '%064d' 0)" "$(printf '%064d' 1)" \
+            > cask/Casks/ketch.rb
+          brew style cask/Casks/ketch.rb
