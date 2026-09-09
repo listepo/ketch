@@ -740,3 +740,117 @@ fn history_and_stats_are_calm_about_a_root_that_has_never_installed_anything() {
         "a read created the database"
     );
 }
+
+/// A shell startup file with the user's own lines in it, so a test can prove
+/// removing ketch's block leaves them exactly as they were.
+fn zshrc(sandbox: &Sandbox) -> (std::path::PathBuf, &'static str) {
+    let file = sandbox.home().join(".zshrc");
+    let original = "# mine\nexport EDITOR=vi\n";
+    std::fs::write(&file, original).expect("write zshrc");
+    (file, original)
+}
+
+#[test]
+fn self_uninstall_removes_the_packages_the_path_block_and_the_homebrew_cask() {
+    let sandbox = Sandbox::new();
+    publish_tool(&sandbox, "1.0.0");
+    sandbox.ok(&["install", "test:testtool", "--yes"]);
+    let (zshrc_file, original) = zshrc(&sandbox);
+    sandbox.ok(&["path", "install", "--shell", "zsh"]);
+    let brew_log = sandbox.install_cask();
+
+    let out = sandbox.ok(&["self", "uninstall", "--yes"]);
+
+    // The tree is gone rather than emptied: nothing ketch wrote is left, and
+    // the root itself goes with it because nothing else was in there.
+    let leftovers: Vec<std::path::PathBuf> = std::fs::read_dir(sandbox.root())
+        .map(|d| d.flatten().map(|e| e.path()).collect())
+        .unwrap_or_default();
+    assert!(
+        !sandbox.root().exists(),
+        "the root survived, holding {leftovers:?}\n{out}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&zshrc_file).expect("read zshrc"),
+        original,
+        "the PATH block was not taken back out"
+    );
+    // Handed back to Homebrew rather than deleted behind its back, which would
+    // leave `brew` believing ketch is still installed.
+    assert!(
+        std::fs::read_to_string(&brew_log)
+            .expect("brew was never run")
+            .contains("uninstall --cask ketch"),
+        "brew was called with something else"
+    );
+    assert!(!sandbox.homebrew().join("Caskroom").join("ketch").exists());
+    // The binary being run is outside the root — a build, not an install — so
+    // it is not ketch's to delete.
+    assert!(std::path::Path::new(env!("CARGO_BIN_EXE_ketch")).exists());
+}
+
+#[test]
+fn self_uninstall_says_what_it_will_take_and_removes_nothing_without_an_answer() {
+    let sandbox = Sandbox::new();
+    publish_tool(&sandbox, "1.0.0");
+    sandbox.ok(&["install", "test:testtool", "--yes"]);
+    let (zshrc_file, original) = zshrc(&sandbox);
+    sandbox.ok(&["path", "install", "--shell", "zsh"]);
+    sandbox.install_cask();
+
+    // No terminal and no `--yes`: the answer is no, which is the only safe
+    // default for something that cannot be undone.
+    let out = sandbox.ketch(&["self", "uninstall"]);
+    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+
+    assert!(
+        out.status.success(),
+        "declining is not a failure:\n{stderr}"
+    );
+    assert!(stderr.contains("cancelled"), "{stderr}");
+    assert!(stderr.contains("permanent"), "{stderr}");
+    for named in [
+        "testtool",
+        &sandbox.root().display().to_string(),
+        &zshrc_file.display().to_string(),
+        "Homebrew cask",
+    ] {
+        assert!(
+            stderr.contains(named),
+            "the question did not say {named} was at stake:\n{stderr}"
+        );
+    }
+
+    assert_eq!(run(&sandbox.bin().join("testtool")), "testtool 1.0.0");
+    assert!(sandbox.store().join("testtool").exists());
+    assert_ne!(
+        std::fs::read_to_string(&zshrc_file).expect("read zshrc"),
+        original
+    );
+    assert!(sandbox.homebrew().join("Caskroom").join("ketch").exists());
+}
+
+#[test]
+fn self_uninstall_can_keep_the_packages_and_leave_the_cask_to_homebrew() {
+    let sandbox = Sandbox::new();
+    publish_tool(&sandbox, "1.0.0");
+    sandbox.ok(&["install", "test:testtool", "--yes"]);
+    let (zshrc_file, _) = zshrc(&sandbox);
+    sandbox.ok(&["path", "install", "--shell", "zsh"]);
+    let brew_log = sandbox.install_cask();
+
+    // What the cask itself runs on the way out: Homebrew is already removing
+    // the cask, and what ketch installed is not Homebrew's to take.
+    sandbox.ok(&["self", "uninstall", "--yes", "--keep-packages", "--no-brew"]);
+
+    assert_eq!(run(&sandbox.bin().join("testtool")), "testtool 1.0.0");
+    assert!(sandbox.store().join("testtool").exists());
+    assert!(
+        std::fs::read_to_string(&zshrc_file)
+            .expect("read zshrc")
+            .contains(&sandbox.bin().display().to_string()),
+        "the block was removed for a tree that is still there"
+    );
+    assert!(!brew_log.exists(), "brew was run despite --no-brew");
+    assert!(sandbox.homebrew().join("Caskroom").join("ketch").exists());
+}

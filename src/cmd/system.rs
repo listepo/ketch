@@ -8,7 +8,7 @@ use crate::error::{Error, Result};
 use crate::platform::{self, worst_status, CheckStatus, DoctorCheck};
 use crate::push;
 use crate::registry;
-use crate::selfupdate;
+use crate::self_update;
 use crate::shell::{self, Outcome, Shell};
 use crate::source::{plugin, Source};
 use crate::state::State;
@@ -21,7 +21,11 @@ pub fn doctor(cfg: &Config, args: DoctorArgs) -> Result<()> {
 
     let mut checks = vec![DoctorCheck::ok(
         "version",
-        format!("ketch {} for {}", selfupdate::current_version(), cfg.target),
+        format!(
+            "ketch {} for {}",
+            self_update::current_version(),
+            cfg.target
+        ),
     )];
 
     // Not a platform check: every shell reads the same startup files wherever
@@ -316,6 +320,29 @@ fn shell_file(sh: Shell) -> Result<std::path::PathBuf> {
     Ok(sh.config_file(&home))
 }
 
+/// What `self uninstall` is about to delete, one line per kind of thing.
+///
+/// Printed before the question rather than after it: an answer to "remove
+/// everything?" means nothing unless everything is on screen next to it.
+fn plan_lines(plan: &self_update::UninstallPlan) -> Vec<String> {
+    let mut lines = Vec::new();
+    if !plan.packages.is_empty() {
+        lines.push(format!("packages: {}", plan.packages.join(", ")));
+    }
+    if let Some(root) = &plan.root {
+        lines.push(format!("{} and everything in it", root.display()));
+    } else if let Some(exe) = &plan.exe {
+        lines.push(exe.display().to_string());
+    }
+    for file in &plan.shell_files {
+        lines.push(format!("the PATH block in {}", file.display()));
+    }
+    if plan.cask.is_some() {
+        lines.push("the Homebrew cask".to_string());
+    }
+    lines
+}
+
 fn report(change: &shell::Change, dry_run: bool) {
     let file = change.file.display().to_string();
     let detail = format!("{file} ({})", change.shell.name());
@@ -407,8 +434,8 @@ pub fn push(cfg: &Config, args: PushArgs) -> Result<()> {
 pub fn zelf(cfg: &Config, command: SelfCommand) -> Result<()> {
     match command {
         SelfCommand::Install { force } => {
-            let version = selfupdate::current_version();
-            match selfupdate::install_self(cfg, force) {
+            let version = self_update::current_version();
+            match self_update::install_self(cfg, force) {
                 Ok(out) => {
                     let detail = match &out.replaced {
                         Some(old) if old != &out.package.version => {
@@ -428,16 +455,16 @@ pub fn zelf(cfg: &Config, command: SelfCommand) -> Result<()> {
             Ok(())
         }
         SelfCommand::Version => {
-            ui::out(&format!("ketch {}", selfupdate::current_version()));
+            ui::out(&format!("ketch {}", self_update::current_version()));
             ui::out(&format!("target {}", cfg.target));
             ui::out(&format!("root   {}", cfg.root.display()));
-            if let Ok(exe) = selfupdate::current_exe() {
+            if let Ok(exe) = self_update::current_exe() {
                 ui::out(&format!("binary {}", exe.display()));
             }
             Ok(())
         }
         SelfCommand::Update { dry_run, force } => {
-            let out = selfupdate::update(cfg, force, dry_run)?;
+            let out = self_update::update(cfg, force, dry_run)?;
             if !out.replaced {
                 let verb = if dry_run {
                     "would update"
@@ -453,16 +480,25 @@ pub fn zelf(cfg: &Config, command: SelfCommand) -> Result<()> {
             }
             Ok(())
         }
-        SelfCommand::Uninstall { purge, yes } => {
-            let question = if purge {
-                "remove ketch and everything it installed?"
+        SelfCommand::Uninstall {
+            keep_packages,
+            no_brew,
+            yes,
+        } => {
+            let plan = self_update::uninstall_plan(cfg, keep_packages, no_brew)?;
+            for line in plan_lines(&plan) {
+                ui::step("will remove", &line);
+            }
+            let question = if keep_packages {
+                "remove ketch? this is permanent: nothing here can be recovered"
             } else {
-                "remove ketch itself? (installed packages are kept)"
+                "remove ketch and every package it installed? this is permanent: \
+                 all of this data is deleted for good, with no way to undo it"
             };
             if !yes && !ui::confirm(question, false) {
                 return Ok(());
             }
-            for path in selfupdate::uninstall_self(cfg, purge)? {
+            for path in self_update::uninstall_self(cfg, &plan)? {
                 ui::success("removed", &path.display().to_string());
             }
             Ok(())

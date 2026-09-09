@@ -214,6 +214,42 @@ pub fn uninstall(shell: Shell, dry_run: bool) -> Result<Change> {
     })
 }
 
+/// Every shell startup file holding a ketch block, across all three shells and
+/// every file each of them reads.
+///
+/// Deliberately narrower than `configured_in`: that one answers "is the bin dir
+/// on PATH", a line the user wrote by hand included. This one finds only blocks
+/// ketch wrote, because those are the only ones it may take back out.
+pub fn files_with_block() -> Vec<PathBuf> {
+    let Ok(home) = home() else {
+        return Vec::new();
+    };
+    Shell::ALL
+        .into_iter()
+        .flat_map(|s| s.candidates(&home))
+        .filter(|p| {
+            std::fs::read_to_string(p)
+                .map(|t| block_span(&t).is_some())
+                .unwrap_or(false)
+        })
+        .collect()
+}
+
+/// Take the ketch block out of one file named by path. True when it changed.
+///
+/// The by-path entry point, for `ketch self uninstall`: it removes every block
+/// it can find rather than the file one named shell happens to read now, since
+/// a shell the user has since stopped using still has ketch in its startup.
+pub fn uninstall_file(file: &Path) -> Result<bool> {
+    match unsplice(&read(file)?) {
+        None => Ok(false),
+        Some(next) => {
+            write(file, &next)?;
+            Ok(true)
+        }
+    }
+}
+
 /// Config files that already put the bin dir on PATH, whether ketch wrote them
 /// or the user did.
 ///

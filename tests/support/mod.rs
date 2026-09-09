@@ -28,6 +28,7 @@ impl Sandbox {
             sandbox.plugin_dir(),
             sandbox.assets(),
             sandbox.home(),
+            sandbox.homebrew(),
         ] {
             std::fs::create_dir_all(dir).expect("create sandbox dir");
         }
@@ -55,6 +56,40 @@ impl Sandbox {
     /// cannot reach the one belonging to whoever is running the suite.
     pub fn home(&self) -> PathBuf {
         self.tmp.path().join("home")
+    }
+
+    /// A Homebrew prefix of its own. Every run points `HOMEBREW_PREFIX` here,
+    /// so a test that removes a cask cannot reach the real Homebrew — and one
+    /// that does not set a cask up finds none, whatever the host has installed.
+    pub fn homebrew(&self) -> PathBuf {
+        self.tmp.path().join("homebrew")
+    }
+
+    /// Put a ketch cask in that prefix, with a `brew` that records how it was
+    /// called instead of doing anything. Returns the file it writes to.
+    ///
+    /// The point is to prove ketch hands the cask back to Homebrew rather than
+    /// deleting the Caskroom directory, which would leave `brew` believing
+    /// ketch is still installed.
+    pub fn install_cask(&self) -> PathBuf {
+        let cask = self.homebrew().join("Caskroom").join("ketch");
+        let bin = self.homebrew().join("bin");
+        for dir in [&cask, &bin] {
+            std::fs::create_dir_all(dir).expect("create homebrew dir");
+        }
+        let log = self.homebrew().join("brew-args");
+        let brew = bin.join("brew");
+        std::fs::write(
+            &brew,
+            format!(
+                "#!/bin/sh\nprintf '%s\\n' \"$*\" >> {log}\nrm -rf {cask}\n",
+                log = shell_quote(&log),
+                cask = shell_quote(&cask),
+            ),
+        )
+        .expect("write brew");
+        make_executable(&brew);
+        log
     }
 
     /// Where the run's log lands.
@@ -101,6 +136,9 @@ impl Sandbox {
             // what keeps the suite from editing a real `.zshrc`.
             .env("HOME", self.home())
             .env("SHELL", "/bin/zsh")
+            // Homebrew's own answer to where it lives, so cask detection looks
+            // inside the sandbox and nowhere else.
+            .env("HOMEBREW_PREFIX", self.homebrew())
             .env_remove("ZDOTDIR")
             .env_remove("XDG_CONFIG_HOME")
             // A token in the ambient environment (CI always has one) must not

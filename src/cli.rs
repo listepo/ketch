@@ -422,11 +422,15 @@ pub enum SelfCommand {
     },
     /// Print the running version and where it lives
     Version,
-    /// Remove ketch itself
+    /// Remove ketch and everything it installed, permanently
     Uninstall {
-        /// Also delete the store, cache and state
+        /// Remove only ketch, leaving the packages it installed in place
         #[arg(long)]
-        purge: bool,
+        keep_packages: bool,
+        /// Leave the Homebrew cask alone. Set by the cask's own uninstall,
+        /// which is already removing it.
+        #[arg(long)]
+        no_brew: bool,
         /// Answer yes to every prompt
         #[arg(long, short = 'y')]
         yes: bool,
