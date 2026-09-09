@@ -107,7 +107,9 @@ ketch pin / unpin &lt;pkg&gt;    # hold a version, or let go
 ketch uninstall &lt;pkg&gt;...   # remove it
 ketch lock / sync          # pin every tool to a release, and reproduce it
 ketch path install         # put ~/.ketch/bin on PATH in bash, zsh and fish
-ketch doctor --fix         # check the environment, and repair what it can</code></pre>
+ketch doctor --fix         # check the environment, and repair what it can
+ketch self update          # upgrade ketch itself
+ketch self uninstall       # remove ketch, its packages, its PATH block, its cask</code></pre>
 
   <p class="note">
     Names resolve through four tiers — your own manifests, the fetched registry,

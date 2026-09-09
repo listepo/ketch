@@ -1,431 +1,270 @@
-# Rust CLI testing plan
+# Plan
 
-Testing a Rust CLI application requires a combination of unit tests for
-internal business logic and integration tests to verify end-to-end binary
-execution, argument parsing, and output formatting.
+What ketch is building next, and what each piece would take. [`ROADMAP.md`](ROADMAP.md)
+says *what* is missing and why; this file is the execution detail: the order,
+the exit criteria, and the traps found while reading the code that each piece
+touches.
 
-## Implementation status
+Ordering is a delivery sequence, not a schedule. Every milestone ends at a
+releasable boundary: pausing after any of them leaves no half-built platform,
+no partly-enforced trust policy, and nothing users can reach that does not work.
 
-- [x] Added `assert_cmd`, `predicates`, `assert_fs`, `trycmd`, `rstest`,
-  `insta`, and `pretty_assertions` as locked development dependencies, with
-  portable binary assertions and a literate version snapshot.
-- [x] Preserved colocated unit tests and the offline, macOS install pipeline
-  suite; the new binary tests cover help, invalid arguments, output streams,
-  and an isolated root.
-- [x] Added a `Justfile` for the documented lightweight task-runner choice.
-- [x] Implemented opt-in `ratatui`/`crossterm` TUI support behind `--features
-  tui`, including non-TTY/CI fallback and reducer/rendering tests.
+## Shared rules
 
-## Test tools
+These apply to everything below, and are the same rules
+[`AGENTS.md`](AGENTS.md) states for any change.
 
-- **assert_cmd** executes your compiled CLI binary and runs assertions against
-  exit codes, stdout, and stderr.
-- **predicates** composes boolean assertions for output matching (for example,
-  string containment and regular expressions).
-- **assert_fs** automates the setup, tear-down, and verification of temporary
-  files and directories.
-- **trycmd** orchestrates snapshot testing using plain text or Markdown files
-  to check CLI commands against expected output. If the CLI generates lengthy
-  or complex text outputs, line-by-line assertions are inefficient; `trycmd`
-  keeps those expectations readable while making the fixtures documentation.
-- **rstest** provides parameterized tests and fixtures for compact, explicit
-  test matrices such as archive formats, target tokens, and malformed input.
-- **insta** stores reviewed snapshots for stable structured values and output;
-  redact volatile paths, timestamps, and IDs instead of making assertions vague.
-- **pretty_assertions** gives useful colored diffs for non-trivial equality
-  checks; import its macros where the standard assertion would hide the cause.
+- Preserve the `Platform` boundary. Commands, sources, extraction, manifests,
+  state and the TUI stay OS-agnostic; OS-specific behaviour lives in
+  `src/platform/`.
+- The default output stays line-oriented. New interactive behaviour is opt-in
+  and cannot change output, exit status, logs or JSON contracts for scripts.
+- Release metadata, archives, registry entries, signature sidecars and shell
+  paths are untrusted input. Reuse the existing guards; never weaken one to
+  make a new feature fit.
+- Any change to a persisted format needs a backward-read test, a documentation
+  update, and an explicit compatibility rule.
+- Nothing ships until `cargo fmt --check`, `cargo clippy --all-targets --locked
+  -- -D warnings` and `cargo test --locked` are clean, plus a packaged-binary
+  smoke test for anything touching packaging.
 
-## Execution plan
+## Recently shipped
 
-1. [x] Keep pure business-logic tests in `#[cfg(test)]` modules beside the Rust
-   source they exercise.
-2. [x] Add `assert_cmd`, `predicates`, `assert_fs`, `trycmd`, `rstest`, `insta`,
-   and `pretty_assertions` as development dependencies for unit and integration
-   tests.
-3. [x] Cover each command's happy path, argument errors, exit status, stdout, and
-   stderr by executing the real `ketch` binary.
-4. [x] Use `assert_fs` to isolate installation roots and verify filesystem state
-   after install, upgrade, relink, unlink, and uninstall operations.
-5. [x] Add `trycmd` fixtures for stable, lengthy, or documentation-worthy command
-   output; update snapshots only when the behavior change is intentional.
-6. [x] Use `rstest` for true case matrices, `insta` for stable reviewed snapshots,
-   and `pretty_assertions` for readable equality diffs.
-7. [x] Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and
-   `cargo test` before committing. Run the end-to-end suite separately with
-   `cargo test --test install` when changing the install pipeline.
+Kept short deliberately: `CHANGELOG.md` is the record. These are here because
+the next milestones build directly on them.
 
-## Definition of done
+- **`ketch self install` / `update` / `uninstall`.** ketch is one of its own
+  packages, installed from its own release and verified against a published
+  checksum rather than trusted on first use.
+- **Homebrew cask**, generated by `scripts/cask.sh` into `listepo/homebrew-tap`
+  on every release. Homebrew keeps only the bootstrap binary.
+- **`ketch push`**, which turns a project's own `ketch.toml` into a registry
+  pull request, through a fork when it has to.
+- **Complete removal.** `ketch self uninstall` takes the packages, the root,
+  the `PATH` block in every shell startup file and the Homebrew cask, after
+  printing the list and asking once.
+- **Publish-then-tag releases.** A tag now exists only for a release that
+  finished, so no installed copy can see a version whose binaries are missing.
 
-- Unit tests cover changed business logic.
-- Integration tests execute the compiled binary rather than internal helpers.
-- Temporary files are isolated and cleaned up automatically.
-- Output assertions identify the intended stream and exit code.
-- Snapshot fixtures are reviewed as both tests and user-facing documentation.
-- Parameterized cases are explicit and deterministic; snapshots redact only
-  values that are inherently volatile.
+## Follow-ups from the work just done
 
-## Cargo cache maintenance
+Small, and each one is a real gap rather than a nice-to-have.
 
-`cargo-cache` is pinned in `mise.toml`. Install it with:
+1. **Notarisation.** The release binaries are signed with a Developer ID but
+   not notarised, which is fine for a `curl`-fetched tarball and not fine the
+   day ketch ships anything a browser downloads. Needs an App Store Connect
+   key, `xcrun notarytool submit --wait` in the build job, and a stapled
+   check in the smoke test.
+2. **`ketch self uninstall --dry-run`.** The plan is already computed before
+   the prompt and printed; showing it and stopping is a flag, not a feature.
+3. **Report what the cask left.** `brew uninstall --cask` can fail while the
+   rest of the removal succeeds. The warning says so, but `ketch doctor` on a
+   half-removed install has nothing to say yet.
+4. **A test for the cask itself.** `scripts/cask.sh` output is checked by
+   `brew style` in CI; the install and uninstall steps it generates are only
+   exercised by installing the cask for real. A `brew install --cask` smoke
+   test on a release would have caught the recursion the `--no-brew` flag now
+   prevents.
+5. **Registry CI.** `listepo/ketch-registry` accepts any `ketch.toml` that
+   parses. `ketch push` writes them, and nothing validates them before merge.
+   This is Milestone 5 below, and the cheapest half of it is a workflow that
+   runs the same `Manifest::validate` the client does.
 
-```bash
-mise install
-```
+## Milestone 0 — cross-platform contracts
 
-Use the Just recipes to inspect and clean local Cargo state without affecting
-the application:
+**Goal:** make today's macOS assumptions explicit before a second backend
+exists to inherit them.
 
-```bash
-just cache
-just cache-dry-run
-just cache-autoclean
-```
-
-Always inspect the dry run before cleanup. Cache removal only trades disk space
-for future downloads; it must not be used as a substitute for fixing build or
-test failures.
-
-## Task runner selection
-
-Choose **Just** if you want a fast, lightweight, and simple command alias tool
-that feels like `make` without the baggage, or if the repository manages
-multiple languages alongside Rust. References: [Rust Project Primer](https://rustprojectprimer.com/tools/tasks.html),
-[Just vs cargo-make](https://www.libhunt.com/compare/cargo-make-vs-just), and
-[Just and Cargo build scripts](https://just.systems/man/en/whats-the-relationship-between-just-and-cargo-build-scripts.html).
-
-Choose **cargo-make** if you need complex CI/CD build pipelines,
-cross-platform conditional flows, automated crate installations, or built-in
-scripting extensions such as duckscript tailored specifically for Rust.
-References: [cargo-make announcement](https://users.rust-lang.org/t/announcing-cargo-make-task-runner-and-build-tool-for-rust/11629),
-[Rust Project Primer](https://rustprojectprimer.com/tools/tasks.html), and
-[cargo-make documentation](https://sagiegurari.github.io/cargo-make/).
-
-For ketch, prefer **Just** for a future task runner because the repository
-combines Rust with shell and site tooling and currently needs only simple
-aliases. Revisit cargo-make if CI grows into conditional, multi-stage Rust
-automation.
-
-## Next feature: ratatui TUI support
-
-Add an optional interactive terminal UI for long-running installs, upgrades,
-syncs, and registry updates. Use [ratatui](https://ratatui.rs/) for rendering
-and [crossterm](https://docs.rs/crossterm/latest/crossterm/) for terminal input,
-raw mode, alternate-screen handling, and resize events. Keep the current
-line-oriented `ui` output as the default so scripts, pipes, CI, `--quiet`, and
-JSON output remain stable and do not require a terminal.
-
-### Dual-mode terminal UI contract
-
-ketch supports two human-facing terminal experiences; the ratatui screen must
-extend, not replace, the classic terminal UI.
-
-- **Classic terminal UI (default):** line-oriented status, warnings, final
-  summaries, and `indicatif` progress bars when stderr is interactive. It uses
-  no raw mode or alternate screen, remains readable in terminal scrollback,
-  and is the fallback for pipes, CI, `--quiet`, machine-readable output, and a
-  terminal that cannot start the TUI.
-- **Full-screen TUI (opt-in):** `--tui` with the `tui` Cargo feature renders
-  the queue, activity, aggregate status, and keyboard help in the alternate
-  screen. `q`/`Esc` return to the classic terminal UI while work continues;
-  Ctrl-C restores the terminal before exiting with the standard interrupt
-  status.
-- **Parity requirement:** every install/upgrade/sync/registry-update state,
-  warning, partial failure, and final result must remain understandable in
-  classic mode. The TUI may aggregate or enhance that information, but cannot
-  become its sole output path.
-- **Testing requirement:** test both modes for each terminal-facing change:
-  classic output streams and exit codes through spawned-binary assertions, and
-  TUI reducer/rendering plus non-TTY fallback without escape sequences.
-
-### Architecture
-
-- Add a `tui` feature with `ratatui` and `crossterm` as optional dependencies;
-  do not increase the default binary surface until the feature is enabled.
-- Keep `src/install.rs`, sources, and platform code terminal-agnostic. Extend
-  their existing progress/reporter seam with typed events rather than writing
-  directly to a `ratatui::Frame`.
-- Put the event model, reducer, and ratatui renderer in a dedicated
-  `src/tui/` module. The reducer owns state; rendering is a pure projection of
-  that state, which makes it testable with ratatui's `TestBackend`.
-- Enter the TUI only when explicitly requested (for example, `--tui`) or when
-  the eventual default policy confirms an interactive TTY. Fall back to the
-  line UI when stderr is not a terminal, and never activate it for `--quiet`,
-  machine-readable output, or CI.
-- Guard terminal setup and teardown with an RAII type. Always restore raw mode,
-  the cursor, and the alternate screen on success, error, panic, and Ctrl-C.
-
-### Screen design
-
-Use a compact three-region layout that remains useful at narrow widths:
-
-```
-┌ ketch · install · 2/4 packages ───────────────────────────────────────────┐
-│ Queue (left)             │ Activity (main)                                  │
-│ ✓ ripgrep 14.1            │ Downloading  ████████░░  80%  12.4 MiB / 15 MiB │
-│ ⟳ fd 10.2                 │ Verifying checksum                             │
-│ · bat pending             │ Extracting archive                             │
-│ · jq pending              │                                                 │
-├──────────────────────────┴─────────────────────────────────────────────────┤
-│ 2 succeeded · 0 failed · 1m 04s                         q quit  ? help      │
-└────────────────────────────────────────────────────────────────────────────┘
-```
-
-- **Header:** command, active package count, and overall progress.
-- **Queue pane:** every requested package with pending, active, succeeded, or
-  failed status; keep the selected package visible while the list scrolls.
-- **Activity pane:** current stage, byte progress, checksum/trust warnings,
-  and a bounded scrollback of recent events.
-- **Footer:** success/failure totals, elapsed time, and key hints (`q` quit,
-  `?` help, `Esc` return to the line UI if supported).
-- Use color and symbols as enhancements only; status text must remain
-  understandable with `NO_COLOR` and accessible terminal themes.
-
-### Delivery steps
-
-1. [x] Define typed progress events and a reducer independent of ratatui.
-2. [x] Add the optional feature and a terminal-session guard that cleans up on all
-   exit paths.
-3. [x] Implement the queue/activity/footer renderer and keyboard handling with
-   deterministic redraws and resize support.
-4. [x] Wire `--tui` through the CLI while preserving existing output behavior for
-   every non-TUI invocation.
-5. [x] Unit-test reducer transitions and rendering with `TestBackend`; retain
-   `assert_cmd`/`trycmd` coverage for the line UI and add a smoke test proving
-   `--tui` refuses or falls back cleanly in a non-TTY subprocess.
-6. [x] Guard terminal cleanup after success, a failed package, `q`/`Esc`, and
-   panic with RAII plus a panic hook; run the full Rust gates and the packaged
-   binary smoke test.
-
-### Acceptance criteria
-
-- TUI builds only with the opt-in feature and does not change default CLI
-  output, exit codes, logs, or JSON contracts.
-- All install stages and partial-batch failures are visible without flooding
-  the terminal or losing the final result.
-- Non-TTY and redirected invocations never emit escape sequences.
-- Terminal state is restored on every exit path, including Ctrl-C and panic.
-- Rendering and reducer tests run without a real terminal or network.
-
-# Roadmap delivery plan
-
-This is the execution plan for [`ROADMAP.md`](ROADMAP.md). Its ordering is a
-delivery sequence rather than a calendar commitment: each milestone ends at a
-usable, releasable boundary and can be paused without leaving a partial
-platform or trust policy exposed to users.
-
-## Shared delivery rules
-
-- Preserve the existing `Platform` boundary: commands, sources, extraction,
-  manifests, state, and the TUI remain OS-agnostic. Platform-specific behaviour
-  belongs in `src/platform/`.
-- Keep the default CLI line-oriented. New interactive behaviour must remain
-  opt-in and cannot change output, exit status, logs, or JSON contracts for
-  scripts and CI.
-- Treat release metadata, archives, registry entries, signature sidecars, and
-  shell paths as untrusted input. Reuse existing validation and ownership
-  checks; do not weaken them to make a new platform or feature fit.
-- Every schema or persisted-state change needs a backward-read test, generated
-  documentation/schema updates where applicable, and an explicit migration or
-  compatibility rule.
-- Ship each milestone only after `cargo fmt --check`,
-  `cargo clippy --all-targets --locked -- -D warnings`, `cargo test --locked`,
-  the relevant feature/platform checks, and a packaged-binary smoke test.
-
-## Milestone 0 — Establish cross-platform contracts
-
-**Goal:** make the existing macOS assumptions explicit before adding a second
-backend.
-
-1. Inventory `src/platform/macos.rs`, `src/shell.rs`, extraction, and tests for
-   Unix-only APIs, executable-bit assumptions, symlink semantics, and
-   case-sensitive-path assumptions.
-2. Move only genuinely shared asset-token scoring, destination ownership, and
-   executable-discovery helpers into `src/platform/mod.rs`; leave macOS policy
+1. Inventory `src/platform/macos.rs`, `src/shell.rs`, extraction and the tests
+   for Unix-only APIs, executable-bit assumptions, symlink semantics and
+   case-sensitivity assumptions.
+2. Move only genuinely shared asset-token scoring, destination ownership and
+   executable-discovery helpers into `src/platform/mod.rs`. macOS policy stays
    in the macOS backend.
 3. Add table-driven unit tests for asset classification and placement
-   preflight that can run on any host without invoking the active backend.
-4. Add CI jobs that at least compile and unit-test the supported target matrix;
-   run real install end-to-end tests on each platform as it becomes available.
+   preflight that run on any host without the active backend.
+4. Add CI jobs that compile and unit-test the target matrix; end-to-end tests
+   per platform as each becomes real.
 
-**Exit criteria:** macOS behaviour and persisted link records are unchanged;
-the `Platform` trait is sufficient for Linux without command-level `cfg`s.
+**Exit criteria:** macOS behaviour and persisted link records unchanged; the
+`Platform` trait is sufficient for Linux with no command-level `cfg`s.
 
-## Milestone 1 — Linux support
+## Milestone 1 — Linux
 
-**Goal:** support native Linux CLI releases without `.app` or macOS trust
-behaviour leaking into the experience.
+**Goal:** native Linux CLI releases, with no `.app` or macOS trust behaviour
+leaking into the experience.
 
-1. Add `src/platform/linux.rs` and select it from `platform::host()` under
+1. Add `src/platform/linux.rs`, selected from `platform::host()` under
    `target_os = "linux"`.
-2. Implement `score_asset` for `linux`, `gnu`, `musl`, `x86_64`, and `aarch64`.
-   Reject sidecars and foreign platform assets using the shared guards; define
-   and test the ordering for native versus emulated architecture and static
-   versus dynamically linked assets when libc is uncertain.
-3. Implement `place`/`unplace` with the same ownership preflight and
-   replacement guarantees as macOS: only create bin-directory symlinks, never
-   overwrite a user-owned destination, and tolerate already-missing links.
-4. Return `TrustVerdict::NotApplicable` until a signature verifier is added;
-   do not strip or emulate macOS quarantine semantics.
-5. Implement Linux `doctor` checks for writable store/bin directories and PATH
-   reachability. Reuse shell setup only after its Linux file-selection logic is
+2. Implement `score_asset` for `linux`, `gnu`, `musl`, `x86_64`, `aarch64`.
+   Reject sidecars and foreign-platform assets with the shared guards. Define
+   and test the ordering for native versus emulated architecture, and static
+   versus dynamic when the host libc is uncertain.
+3. Implement `place`/`unplace` with the macOS ownership preflight and
+   replacement guarantees: bin-dir symlinks only, never overwrite a
+   user-owned destination, tolerate an already-missing link.
+4. Return `TrustVerdict::NotApplicable` until a verifier exists. Do not
+   emulate quarantine semantics.
+5. Linux `doctor` checks for writable store and bin directories and PATH
+   reachability. Reuse shell setup only once its Linux file selection is
    verified.
-6. Add Linux integration fixtures for install, upgrade, relink, unlink,
-   uninstall, checksum failure, and user-owned destination protection. Build a
-   Linux release archive and smoke-test it in CI.
+6. Linux fixtures for install, upgrade, relink, unlink, uninstall, checksum
+   failure and user-owned destinations. Build a Linux tarball in CI and smoke
+   test it.
 
-**Exit criteria:** `ketch install`, `upgrade`, `link`, `unlink`, `uninstall`,
-and `doctor` work for Linux tar/zip release assets without macOS-specific
-output or filesystem writes.
+**Exit criteria:** install, upgrade, link, unlink, uninstall and doctor work
+for Linux tar/zip assets with no macOS-specific output or writes.
 
-## Milestone 2 — Windows support
+## Milestone 2 — Windows
 
-**Goal:** support native Windows release assets while retaining safe ownership
-and uninstall behaviour.
+**Goal:** native Windows assets, with ownership and uninstall behaviour intact.
 
-1. Complete the Milestone 0 portability inventory before coding; replace or
-   isolate Unix-only filesystem, permissions, shell, and process code so the
-   Windows target compiles cleanly.
-2. Add `src/platform/windows.rs` and a `target_os = "windows"` branch in
-   `platform::host()`.
-3. Implement Windows asset scoring for `.exe`, `.zip`, architecture tokens,
-   and common target triples. Explicitly reject installers and package formats
-   (`.msi`, `.nupkg`, etc.) that ketch does not install.
-4. Make placement copy executables by default, record every copied destination
-   in `LinkRecord`, and verify identity before replacement/removal. Cover
-   case-insensitive name collisions and `.exe` name normalization.
-5. Define Windows PATH integration separately from POSIX shell edits; support
-   it only after an idempotent, reversible user-environment implementation and
-   tests exist.
-6. Add Windows CI, integration fixtures, release packaging, and a native
-   packaged-binary smoke test.
+1. Finish the Milestone 0 inventory first; isolate Unix-only filesystem,
+   permission, shell and process code so the target compiles.
+2. Add `src/platform/windows.rs` and the `target_os = "windows"` branch.
+3. Score `.exe`, `.zip`, architecture tokens and common triples. Reject
+   installer formats (`.msi`, `.nupkg`) that ketch does not install.
+4. Copy executables rather than link, record every destination in
+   `LinkRecord`, and verify identity before replacing or removing. Cover
+   case-insensitive collisions and `.exe` name normalisation.
+5. Treat PATH integration separately from POSIX shell edits, and ship it only
+   with an idempotent, reversible user-environment implementation and tests.
+6. Windows CI, fixtures, packaging and a native smoke test.
 
-**Exit criteria:** native Windows installation is safe, reversible, and does
-not expose symlink-only or POSIX-shell assumptions to users.
+**Exit criteria:** Windows installation is safe and reversible, and exposes no
+symlink-only or POSIX-shell assumptions.
 
-## Milestone 3 — Provenance and signature verification
+## Milestone 3 — provenance and signatures
 
-**Goal:** distinguish a matching checksum from an authenticated publisher.
+**Goal:** tell a matching checksum apart from an authenticated publisher.
 
-1. Design a manifest `trust`/signature policy that declares verifier type,
-   expected identity or pinned key, required sidecar pattern, and failure mode.
-   Validate it in `Manifest::validate` and regenerate documentation/schema
-   outputs before adding a verifier.
-2. Extend installed state to record the verified method, identity, and
-   sidecar/attestation digest. Preserve old state files by making new fields
-   optional/defaulted and test both old and new records.
-3. Add sigstore/cosign verification first: locate a matching `.sigstore` or
-   `.intoto.jsonl` sidecar, bind it to the selected asset digest, verify the
-   transparency-log/provenance data, and compare its identity to the manifest.
-   Fail closed when a policy is declared but verification cannot complete.
-4. Add minisign/signify next, requiring a manifest-pinned public key and a
-   matching `.minisig` sidecar; do not use ambient key material.
-5. Add GPG detached signatures only with a declared trust root or fingerprint.
-   Never treat a locally available keyring as publisher authorization by
-   default.
-6. Surface verifier results in `info`, logs, and the TUI/line reporter without
-   printing untrusted signature text. Add offline fixtures for valid, missing,
-   mismatched, expired, and identity-confused signatures.
+1. Design the manifest `trust` policy: verifier type, expected identity or
+   pinned key, required sidecar pattern, failure mode. Validate it in
+   `Manifest::validate` and regenerate the docs before writing a verifier.
+2. Record the verified method, identity and sidecar digest in installed state.
+   New fields optional and defaulted; test reading both old and new records.
+3. sigstore/cosign first: find the matching `.sigstore` or `.intoto.jsonl`
+   sidecar, bind it to the selected asset digest, verify the transparency-log
+   provenance, compare the identity to the manifest. Fail closed when a policy
+   is declared and verification cannot complete.
+4. minisign/signify next, with a manifest-pinned public key and a `.minisig`
+   sidecar. No ambient key material.
+5. GPG last, and only with a declared trust root or fingerprint. A local
+   keyring is never publisher authorisation.
+6. Surface results in `info`, the logs and both reporters, without printing
+   untrusted signature text. Offline fixtures for valid, missing, mismatched,
+   expired and identity-confused signatures.
 
-**Exit criteria:** a package can require publisher provenance; an authenticated
-identity is persisted and auditable; checksum-only installs retain their
-current explicitly weaker status.
+**Exit criteria:** a package can require provenance; the authenticated identity
+is persisted and auditable; checksum-only installs keep their weaker status
+explicitly.
 
-## Milestone 4 — Man pages and shell completions
+## Milestone 4 — man pages and completions
 
-**Goal:** make existing manifest `extra_paths` useful without writing outside
-approved locations unexpectedly.
+**Goal:** make `extra_paths` useful without writing anywhere surprising.
 
-1. Classify each validated `extra_paths` entry as a man page or completion by
-   explicit manifest metadata or tightly documented path rules; reject
-   ambiguous paths rather than guessing.
-2. Resolve entries only beneath the extracted payload and record every exposed
-   destination in state so uninstall/relink use the same ownership proof as
-   binaries.
-3. Add platform-specific destination resolvers: standard user man roots and
-   shell completion directories, with configuration/doctor reporting before a
-   write occurs.
+1. Classify each validated entry as a man page or a completion from explicit
+   manifest metadata or tightly documented path rules. Reject ambiguity rather
+   than guessing.
+2. Resolve entries only beneath the extracted payload, and record every
+   exposed destination in state so uninstall and relink use the same ownership
+   proof as binaries.
+3. Platform destination resolvers for user man roots and completion
+   directories, reported by `doctor` before anything is written.
 4. Extend `path`/`doctor` guidance for `MANPATH` only when a package actually
-   exposes man pages. Keep arbitrary startup-file edits opt-in and reversible.
-5. Add integration tests for linking, relinking, upgrading, unlinking, and
-   uninstalling man/completion files, including user-owned destination and
-   traversal attempts.
+   exposes man pages. Startup-file edits stay opt-in and reversible.
+5. Integration tests for link, relink, upgrade, unlink and uninstall of
+   man/completion files, including user-owned destinations and traversal
+   attempts.
 
-**Exit criteria:** a manifest can expose documented auxiliary files, all links
-are reversible, and uninstall never deletes a replacement it does not own.
+**Exit criteria:** a manifest can expose documented auxiliary files, every link
+is reversible, and uninstall never deletes a replacement it does not own.
 
-## Milestone 5 — Registry maturity
+## Milestone 5 — registry maturity
 
-**Goal:** move registry validation left while keeping update explicit.
+**Goal:** move registry validation left, while keeping `update` explicit.
 
-1. Create a registry-side CI workflow or reusable validation command that
-   parses every `ketch.toml`, runs manifest validation, checks alias collisions,
-   and performs offline fixture installs for changed entries.
-2. Promote name/alias collisions from local-update warnings to registry CI
-   failures, while retaining warnings for already-published bad registries so
-   clients remain best-effort.
-3. Record successful registry update metadata (source revision/ETag and
-   timestamp) under the ketch root, separately from package manifests.
-4. Add `ketch registry status` (or equivalent `doctor` section) that reports
-   age, source, and refresh advice without contacting the network. Keep
-   `ketch update` the only refresh action.
-5. Document registry author and maintainer workflows, including the exact
-   validation command and compatibility policy.
+1. A registry-side workflow (or a reusable validation command) that parses
+   every `ketch.toml`, runs manifest validation, checks alias collisions, and
+   offline-installs changed entries against a fixture.
+2. Promote name and alias collisions from local warnings to registry CI
+   failures. Clients stay best-effort about an already-published bad registry.
+3. Record registry update metadata — source revision or ETag, and timestamp —
+   under the ketch root, separately from the manifests.
+4. Add `ketch registry status`, or a `doctor` section, reporting age and source
+   with no network call. `ketch update` stays the only refresh.
+5. Document the author and maintainer workflow, including the exact validation
+   command and the compatibility policy.
 
-**Exit criteria:** invalid/colliding registry entries are rejected before
-merge, and users can identify stale local registry data without hidden network
-traffic.
+**Exit criteria:** invalid or colliding entries are rejected before merge, and
+a stale local registry is visible without hidden network traffic.
 
-## Milestone 6 — Version rollback
+## Milestone 6 — rollback
 
-**Goal:** safely switch a package back to a retained prior version.
+**Goal:** switch a package back to a version that is still on disk.
 
-**Prerequisite correction:** the roadmap says every version stays in the
-store, but the current upgrade commit removes the replaced prefix. Establish a
-retention model first; do not add a command that promises versions which have
-already been deleted.
+**Prerequisite.** `ROADMAP.md` says every version stays in the store, but
+`install::commit` removes the replaced prefix after an upgrade. The retention
+model comes first: a command that promises versions already deleted is worse
+than no command.
 
-1. Define retained-version state: version, prefix, asset digest, links, and
-   trust result, plus a retention policy and migration from current single
-   installed-package records.
-2. Change upgrade cleanup so an eligible older prefix is retained only after
-   the new version is placed and state is atomically saved. Add pruning as an
-   explicit command/policy, never an implicit data loss.
-3. Add `ketch rollback <pkg> [--to <version>]`, defaulting to the immediately
-   prior retained version. Preflight all destinations before retiring current
+1. Define retained-version state: version, prefix, asset digest, links, trust
+   result, plus a retention policy and a migration from today's single record.
+2. Retain an eligible older prefix only after the new version is placed and
+   state is saved. Pruning becomes an explicit command, never implicit loss.
+3. Add `ketch rollback <pkg> [--to <version>]`, defaulting to the previous
+   retained version. Preflight every destination before retiring the current
    links; preserve user replacements and state atomicity on failure.
-4. Show available versions and retention details in `info`/`list` as needed.
-5. Add end-to-end cases for successful rollback, missing retained version,
-   occupied destination, pinned package interaction, and uninstall after a
-   rollback.
+4. Show retained versions in `info` and `list` where it helps.
+5. End-to-end cases: successful rollback, missing retained version, occupied
+   destination, pinned package, and uninstall after a rollback.
 
-**Exit criteria:** rollback never redownloads, never discards the currently
-working version before the target is placeable, and makes its retained-history
-policy visible.
+**Exit criteria:** rollback never redownloads, never gives up the working
+version before the target is placeable, and makes its retention policy visible.
 
-## Milestone 7 — Resolution explanation (`ketch why`)
+## Milestone 7 — `ketch why`
 
-**Goal:** make selection decisions inspectable without changing them.
+**Goal:** make resolution inspectable without changing it.
 
 1. Extract a structured, side-effect-free resolution trace from manifest
-   lookup, release selection, and asset scoring. It must carry rejected
-   candidates and reasons without exposing secrets or untrusted control text.
-2. Add `ketch why <pkg> [--json]`, displaying manifest tier/origin, source and
-   version selection, scored/rejected assets, checksum/trust policy, and the
+   lookup, release selection and asset scoring, carrying rejected candidates
+   and reasons — with no secrets and no untrusted control text.
+2. Add `ketch why <pkg> [--json]`: manifest tier and origin, source and version
+   selection, scored and rejected assets, checksum and trust policy, and the
    final candidate.
-3. Keep normal install resolution on the same functions so explanation cannot
-   drift from behaviour; do not make an additional network call beyond what
-   an equivalent dry resolution requires.
-4. Add deterministic unit fixtures and binary-level JSON/text snapshots for
-   aliases, user manifests, registry/built-in precedence, prereleases, pinned
-   assets, and no-compatible-asset failures.
+3. Keep install resolution on the same functions, so the explanation cannot
+   drift from the behaviour, and make no extra network call.
+4. Deterministic unit fixtures plus binary-level JSON and text snapshots for
+   aliases, user manifests, registry and built-in precedence, prereleases,
+   pinned assets, and no-compatible-asset failures.
 
-**Exit criteria:** users can explain a package decision end to end, and every
-reported explanation is derived from the production resolver.
+**Exit criteria:** a package decision can be explained end to end, and every
+explanation comes from the production resolver.
+
+## Smaller improvements
+
+Each is small enough to land on its own, in no particular order.
+
+- **Install ketch's own completions and a man page.** `ketch completions`
+  prints a script and nothing installs it; there is no man page at all. Both
+  land naturally with Milestone 4, which is building the destinations anyway.
+- **`ketch doctor` for a half-finished tree.** It reports packages whose files
+  are gone and links that dangle. A store prefix with no state entry, and a
+  `.lock` left by a process that died, are both detectable and neither is
+  mentioned.
+- **Concurrency for `ketch outdated`.** It resolves one package at a time,
+  while `install` has had a job pool since the batch work.
+- **`--json` for `doctor`.** Every other query command has it, and a health
+  check is the one most worth reading from a script.
+- **A root that is not the parent of the bin dir.** `install.sh --install-dir`
+  derives `KETCH_ROOT` from the directory's parent, so `--install-dir ~/bin`
+  makes `~` the ketch root. `self uninstall` is careful about exactly this, but
+  the honest fix is for the installer to take a root of its own.
 
 ## Release sequencing
 
-1. Land Milestone 0, then Linux as the first user-facing platform release.
-2. Treat Windows, provenance, auxiliary paths, registry maturity, rollback,
-   and `why` as independent feature releases after their own gates pass.
-3. Do not add building from source, dependency resolution, root execution, or
-   arbitrary install roots; these remain deliberately out of scope.
+1. Milestone 0, then Linux as the first user-facing platform release.
+2. Windows, provenance, auxiliary paths, registry maturity, rollback and `why`
+   are independent releases, each behind its own gate.
+3. Building from source, dependency resolution, running as root and arbitrary
+   install roots stay out of scope — see `ROADMAP.md` for why.

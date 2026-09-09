@@ -64,6 +64,15 @@ PAGES = [
         "backends, signature verification, man pages and shell completions.",
     ),
     (
+        "plan.md",
+        "plan",
+        "Plan",
+        55,
+        "What is being built next and in what order: platform backends, "
+        "signature verification, registry validation, rollback — with the exit "
+        "criteria for each and the traps found in the code it touches.",
+    ),
+    (
         "AGENTS.md",
         "contributing",
         "Contributing",
