@@ -1,8 +1,9 @@
-# release-plz proposes the version bump and writes the changelog. The tag it
-# pushes on merge is what actually publishes ketch, through
+# release-plz proposes the version bump and writes the changelog. Merging the
+# pull request it opens is what releases ketch, through
 # `.github/workflows/release.yml`.
 #
-# Two defaults are deliberately off:
+# Three defaults are deliberately off, and one command is deliberately never
+# run — `.github/workflows/release-plz.yml` runs only `release-pr`:
 #
 # - `publish`, because ketch is distributed as a tarball attached to a GitHub
 #   release, not as a crate. Nobody installs it with `cargo install`, and
@@ -11,21 +12,17 @@
 #   attaches both tarballs and the aggregate `SHA256SUMS`. Two tools creating
 #   the same release is a race, and losing it leaves a release with no assets —
 #   which is the one thing `install.sh` and `ketch self update` both read.
+# - tagging, because a tag is a promise that a release exists. release.yml
+#   creates it by publishing the release it has just finished building, so a
+#   failed build leaves main untagged rather than tagged with nothing behind
+#   it. That is why the `release` command is not run here at all.
 
 [workspace]
 publish = false
 git_release_enable = false
 
-# Tag only when a release pull request is merged, never on an ordinary push to
-# main. With the default, the very first run would find no `v0.1.0` tag and
-# publish whatever main happened to be, before anyone had seen a changelog or
-# a pull request for it. Every later release works the same either way: the
-# version only moves in a release pull request, so only merging one leaves an
-# untagged version behind.
-release_always = false
-
-# The other end of a coupling that is easy to miss: release.yml triggers on
-# `v*` and refuses a tag that disagrees with Cargo.toml. Changing this name
-# without changing that trigger means merging a release pull request publishes
-# nothing at all.
+# Still a contract, even though nothing here creates the tag: release.yml
+# derives `v<version>` from `Cargo.toml`, and the changelog entries link to
+# `releases/tag/v<version>` — a link `tests/release_changelog.rs` checks.
+# Changing this name means changing both.
 git_tag_name = "v{{ version }}"

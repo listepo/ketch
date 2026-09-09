@@ -5,14 +5,13 @@
 #   scripts/release.sh 0.2.0 --dry-run
 #
 # Bumps the version in Cargo.toml and Cargo.lock on a branch, pushes it, and
-# opens a pull request. Merging that pull request is what makes the version
-# official; tagging it is what publishes it, and the pull request body says how.
+# opens a pull request. Merging that pull request is the release: the release
+# workflow builds it, publishes the tarballs, and creates the tag afterwards.
 #
-# The version lives in one place and is load-bearing in two: the release
-# workflow refuses a tag that disagrees with Cargo.toml, because `ketch self
-# update` compares the running binary's version against the release tag. A
-# mismatch there breaks upgrades for everyone already installed. Bumping by hand
-# is what this command exists to stop.
+# The version is written in one place and read as the tag: `ketch self update`
+# compares the running binary's version against the release tag, so deriving
+# one from the other is what keeps them level. Bumping by hand in an ordinary
+# commit is what this command exists to stop.
 
 set -euo pipefail
 IFS=$'\n\t'
@@ -24,8 +23,8 @@ usage: scripts/release.sh <version> [--dry-run]
   <version>   the new version, without a leading `v` (e.g. 0.2.0)
   --dry-run   say what would happen, change nothing
 
-Run it on a clean, up-to-date main. It opens the pull request; you merge it,
-then tag the merge commit to publish.
+Run it on a clean, up-to-date main. It opens the pull request; merging it
+publishes the release, which is also what creates the tag.
 USAGE
   exit 2
 }
@@ -124,7 +123,7 @@ if [ "$DRY_RUN" -eq 1 ]; then
   step "dry run: nothing will be changed"
   echo "  version   $CURRENT -> $VERSION"
   echo "  branch    $BRANCH"
-  echo "  tag       $TAG (after merge)"
+  echo "  tag       $TAG (created by the release workflow, after it publishes)"
   echo "  changes   $SINCE"
   printf '%s\n' "$CHANGES" | sed 's/^/    /'
   exit 0
@@ -170,7 +169,7 @@ trap 'rm -rf "$TMP"' EXIT
 
 {
   printf 'Release %s\n\n' "$TAG"
-  printf 'Bumps the version the release workflow checks the tag against.\n\n'
+  printf 'Bumps the version the release workflow publishes and tags.\n\n'
   printf '%s\n' "$CHANGES"
 } > "$TMP/message"
 
@@ -186,18 +185,14 @@ step "opening the pull request"
   printf '## What is in it\n\nCommits %s:\n\n' "$SINCE"
   printf '%s\n\n' "$CHANGES"
   printf '## Publishing it\n\n'
-  printf 'Merging this pull request does not publish anything. Tag the merge commit:\n\n'
-  printf '```bash\n'
-  printf 'git checkout %s && git pull\n' "$DEFAULT_BRANCH"
-  printf 'git tag %s && git push origin %s\n' "$TAG" "$TAG"
-  printf '```\n\n'
-  printf 'That runs the release workflow, which re-runs the whole gate, checks the\n'
-  printf 'tag against `Cargo.toml`, builds both macOS architectures and publishes\n'
-  printf 'the tarballs with an aggregate `SHA256SUMS`.\n\n'
-  printf 'The tag must stay level with `Cargo.toml`: `ketch self update` compares\n'
-  printf "the running binary's version against the release tag, so a mismatch\n"
-  printf 'breaks upgrades for everyone already installed. The release workflow\n'
-  printf 'refuses one, which is why this pull request exists.\n'
+  printf 'Merging this pull request is the release. The release workflow re-runs the\n'
+  printf 'whole gate, builds and signs both macOS architectures, publishes the\n'
+  printf 'tarballs with an aggregate `SHA256SUMS`, and creates `%s` last — so the\n' "$TAG"
+  printf 'tag exists only if the release actually completed. Nothing else to type.\n\n'
+  printf 'The tag is derived from `Cargo.toml`, which is why the version is bumped\n'
+  printf 'here rather than by hand: `ketch self update` compares the running\n'
+  printf "binary's version against the release tag, and a mismatch breaks upgrades\n"
+  printf 'for everyone already installed.\n'
 } > "$TMP/body"
 
 gh pr create \
@@ -206,4 +201,4 @@ gh pr create \
   --title "Release $TAG" \
   --body-file "$TMP/body"
 
-step "done — merge it, then tag $TAG to publish"
+step "done — merging it publishes the release and creates $TAG"

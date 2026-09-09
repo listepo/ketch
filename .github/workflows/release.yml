@@ -1,29 +1,91 @@
 name: release
 
-# Tagging is the trigger, so cutting a release is `git tag v0.2.0 && git push
-# --tags` and nothing else. The manual trigger exists to re-run a publish that
-# failed after the tag was already pushed.
+# Publishing creates the tag, not the other way round.
+#
+# Every merge to main is a candidate release: if the version in `Cargo.toml`
+# has no tag yet, the whole gate runs, both macOS architectures are built and
+# signed, the tarballs go up on a *draft* release, and publishing that draft is
+# what creates `v<version>` — at the commit that was built. So a tag exists if
+# and only if a release completed. A build that fails leaves main untagged and
+# nothing half-published for `install.sh` or `ketch self update` to find.
+#
+# Nothing is typed to cut a release: release-plz keeps a pull request holding
+# the next version, and merging it is the release.
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
   workflow_dispatch:
     inputs:
-      tag:
-        description: "Existing tag to build and publish"
-        required: true
+      force:
+        description: "Publish even when the tag exists, to re-run a failed upload or cask push"
+        type: boolean
+        default: false
 
 env:
   CARGO_TERM_COLOR: always
 
+permissions:
+  contents: read
+
+# One release at a time. Two merges landing together would race for the same
+# tag, and cancelling a run halfway could leave a draft release behind.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
+  # The cheap job that decides whether this merge is a release at all, so an
+  # ordinary one stops here in seconds.
+  #
+  # The version in `Cargo.toml` *is* the tag: `ketch self update` compares the
+  # running binary's version against the release tag, so deriving one from the
+  # other is what keeps them from disagreeing. It also means "already tagged"
+  # is the same statement as "already released".
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.decide.outputs.version }}
+      tag: ${{ steps.decide.outputs.tag }}
+      publish: ${{ steps.decide.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Is this version released yet?
+        id: decide
+        env:
+          FORCE: ${{ inputs.force }}
+        run: |
+          version="$(cargo metadata --no-deps --format-version 1 \
+            | sed -n 's/.*"name":"ketch","version":"\([^"]*\)".*/\1/p')"
+          if [ -z "$version" ]; then
+            echo "could not read the version out of Cargo.toml" >&2
+            exit 1
+          fi
+          tag="v$version"
+          {
+            echo "version=$version"
+            echo "tag=$tag"
+          } >> "$GITHUB_OUTPUT"
+
+          if [ "$FORCE" = "true" ]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            echo "$tag: forced, publishing again"
+          elif git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "$tag is already released; nothing to do"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            echo "$tag has no tag yet; releasing it"
+          fi
+
   # Nothing is published unless the same gate CI applies is green. A release is
   # the one build people cannot re-run themselves.
   verify:
+    needs: version
+    if: needs.version.outputs.publish == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
 
       - run: rustup component add rustfmt clippy
       - uses: Swatinem/rust-cache@v2
@@ -37,30 +99,14 @@ jobs:
       - name: Test
         run: cargo test --all-targets --locked
 
-      # `ketch self update` compares the running binary's version against the
-      # release tag. A tag that disagrees with Cargo.toml makes every installed
-      # copy either miss the update or reinstall forever.
-      - name: Tag matches Cargo.toml
-        run: |
-          tag="${{ github.event.inputs.tag || github.ref_name }}"
-          crate="v$(cargo metadata --no-deps --format-version 1 \
-            | sed -n 's/.*"name":"ketch","version":"\([^"]*\)".*/\1/p')"
-          if [ "$tag" != "$crate" ]; then
-            echo "tag $tag does not match Cargo.toml version $crate" >&2
-            exit 1
-          fi
-          echo "$tag matches Cargo.toml"
-
   build:
-    needs: verify
+    needs: [version, verify]
     runs-on: macos-latest
     strategy:
       matrix:
         target: [aarch64-apple-darwin, x86_64-apple-darwin]
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -69,7 +115,7 @@ jobs:
       # The certificate goes into a keychain of its own, created for this job
       # and deleted at the end of it, so nothing is left on the runner and the
       # login keychain is never touched. An unsigned release is refused the
-      # same way an untagged one is: it would be discovered by whoever installs
+      # same way an untested one is: it would be discovered by whoever installs
       # it, not here.
       - name: Import signing certificate
         env:
@@ -134,14 +180,12 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: build
+    needs: [version, build]
     runs-on: macos-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
 
       - uses: actions/download-artifact@v4
         with:
@@ -157,30 +201,54 @@ jobs:
           shasum -a 256 $(ls *.tar.gz | sort) > SHA256SUMS
           cat SHA256SUMS
 
+      # The release is assembled as a draft, which has no tag, and only the
+      # last step here publishes it. That is the step that creates the tag, at
+      # the commit this run built — so an interrupted release leaves a draft to
+      # be re-run or deleted, never a tag with nothing behind it.
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
-          tag="${{ github.event.inputs.tag || github.ref_name }}"
-          if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" dist/* --clobber
-          else
-            gh release create "$tag" dist/* \
-              --title "$tag" \
-              --generate-notes \
-              --verify-tag
+          # release-plz already wrote what changed, in the section for this
+          # version. Its own generated notes are the fallback.
+          awk -v version="$VERSION" '
+            index($0, "## [" version "]") == 1 { on = 1; next }
+            on && /^## / { exit }
+            on { print }
+          ' CHANGELOG.md > notes.md
+
+          notes=(--generate-notes)
+          if [ -s notes.md ]; then
+            notes=(--notes-file notes.md)
           fi
+
+          # A draft from an earlier attempt is found by tag name as well.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* \
+              --draft \
+              --target "$GITHUB_SHA" \
+              --title "$TAG" \
+              "${notes[@]}"
+          fi
+
+          # Everything is uploaded and verified: this is the release, and the
+          # tag it creates is the record of it.
+          gh release edit "$TAG" --draft=false
+          gh release view "$TAG" --json tagName,isDraft,assets \
+            --jq '"published \(.tagName) draft=\(.isDraft) assets=\(.assets | length)"'
 
   # The Homebrew cask in listepo/homebrew-tap is generated from this release:
   # version and both checksums. It runs after publish so `brew install` never
   # names a tarball that is not on the releases page yet.
   tap:
-    needs: publish
+    needs: [version, publish]
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
 
       - uses: actions/download-artifact@v4
         with:
@@ -192,19 +260,18 @@ jobs:
           # GITHUB_TOKEN is scoped to this repository, so it cannot.
           TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           TAP_REPO: listepo/homebrew-tap
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           if [ -z "$TAP_TOKEN" ]; then
             echo "HOMEBREW_TAP_TOKEN is not set; the cask in $TAP_REPO was not updated" >&2
             exit 1
           fi
-          tag="${{ github.event.inputs.tag || github.ref_name }}"
-          version="${tag#v}"
           arm="$(shasum -a 256 staging/aarch64-apple-darwin/ketch-aarch64-apple-darwin.tar.gz | cut -d' ' -f1)"
           intel="$(shasum -a 256 staging/x86_64-apple-darwin/ketch-x86_64-apple-darwin.tar.gz | cut -d' ' -f1)"
 
           git clone "https://x-access-token:${TAP_TOKEN}@github.com/${TAP_REPO}.git" tap
           mkdir -p tap/Casks
-          scripts/cask.sh "$version" "$arm" "$intel" > tap/Casks/ketch.rb
+          scripts/cask.sh "$VERSION" "$arm" "$intel" > tap/Casks/ketch.rb
           brew style tap/Casks/ketch.rb
 
           cd tap
@@ -214,8 +281,8 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add Casks/ketch.rb
           if git diff --cached --quiet; then
-            echo "cask already at $version"
+            echo "cask already at $VERSION"
             exit 0
           fi
-          git commit -m "ketch $version"
+          git commit -m "ketch $VERSION"
           git push origin HEAD
