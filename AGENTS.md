@@ -146,13 +146,14 @@ conditional, multi-stage Rust automation.
 | `src/changelog.rs` | finding and slicing a client app's changelog |
 | `src/lockfile.rs` | `ketch.lock`: what is installed, pinned to exact releases |
 | `src/push.rs` | `ketch push`: a project's `ketch.toml` as a registry pull request, via octocrab |
-| `src/selfupdate.rs` | `ketch self`: installing, updating and removing the host as a package |
+| `src/self_update.rs` | `ketch self`: installing, updating and removing the host as a package |
 | `ketch.toml` | the host's own package file, what `ketch push` sends |
 | `src/ui.rs` | all terminal output |
 | `tests/` | end-to-end tests that drive the real binary |
 | `scripts/package.sh` | the release tarball, shared by CI and the release workflow |
-| `release-plz.toml` | what the release pull request bumps, tags and does not publish |
+| `release-plz.toml` | what the release pull request bumps, and what it does not publish |
 | `scripts/release.sh` | the same version bump and pull request, by hand |
+| `plan.md` | what is being built next, and what each piece would take |
 | `scripts/cask.sh` | the Homebrew cask, generated into `listepo/homebrew-tap` on release |
 | `install.sh` | the `curl | bash` installer; only bootstraps `ketch self install` |
 
@@ -162,7 +163,9 @@ every command. If you are about to write install logic inside a command, you
 are in the wrong file.
 
 `src/shell.rs` is the one module that writes outside the ketch root, and it
-does so only when asked: `ketch path install` and `ketch doctor --fix`. It edits
+does so only when asked: `ketch path install`, `ketch doctor --fix` and
+`ketch self uninstall`, which takes the block back out of every startup file
+that has one rather than only the shell running now. It edits
 a shell startup file between two markers, so the block can be found again,
 rewritten when the root moves, and removed without guessing which line was
 ketch's. It follows a symlinked startup file to its target before writing,
@@ -218,6 +221,11 @@ Reuse the guards that exist rather than writing new ones:
 - `Manifest::validate` — the single guard every manifest tier passes through
   (registry, user manifests, built-in). Add new checks there, not at a caller.
 - `config::validate_repo` — anything that becomes `github.com/owner/repo`.
+- `self_update::remove_root` — takes the ketch root apart by naming the
+  directories and files ketch creates, then removes the root itself only if
+  nothing else is left in it. `install.sh --install-dir ~/bin` makes the root
+  that directory's parent, so a `remove_dir_all` on the root is a way to delete
+  someone's home directory. Anything left behind is reported, never removed.
 - `changelog::sanitize` — drops escape sequences and bidi overrides from client
   prose before it is printed. A changelog is the one place ketch shows a whole
   file someone else wrote; an unfiltered one can rewrite the screen above it.
@@ -256,13 +264,25 @@ Nothing is typed to cut a release. release-plz keeps one pull request up to
 date on every merge to `main`, holding the next version and the `CHANGELOG.md`
 entry for it, both derived from the conventional commits since the last tag —
 so `feat:` moves the minor, `fix:` the patch, and `docs:`/`chore:` move
-nothing. Merging that pull request pushes the tag.
+nothing. Merging that pull request is the release.
 
-The tag is the only thing that publishes. `release.yml` picks it up, re-runs
-the whole gate, refuses a tag that disagrees with `Cargo.toml` (`ketch self
-update` compares the two, so a mismatched tag breaks upgrades for everyone
-already installed), builds both macOS architectures, and publishes the tarballs
-with an aggregate `SHA256SUMS`.
+`release.yml` runs on every merge to `main` and asks one question first: does
+`v<version from Cargo.toml>` already exist as a tag? If it does, that version
+has shipped and the run stops there in seconds. If it does not, this merge is a
+release: the whole gate runs again, both macOS architectures are built and
+signed, the tarballs and an aggregate `SHA256SUMS` go up on a **draft** release
+— which has no tag — and the last step publishes that draft, which is what
+creates the tag, at the commit that was built.
+
+That ordering is the point. A tag exists if and only if a release finished, so
+`ketch self update` and `install.sh` can never find a tag whose binaries are
+still building or never arrived; a failed run leaves a draft to re-run or
+delete, and main simply stays untagged. It also removes the old mismatch
+hazard: the version in `Cargo.toml` *is* the tag, derived rather than compared,
+and `ketch self update` measures itself against exactly that.
+
+A re-run is `workflow_dispatch` with `force` — the one case the tag check would
+otherwise skip, such as a `tap` job that failed after the release published.
 
 The binaries are code-signed with a Developer ID Application certificate,
 held in two repository secrets: `MACOS_CERTIFICATE`, the `.p12` as base64, and
@@ -286,41 +306,50 @@ network access and one writable path under it, which is all `ketch self
 install` needs. Homebrew keeps only the bootstrap binary; the installed ketch
 is one ketch downloaded and verified itself, exactly as with `install.sh`.
 
-Four things about that handoff are easy to break:
+Five things about that handoff are easy to break:
 
 - **`RELEASE_PLZ_TOKEN` must be a PAT or GitHub App token**, not the default
-  `GITHUB_TOKEN`, which cannot start another workflow run. A tag pushed with
-  the default token never reaches `release.yml`, leaving a release with no
-  binaries — which is the only thing `install.sh` and `ketch self update` read.
-  `release-plz.yml` fails on the missing secret rather than letting that happen
-  quietly.
-- **The tag name is a contract.** `release-plz.toml` sets `v{{ version }}` and
-  `release.yml` triggers on `v*`. Changing one without the other means merging
-  a release pull request publishes nothing.
+  `GITHUB_TOKEN`, which cannot start another workflow run — so the release
+  pull request it opens would never have CI run on it, and merging that pull
+  request is what publishes ketch. `release-plz.yml` fails on the missing
+  secret rather than letting that happen quietly.
+- **release-plz must not propose a version while one is being published.**
+  A release pull request is written against the last released version, and for
+  the minutes between the merge and the tag there is none. `release-plz.yml`
+  checks for the tag and leaves the pull request alone until it exists; the
+  next commit after that opens it.
+- **The tag name is a contract.** `release-plz.toml` sets `v{{ version }}`,
+  `release.yml` derives the same string from `Cargo.toml`, and the changelog
+  links to `releases/tag/v<version>` — which `tests/release_changelog.rs`
+  checks. Change one and change all three.
 - **The certificate expires.** A Developer ID certificate lasts five years,
   and the day after, every release fails at the import step. Replace both
-  secrets with the renewed `.p12` and re-run the workflow for the tag.
+  secrets with the renewed `.p12` and re-run with `force`.
 - **The cask is generated.** Editing `Casks/ketch.rb` in the tap by hand lasts
   until the next release overwrites it; change `scripts/cask.sh` instead, and
   run `brew style` on its output, as the `tap` job does.
 
-release-plz does not publish to crates.io (`publish = false`) and does not
-create the GitHub release (`git_release_enable = false`); `release.yml` owns
-that, because it is what attaches the assets.
+release-plz does not publish to crates.io (`publish = false`), does not create
+the GitHub release (`git_release_enable = false`), and does not tag: only its
+`release-pr` command is ever run. `release.yml` owns all three, because it is
+what builds and attaches the assets.
 
 `scripts/release.sh 0.2.0` still works and does the same job by hand — bump on
-a branch, pull request, tag afterwards — for cutting a specific version without
-waiting for the bot. Close release-plz's pull request if you use it, or the two
-will propose different versions.
+a branch, pull request, merge to release — for cutting a specific version
+without waiting for the bot. Close release-plz's pull request if you use it, or
+the two will propose different versions. Either way `CHANGELOG.md` has to gain
+the entry for the new version, because `tests/release_changelog.rs` requires
+one for whatever `Cargo.toml` says and `release.yml` publishes that section as
+the release notes.
 
 Bumping the version by hand in an ordinary commit is what both of these exist
-to stop: the version is written in one place and checked in two, and the two
-must agree.
+to stop: the version is written in one place and read as the tag, so a stray
+bump publishes a release.
 
 Asset names are load-bearing: `install.sh` and `ketch self update` both look for
 `ketch-<target>.tar.gz` and `SHA256SUMS`. Renaming either strips the upgrade
 path from every copy already out there. CI runs the same `scripts/package.sh` on
-every pull request so packaging breaks before a tag is pushed, not after.
+every pull request so packaging breaks there, not halfway through a release.
 
 ## Before you call it done
 

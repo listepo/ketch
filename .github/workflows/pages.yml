@@ -66,6 +66,7 @@ jobs:
           for required in index.html sitemap.xml robots.txt docs/index.html \
                           docs/manifests/index.html docs/registry/index.html \
                           docs/plugins/index.html docs/roadmap/index.html \
+                          docs/plan/index.html \
                           css/main.css img/og.png; do
             [ -s "$required" ] || { echo "missing or empty: $required" >&2; exit 1; }
           done

@@ -50,6 +50,18 @@ bootstrap binary, and `brew upgrade` hands over to `ketch self update`.
 Then make sure `~/.ketch/bin` is on your `PATH`. `ketch doctor` will tell you if
 it is not, along with anything else that needs attention.
 
+To remove it again:
+
+```bash
+ketch self uninstall
+```
+
+That takes everything with it — every package ketch installed, the whole
+`~/.ketch` tree, the `PATH` block in your shell startup files, and the Homebrew
+cask if that is how ketch arrived. It lists what it is about to delete and asks
+first, because none of it can be recovered afterwards. `--keep-packages` removes
+only ketch and leaves the tools it installed alone.
+
 ## Why
 
 Most command-line tools are already published as a release asset built for your
@@ -88,6 +100,8 @@ ketch sync                 # install what ketch.lock names, at those versions
 ketch doctor               # check the environment and the install tree
 ketch doctor --fix         # and repair the PATH setup while it is there
 ketch path install         # put ~/.ketch/bin on PATH in bash, zsh and fish
+ketch self update          # upgrade ketch itself
+ketch self uninstall       # remove ketch and everything it installed
 ```
 
 Everything lives under `~/.ketch`: versioned payloads in `store/`, links in
@@ -278,16 +292,19 @@ KETCH_ROOT=/tmp/ketch-scratch cargo run -- doctor
 Nothing is typed. [release-plz](https://release-plz.dev) keeps one pull request
 up to date on every merge to `main`, holding the next version and the
 `CHANGELOG.md` entry for it, both read off the conventional commits since the
-last tag. Merging it pushes the tag, and the tag is what builds both macOS
-architectures, signs the binaries with a Developer ID certificate, and
-publishes the tarballs.
+last tag. Merging that pull request is the release: the whole gate runs again,
+both macOS architectures are built and signed with a Developer ID certificate,
+the tarballs are published — and the tag is created last, once all of that has
+succeeded. So `v0.2.0` existing means v0.2.0 shipped, and a build that fails
+leaves nothing to clean up but a draft.
 
 ```bash
 scripts/release.sh 0.2.0        # the same thing by hand, for a specific version
 ```
 
 ketch is not on crates.io — it ships as a tarball on a GitHub release, so
-release-plz bumps and tags but never publishes a crate.
+release-plz proposes the version and writes the changelog, and never publishes
+a crate.
 
 ## Contributing
 
