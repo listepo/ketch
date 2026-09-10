@@ -1,0 +1,49 @@
+# Weekly dependency pull requests for everything this repository pins that
+# Dependabot can read: the crate's dependencies, the commitlint toolchain in
+# package.json, and the actions the workflows use. mise.toml is not among them —
+# Dependabot has no mise support, so the Node and cargo-cache pins are bumped by
+# hand.
+#
+# Messages are `chore(deps): …` because CI lints every commit a pull request
+# brings (commitlint.config.mjs), and Dependabot's default "Bump x from a to b"
+# is not a conventional commit. A merged cargo bump still changes Cargo.lock, so
+# release-plz proposes a patch release for it; merging that stays a human call.
+#
+# Minor and patch updates arrive as one grouped pull request per ecosystem; a
+# major update arrives alone, because it is the one that can break the build.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      cargo:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      # The CLI and the shared config are released in lockstep and pinned to
+      # the same exact version, so they move together, majors included.
+      commitlint:
+        patterns: ["@commitlint/*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      actions:
+        update-types: [minor, patch]

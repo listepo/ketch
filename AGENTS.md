@@ -186,6 +186,7 @@ conditional, multi-stage Rust automation.
 | `plan.md` | what is being built next, and what each piece would take |
 | `scripts/cask.sh` | the Homebrew cask, generated into `listepo/homebrew-tap` on release |
 | `install.sh` | the `curl | bash` installer; only bootstraps `ketch self install` |
+| `.github/dependabot.yml` | weekly `chore(deps)` pull requests for cargo, npm and GitHub Actions; not `mise.toml` |
 
 The rule that keeps `cmd/` thin: anything touching the install tree belongs in
 `install.rs`, `state.rs`, or a trait implementation, so the same logic serves
