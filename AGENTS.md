@@ -248,8 +248,10 @@ Reuse the guards that exist rather than writing new ones:
   that directory's parent, so a `remove_dir_all` on the root is a way to delete
   someone's home directory. Anything left behind is reported, never removed.
 - `changelog::sanitize` — drops escape sequences and bidi overrides from client
-  prose before it is printed. A changelog is the one place ketch shows a whole
-  file someone else wrote; an unfiltered one can rewrite the screen above it.
+  prose before it is printed. A changelog and the registry's copy of a package
+  file, shown as `ketch registry push`'s review diff, are the places ketch shows
+  a whole file someone else wrote; an unfiltered one can rewrite the screen
+  above it — including the review the user is about to approve.
 
 Simplicity never removes one of these. If a change makes a guard unnecessary,
 delete the guard deliberately and say why in the commit.

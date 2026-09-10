@@ -87,7 +87,7 @@ fn push(
                 crate::registry::PACKAGE_FILE
             ));
             ui::out(&format!("+++ {} (local)", file.display()));
-            for line in crate::diff::unified(&existing.text, &proposal.body).lines() {
+            for line in review_diff(&existing.text, &proposal.body).lines() {
                 if line.starts_with('-') {
                     ui::out(&ui::red(line));
                 } else if line.starts_with('+') {
@@ -111,6 +111,15 @@ fn push(
     Ok(())
 }
 
+/// The diff shown before an update, safe to print.
+///
+/// The registry's copy is a file someone else wrote, on its way to this
+/// terminal. An escape sequence in it could redraw the very review the user is
+/// about to approve, so it goes through the same filter a changelog does.
+fn review_diff(registry: &str, local: &str) -> String {
+    crate::changelog::sanitize(&crate::diff::unified(registry, local))
+}
+
 /// The outcome lines the add and update paths share, so the two cannot drift
 /// apart in what they say a pull request did.
 fn report(target: &str, name: &str, outcome: push::Outcome) {
@@ -120,5 +129,23 @@ fn report(target: &str, name: &str, outcome: push::Outcome) {
         }
         push::Outcome::Opened(pr) if pr.already_open => ui::success("already open", &pr.url),
         push::Outcome::Opened(pr) => ui::success("opened", &pr.url),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_review_diff_drops_escape_sequences_from_the_registry_copy() {
+        let registry = "name = \"tool\"\ndescription = \"\u{1b}[2J\u{1b}]0;x\u{7}hi\u{202e}\"\n";
+        let shown = review_diff(registry, "name = \"tool\"\n");
+        assert!(shown.contains("-description"), "{shown}");
+        for bad in ['\u{1b}', '\u{7}', '\u{202e}'] {
+            assert!(
+                !shown.contains(bad),
+                "{bad:?} reached the terminal: {shown:?}"
+            );
+        }
     }
 }
