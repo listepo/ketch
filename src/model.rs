@@ -706,6 +706,40 @@ pub enum ManifestOrigin {
     Inferred,
 }
 
+/// How a `local:` package arrived on disk.
+///
+/// Optional on `InstalledPackage` with `#[serde(default)]` so state written
+/// before local installs existed still deserialises.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LocalKind {
+    /// A recognised archive that was extracted into the store.
+    Archive,
+    /// A single executable file placed into the store and linked into bin.
+    Binary,
+    /// A symlink; payload bytes come from the resolved target.
+    Symlink,
+    /// A macOS `.app` bundle copied into the store and applications dir.
+    App,
+}
+
+impl LocalKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            LocalKind::Archive => "archive",
+            LocalKind::Binary => "binary",
+            LocalKind::Symlink => "symlink",
+            LocalKind::App => "app",
+        }
+    }
+}
+
+impl fmt::Display for LocalKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Installed state
 // ---------------------------------------------------------------------------
@@ -755,6 +789,14 @@ pub struct InstalledPackage {
     /// Kept so `upgrade` reuses the same selection rules as `install`.
     #[serde(default)]
     pub manifest: Option<Manifest>,
+    /// Present when `source` is `local:…`. Absent (default) on packages
+    /// installed before local installs existed — still readable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_kind: Option<LocalKind>,
+    /// Absolute path the user named, when it differs from `source.id` or when
+    /// we want an explicit field for `info --json`. Usually mirrors the id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_path: Option<PathBuf>,
 }
 
 impl InstalledPackage {

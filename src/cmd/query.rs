@@ -80,6 +80,11 @@ pub fn outdated(cfg: &Config, args: OutdatedArgs) -> Result<()> {
     let mut json = Vec::new();
     let (mut checked, mut unreachable) = (0usize, 0usize);
     for pkg in state.iter() {
+        // Local packages have no upstream release stream; skipping them keeps
+        // `outdated` from treating the synthetic tag as something to refresh.
+        if pkg.source.scheme == "local" {
+            continue;
+        }
         ui::step("checking", &pkg.name);
         let release = match install::latest_release(&sources, pkg, prerelease) {
             Ok(r) => r,
@@ -199,6 +204,10 @@ pub fn info(cfg: &Config, args: InfoArgs) -> Result<()> {
             "latest_tag": release.as_ref().map(|r| r.tag.clone()),
             "installed": installed.as_ref().map(|p| p.version.to_string()),
             "pinned": installed.as_ref().map(|p| p.pinned).unwrap_or(false),
+            "local_kind": installed.as_ref().and_then(|p| p.local_kind).map(|k| k.to_string())
+                .or_else(|| (manifest.source.scheme == "local").then(|| "local".to_string())),
+            "local_path": installed.as_ref().and_then(|p| p.local_path.as_ref()).map(|p| p.display().to_string())
+                .or_else(|| (manifest.source.scheme == "local").then(|| manifest.source.id.clone())),
             "assets": scored.iter().map(|s| serde_json::json!({
                 "name": s.asset.name,
                 "size": s.asset.size,
@@ -262,11 +271,22 @@ pub fn info(cfg: &Config, args: InfoArgs) -> Result<()> {
                 ),
             );
             field("prefix", pkg.prefix.display().to_string());
+            if let Some(kind) = pkg.local_kind {
+                field("local kind", kind.to_string());
+            }
+            if let Some(path) = &pkg.local_path {
+                field("local path", path.display().to_string());
+            }
             for link in pkg.binaries() {
                 field("binary", link.link.display().to_string());
             }
         }
-        None => field("installed", "no".into()),
+        None => {
+            field("installed", "no".into());
+            if manifest.source.scheme == "local" {
+                field("local path", manifest.source.id.clone());
+            }
+        }
     }
 
     if args.assets {

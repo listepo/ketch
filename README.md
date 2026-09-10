@@ -28,6 +28,8 @@ ships, verifies it, and puts it on your `PATH`.
 ketch install BurntSushi/ripgrep     # any repo that publishes releases
 ketch install rg                     # or a name ketch already knows
 ketch install sharkdp/fd@v10.2.0     # or an exact version
+ketch install --path ./mytool        # a local binary, archive, symlink, or .app
+ketch install local:/abs/or/rel      # same thing, as a package ref
 ```
 
 ## Install
@@ -86,6 +88,7 @@ versioned store, and links it onto your `PATH`.
 
 ```bash
 ketch install <pkg>...     # install; concurrent by default, --jobs N to change
+ketch install --path PATH  # install a local archive, binary, symlink, or .app
 ketch list                 # what is installed
 ketch outdated             # what has a newer release
 ketch upgrade              # bring everything unpinned up to date
