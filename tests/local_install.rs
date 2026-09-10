@@ -19,8 +19,7 @@ fn local_binary_install_appears_in_list_and_info_json() {
     let sandbox = Sandbox::new();
     // Put the fixture outside the ketch root's bin dir so we do not collide
     // with links ketch creates.
-    let root = sandbox.root();
-    let fixture = root.parent().unwrap().join("localtool");
+    let fixture = sandbox.fixture("localtool");
     write_program(&fixture, "local-binary-1");
 
     sandbox.ok(&[
@@ -78,8 +77,7 @@ fn local_binary_install_appears_in_list_and_info_json() {
 #[test]
 fn local_archive_install_via_local_scheme() {
     let sandbox = Sandbox::new();
-    let root = sandbox.root();
-    let archive_path = root.parent().unwrap().join("tiny-tool.tar.gz");
+    let archive_path = sandbox.fixture("tiny-tool.tar.gz");
     Archive::TarGz(vec![
         Entry::program("tiny-tool/bin/tinytool", "from-archive"),
         Entry::file("tiny-tool/README.md", "hi\n"),
@@ -103,10 +101,8 @@ fn local_archive_install_via_local_scheme() {
 #[test]
 fn local_symlink_to_binary_records_symlink_kind() {
     let sandbox = Sandbox::new();
-    let root = sandbox.root();
-    let parent = root.parent().unwrap();
-    let target = parent.join("real-tool");
-    let link = parent.join("link-tool");
+    let target = sandbox.fixture("real-tool");
+    let link = sandbox.fixture("link-tool");
     write_program(&target, "via-symlink");
     std::os::unix::fs::symlink(&target, &link).expect("symlink");
 
@@ -133,8 +129,7 @@ fn local_symlink_to_binary_records_symlink_kind() {
 #[test]
 fn missing_local_path_errors_clearly() {
     let sandbox = Sandbox::new();
-    let root = sandbox.root();
-    let missing = root.parent().unwrap().join("no-such-local-file");
+    let missing = sandbox.fixture("no-such-local-file");
     let err = sandbox.fails(&["install", "--path", missing.to_str().unwrap(), "-y"]);
     assert!(
         err.contains("does not exist") || err.contains("local path"),
@@ -145,8 +140,7 @@ fn missing_local_path_errors_clearly() {
 #[test]
 fn local_plain_directory_is_refused() {
     let sandbox = Sandbox::new();
-    let root = sandbox.root();
-    let dir = root.parent().unwrap().join("plain-dir");
+    let dir = sandbox.fixture("plain-dir");
     std::fs::create_dir_all(&dir).unwrap();
     let err = sandbox.fails(&["install", "--path", dir.to_str().unwrap(), "-y"]);
     assert!(
@@ -158,7 +152,7 @@ fn local_plain_directory_is_refused() {
 #[test]
 fn uninstall_local_binary_clears_links_and_keeps_source() {
     let sandbox = Sandbox::new();
-    let fixture = sandbox.root().parent().unwrap().join("localtool");
+    let fixture = sandbox.fixture("localtool");
     write_program(&fixture, "local-binary-1");
 
     sandbox.ok(&[
@@ -193,10 +187,8 @@ fn uninstall_local_binary_clears_links_and_keeps_source() {
 #[test]
 fn uninstall_local_symlink_clears_links_and_keeps_origin() {
     let sandbox = Sandbox::new();
-    let root = sandbox.root();
-    let parent = root.parent().unwrap();
-    let target = parent.join("real-tool");
-    let link = parent.join("link-tool");
+    let target = sandbox.fixture("real-tool");
+    let link = sandbox.fixture("link-tool");
     write_program(&target, "via-symlink");
     std::os::unix::fs::symlink(&target, &link).expect("symlink");
 
@@ -230,7 +222,7 @@ fn uninstall_local_symlink_clears_links_and_keeps_origin() {
 #[test]
 fn uninstall_local_archive_clears_links() {
     let sandbox = Sandbox::new();
-    let archive_path = sandbox.root().parent().unwrap().join("tiny-tool.tar.gz");
+    let archive_path = sandbox.fixture("tiny-tool.tar.gz");
     Archive::TarGz(vec![
         Entry::program("tiny-tool/bin/tinytool", "from-archive"),
         Entry::file("tiny-tool/README.md", "hi\n"),

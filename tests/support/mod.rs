@@ -9,6 +9,8 @@
 //! network, no fixtures checked into the tree, and no test that depends on
 //! somebody else's tag still existing.
 
+use assert_fs::prelude::*;
+use assert_fs::TempDir;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -16,33 +18,37 @@ use std::process::{Command, Output};
 /// A ketch root, applications directory and plugin, all inside one temp dir
 /// that is removed when the test ends.
 pub struct Sandbox {
-    tmp: tempfile::TempDir,
+    tmp: TempDir,
 }
 
 impl Sandbox {
     pub fn new() -> Sandbox {
-        let tmp = tempfile::tempdir().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir");
         let sandbox = Sandbox { tmp };
-        for dir in [
-            sandbox.root(),
-            sandbox.apps(),
-            sandbox.plugin_dir(),
-            sandbox.assets(),
-            sandbox.home(),
-            sandbox.homebrew(),
+        for name in [
+            "root",
+            "Applications",
+            "home",
+            "homebrew",
+            "assets",
+            "root/plugins",
         ] {
-            std::fs::create_dir_all(dir).expect("create sandbox dir");
+            sandbox
+                .tmp
+                .child(name)
+                .create_dir_all()
+                .expect("create sandbox dir");
         }
         sandbox.write_plugin();
         sandbox
     }
 
     pub fn root(&self) -> PathBuf {
-        self.tmp.path().join("root")
+        self.tmp.child("root").to_path_buf()
     }
 
     pub fn apps(&self) -> PathBuf {
-        self.tmp.path().join("Applications")
+        self.tmp.child("Applications").to_path_buf()
     }
 
     pub fn bin(&self) -> PathBuf {
@@ -56,14 +62,20 @@ impl Sandbox {
     /// A home directory of its own, so a test that edits shell startup files
     /// cannot reach the one belonging to whoever is running the suite.
     pub fn home(&self) -> PathBuf {
-        self.tmp.path().join("home")
+        self.tmp.child("home").to_path_buf()
     }
 
     /// A Homebrew prefix of its own. Every run points `HOMEBREW_PREFIX` here,
     /// so a test that removes a cask cannot reach the real Homebrew — and one
     /// that does not set a cask up finds none, whatever the host has installed.
     pub fn homebrew(&self) -> PathBuf {
-        self.tmp.path().join("homebrew")
+        self.tmp.child("homebrew").to_path_buf()
+    }
+
+    /// Path under the sandbox temp root (sibling of `root/`, `assets/`, …).
+    /// Useful for local-install fixtures that must live outside the ketch root.
+    pub fn fixture(&self, name: &str) -> PathBuf {
+        self.tmp.child(name).to_path_buf()
     }
 
     /// Put a ketch cask in that prefix, with a `brew` that records how it was
@@ -73,23 +85,27 @@ impl Sandbox {
     /// deleting the Caskroom directory, which would leave `brew` believing
     /// ketch is still installed.
     pub fn install_cask(&self) -> PathBuf {
-        let cask = self.homebrew().join("Caskroom").join("ketch");
-        let bin = self.homebrew().join("bin");
-        for dir in [&cask, &bin] {
-            std::fs::create_dir_all(dir).expect("create homebrew dir");
-        }
-        let log = self.homebrew().join("brew-args");
-        let brew = bin.join("brew");
-        std::fs::write(
-            &brew,
-            format!(
-                "#!/bin/sh\nprintf '%s\\n' \"$*\" >> {log}\nrm -rf {cask}\n",
-                log = shell_quote(&log),
-                cask = shell_quote(&cask),
-            ),
-        )
+        let homebrew = self.tmp.child("homebrew");
+        homebrew
+            .child("Caskroom")
+            .child("ketch")
+            .create_dir_all()
+            .expect("create caskroom");
+        homebrew
+            .child("bin")
+            .create_dir_all()
+            .expect("create brew bin");
+
+        let cask = homebrew.child("Caskroom").child("ketch").to_path_buf();
+        let log = homebrew.child("brew-args").to_path_buf();
+        let brew = homebrew.child("bin").child("brew");
+        brew.write_str(&format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> {log}\nrm -rf {cask}\n",
+            log = shell_quote(&log),
+            cask = shell_quote(&cask),
+        ))
         .expect("write brew");
-        make_executable(&brew);
+        make_executable(brew.path());
         log
     }
 
@@ -100,7 +116,11 @@ impl Sandbox {
 
     /// Write `config.toml` for this root, for settings with no flag.
     pub fn configure(&self, toml: &str) {
-        std::fs::write(self.root().join("config.toml"), toml).expect("write config");
+        self.tmp
+            .child("root")
+            .child("config.toml")
+            .write_str(toml)
+            .expect("write config");
     }
 
     fn plugin_dir(&self) -> PathBuf {
@@ -109,7 +129,7 @@ impl Sandbox {
 
     /// Where fixture assets and the JSON the plugin serves both live.
     fn assets(&self) -> PathBuf {
-        self.tmp.path().join("assets")
+        self.tmp.child("assets").to_path_buf()
     }
 
     /// Run ketch against this sandbox. The environment is set per-invocation
@@ -188,11 +208,11 @@ impl Sandbox {
     /// Publish the releases the test plugin will serve for `id`.
     pub fn publish(&self, id: &str, releases: &[Release]) {
         let json: Vec<String> = releases.iter().map(Release::to_json).collect();
-        std::fs::write(
-            self.assets().join(format!("{id}.releases.json")),
-            format!("[{}]", json.join(",")),
-        )
-        .expect("write releases");
+        self.tmp
+            .child("assets")
+            .child(format!("{id}.releases.json"))
+            .write_str(&format!("[{}]", json.join(",")))
+            .expect("write releases");
     }
 
     /// Build a release asset on disk and describe it for the plugin.
@@ -223,9 +243,13 @@ impl Sandbox {
             db = shell_quote(&self.assets()),
             caps = r#"{"protocol":1,"scheme":"test","download":true,"search":false}"#,
         );
-        let path = self.plugin_dir().join("ketch-source-test");
-        std::fs::write(&path, script).expect("write plugin");
-        make_executable(&path);
+        let path = self
+            .tmp
+            .child("root")
+            .child("plugins")
+            .child("ketch-source-test");
+        path.write_str(&script).expect("write plugin");
+        make_executable(path.path());
     }
 }
 
