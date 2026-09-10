@@ -108,8 +108,17 @@ pub enum Command {
     /// Check the environment and the install tree
     Doctor(DoctorArgs),
 
-    /// Offer this project's `ketch.toml` to the registry as a pull request
-    Push(PushArgs),
+    /// Write a package config (`ketch.toml`) by answering questions
+    Config {
+        #[command(subcommand)]
+        command: ConfigCommand,
+    },
+
+    /// Compare a package config with the registry's copy before pulling-requesting it
+    Registry {
+        #[command(subcommand)]
+        command: RegistryCommand,
+    },
 
     /// Put the ketch bin directory on your shell's PATH
     Path {
@@ -347,21 +356,58 @@ pub struct DoctorArgs {
     /// Repair what can be repaired without asking: currently the PATH setup
     #[arg(long)]
     pub fix: bool,
+
+    /// Emit JSON instead of text
+    #[arg(long)]
+    pub json: bool,
 }
 
-#[derive(Args, Debug, Clone)]
-pub struct PushArgs {
-    /// Package file to push (default: ./ketch.toml)
-    #[arg(long, short, value_name = "FILE")]
-    pub file: Option<PathBuf>,
+#[derive(Subcommand, Debug, Clone)]
+pub enum ConfigCommand {
+    /// Create a `ketch.toml` by asking what each field should say
+    Create {
+        /// File to write (default: ./ketch.toml)
+        #[arg(long, short, value_name = "FILE")]
+        file: Option<PathBuf>,
 
-    /// Registry to open the pull request against, as `owner/repo`
-    #[arg(long, value_name = "REPO")]
-    pub registry: Option<String>,
+        /// Replace the file even if one is already there
+        #[arg(long)]
+        force: bool,
 
-    /// Show what would be pushed, and push nothing
-    #[arg(long)]
-    pub dry_run: bool,
+        /// Write the file without the final confirmation
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum RegistryCommand {
+    /// Compare this project's `ketch.toml` with the registry's copy, show the
+    /// difference, and open a pull request with it
+    Push {
+        /// Package file to push (default: ./ketch.toml)
+        #[arg(long, short, value_name = "FILE")]
+        file: Option<PathBuf>,
+
+        /// Registry to open the pull request against, as `owner/repo`
+        #[arg(long, value_name = "REPO")]
+        registry: Option<String>,
+
+        /// Show what would be pushed, and push nothing
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Answer yes to the update prompt
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
+
+    /// Check every package folder in a registry checkout
+    Validate {
+        /// Registry checkout to validate (default: the current directory)
+        #[arg(value_name = "DIR", default_value = ".")]
+        path: PathBuf,
+    },
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -439,6 +485,9 @@ pub enum SelfCommand {
         /// which is already removing it.
         #[arg(long)]
         no_brew: bool,
+        /// Show what would be removed, and remove nothing
+        #[arg(long)]
+        dry_run: bool,
         /// Answer yes to every prompt
         #[arg(long, short = 'y')]
         yes: bool,

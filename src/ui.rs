@@ -247,6 +247,13 @@ pub fn confirm(question: &str, default: bool) -> bool {
     answered
 }
 
+/// A yes/no question that is a form field rather than consent: "no" is an
+/// answer, not a cancellation, so nothing is announced when it is declined.
+/// The questionnaire's prerelease and `bin`-entry questions are the users.
+pub fn question(question: &str, default: bool) -> bool {
+    ask(question, default)
+}
+
 /// `--quiet` deliberately does not reach here. It asks for less output, not for
 /// consent: silently taking the default answer to "remove this?" is not a
 /// quieter version of asking, it is a different program.
@@ -268,6 +275,56 @@ fn ask(question: &str, default: bool) -> bool {
         "y" | "yes" => true,
         "n" | "no" => false,
         _ => default,
+    }
+}
+
+/// Ask one question and read one line of free text.
+///
+/// Unlike [`confirm`], this reads stdin even when it is not a terminal: the
+/// answer is the point rather than consent, and piping answers in is how the
+/// questionnaire is scripted and tested. End of input counts as an empty
+/// answer, so a pipe with nothing in it still gets the default rather than a
+/// hang.
+pub fn prompt(question: &str, default: &str) -> String {
+    let hint = if default.is_empty() { "none" } else { default };
+    eprint!(
+        "{} {question} [{hint}] ",
+        cyan(&format!("{:>10}", "answer"))
+    );
+    let _ = std::io::stderr().flush();
+    let mut answer = String::new();
+    let _ = std::io::stdin().read_line(&mut answer);
+    let trimmed = answer.trim();
+    if trimmed.is_empty() {
+        default.to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+/// Ask for a field that has no default.
+///
+/// End of input is an error rather than an answer: inventing a `source` would
+/// write a config nobody asked for and say nothing about it.
+pub fn prompt_required(question: &str) -> crate::error::Result<String> {
+    eprint!("{} {question} ", cyan(&format!("{:>10}", "answer")));
+    let _ = std::io::stderr().flush();
+    let mut answer = String::new();
+    match std::io::stdin().read_line(&mut answer) {
+        Ok(0) => Err(crate::error::Error::msg(format!(
+            "{question} needs an answer, and stdin has none — run this in a terminal"
+        ))),
+        Ok(_) => {
+            let trimmed = answer.trim();
+            if trimmed.is_empty() {
+                Err(crate::error::Error::msg(format!(
+                    "{question} has no default and cannot be left empty"
+                )))
+            } else {
+                Ok(trimmed.to_string())
+            }
+        }
+        Err(e) => Err(crate::error::Error::io("stdin", e)),
     }
 }
 

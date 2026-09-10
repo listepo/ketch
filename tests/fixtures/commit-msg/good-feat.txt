@@ -1,0 +1,1 @@
+feat: search the registry from the install command

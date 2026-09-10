@@ -4,3 +4,4 @@
 # disagree about the compiler that ships a release.
 [tools]
 "cargo:cargo-cache" = "0.8.3" # `just cache` / `just cache-autoclean`; the shared cargo home fills up
+node = "24.20.0"              # commitlint for `just lint-commits` and the commit-msg hook; node-based checks live in Just and CI only

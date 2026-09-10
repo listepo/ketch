@@ -1,0 +1,6 @@
+feat!: remove the doctor --fix flag
+
+`ketch path install` does the same job with a narrower blast radius.
+
+BREAKING CHANGE: doctor --fix is gone; scripts calling it must switch to
+`ketch path install`.

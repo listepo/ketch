@@ -103,6 +103,8 @@ ketch sync                 # install what ketch.lock names, at those versions
 ketch doctor               # check the environment and the install tree
 ketch doctor --fix         # and repair the PATH setup while it is there
 ketch path install         # put ~/.ketch/bin on PATH in bash, zsh and fish
+ketch config create        # write a ketch.toml by answering questions
+ketch registry push        # offer it to the registry, showing the diff first
 ketch self update          # upgrade ketch itself
 ketch self uninstall       # remove ketch and everything it installed
 ```
@@ -316,9 +318,17 @@ boundaries — read it before changing anything. `cargo test`, `cargo clippy
 --all-targets` and `cargo fmt --check` all have to be clean, and CI enforces all
 three on macOS.
 
+With [just](https://github.com/casey/just) installed, `just deps` sets up the
+pinned tools and commitlint once, and `just hooks` opts in to the
+commit-message hook. Commits follow
+[conventional commits](https://www.conventionalcommits.org); a change that
+alters or removes existing CLI behavior is marked `feat!:`/`fix!:` or given a
+`BREAKING CHANGE:` footer, because that marker is what tells release-plz to
+bump the minor rather than ship a breaking change as a patch.
+
 To add a package to the registry, put a `ketch.toml` at the root of its
-repository and run `ketch push`: it opens the pull request for you, through a
-fork if you cannot write to the registry. See
+repository and run `ketch registry push`: it opens the pull request for you,
+through a fork if you cannot write to the registry. See
 [docs/REGISTRY.md](docs/REGISTRY.md).
 
 ## Licence

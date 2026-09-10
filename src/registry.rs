@@ -43,11 +43,11 @@ pub fn update(cfg: &Config) -> Result<usize> {
 
     let staging = tempfile::tempdir_in(&cfg.root).map_err(|e| Error::io(&cfg.root, e))?;
     let tarball = staging.path().join("registry.tar.gz");
+    let url = tarball_url(repo);
     // The API tarball endpoint follows the default branch and honours the
     // token, which keeps unauthenticated rate limits out of the way. It answers
     // 415 to the octet-stream `Accept` that asset downloads use, so ask for the
     // API media type and let it redirect to the gzip.
-    let url = format!("https://api.github.com/repos/{repo}/tarball");
     let accept = [(
         "Accept".to_string(),
         "application/vnd.github+json".to_string(),
@@ -69,6 +69,13 @@ pub fn update(cfg: &Config) -> Result<usize> {
     let root = unwrap_single_dir(&unpacked)?;
 
     swap_in(cfg, &root, repo)
+}
+
+/// Where the registry's tarball is fetched from: the same API base every
+/// other GitHub request honors, so `KETCH_GITHUB_API` stands in an Enterprise
+/// host here too.
+fn tarball_url(repo: &str) -> String {
+    format!("{}/repos/{repo}/tarball", crate::source::github::api_base())
 }
 
 /// Move a freshly-unpacked tree into place, returning its package count.
@@ -291,5 +298,27 @@ mod tests {
         let found = load_dir(tmp.path());
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].0.name, "ok");
+    }
+
+    #[test]
+    fn tarball_url_honours_ketch_github_api() {
+        // Same env override every other GitHub request uses (follow-up 9).
+        let previous = std::env::var("KETCH_GITHUB_API").ok();
+        std::env::set_var("KETCH_GITHUB_API", "https://ghe.example/api/v3");
+        assert_eq!(
+            tarball_url("acme/registry"),
+            "https://ghe.example/api/v3/repos/acme/registry/tarball"
+        );
+        match previous {
+            Some(v) => std::env::set_var("KETCH_GITHUB_API", v),
+            None => std::env::remove_var("KETCH_GITHUB_API"),
+        }
+        assert_eq!(
+            tarball_url("acme/registry"),
+            format!(
+                "{}/repos/acme/registry/tarball",
+                crate::source::github::DEFAULT_API
+            )
+        );
     }
 }

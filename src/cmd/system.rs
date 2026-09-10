@@ -1,12 +1,9 @@
 //! Commands about ketch itself and its environment.
 
-use crate::cli::{
-    DoctorArgs, PathArgs, PathCommand, PathInstallArgs, PluginCommand, PushArgs, SelfCommand,
-};
-use crate::config::{self, Config};
+use crate::cli::{DoctorArgs, PathArgs, PathCommand, PathInstallArgs, PluginCommand, SelfCommand};
+use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::platform::{self, worst_status, CheckStatus, DoctorCheck};
-use crate::push;
 use crate::registry;
 use crate::self_update;
 use crate::shell::{self, Outcome, Shell};
@@ -400,37 +397,6 @@ pub fn plugin(cfg: &Config, command: PluginCommand) -> Result<()> {
     }
 }
 
-/// `ketch push` — this project's package file, as a registry pull request.
-pub fn push(cfg: &Config, args: PushArgs) -> Result<()> {
-    let file = args
-        .file
-        .unwrap_or_else(|| std::path::PathBuf::from(registry::PACKAGE_FILE));
-    let proposal = push::load(&file)?;
-    let target = match args.registry {
-        Some(repo) => config::validate_repo("registry", repo)?,
-        None => cfg.registry.clone(),
-    };
-    let destination = format!("{target}:{}/{}", proposal.name, registry::PACKAGE_FILE);
-    if args.dry_run {
-        ui::step("would push", &destination);
-        // The file ends with its own newline; `out` adds one, so strip it or
-        // the dry run prints a blank line the real file does not have.
-        ui::out(proposal.body.trim_end_matches('\n'));
-        return Ok(());
-    }
-    let api = push::GitHub::new(cfg)?;
-    ui::step("pushing", &destination);
-    match push::open(&api, &target, &proposal)? {
-        push::Outcome::Unchanged => ui::success(
-            "unchanged",
-            &format!("{target} already has this {}", proposal.name),
-        ),
-        push::Outcome::Opened(pr) if pr.already_open => ui::success("already open", &pr.url),
-        push::Outcome::Opened(pr) => ui::success("opened", &pr.url),
-    }
-    Ok(())
-}
-
 pub fn zelf(cfg: &Config, command: SelfCommand) -> Result<()> {
     match command {
         SelfCommand::Install { force } => {
@@ -483,11 +449,15 @@ pub fn zelf(cfg: &Config, command: SelfCommand) -> Result<()> {
         SelfCommand::Uninstall {
             keep_packages,
             no_brew,
+            dry_run,
             yes,
         } => {
             let plan = self_update::uninstall_plan(cfg, keep_packages, no_brew)?;
             for line in plan_lines(&plan) {
                 ui::step("will remove", &line);
+            }
+            if dry_run {
+                return Ok(());
             }
             let question = if keep_packages {
                 "remove ketch? this is permanent: nothing here can be recovered"

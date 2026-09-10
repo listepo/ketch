@@ -17,6 +17,7 @@ fi
 # Script constants
 SELF_REPO="listepo/ketch"
 BINARY_NAME="ketch"
+DEFAULT_ROOT="${HOME}/.ketch"
 DEFAULT_INSTALL_DIR="${HOME}/.ketch/bin"
 
 # State for cleanup
@@ -31,7 +32,11 @@ Install ketch, a Rust CLI for managing GitHub-released apps on macOS.
 
 OPTIONS:
   --version <TAG>      Install specific version (default: latest)
-  --install-dir <DIR>  Install directory (default: $DEFAULT_INSTALL_DIR)
+  --root <DIR>         Ketch root, where ketch keeps its store and bin dir
+                       (default: $DEFAULT_ROOT)
+  --install-dir <DIR>  Where the bootstrap binary lands; the installed ketch
+                       itself lives in the root's bin dir
+                       (default: $DEFAULT_INSTALL_DIR)
   --no-modify-path     Don't modify PATH in shell config files
   --help              Show this help message
 EOF
@@ -47,6 +52,7 @@ trap cleanup EXIT
 
 # Parse arguments
 VERSION=""
+ROOT="${DEFAULT_ROOT}"
 INSTALL_DIR="${DEFAULT_INSTALL_DIR}"
 NO_MODIFY_PATH=0
 
@@ -55,6 +61,11 @@ while [ $# -gt 0 ]; do
     --version)
       shift
       VERSION="$1"
+      shift
+      ;;
+    --root)
+      shift
+      ROOT="$1"
       shift
       ;;
     --install-dir)
