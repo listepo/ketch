@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2](https://github.com/listepo/ketch/releases/tag/v0.3.2) - 2026-09-10
+
+### Other
+
+- commitlint rejects agent attribution in commits ([#34](https://github.com/listepo/ketch/pull/34))
+- the human is the only author of every commit and PR ([#33](https://github.com/listepo/ketch/pull/33))
+- release-plz owns the changelog's generated header ([#32](https://github.com/listepo/ketch/pull/32))
+- generated files say so in their first lines ([#30](https://github.com/listepo/ketch/pull/30))
+
 ## [0.3.1](https://github.com/listepo/ketch/releases/tag/v0.3.1) - 2026-09-10
 
 ### Fixed
