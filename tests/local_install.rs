@@ -154,3 +154,100 @@ fn local_plain_directory_is_refused() {
         "unclear error: {err}"
     );
 }
+
+#[test]
+fn uninstall_local_binary_clears_links_and_keeps_source() {
+    let sandbox = Sandbox::new();
+    let fixture = sandbox.root().parent().unwrap().join("localtool");
+    write_program(&fixture, "local-binary-1");
+
+    sandbox.ok(&[
+        "install",
+        "--path",
+        fixture.to_str().unwrap(),
+        "--name",
+        "localtool",
+        "-y",
+    ]);
+    assert!(sandbox.bin().join("localtool").exists());
+
+    sandbox.ok(&["uninstall", "localtool", "--yes"]);
+
+    assert!(!sandbox.bin().join("localtool").exists());
+    assert!(!sandbox.store().join("localtool").exists());
+    assert!(sandbox.ok(&["list"]).contains("nothing installed"));
+    assert!(
+        fixture.exists(),
+        "uninstall must not delete the user's original binary"
+    );
+    let out = std::process::Command::new(&fixture)
+        .output()
+        .expect("run original");
+    assert!(out.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "local-binary-1"
+    );
+}
+
+#[test]
+fn uninstall_local_symlink_clears_links_and_keeps_origin() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.root();
+    let parent = root.parent().unwrap();
+    let target = parent.join("real-tool");
+    let link = parent.join("link-tool");
+    write_program(&target, "via-symlink");
+    std::os::unix::fs::symlink(&target, &link).expect("symlink");
+
+    sandbox.ok(&[
+        "install",
+        "--path",
+        link.to_str().unwrap(),
+        "--name",
+        "linktool",
+        "-y",
+    ]);
+    assert!(sandbox.bin().join("linktool").exists());
+
+    sandbox.ok(&["uninstall", "linktool", "--yes"]);
+
+    assert!(!sandbox.bin().join("linktool").exists());
+    assert!(!sandbox.store().join("linktool").exists());
+    assert!(sandbox.ok(&["list"]).contains("nothing installed"));
+    assert!(target.exists(), "uninstall must keep the symlink target");
+    assert!(
+        link.symlink_metadata().is_ok(),
+        "uninstall must keep the user's install-source symlink"
+    );
+    let out = std::process::Command::new(&link)
+        .output()
+        .expect("run origin link");
+    assert!(out.status.success());
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "via-symlink");
+}
+
+#[test]
+fn uninstall_local_archive_clears_links() {
+    let sandbox = Sandbox::new();
+    let archive_path = sandbox.root().parent().unwrap().join("tiny-tool.tar.gz");
+    Archive::TarGz(vec![
+        Entry::program("tiny-tool/bin/tinytool", "from-archive"),
+        Entry::file("tiny-tool/README.md", "hi\n"),
+    ])
+    .write_to(&archive_path);
+
+    let pkg = format!("local:{}", archive_path.display());
+    sandbox.ok(&["install", &pkg, "--name", "tinytool", "-y"]);
+    assert!(sandbox.bin().join("tinytool").exists());
+
+    sandbox.ok(&["uninstall", "tinytool", "--yes"]);
+
+    assert!(!sandbox.bin().join("tinytool").exists());
+    assert!(!sandbox.store().join("tinytool").exists());
+    assert!(sandbox.ok(&["list"]).contains("nothing installed"));
+    assert!(
+        archive_path.exists(),
+        "uninstall must not delete the user's archive"
+    );
+}
