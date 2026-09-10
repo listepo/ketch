@@ -293,3 +293,28 @@ fn file_writes_where_it_is_told() {
         .child("ketch.toml")
         .assert(predicate::path::missing());
 }
+
+#[test]
+fn config_create_does_not_create_the_ketch_root() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let root = temp.child("ketch-root");
+    let project = temp.child("Fancy-Tool");
+    project.create_dir_all().unwrap();
+
+    config_create(project.path(), root.path())
+        .arg("--yes")
+        .write_stdin(format!(
+            "github:acme/fancy-tool\n{}",
+            empty_answers_for_the_rest()
+        ))
+        .assert()
+        .success();
+
+    assert!(
+        !root.path().exists(),
+        "config create must not mkdir the ketch root"
+    );
+    project
+        .child("ketch.toml")
+        .assert(predicate::path::exists());
+}

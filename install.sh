@@ -89,6 +89,14 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# --install-dir names the bin dir. When the caller set it without --root,
+# derive the root from it so self-install and PATH agree with the bootstrap.
+if [ "${INSTALL_DIR}" != "${DEFAULT_INSTALL_DIR}" ] && [ "${ROOT}" = "${DEFAULT_ROOT}" ]; then
+  ROOT="$(dirname "${INSTALL_DIR}")"
+fi
+# The installed binary always lives at $ROOT/bin; keep INSTALL_DIR in step.
+INSTALL_DIR="${ROOT}/bin"
+
 # The parsed root controls self-installation and every managed path below.
 KETCH_ROOT="${ROOT}"
 export KETCH_ROOT
@@ -239,9 +247,9 @@ else
   fi
 fi
 
-# Create install directory
-mkdir -p "${INSTALL_DIR}" || {
-  echo "${RED}Error: Failed to create install directory: ${INSTALL_DIR}${NC}" >&2
+# Create the root bin dir the installed binary will live in.
+mkdir -p "${ROOT}/bin" || {
+  echo "${RED}Error: Failed to create install directory: ${ROOT}/bin${NC}" >&2
   exit 1
 }
 
