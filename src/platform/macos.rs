@@ -1170,7 +1170,12 @@ mod tests {
         let link = tmp.path().join("bin/tool");
         std::fs::create_dir_all(link.parent().unwrap()).unwrap();
         // Lexically under `owned`, but resolves outside via `..`.
-        let sneaky = owned.join("1.0").join("..").join("..").join("..").join("elsewhere");
+        let sneaky = owned
+            .join("1.0")
+            .join("..")
+            .join("..")
+            .join("..")
+            .join("elsewhere");
         assert!(
             sneaky.starts_with(&owned),
             "precondition: lexical starts_with alone would allow this"
