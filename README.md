@@ -115,6 +115,28 @@ what happened. Nothing is written outside that tree except the `.app` bundles
 that belong in `/Applications`, and the shell startup file `ketch path install`
 edits when you ask it to.
 
+## Installing from disk
+
+`ketch install --path PATH` (or `ketch install local:PATH`) installs something
+already on this machine: a bare binary, a symlink to one, an archive, or an
+`.app` bundle. The path is recorded in absolute form, the original is never
+touched, and uninstalling removes only ketch's copy. A single file is linked
+under the package name, which comes from the file name unless `--name` says
+otherwise:
+
+```bash
+ketch install --path ./target/release/mytool --name mytool
+```
+
+A local package has no releases: it records the version `0.0.0-local`,
+`outdated` and `upgrade` skip it, and installing the same path again with
+`--force` picks up a rebuilt file. There is no published checksum to require,
+so `require_checksums` does not apply to it. `ketch lock` records the hash of
+what was there, and `sync` refuses the path if its contents have changed since.
+
+`--name` works for any single package, not only a local one, and `upgrade` and
+`sync` keep the name it chose.
+
 ## What you had, and when
 
 ```bash

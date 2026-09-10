@@ -71,6 +71,13 @@ cannot run. So:
   Pretending the recorded hash still applied would be a guarantee that quietly
   is not one.
 
+**A `local:` package is reproducible only where its path is.** The lock records
+the absolute path it was installed from and the hash of what was there — the
+file's bytes, or for an `.app` bundle a digest of every file in the tree.
+`sync` reinstalls from that path and refuses it, before anything is placed, if
+its contents changed since the lock was written. On a machine without the path
+the entry fails like any other source that cannot be reached.
+
 ## `ketch sync`
 
 ```bash
@@ -101,15 +108,17 @@ comes back held rather than quietly upgradeable.
 
 A lockfile is a file somebody else may have written; that is what sharing a
 dotfiles repository means. So nothing in it is allowed to choose a filesystem
-path. `sync` asks for a source at a tag and lets the ordinary manifest
-resolution decide the install name, the binaries, and where they go — the lock
-pins *which release*, never *where it lands*.
+path. `sync` asks for a source at a tag, installs it under the recorded `name`
+— which must pass the first check below — and lets the ordinary manifest
+resolution decide the binaries and where they go. The lock pins *which
+release*, never *where it lands*.
 
 | Refused | Why |
 | --- | --- |
 | a `name` that is not usable verbatim as one path component | it is matched against installed packages and shown to you; a name that would have to be rewritten does not mean what it says |
 | the same package twice | only one of them could ever be installed |
-| a `source` that is not a valid `owner/repo` | it becomes a URL |
+| a `github:` source that is not a valid `owner/repo` | it becomes a URL |
+| any other source with an empty id | there is nothing to resolve |
 | a `sha256` that is not 64 hex characters | it is compared against a real digest |
 | an empty `tag` | there is nothing to resolve |
 | an unknown key | a misspelt key that is silently ignored locks something other than what you wrote |
@@ -130,3 +139,7 @@ entry you actually installed.
 The name is used only while it still means the same project. If it now resolves
 to a different source, the `source` in the lockfile wins — a name that changed
 hands must not quietly install something else.
+
+Either way the package is installed under the lockfile's `name`. One installed
+with `ketch install --name` comes back under that name, not the one its source
+would infer, so `ketch lock --check` agrees with the machine `sync` just set up.
