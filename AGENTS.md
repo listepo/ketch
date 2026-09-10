@@ -198,6 +198,10 @@ These are observed throughout; match them rather than introducing your own.
 
 - **Every file opens with a `//!` header** saying what the module owns and why
   it exists separately. Every public item has a doc comment.
+- **A generated file says so in its first lines**, and the generator writes
+  that header, not a person or a second script: `ketch lock` for `ketch.lock`,
+  `site/sync-docs.py` for `site/content/docs/`, `scripts/cask.sh` for the
+  tap's `Casks/ketch.rb`. To change such a file, change its generator.
 - **Comments explain *why*, never *what*.** The code already says what it does.
   A comment earns its place by recording a decision, a constraint, or a
   failure that motivated the shape of the code.
