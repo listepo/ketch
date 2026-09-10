@@ -1,6 +1,6 @@
 [package]
 name = "ketch"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2021"
 # Raised from 1.82 by Diesel 2.3, which is the floor for the statistics
 # database. Nothing else in the tree needs it.
