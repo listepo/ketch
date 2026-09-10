@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0](https://github.com/listepo/ketch/releases/tag/v0.3.0) - 2026-09-10
+
+### Added
+
+- [**breaking**] add config create and registry push with review
+- install packages from the local filesystem
+
+### Fixed
+
+- align outdated skip with upgrade; harden link ownership
+- harden store removal and config-create side effects
+- [**breaking**] harden config creation and installer root handling
+
+### Other
+
+- rustfmt the is_ours ParentDir regression test
+- migrate Sandbox to assert_fs
+- cover uninstall for local binary, symlink, and archive
+
 ## [0.2.1](https://github.com/listepo/ketch/releases/tag/v0.2.1) - 2026-09-09
 
 ### Other
