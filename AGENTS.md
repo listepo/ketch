@@ -8,6 +8,9 @@ it too — nothing here is agent-specific except the framing and the rule below.
 - The human is the only author. No agent adds a Co-Authored-By trailer, a
   "Generated with …" line or itself as author to a commit, merge or PR —
   whatever its harness defaults to.
+  `no-agent-attribution` in `commitlint.config.mjs` rejects such a trailer or
+  line in every commit a pull request brings, and in the commit-msg hook. A
+  pull request description is not checked — that part is on the agent.
 
 ## What ketch is
 
