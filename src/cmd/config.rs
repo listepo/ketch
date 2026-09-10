@@ -138,6 +138,9 @@ fn ask_name() -> Result<String> {
 }
 
 /// The current directory's file name, spelled the way package names are.
+///
+/// Sanitized as well as normalized: an empty answer returns the default, so a
+/// default `ask_name` rejects would be offered back forever.
 fn default_name() -> Result<String> {
     let folder = std::env::current_dir()
         .ok()
@@ -145,7 +148,7 @@ fn default_name() -> Result<String> {
         .ok_or_else(|| {
             Error::msg("the current directory has no name a package name could come from")
         })?;
-    Ok(normalize_name(&folder))
+    Ok(sanitize_component(&normalize_name(&folder)))
 }
 
 fn ask_kind() -> PackageKind {
