@@ -21,19 +21,28 @@ pub struct Answers {
     /// The install name as typed. The default comes from the current
     /// directory; `manifest` normalizes it the way repo names are normalized.
     pub name: String,
+    /// A short package summary, omitted when the question is left blank.
     pub description: Option<String>,
+    /// The package's project URL, omitted when the question is left blank.
     pub homepage: Option<String>,
     /// What the payload is; `Auto` is the default and means "look inside".
     pub kind: PackageKind,
+    /// Whether resolving `latest` may select a prerelease.
     pub prerelease: bool,
     /// Leading wrapper directories to drop. `None` means "leave it to ketch";
     /// an answer of `0` means the same thing and is stored as `None`.
     pub strip_prefix: Option<usize>,
+    /// Alternate package names, collected from a comma-separated answer.
     pub provides: Vec<String>,
+    /// Optional guidance printed after a successful installation.
     pub notes: Option<String>,
+    /// Executables the installed package exposes on `PATH`.
     pub bin: Vec<BinSpec>,
+    /// Additional payload files retained for future exposure.
     pub extra_paths: Vec<String>,
+    /// Globs that release assets must match when the list is non-empty.
     pub asset_include: Vec<String>,
+    /// Globs that always disqualify matching release assets.
     pub asset_exclude: Vec<String>,
     /// Per-target asset overrides, keyed by `<os>-<arch>`.
     pub asset_target: BTreeMap<String, String>,

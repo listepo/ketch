@@ -8,7 +8,7 @@
 
 use crate::cli::RegistryCommand;
 use crate::config::{self, Config};
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::push;
 use crate::ui;
 use std::path::PathBuf;
@@ -22,14 +22,7 @@ pub fn run(cfg: &Config, command: RegistryCommand) -> Result<()> {
             dry_run,
             yes,
         } => push(cfg, file, registry, dry_run, yes),
-        RegistryCommand::Validate { path } => validate(&path),
     }
-}
-
-/// `ketch registry validate`: every package folder in a checkout, checked the
-/// way the client will check it, so a bad entry is caught before merge.
-fn validate(_path: &std::path::Path) -> Result<()> {
-    Err(Error::msg("`ketch registry validate` is being built"))
 }
 
 /// `ketch registry push`: this project's package file, as a registry pull

@@ -14,6 +14,16 @@ use assert_fs::prelude::*;
 use predicates::prelude::*;
 
 #[test]
+fn registry_help_does_not_advertise_an_unimplemented_validator() {
+    Command::cargo_bin("ketch")
+        .unwrap()
+        .args(["registry", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("push").and(predicate::str::contains("validate").not()));
+}
+
+#[test]
 fn registry_push_dry_run_names_the_registry_folder_and_sends_nothing() {
     let temp = assert_fs::TempDir::new().unwrap();
     let root = temp.child("ketch-root");

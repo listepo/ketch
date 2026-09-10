@@ -14,8 +14,10 @@ use crate::registry::PACKAGE_FILE;
 use crate::ui;
 use crate::wizard::{self, Answers};
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::io::Write;
+use std::path::{Path, PathBuf};
 
+/// Run the selected `ketch config` operation with the active configuration.
 pub fn run(cfg: &Config, command: ConfigCommand) -> Result<()> {
     match command {
         ConfigCommand::Create { file, force, yes } => {
@@ -49,13 +51,27 @@ fn create(file: Option<PathBuf>, force: bool, yes: bool) -> Result<()> {
     if !yes && !ui::confirm(&format!("write {}?", path.display()), false) {
         return Ok(());
     }
-    std::fs::write(&path, body).map_err(|e| Error::io(&path, e))?;
+    write_manifest(&path, &body, force)?;
     ui::success("wrote", &path.display().to_string());
     ui::note(&format!(
         "try it with `ketch install {} --verbose`, offer it with `ketch registry push`",
         manifest.name
     ));
     Ok(())
+}
+
+/// Write a generated manifest, refusing a late overwrite unless forced.
+fn write_manifest(path: &Path, body: &str, force: bool) -> Result<()> {
+    if force {
+        return std::fs::write(path, body).map_err(|e| Error::io(path, e));
+    }
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|e| Error::io(path, e))?;
+    file.write_all(body.as_bytes())
+        .map_err(|e| Error::io(path, e))
 }
 
 /// The questionnaire, one field per question, in the order the schema
@@ -211,4 +227,19 @@ fn ask_asset_targets() -> BTreeMap<String, String> {
 fn ask_text(question: &str) -> Option<String> {
     let answer = ui::prompt(question, "");
     (!answer.is_empty()).then_some(answer)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn non_force_write_never_truncates_an_existing_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("ketch.toml");
+        std::fs::write(&path, "original\n").unwrap();
+
+        assert!(write_manifest(&path, "replacement\n", false).is_err());
+        assert_eq!(std::fs::read_to_string(path).unwrap(), "original\n");
+    }
 }

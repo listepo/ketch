@@ -401,13 +401,6 @@ pub enum RegistryCommand {
         #[arg(long, short = 'y')]
         yes: bool,
     },
-
-    /// Check every package folder in a registry checkout
-    Validate {
-        /// Registry checkout to validate (default: the current directory)
-        #[arg(value_name = "DIR", default_value = ".")]
-        path: PathBuf,
-    },
 }
 
 #[derive(Subcommand, Debug, Clone)]

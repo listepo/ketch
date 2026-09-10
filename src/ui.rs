@@ -251,7 +251,14 @@ pub fn confirm(question: &str, default: bool) -> bool {
 /// answer, not a cancellation, so nothing is announced when it is declined.
 /// The questionnaire's prerelease and `bin`-entry questions are the users.
 pub fn question(question: &str, default: bool) -> bool {
-    ask(question, default)
+    if std::io::stdin().is_terminal() {
+        return ask(question, default);
+    }
+    let mut answer = String::new();
+    if std::io::stdin().read_line(&mut answer).is_err() {
+        return default;
+    }
+    boolean_answer(&answer, default)
 }
 
 /// `--quiet` deliberately does not reach here. It asks for less output, not for
@@ -271,6 +278,11 @@ fn ask(question: &str, default: bool) -> bool {
     if std::io::stdin().read_line(&mut answer).is_err() {
         return default;
     }
+    boolean_answer(&answer, default)
+}
+
+/// Interpret one questionnaire or confirmation answer.
+fn boolean_answer(answer: &str, default: bool) -> bool {
     match answer.trim().to_ascii_lowercase().as_str() {
         "y" | "yes" => true,
         "n" | "no" => false,

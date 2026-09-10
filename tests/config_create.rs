@@ -3,11 +3,11 @@
 //!
 //! Every case drives the real binary through the questionnaire's stdin
 //! contract: with a pipe attached, each `ui::prompt` question reads one line
-//! and an empty line takes that question's default, while each `ui::confirm`
-//! — prereleases, the `bin` loop, the final write — reads nothing and answers
-//! itself with its default. The transcript a test pipes in therefore decides
-//! exactly which fields the written file has, which is the same view of the
-//! questionnaire a script or CI job gets.
+//! and an empty line takes that question's default. Questionnaire booleans such
+//! as prereleases and the `bin` loop also consume one line, while the final
+//! consent confirmation reads nothing and answers itself with its default. The
+//! transcript therefore decides exactly which fields the written file has,
+//! which is the same view of the questionnaire a script or CI job gets.
 
 use assert_cmd::Command;
 use assert_fs::prelude::*;
@@ -25,13 +25,11 @@ const MINIMAL_FILE: &str = concat!(
 );
 
 /// The empty answers that leave every question after `source` at its
-/// default: one empty line for each prompt that reads one — name,
-/// description, homepage, kind, strip prefix, aliases, notes, extra paths,
-/// asset include, asset exclude — and one more to end the asset.target loop.
-/// The two confirms in between read nothing from a pipe, so they consume no
-/// line, and anything piped after the loop's terminator is never read.
+/// default: name, description, homepage, kind, prereleases, strip prefix,
+/// aliases, notes, the `bin` loop, extra paths, asset include, asset exclude,
+/// and the asset-target loop terminator each consume one empty line.
 fn empty_answers_for_the_rest() -> String {
-    "\n".repeat(11)
+    "\n".repeat(13)
 }
 
 /// The command under test: the questionnaire run inside `project`, with the
@@ -92,6 +90,52 @@ fn answers_fill_in_the_optional_fields() {
         "source = \"github:acme/fancy-tool\"\n",
         "description = \"Searches files for a pattern\"\n",
         "homepage = \"https://acme.example/fancy-tool\"\n",
+    );
+    project
+        .child("ketch.toml")
+        .assert(predicate::str::diff(expected));
+}
+
+#[test]
+fn piped_boolean_answers_are_consumed_by_their_questions() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let root = temp.child("ketch-root");
+    let project = temp.child("Fancy-Tool");
+    project.create_dir_all().unwrap();
+    let answers = [
+        "github:acme/fancy-tool",
+        "",
+        "",
+        "",
+        "",
+        "yes",
+        "",
+        "",
+        "",
+        "yes",
+        "dist/fancy-tool",
+        "",
+        "no",
+        "",
+        "",
+        "",
+        "",
+    ]
+    .join("\n");
+
+    config_create(project.path(), root.path())
+        .arg("--yes")
+        .write_stdin(format!("{answers}\n"))
+        .assert()
+        .success();
+
+    let expected = concat!(
+        "# Written by `ketch config create`. Schema: docs/MANIFESTS.md.\n",
+        "name = \"fancy-tool\"\n",
+        "source = \"github:acme/fancy-tool\"\n",
+        "prerelease = true\n",
+        "\n",
+        "bin = [{ path = \"dist/fancy-tool\", name = \"fancy-tool\" }]\n",
     );
     project
         .child("ketch.toml")

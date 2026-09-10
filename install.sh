@@ -89,6 +89,10 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# The parsed root controls self-installation and every managed path below.
+KETCH_ROOT="${ROOT}"
+export KETCH_ROOT
+
 # Refuse to run as root
 if [ "$(id -u)" -eq 0 ]; then
   echo "${RED}Error: Don't run this script as root.${NC}" >&2
@@ -242,16 +246,12 @@ mkdir -p "${INSTALL_DIR}" || {
 }
 
 # Check if this is an upgrade
-INSTALL_PATH="${INSTALL_DIR}/${BINARY_NAME}"
+INSTALL_PATH="${ROOT}/bin/${BINARY_NAME}"
 if [ -e "${INSTALL_PATH}" ]; then
   echo "Upgrading ketch..."
 else
   echo "Installing ketch..."
 fi
-
-# The root is the bin dir's parent, which is how ketch itself derives it.
-KETCH_ROOT="$(dirname "${INSTALL_DIR}")"
-export KETCH_ROOT
 
 # Let ketch install itself. The downloaded binary is only used to run
 # `self install`, which fetches this same release again through ketch's own
@@ -261,7 +261,7 @@ export KETCH_ROOT
 chmod 755 "${BINARY_PATH}"
 xattr -d com.apple.quarantine "${BINARY_PATH}" 2>/dev/null || true
 "${BINARY_PATH}" self install || {
-  echo "${RED}Error: ketch could not install itself into ${INSTALL_DIR}.${NC}" >&2
+  echo "${RED}Error: ketch could not install itself into ${ROOT}.${NC}" >&2
   exit 1
 }
 
@@ -289,7 +289,7 @@ if [ "${PATH_SET}" -eq 1 ]; then
   echo "PATH updated. Open a new shell, or run:"
   echo "  ${GREEN}exec \$SHELL${NC}"
 else
-  echo "To use ketch, add ${INSTALL_DIR} to your PATH:"
+  echo "To use ketch, add ${ROOT}/bin to your PATH:"
   echo "  ${GREEN}${INSTALL_PATH} path install${NC}"
 fi
 
