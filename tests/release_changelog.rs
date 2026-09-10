@@ -235,3 +235,19 @@ fn changelog_has_no_duplicate_or_blank_change_items() {
         }
     }
 }
+
+// release-plz applies its configured header only to a new file and keeps an
+// existing one's, so nothing but this test notices the two drifting apart.
+#[test]
+fn the_changelog_opens_with_the_header_release_plz_is_configured_to_write() {
+    let config: toml::Table =
+        toml::from_str(include_str!("../release-plz.toml")).expect("release-plz.toml parses");
+    let header = config["changelog"]["header"]
+        .as_str()
+        .expect("[changelog] header is a string");
+    assert!(header.contains("Do not edit"), "{header}");
+    assert!(
+        CHANGELOG.starts_with(header),
+        "CHANGELOG.md does not open with release-plz.toml's [changelog] header"
+    );
+}
