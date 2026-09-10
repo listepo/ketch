@@ -261,7 +261,9 @@ pub fn upgrade(cfg: &Config, args: UpgradeArgs) -> Result<()> {
             require_checksum: cfg.require_checksums,
             asset_override: None,
             expected_sha256: None,
-            name_override: None,
+            // The installed name, which `--name` may have chosen. Resolving
+            // the source alone would infer another and install a second copy.
+            name_override: Some(pkg.name.clone()),
         })
         .collect();
 

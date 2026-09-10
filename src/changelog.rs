@@ -122,7 +122,10 @@ pub fn from_release(notes: Option<&str>) -> Option<Entry> {
 /// a bidi override can make a line read as the reverse of what it says. Neither
 /// belongs in prose, so both are dropped where the text enters rather than
 /// where it is printed, which would leave every caller to remember.
-fn sanitize(text: &str) -> String {
+///
+/// `ketch registry push` borrows it for the registry's copy of a package file,
+/// the other whole file someone else wrote that ketch prints.
+pub(crate) fn sanitize(text: &str) -> String {
     text.chars()
         .filter(|&c| match c {
             '\n' | '\t' => true,

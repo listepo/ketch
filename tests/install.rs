@@ -433,6 +433,40 @@ fn sync_refuses_a_payload_that_is_not_the_one_that_was_locked() {
     );
 }
 
+/// `--name` is the name a package lives under from then on. An upgrade that
+/// re-resolved the source would infer `testtool` and install a second copy
+/// beside `tt` instead of replacing it.
+#[test]
+fn upgrade_keeps_the_name_given_at_install() {
+    let sandbox = Sandbox::new();
+    publish_tool(&sandbox, "1.0.0");
+    sandbox.ok(&["install", "test:testtool", "--name", "tt", "--yes"]);
+
+    publish_tool(&sandbox, "2.0.0");
+    sandbox.ok(&["upgrade", "--yes"]);
+
+    assert_eq!(sandbox.ok(&["list", "--names-only"]).trim(), "tt");
+    assert_eq!(run(&sandbox.bin().join("testtool")), "testtool 2.0.0");
+}
+
+/// The lockfile records the name; sync has to put the package back under it,
+/// or `lock --check` never agrees with the machine it just synced.
+#[test]
+fn sync_puts_a_renamed_package_back_under_its_name() {
+    let sandbox = Sandbox::new();
+    publish_tool(&sandbox, "1.0.0");
+    let lock = lock_at(&sandbox);
+    let lock_arg = lock.display().to_string();
+
+    sandbox.ok(&["install", "test:testtool", "--name", "tt", "--yes"]);
+    sandbox.ok(&["lock", "--file", &lock_arg]);
+    sandbox.ok(&["uninstall", "tt", "--yes"]);
+
+    sandbox.ok(&["sync", "--file", &lock_arg]);
+    assert_eq!(sandbox.ok(&["list", "--names-only"]).trim(), "tt");
+    sandbox.ok(&["lock", "--check", "--file", &lock_arg]);
+}
+
 #[test]
 fn prune_removes_what_the_lockfile_does_not_name() {
     let sandbox = Sandbox::new();

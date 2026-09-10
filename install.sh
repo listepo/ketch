@@ -34,9 +34,9 @@ OPTIONS:
   --version <TAG>      Install specific version (default: latest)
   --root <DIR>         Ketch root, where ketch keeps its store and bin dir
                        (default: $DEFAULT_ROOT)
-  --install-dir <DIR>  Where the bootstrap binary lands; the installed ketch
-                       itself lives in the root's bin dir
-                       (default: $DEFAULT_INSTALL_DIR)
+  --install-dir <DIR>  The root's bin dir, as another way to name the root:
+                       the root becomes its parent. Beside --root it must be
+                       <root>/bin (default: $DEFAULT_INSTALL_DIR)
   --no-modify-path     Don't modify PATH in shell config files
   --help              Show this help message
 EOF
@@ -50,10 +50,11 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Parse arguments
+# Parse arguments. ROOT and INSTALL_DIR stay empty unless given, so the check
+# below can tell a flag that was passed from one left at its default.
 VERSION=""
-ROOT="${DEFAULT_ROOT}"
-INSTALL_DIR="${DEFAULT_INSTALL_DIR}"
+ROOT=""
+INSTALL_DIR=""
 NO_MODIFY_PATH=0
 
 while [ $# -gt 0 ]; do
@@ -89,13 +90,20 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# --install-dir names the bin dir. When the caller set it without --root,
-# derive the root from it so self-install and PATH agree with the bootstrap.
-if [ "${INSTALL_DIR}" != "${DEFAULT_INSTALL_DIR}" ] && [ "${ROOT}" = "${DEFAULT_ROOT}" ]; then
-  ROOT="$(dirname "${INSTALL_DIR}")"
+# --install-dir names the root's bin dir, so all it can say is where the root
+# is. Alone, the root is its parent; beside a --root it has to agree, because
+# ketch always installs into <root>/bin and one of the two would otherwise be
+# silently ignored.
+if [ -n "${INSTALL_DIR}" ]; then
+  if [ -z "${ROOT}" ]; then
+    ROOT="$(dirname "${INSTALL_DIR}")"
+  elif [ "${INSTALL_DIR%/}" != "${ROOT%/}/bin" ]; then
+    echo "${RED}Error: --install-dir ${INSTALL_DIR} is not ${ROOT%/}/bin, the bin dir of --root ${ROOT}.${NC}" >&2
+    echo "ketch always installs into <root>/bin; pass just one of the two." >&2
+    exit 1
+  fi
 fi
-# The installed binary always lives at $ROOT/bin; keep INSTALL_DIR in step.
-INSTALL_DIR="${ROOT}/bin"
+ROOT="${ROOT:-${DEFAULT_ROOT}}"
 
 # The parsed root controls self-installation and every managed path below.
 KETCH_ROOT="${ROOT}"

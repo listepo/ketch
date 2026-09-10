@@ -66,6 +66,30 @@ fn defaults_write_only_name_and_source() {
         .assert(predicate::str::diff(MINIMAL_FILE));
 }
 
+/// An empty answer takes the default, so a default the name check rejects
+/// would be re-offered forever. A folder name with a leading dash is one.
+#[test]
+fn a_folder_name_that_is_not_a_package_name_still_gives_a_usable_default() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let root = temp.child("ketch-root");
+    let project = temp.child("-Fancy-Tool-");
+    project.create_dir_all().unwrap();
+
+    config_create(project.path(), root.path())
+        .arg("--yes")
+        .timeout(std::time::Duration::from_secs(30))
+        .write_stdin(format!(
+            "github:acme/fancy-tool\n{}",
+            empty_answers_for_the_rest()
+        ))
+        .assert()
+        .success();
+
+    project
+        .child("ketch.toml")
+        .assert(predicate::str::diff(MINIMAL_FILE));
+}
+
 #[test]
 fn answers_fill_in_the_optional_fields() {
     let temp = assert_fs::TempDir::new().unwrap();
