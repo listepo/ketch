@@ -10,8 +10,8 @@ use crate::config::{sanitize_component, Config};
 use crate::error::{Error, Result};
 use crate::manifest::Resolver;
 use crate::model::{
-    glob_match, now_unix, AssetSelector, InstalledPackage, LinkRecord, PackageSpec, Release,
-    ReleaseAsset, Version, VersionSpec,
+    glob_match, now_unix, AssetSelector, BinSpec, InstalledPackage, LinkRecord, LocalKind,
+    PackageSpec, Release, ReleaseAsset, Version, VersionSpec,
 };
 use crate::platform::{AssetScore, Placement, Platform, TrustVerdict};
 use crate::source::{ListOpts, SourceRegistry};
@@ -37,6 +37,8 @@ pub struct InstallRequest {
     /// SHA-256 this asset is already known to have, from a lockfile. Checked
     /// before anything is unpacked.
     pub expected_sha256: Option<String>,
+    /// Override the resolved package name (used by `ketch install --path --name`).
+    pub name_override: Option<String>,
 }
 
 impl InstallRequest {
@@ -50,6 +52,7 @@ impl InstallRequest {
             require_checksum: false,
             asset_override: None,
             expected_sha256: None,
+            name_override: None,
         }
     }
 }
@@ -93,6 +96,9 @@ pub struct Prepared {
     /// records covers the download and the unpack too — the parts that take the
     /// time — rather than only the placement it can see for itself.
     started: std::time::Instant,
+    /// Set for `local:` installs so list/info can show how the path was used.
+    local_kind: Option<LocalKind>,
+    local_path: Option<PathBuf>,
 }
 
 /// Run the pipeline. Mutates `state` in memory; the caller saves it, so a batch
@@ -161,7 +167,47 @@ pub fn prepare(
     let platform = crate::platform::host()?;
     let label = req.spec.label();
     ui::stage(&label, ui::ProgressStage::Resolving);
-    let (manifest, origin) = Resolver::new(cfg)?.resolve(&req.spec)?;
+    let (mut manifest, origin) = Resolver::new(cfg)?.resolve(&req.spec)?;
+
+    // Local refs are recorded with an absolute path so list/info survive a
+    // later change of working directory. Classification also needs the path
+    // to exist before anything is copied.
+    let (local_kind, local_path) = if manifest.source.scheme == "local" {
+        let abs = crate::source::local::resolve_path(&manifest.source.id)?;
+        let kind = crate::source::local::classify(&abs)?;
+        manifest.source = crate::source::local::package_ref(&abs);
+        (Some(kind), Some(abs))
+    } else {
+        (None, None)
+    };
+
+    if let Some(name) = &req.name_override {
+        let name = sanitize_component(&crate::model::normalize_name(name));
+        if name.is_empty() {
+            return Err(Error::msg("--name produced an empty package name"));
+        }
+        manifest.name = name;
+        manifest.validate()?;
+    }
+
+    // A local single file should appear on PATH under the package name, not
+    // whatever the file happened to be called on disk (`a.out`, a symlink
+    // leaf, a version-stamped build artifact).
+    if matches!(local_kind, Some(LocalKind::Binary | LocalKind::Symlink)) {
+        if let Some(path) = &local_path {
+            let leaf = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| manifest.name.clone());
+            if manifest.bin.is_empty() {
+                manifest.bin = vec![BinSpec {
+                    path: Some(leaf),
+                    name: Some(manifest.name.clone()),
+                }];
+            }
+        }
+    }
+
     let source = sources.for_ref(&manifest.source)?;
 
     let opts = ListOpts {
@@ -204,53 +250,94 @@ pub fn prepare(
         ));
     }
 
-    // --- download -----------------------------------------------------------
-    ui::stage(&label, ui::ProgressStage::Downloading);
     std::fs::create_dir_all(&cfg.cache_dir).map_err(|e| Error::io(&cfg.cache_dir, e))?;
-    // A directory of its own, not a name under the cache. Two `prepare`s run
-    // side by side, and an alias and a repo path naming the same package would
-    // pick the same file name: they would overwrite each other's archive,
-    // extract whichever landed last, and delete it from under each other. The
-    // archive is staging, never a cache — it is deleted as soon as the payload
-    // is unpacked — so a unique directory costs nothing.
-    let staging = tempfile::tempdir_in(&cfg.cache_dir).map_err(|e| Error::io(&cfg.cache_dir, e))?;
-    let download_path = staging.path().join(sanitize_component(&asset.name));
-    let sha256 = source.download(&asset, &download_path, progress)?;
+    let unpack = tempfile::tempdir_in(&cfg.cache_dir).map_err(|e| Error::io(&cfg.cache_dir, e))?;
 
-    // --- checksum -----------------------------------------------------------
-    // A lockfile's hash is checked first and separately. The source's own
-    // checksum says the download was not corrupted; this says the release is
-    // still the one that was locked, and a release that changed under a tag it
-    // already published is exactly what a lockfile exists to catch.
-    if let Some(expected) = &req.expected_sha256 {
-        if !expected.eq_ignore_ascii_case(&sha256) {
-            return Err(Error::msg(format!(
-                "{}: {} does not match the lockfile\n  locked {expected}\n  got    {sha256}\n\
+    // Local `.app` bundles are directories: copy the tree into the unpack root
+    // rather than pretending they are a downloadable archive.
+    let (sha256, asset_name, checksum_verified, payload) = if local_kind == Some(LocalKind::App) {
+        let app_path = local_path.as_ref().ok_or_else(|| {
+            Error::msg("internal error: local .app install without a recorded path")
+        })?;
+        ui::stage(&label, ui::ProgressStage::Downloading);
+        let dest_name = app_path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "App.app".into());
+        let dest = unpack.path().join(&dest_name);
+        crate::source::local::copy_tree(app_path, &dest)?;
+        let sha256 = crate::source::local::sha256_tree(app_path)?;
+        progress.finish("copied");
+        ui::stage(&label, ui::ProgressStage::Verifying);
+        if req.require_checksum || cfg.require_checksums {
+            return Err(Error::ChecksumMissing(dest_name));
+        }
+        let payload = payload_root(unpack.path(), manifest.strip_prefix)?;
+        (sha256, dest_name, false, payload)
+    } else {
+        // --- download -------------------------------------------------------
+        ui::stage(&label, ui::ProgressStage::Downloading);
+        // A directory of its own, not a name under the cache. Two `prepare`s
+        // run side by side, and an alias and a repo path naming the same
+        // package would pick the same file name: they would overwrite each
+        // other's archive, extract whichever landed last, and delete it from
+        // under each other. The archive is staging, never a cache — it is
+        // deleted as soon as the payload is unpacked — so a unique directory
+        // costs nothing.
+        let staging =
+            tempfile::tempdir_in(&cfg.cache_dir).map_err(|e| Error::io(&cfg.cache_dir, e))?;
+        let download_path = staging.path().join(sanitize_component(&asset.name));
+        // For a local symlink, point the asset URL at the origin path so
+        // LocalSource::download follows it; classification already recorded
+        // that the user named a link.
+        let mut asset = asset;
+        if let Some(path) = &local_path {
+            asset.url = path.to_string_lossy().into_owned();
+        }
+        let sha256 = source.download(&asset, &download_path, progress)?;
+
+        // --- checksum -------------------------------------------------------
+        // A lockfile's hash is checked first and separately. The source's own
+        // checksum says the download was not corrupted; this says the release
+        // is still the one that was locked, and a release that changed under a
+        // tag it already published is exactly what a lockfile exists to catch.
+        if let Some(expected) = &req.expected_sha256 {
+            if !expected.eq_ignore_ascii_case(&sha256) {
+                return Err(Error::msg(format!(
+                    "{}: {} does not match the lockfile\n  locked {expected}\n  got    {sha256}\n\
                  The release was replaced after the lock was written. Install it \
                  deliberately and re-run `ketch lock` rather than accepting a payload \
                  nobody recorded.",
-                manifest.name, asset.name
-            )));
+                    manifest.name, asset.name
+                )));
+            }
         }
-    }
 
-    ui::stage(&label, ui::ProgressStage::Verifying);
-    let checksum_verified = verify_checksum(
-        source.as_ref(),
-        &manifest.source.id,
-        &release,
-        &asset,
-        &sha256,
-        req.require_checksum || cfg.require_checksums,
-    )?;
+        ui::stage(&label, ui::ProgressStage::Verifying);
+        // Local packages never publish a checksum; requiring one would make
+        // every `local:` install fail for a reason the user cannot fix.
+        let require = if local_kind.is_some() {
+            false
+        } else {
+            req.require_checksum || cfg.require_checksums
+        };
+        let checksum_verified = verify_checksum(
+            source.as_ref(),
+            &manifest.source.id,
+            &release,
+            &asset,
+            &sha256,
+            require,
+        )?;
 
-    // --- extract ------------------------------------------------------------
-    ui::stage(&label, ui::ProgressStage::Extracting);
-    let unpack = tempfile::tempdir_in(&cfg.cache_dir).map_err(|e| Error::io(&cfg.cache_dir, e))?;
-    let format =
-        crate::extract::extract_auto(&download_path, unpack.path(), &platform.extractors())?;
-    ui::debug(&format!("unpacked {} as {format}", asset.name));
-    let payload = payload_root(unpack.path(), manifest.strip_prefix)?;
+        // --- extract --------------------------------------------------------
+        ui::stage(&label, ui::ProgressStage::Extracting);
+        let format =
+            crate::extract::extract_auto(&download_path, unpack.path(), &platform.extractors())?;
+        ui::debug(&format!("unpacked {} as {format}", asset.name));
+        let payload = payload_root(unpack.path(), manifest.strip_prefix)?;
+        (sha256, asset.name, checksum_verified, payload)
+    };
 
     ui::stage(&label, ui::ProgressStage::Trusting);
     check_trust(platform.as_ref(), cfg, &payload, &manifest.name);
@@ -259,13 +346,15 @@ pub fn prepare(
         manifest,
         origin,
         release,
-        asset_name: asset.name,
+        asset_name,
         sha256,
         checksum_verified,
         link: req.link,
         payload,
         unpack,
         started,
+        local_kind,
+        local_path,
     })
 }
 
@@ -304,6 +393,8 @@ pub fn commit(cfg: &Config, state: &mut State, prepared: Prepared) -> Result<Ins
         payload,
         unpack,
         started,
+        local_kind,
+        local_path,
     } = prepared;
     let platform = crate::platform::host()?;
     ui::stage(&manifest.name, ui::ProgressStage::Installing);
@@ -367,6 +458,8 @@ pub fn commit(cfg: &Config, state: &mut State, prepared: Prepared) -> Result<Ins
         pinned: existing.as_ref().is_some_and(|p| p.pinned),
         origin,
         manifest: Some(manifest),
+        local_kind,
+        local_path,
     };
     state.insert(package.clone());
     orphan.keep();

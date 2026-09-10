@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Scaffolding for the end-to-end tests: a throwaway ketch root, fixture
 //! archives that stand in for real release assets, and a source plugin that
 //! serves them.
@@ -330,7 +331,7 @@ pub enum Archive {
 }
 
 impl Archive {
-    fn write_to(self, dest: &Path) {
+    pub fn write_to(self, dest: &Path) {
         match self {
             Archive::TarGz(entries) => write_tar_gz(dest, &entries),
             Archive::Zip(entries) => write_zip(dest, &entries),

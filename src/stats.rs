@@ -532,6 +532,8 @@ mod tests {
             pinned: false,
             origin: ManifestOrigin::Inferred,
             manifest: None,
+            local_kind: None,
+            local_path: None,
         }
     }
 

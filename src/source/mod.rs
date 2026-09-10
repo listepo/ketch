@@ -5,6 +5,7 @@
 //! without recompiling ketch (see `plugin.rs` and `docs/PLUGINS.md`).
 
 pub mod github;
+pub mod local;
 pub mod plugin;
 
 use crate::config::Config;
@@ -154,8 +155,10 @@ impl SourceRegistry {
     /// third-party plugin must not make `ketch install owner/repo` fail.
     pub fn load(cfg: &Config) -> Self {
         let http = Arc::new(Http::new(cfg));
-        let mut sources: Vec<Arc<dyn Source>> =
-            vec![Arc::new(github::GitHubSource::new(http.clone()))];
+        let mut sources: Vec<Arc<dyn Source>> = vec![
+            Arc::new(github::GitHubSource::new(http.clone())),
+            Arc::new(local::LocalSource::new()),
+        ];
 
         for found in plugin::discover(cfg) {
             match found {
@@ -174,7 +177,13 @@ impl SourceRegistry {
     pub fn builtin_only(cfg: &Config) -> Self {
         let http = Arc::new(Http::new(cfg));
         SourceRegistry {
-            sources: vec![Arc::new(github::GitHubSource::new(http))],
+            // Local stays available even for self-update's registry: it cannot
+            // serve the host package, and omitting it would make `local:` fail
+            // only in that one code path for no good reason.
+            sources: vec![
+                Arc::new(github::GitHubSource::new(http)),
+                Arc::new(local::LocalSource::new()),
+            ],
         }
     }
 

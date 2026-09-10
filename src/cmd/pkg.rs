@@ -14,7 +14,7 @@ use crate::ui;
 
 pub fn install(cfg: &Config, args: InstallArgs) -> Result<()> {
     if let Some(asset) = &args.asset {
-        if args.packages.len() > 1 {
+        if args.packages.len() > 1 || args.path.is_some() {
             return Err(Error::msg(
                 "--asset names one file, so it can only be used with a single package",
             ));
@@ -30,21 +30,40 @@ pub fn install(cfg: &Config, args: InstallArgs) -> Result<()> {
         }
     }
 
+    if args.name.is_some() && args.path.is_none() && args.packages.len() != 1 {
+        return Err(Error::msg(
+            "--name needs exactly one package (or use it with --path)",
+        ));
+    }
+    if args.path.is_some() && !args.packages.is_empty() {
+        return Err(Error::msg(
+            "--path already names the package; do not also pass a PKG argument",
+        ));
+    }
+
     let _lock = Lock::acquire(cfg)?;
     let sources = SourceRegistry::load(cfg);
     let mut state = State::load(cfg)?;
 
-    // The same package twice would be downloaded twice and placed twice, with
-    // the second replacing the first for no reason. Order is the user's.
+    // --path synthesises a local: ref; otherwise the user-typed PKG list is
+    // used. Deduplicate either way so the same package is not prepared twice.
+    let owned: Vec<String> = if let Some(path) = &args.path {
+        let abs = crate::source::local::absolute_path(&path.to_string_lossy())?;
+        vec![format!("local:{}", abs.display())]
+    } else {
+        args.packages.clone()
+    };
     let mut wanted: Vec<&String> = Vec::new();
-    for raw in &args.packages {
+    for raw in &owned {
         if !wanted.contains(&raw) {
             wanted.push(raw);
         }
     }
+    let name_override = args.name.clone();
     let reqs: Vec<InstallRequest> = wanted
         .iter()
-        .map(|raw| InstallRequest {
+        .enumerate()
+        .map(|(i, raw)| InstallRequest {
             spec: PackageSpec::parse(raw),
             force: args.force,
             prerelease: args.prerelease,
@@ -52,6 +71,8 @@ pub fn install(cfg: &Config, args: InstallArgs) -> Result<()> {
             require_checksum: args.require_checksum || cfg.require_checksums,
             asset_override: args.asset.clone(),
             expected_sha256: None,
+            // --name applies to the single package being installed.
+            name_override: if i == 0 { name_override.clone() } else { None },
         })
         .collect();
 
@@ -163,6 +184,10 @@ pub fn upgrade(cfg: &Config, args: UpgradeArgs) -> Result<()> {
             ui::debug(&format!("{} is pinned at {}", pkg.name, pkg.version));
             continue;
         }
+        if pkg.source.scheme == "local" {
+            ui::debug(&format!("{} is local; upgrade is not applicable", pkg.name));
+            continue;
+        }
         ui::step("checking", &pkg.name);
         let release = match install::latest_release(&sources, &pkg, prerelease) {
             Ok(r) => r,
@@ -236,6 +261,7 @@ pub fn upgrade(cfg: &Config, args: UpgradeArgs) -> Result<()> {
             require_checksum: cfg.require_checksums,
             asset_override: None,
             expected_sha256: None,
+            name_override: None,
         })
         .collect();
 

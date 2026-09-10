@@ -136,9 +136,17 @@ pub enum Command {
 
 #[derive(Args, Debug, Clone)]
 pub struct InstallArgs {
-    /// `owner/repo`, `scheme:id`, or a known alias — each may carry `@version`
-    #[arg(required = true, value_name = "PKG")]
+    /// `owner/repo`, `scheme:id`, `local:<path>`, or a known alias — each may carry `@version`
+    #[arg(required_unless_present = "path", value_name = "PKG")]
     pub packages: Vec<String>,
+
+    /// Install from a local archive, binary, symlink, or `.app` (sets `local:<PATH>`)
+    #[arg(long, value_name = "PATH")]
+    pub path: Option<PathBuf>,
+
+    /// Package name when installing with `--path` (defaults to the file basename)
+    #[arg(long, value_name = "NAME")]
+    pub name: Option<String>,
 
     /// Reinstall even when the requested version is already present
     #[arg(long, short)]

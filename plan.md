@@ -250,6 +250,11 @@ explanation comes from the production resolver.
 
 ## Smaller improvements
 
+- **Local filesystem installs (`local:` / `ketch install --path`).** Install an
+  archive, bare binary, symlink, or macOS `.app` from disk; `list`/`info`
+  (text + JSON) surface `local_kind` and path; `outdated` skips them.
+
+
 Each is small enough to land on its own, in no particular order.
 
 - **Install ketch's own completions and a man page.** `ketch completions`
