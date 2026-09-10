@@ -14,6 +14,75 @@ fn write_program(path: &std::path::Path, says: &str) {
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).expect("chmod");
 }
 
+/// A minimal `.app` bundle whose executable prints `says`.
+fn write_app(app: &std::path::Path, says: &str) {
+    let macos = app.join("Contents/MacOS");
+    std::fs::create_dir_all(&macos).expect("create bundle");
+    write_program(&macos.join("Thing"), says);
+}
+
+/// The file is staged under its sanitized name, so the link must look for the
+/// same spelling — a leading dot is one `sanitize_component` strips.
+#[test]
+fn a_local_binary_whose_name_starts_with_a_dot_still_links() {
+    let sandbox = Sandbox::new();
+    let fixture = sandbox.fixture(".dottool");
+    write_program(&fixture, "dotted");
+
+    sandbox.ok(&["install", "--path", fixture.to_str().unwrap(), "-y"]);
+
+    let out = std::process::Command::new(sandbox.bin().join("dottool"))
+        .output()
+        .expect("run linked binary");
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "dotted");
+}
+
+/// A bundle is hashed as a tree rather than downloaded, and that path has to
+/// be held to the lockfile exactly like a file is.
+#[test]
+fn sync_refuses_a_local_app_that_changed_since_the_lock() {
+    let sandbox = Sandbox::new();
+    let app = sandbox.fixture("Thing.app");
+    write_app(&app, "v1");
+    let lock = sandbox.home().join("ketch.lock");
+    let lock_arg = lock.display().to_string();
+
+    sandbox.ok(&["install", "--path", app.to_str().unwrap(), "-y"]);
+    sandbox.ok(&["lock", "--file", &lock_arg]);
+    sandbox.ok(&["uninstall", "thing.app", "--yes"]);
+    write_app(&app, "v2");
+
+    let said = sandbox.fails(&["sync", "--file", &lock_arg]);
+    assert!(said.contains("does not match the lockfile"), "{said}");
+    assert!(sandbox.ok(&["list"]).contains("nothing installed"));
+}
+
+/// A local path has no published checksum to require; the policy has to treat
+/// a bundle the same as a file rather than refuse one and wave the other on.
+#[test]
+fn require_checksum_treats_a_local_app_like_a_local_binary() {
+    let sandbox = Sandbox::new();
+    let tool = sandbox.fixture("btool");
+    write_program(&tool, "b");
+    let app = sandbox.fixture("Thing.app");
+    write_app(&app, "v1");
+
+    sandbox.ok(&[
+        "install",
+        "--require-checksum",
+        "--path",
+        tool.to_str().unwrap(),
+        "-y",
+    ]);
+    sandbox.ok(&[
+        "install",
+        "--require-checksum",
+        "--path",
+        app.to_str().unwrap(),
+        "-y",
+    ]);
+}
+
 #[test]
 fn local_binary_install_appears_in_list_and_info_json() {
     let sandbox = Sandbox::new();

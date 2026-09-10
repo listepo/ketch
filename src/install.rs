@@ -201,7 +201,9 @@ pub fn prepare(
                 .unwrap_or_else(|| manifest.name.clone());
             if manifest.bin.is_empty() {
                 manifest.bin = vec![BinSpec {
-                    path: Some(leaf),
+                    // Spelled the way the download is staged below, or a leaf
+                    // that sanitizing changes (`.tool`, `-tool`) is never found.
+                    path: Some(sanitize_component(&leaf)),
                     name: Some(manifest.name.clone()),
                 }];
             }
@@ -266,12 +268,13 @@ pub fn prepare(
             .unwrap_or_else(|| "App.app".into());
         let dest = unpack.path().join(&dest_name);
         crate::source::local::copy_tree(app_path, &dest)?;
-        let sha256 = crate::source::local::sha256_tree(app_path)?;
+        // The copy is hashed, not the original, so the digest describes exactly
+        // what gets placed. Like a local file, a bundle has no published
+        // checksum to require, but a lockfile's hash still holds it.
+        let sha256 = crate::source::local::sha256_tree(&dest)?;
         progress.finish("copied");
         ui::stage(&label, ui::ProgressStage::Verifying);
-        if req.require_checksum || cfg.require_checksums {
-            return Err(Error::ChecksumMissing(dest_name));
-        }
+        check_locked(req, &manifest.name, &dest_name, &sha256)?;
         let payload = payload_root(unpack.path(), manifest.strip_prefix)?;
         (sha256, dest_name, false, payload)
     } else {
@@ -297,21 +300,7 @@ pub fn prepare(
         let sha256 = source.download(&asset, &download_path, progress)?;
 
         // --- checksum -------------------------------------------------------
-        // A lockfile's hash is checked first and separately. The source's own
-        // checksum says the download was not corrupted; this says the release
-        // is still the one that was locked, and a release that changed under a
-        // tag it already published is exactly what a lockfile exists to catch.
-        if let Some(expected) = &req.expected_sha256 {
-            if !expected.eq_ignore_ascii_case(&sha256) {
-                return Err(Error::msg(format!(
-                    "{}: {} does not match the lockfile\n  locked {expected}\n  got    {sha256}\n\
-                 The release was replaced after the lock was written. Install it \
-                 deliberately and re-run `ketch lock` rather than accepting a payload \
-                 nobody recorded.",
-                    manifest.name, asset.name
-                )));
-            }
-        }
+        check_locked(req, &manifest.name, &asset.name, &sha256)?;
 
         ui::stage(&label, ui::ProgressStage::Verifying);
         // Local packages never publish a checksum; requiring one would make
@@ -799,6 +788,25 @@ fn payload_root(unpacked: &Path, strip: Option<usize>) -> Result<PathBuf> {
             }
             Ok(root)
         }
+    }
+}
+
+/// Hold a payload to the hash a lockfile recorded for it.
+///
+/// Checked apart from the source's own checksum: that one says the download
+/// was not corrupted, this one says the release is still the one that was
+/// locked — and a release that changed under a tag it already published is
+/// exactly what a lockfile exists to catch. Every payload path calls it before
+/// anything is placed, so no kind of package can skip the lock.
+fn check_locked(req: &InstallRequest, name: &str, asset: &str, sha256: &str) -> Result<()> {
+    match &req.expected_sha256 {
+        Some(expected) if !expected.eq_ignore_ascii_case(sha256) => Err(Error::msg(format!(
+            "{name}: {asset} does not match the lockfile\n  locked {expected}\n  got    {sha256}\n\
+             The release was replaced after the lock was written. Install it \
+             deliberately and re-run `ketch lock` rather than accepting a payload \
+             nobody recorded."
+        ))),
+        _ => Ok(()),
     }
 }
 
