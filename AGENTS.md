@@ -1,7 +1,13 @@
 # AGENTS.md
 
 Notes for coding agents working in this repository. Humans are welcome to read
-it too — nothing here is agent-specific except the framing.
+it too — nothing here is agent-specific except the framing and the rule below.
+
+## Mandatory for every agent
+
+- The human is the only author. No agent adds a Co-Authored-By trailer, a
+  "Generated with …" line or itself as author to a commit, merge or PR —
+  whatever its harness defaults to.
 
 ## What ketch is
 
