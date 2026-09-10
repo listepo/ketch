@@ -1,0 +1,44 @@
+#!/bin/sh
+# Conventional-commit gate. commitlint owns the message format; this wrapper
+# exists for the two things it cannot see: git's own merge/revert subjects,
+# and the staged diff that says whether a CLI-surface change is sneaking out
+# without the breaking marker release-plz reads.
+
+msg="$1"
+subject=$(head -n 1 "$msg")
+
+# git writes merge and revert subjects in its own format; they are not
+# conventional commits and are not ours to rewrite.
+case "$subject" in
+    "Merge "*|"Revert "*) exit 0 ;;
+esac
+
+if ! command -v mise >/dev/null 2>&1; then
+    echo "commit-msg: mise is not installed (it provides the pinned node for commitlint); bypass with git commit --no-verify" >&2
+    exit 1
+fi
+
+# --no-install: a missing commitlint must be an error, not a surprise download.
+if ! mise exec -- npx --no-install commitlint --edit "$msg"; then
+    if [ -x node_modules/.bin/commitlint ]; then
+        echo "commit-msg: fix the message above, or bypass with git commit --no-verify" >&2
+    else
+        echo "commit-msg: commitlint is not installed; run just deps, or bypass with git commit --no-verify" >&2
+    fi
+    exit 1
+fi
+
+# Advisory from here on. A change to the CLI surface that ships unmarked
+# bumps the patch when it should bump the minor; only the diff knows, so the
+# hook reminds and never rejects.
+if git diff --cached --name-only | grep -qE '^src/cli\.rs$|^src/cmd/'; then
+    case "${subject%%:*}" in
+        *!*) exit 0 ;; # feat!: / fix!: already marked
+    esac
+    if ! grep -qE '^[[:space:]]*BREAKING[ -]CHANGE:' "$msg"; then
+        echo "reminder: staged changes touch the CLI surface (src/cli.rs or src/cmd/)." >&2
+        echo "  If they change or remove existing behavior, mark this commit feat!: or fix!: (or add a" >&2
+        echo "  BREAKING CHANGE: footer) so release-plz bumps the minor; bypass with git commit --no-verify." >&2
+    fi
+fi
+exit 0

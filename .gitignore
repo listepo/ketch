@@ -3,6 +3,9 @@
 .DS_Store
 .serena/
 
+# npm install output for commit-message tooling (package-lock.json is committed)
+/node_modules/
+
 # Hugo build output, and the doc pages generated from the Markdown in the
 # repository root by site/sync-docs.py.
 /site/public/

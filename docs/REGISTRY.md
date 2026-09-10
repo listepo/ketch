@@ -80,19 +80,33 @@ A `ketch.toml` at the root of a project is the same file its registry folder
 would hold, so contributing it is one command, run from that root:
 
 ```bash
-KETCH_GITHUB_TOKEN=... ketch push            # opens a pull request
-ketch push --dry-run                         # shows what would be sent
-ketch push --file path/to/ketch.toml         # a file somewhere else
-ketch push --registry someone/their-registry # a registry other than the default
+KETCH_GITHUB_TOKEN=... ketch registry push            # fetch, compare, then a pull request
+ketch registry push --yes                             # answer the question in advance
+ketch registry push --dry-run                         # what would be pushed, offline
+ketch registry push --file path/to/ketch.toml         # a file somewhere else
+ketch registry push --registry someone/their-registry # a registry other than the default
 ```
 
-`push` validates the file exactly as the registry will, then puts it at
-`<name>/ketch.toml` on a branch called `ketch/<name>` and opens a pull request
-against the registry's default branch. With push access to the registry the
-branch is made there; without it, on a fork of the registry under your
-account, created if needed. Pushing again updates the same branch, and joins
-the pull request that is already open rather than opening a second. When the
-registry already holds the file byte for byte, nothing is sent.
+Before sending anything, `registry push` fetches the registry's current copy
+of `<name>/ketch.toml` from the registry's default branch, and what happens
+next depends on what that holds:
+
+| Registry's copy | What `registry push` does |
+| --- | --- |
+| does not exist | opens the pull request straight away |
+| is byte for byte the same | reports `unchanged` and opens nothing |
+| differs | prints a unified diff — its copy as the old side, the local file as the new — and opens the update pull request only after yes/no |
+
+`registry push` validates the file exactly as the registry will, then puts it
+at `<name>/ketch.toml` on a branch called `ketch/<name>` and opens a pull
+request against the registry's default branch. With push access to the
+registry the branch is made there; without it, on a fork of the registry
+under your account, created if needed. Pushing again updates the same branch,
+and joins the pull request that is already open rather than opening a second.
+
+`--yes` answers the question in advance — for scripts and CI, where there is
+no one to ask, or for when you already know what the diff says. `--dry-run`
+shows what would be pushed without touching the network.
 
 `name` may be left out of the file, in which case the folder it sits in names
 the package — the same rule the registry applies. The file goes up exactly as

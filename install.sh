@@ -17,6 +17,7 @@ fi
 # Script constants
 SELF_REPO="listepo/ketch"
 BINARY_NAME="ketch"
+DEFAULT_ROOT="${HOME}/.ketch"
 DEFAULT_INSTALL_DIR="${HOME}/.ketch/bin"
 
 # State for cleanup
@@ -31,7 +32,11 @@ Install ketch, a Rust CLI for managing GitHub-released apps on macOS.
 
 OPTIONS:
   --version <TAG>      Install specific version (default: latest)
-  --install-dir <DIR>  Install directory (default: $DEFAULT_INSTALL_DIR)
+  --root <DIR>         Ketch root, where ketch keeps its store and bin dir
+                       (default: $DEFAULT_ROOT)
+  --install-dir <DIR>  Where the bootstrap binary lands; the installed ketch
+                       itself lives in the root's bin dir
+                       (default: $DEFAULT_INSTALL_DIR)
   --no-modify-path     Don't modify PATH in shell config files
   --help              Show this help message
 EOF
@@ -47,6 +52,7 @@ trap cleanup EXIT
 
 # Parse arguments
 VERSION=""
+ROOT="${DEFAULT_ROOT}"
 INSTALL_DIR="${DEFAULT_INSTALL_DIR}"
 NO_MODIFY_PATH=0
 
@@ -55,6 +61,11 @@ while [ $# -gt 0 ]; do
     --version)
       shift
       VERSION="$1"
+      shift
+      ;;
+    --root)
+      shift
+      ROOT="$1"
       shift
       ;;
     --install-dir)
@@ -77,6 +88,18 @@ while [ $# -gt 0 ]; do
       ;;
   esac
 done
+
+# --install-dir names the bin dir. When the caller set it without --root,
+# derive the root from it so self-install and PATH agree with the bootstrap.
+if [ "${INSTALL_DIR}" != "${DEFAULT_INSTALL_DIR}" ] && [ "${ROOT}" = "${DEFAULT_ROOT}" ]; then
+  ROOT="$(dirname "${INSTALL_DIR}")"
+fi
+# The installed binary always lives at $ROOT/bin; keep INSTALL_DIR in step.
+INSTALL_DIR="${ROOT}/bin"
+
+# The parsed root controls self-installation and every managed path below.
+KETCH_ROOT="${ROOT}"
+export KETCH_ROOT
 
 # Refuse to run as root
 if [ "$(id -u)" -eq 0 ]; then
@@ -224,23 +247,19 @@ else
   fi
 fi
 
-# Create install directory
-mkdir -p "${INSTALL_DIR}" || {
-  echo "${RED}Error: Failed to create install directory: ${INSTALL_DIR}${NC}" >&2
+# Create the root bin dir the installed binary will live in.
+mkdir -p "${ROOT}/bin" || {
+  echo "${RED}Error: Failed to create install directory: ${ROOT}/bin${NC}" >&2
   exit 1
 }
 
 # Check if this is an upgrade
-INSTALL_PATH="${INSTALL_DIR}/${BINARY_NAME}"
+INSTALL_PATH="${ROOT}/bin/${BINARY_NAME}"
 if [ -e "${INSTALL_PATH}" ]; then
   echo "Upgrading ketch..."
 else
   echo "Installing ketch..."
 fi
-
-# The root is the bin dir's parent, which is how ketch itself derives it.
-KETCH_ROOT="$(dirname "${INSTALL_DIR}")"
-export KETCH_ROOT
 
 # Let ketch install itself. The downloaded binary is only used to run
 # `self install`, which fetches this same release again through ketch's own
@@ -250,7 +269,7 @@ export KETCH_ROOT
 chmod 755 "${BINARY_PATH}"
 xattr -d com.apple.quarantine "${BINARY_PATH}" 2>/dev/null || true
 "${BINARY_PATH}" self install || {
-  echo "${RED}Error: ketch could not install itself into ${INSTALL_DIR}.${NC}" >&2
+  echo "${RED}Error: ketch could not install itself into ${ROOT}.${NC}" >&2
   exit 1
 }
 
@@ -278,7 +297,7 @@ if [ "${PATH_SET}" -eq 1 ]; then
   echo "PATH updated. Open a new shell, or run:"
   echo "  ${GREEN}exec \$SHELL${NC}"
 else
-  echo "To use ketch, add ${INSTALL_DIR} to your PATH:"
+  echo "To use ketch, add ${ROOT}/bin to your PATH:"
   echo "  ${GREEN}${INSTALL_PATH} path install${NC}"
 fi
 

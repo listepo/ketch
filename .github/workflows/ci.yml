@@ -13,7 +13,66 @@ jobs:
     # macOS is the only implemented platform, so it is the only one worth gating on.
     runs-on: macos-latest
     steps:
+      # Full history: the commit-message check below ranges from the pull
+      # request's base branch to HEAD. rust-cache keys on the manifests, not
+      # on how much history is present, so the Rust steps are unaffected.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Commits pushed from anywhere but this machine never met the local
+      # commit-msg hook, so a pull request's messages are linted here too,
+      # before the Rust build — a bad subject fails in seconds, not minutes.
+      # Pushes to main skip this: every commit there arrived through a pull
+      # request that already passed it.
+      - name: Read the Node pin from mise.toml
+        if: github.event_name == 'pull_request'
+        id: node_pin
+        run: |
+          version=$(grep '^node = ' mise.toml | cut -d '"' -f2)
+          [ -n "$version" ] || { echo "no node pin found in mise.toml" >&2; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # mise owns the pin but is not installed on GitHub runners, so
+      # setup-node runs the version mise.toml names. A number written here
+      # instead would be a second pin that drifts the first time one changes.
+      - uses: actions/setup-node@v4
+        if: github.event_name == 'pull_request'
+        with:
+          node-version: ${{ steps.node_pin.outputs.version }}
+
+      - name: Commit messages
+        if: github.event_name == 'pull_request'
+        run: |
+          npm ci
+          # Merge commits are skipped: git writes their subjects, they are
+          # not conventional commits, and nobody may rewrite them — the same
+          # call the local commit-msg hook makes. commitlint has no flag for
+          # it, so each non-merge commit is checked on its own, and every
+          # offender is listed before the step fails rather than stopping at
+          # the first.
+          base="origin/${{ github.base_ref }}"
+          # A range that does not resolve must be an error: rev-list would
+          # print nothing, the loop would see no commits, and a broken check
+          # would pass itself.
+          git rev-parse -q --verify "$base^{commit}" > /dev/null \
+              || { echo "base branch $base not found" >&2; exit 1; }
+          echo "linting $(git rev-list --count --no-merges "$base..HEAD") commit(s) from $base"
+          bad=0
+          for sha in $(git rev-list --no-merges --reverse "$base..HEAD"); do
+              subject=$(git log -1 --format=%s "$sha")
+              # Same passthrough as the local hook: git writes reverts in its
+              # own format, not as conventional commits.
+              case "$subject" in
+                  "Revert "*) continue ;;
+              esac
+              echo "checking $sha: $subject"
+              if ! npx --no-install commitlint --from "$sha^" --to "$sha"; then
+                  echo "not a conventional commit: $sha $subject" >&2
+                  bad=1
+              fi
+          done
+          exit $bad
 
       - name: Install toolchain
         run: rustup component add rustfmt clippy

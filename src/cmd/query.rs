@@ -97,7 +97,10 @@ pub fn outdated(cfg: &Config, args: OutdatedArgs) -> Result<()> {
             }
         };
         checked += 1;
-        if release.version <= pkg.version {
+        // Match `upgrade`: a retagged release is not newer, and a source that
+        // still reports the installed tag is current even if its version
+        // string somehow parses differently.
+        if release.tag == pkg.tag || release.version <= pkg.version {
             continue;
         }
         rows.push(vec![

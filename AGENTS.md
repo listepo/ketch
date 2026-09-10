@@ -47,6 +47,18 @@ cargo build                      # debug binary at target/debug/ketch
 The Justfile wraps the same commands with `--locked`: `just fmt`, `just clippy`
 (or `just lint`), `just test`, and `just check` runs the whole CI gate.
 
+Commitlint checks commit messages against the conventional-commit format:
+
+```bash
+just deps             # one-time: mise install + npm ci
+just hooks            # opt in to the commit-msg hook
+just lint-commits     # commitlint over fixture messages; part of just check
+```
+
+The commit-msg hook is opt-in via `just hooks`: commitlint then runs on every
+`git commit`, rejecting a malformed subject outright and letting merge and
+revert subjects through.
+
 Run the binary against a throwaway tree instead of your real `~/.ketch`:
 
 ```bash
@@ -87,12 +99,21 @@ fail without the fix.
 CI runs `fmt --check`, `clippy -D warnings` and `test` on macOS. All three must
 pass before a change is done.
 
+## Installing tools
+
+No program is installed system-wide to get work done: no `brew install`, no
+`curl | bash`, no `sudo`. Anything a task needs that the machine lacks gets
+pinned in `mise.toml` under `[tools]` and fetched with `mise install`, so the
+pin is a reviewed change like any other and every machine — and every agent —
+runs the same version. `just deps` installs everything currently pinned. A
+tool that is a crate dependency belongs in `Cargo.toml` instead, not here.
+
 ## Cargo cache maintenance
 
 `cargo-cache` is a developer utility, not a crate dependency, and it is pinned
-in `mise.toml` so every machine runs the same one. `mise install` fetches it;
-nothing else here needs mise, and the Rust toolchain is deliberately not pinned
-because CI builds on the runner's default stable.
+in `mise.toml` so every machine runs the same one; so is the Node that
+commitlint runs on. `mise install` fetches both, and the Rust toolchain is
+deliberately not pinned because CI builds on the runner's default stable.
 
 ```bash
 just cache            # $CARGO_HOME sizes and the build output, no deletes
@@ -145,9 +166,9 @@ conditional, multi-stage Rust automation.
 | `src/log.rs` | the log file, in text or JSON Lines |
 | `src/changelog.rs` | finding and slicing a client app's changelog |
 | `src/lockfile.rs` | `ketch.lock`: what is installed, pinned to exact releases |
-| `src/push.rs` | `ketch push`: a project's `ketch.toml` as a registry pull request, via octocrab |
+| `src/push.rs` | `ketch registry push`: a project's `ketch.toml` as a registry pull request, via octocrab |
 | `src/self_update.rs` | `ketch self`: installing, updating and removing the host as a package |
-| `ketch.toml` | the host's own package file, what `ketch push` sends |
+| `ketch.toml` | the host's own package file, what `ketch registry push` sends |
 | `src/ui.rs` | all terminal output |
 | `tests/` | end-to-end tests that drive the real binary |
 | `scripts/package.sh` | the release tarball, shared by CI and the release workflow |
@@ -265,6 +286,15 @@ date on every merge to `main`, holding the next version and the `CHANGELOG.md`
 entry for it, both derived from the conventional commits since the last tag —
 so `feat:` moves the minor, `fix:` the patch, and `docs:`/`chore:` move
 nothing. Merging that pull request is the release.
+
+One rule follows from that derivation: a commit that changes or removes
+existing CLI behavior is marked breaking — `feat!:`/`fix!:` or a
+`BREAKING CHANGE:` footer — so the bump lands on the minor, not the patch.
+Below 1.0 that marker is all that keeps a removed command from shipping as a
+patch release. commitlint rejects a malformed subject outright — CI runs the
+same check over a pull request's commits — and the commit-msg hook prints a
+reminder, not a rejection, when the staged diff touches `src/cli.rs` or
+`src/cmd/` and the message carries no breaking marker.
 
 `release.yml` runs on every merge to `main` and asks one question first: does
 `v<version from Cargo.toml>` already exist as a tag? If it does, that version

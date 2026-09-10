@@ -8,6 +8,7 @@ mod changelog;
 mod cli;
 mod cmd;
 mod config;
+mod diff;
 mod error;
 mod extract;
 mod http;
@@ -27,6 +28,7 @@ mod stats;
 #[cfg(feature = "tui")]
 mod tui;
 mod ui;
+mod wizard;
 
 use clap::{CommandFactory, Parser};
 use cli::{Cli, Command};
@@ -77,6 +79,22 @@ fn run(cli: Cli) -> Result<()> {
         return Ok(());
     }
 
+    // `config create` writes a project file in the working tree. Creating the
+    // ketch root for it would leave empty store/bin/cache dirs behind a
+    // questionnaire that never uses them.
+    if matches!(
+        &cli.command,
+        Command::Config {
+            command: cli::ConfigCommand::Create { .. }
+        }
+    ) {
+        let cfg = config::Config::load(cli.global.root.clone())?;
+        return match cli.command {
+            Command::Config { command } => cmd::config::run(&cfg, command),
+            _ => unreachable!("matched Create above"),
+        };
+    }
+
     let cfg = config::Config::load(cli.global.root.clone())?;
     cfg.ensure_dirs()?;
     log::init(&cfg);
@@ -113,7 +131,8 @@ fn run(cli: Cli) -> Result<()> {
         Command::Lock(args) => cmd::lock::lock(&cfg, args),
         Command::Sync(args) => cmd::lock::sync(&cfg, args),
         Command::Doctor(args) => cmd::system::doctor(&cfg, args),
-        Command::Push(args) => cmd::system::push(&cfg, args),
+        Command::Config { command } => cmd::config::run(&cfg, command),
+        Command::Registry { command } => cmd::registry::run(&cfg, command),
         Command::Path { command } => cmd::system::path(&cfg, command),
         Command::Plugin { command } => cmd::system::plugin(&cfg, command),
         Command::Zelf { command } => cmd::system::zelf(&cfg, command),

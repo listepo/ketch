@@ -829,9 +829,12 @@ fn check_trust(platform: &dyn Platform, cfg: &Config, payload: &Path, name: &str
 /// Delete a store directory, and its now-empty package parent.
 ///
 /// Refuses anything outside the store: a corrupted state file must never turn
-/// an uninstall into a `rm -rf` of somewhere else.
+/// an uninstall into a `rm -rf` of somewhere else. Lexical `starts_with` alone
+/// is not enough — `store/pkg/../../outside` starts with `store`, and a
+/// symlink planted inside the store can point anywhere — so the check
+/// resolves both paths when it can and rejects `..` components otherwise.
 fn remove_store_dir(cfg: &Config, prefix: &Path) {
-    if !prefix.starts_with(&cfg.store_dir) || prefix == cfg.store_dir {
+    if !is_inside_store(&cfg.store_dir, prefix) {
         ui::warn(&format!(
             "refusing to remove {} — it is not inside the ketch store",
             prefix.display()
@@ -846,6 +849,28 @@ fn remove_store_dir(cfg: &Config, prefix: &Path) {
     if let Some(parent) = prefix.parent().filter(|p| *p != cfg.store_dir) {
         let _ = std::fs::remove_dir(parent); // only succeeds when empty
     }
+}
+
+/// True when `prefix` is a proper subdirectory of `store`, after resolving
+/// symlinks and rejecting `..` escapes a corrupted state file could invent.
+fn is_inside_store(store: &Path, prefix: &Path) -> bool {
+    use std::path::Component;
+    if prefix
+        .components()
+        .any(|c| matches!(c, Component::ParentDir))
+    {
+        return false;
+    }
+    // When both exist, resolve symlinks so a decoy link inside the store
+    // cannot point `remove_dir_all` at an outside victim.
+    if let (Ok(store), Ok(resolved)) = (store.canonicalize(), prefix.canonicalize()) {
+        return resolved.starts_with(&store) && resolved != store;
+    }
+    // Missing path (idempotent uninstall): lexical containment only, after
+    // rejecting `..` above. Compare against the caller's store path as given
+    // so a not-yet-canonical root still matches the prefixes `package_dir`
+    // wrote into state.
+    prefix.starts_with(store) && prefix != store
 }
 
 /// Deletes a store directory when dropped, unless the install got far enough to
@@ -1009,5 +1034,54 @@ mod tests {
         remove_store_dir(&cfg, &outside);
         assert!(outside.is_dir(), "a path outside the store must survive");
         std::fs::remove_dir_all(&outside).ok();
+    }
+
+    #[test]
+    fn refuses_dotdot_escape_out_of_the_store() {
+        let root = tempfile::tempdir().unwrap();
+        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        cfg.ensure_dirs().unwrap();
+        let victim = root.path().join("victim");
+        std::fs::create_dir_all(&victim).unwrap();
+        std::fs::write(victim.join("keep"), b"safe").unwrap();
+
+        // Lexical child of the store that resolves to `victim` via `..`.
+        let escape = cfg
+            .store_dir
+            .join("pkg")
+            .join("1.0.0")
+            .join("..")
+            .join("..")
+            .join("..")
+            .join("victim");
+        assert!(
+            escape.starts_with(&cfg.store_dir),
+            "precondition: lexical starts_with alone would allow this"
+        );
+        remove_store_dir(&cfg, &escape);
+        assert!(
+            victim.join("keep").is_file(),
+            "`..` must not let uninstall delete outside the store"
+        );
+    }
+
+    #[test]
+    fn refuses_a_store_symlink_that_points_outside() {
+        let root = tempfile::tempdir().unwrap();
+        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        cfg.ensure_dirs().unwrap();
+        let victim = root.path().join("victim");
+        std::fs::create_dir_all(&victim).unwrap();
+        std::fs::write(victim.join("keep"), b"safe").unwrap();
+
+        let decoy = cfg.store_dir.join("decoy");
+        std::os::unix::fs::symlink(&victim, &decoy).unwrap();
+        remove_store_dir(&cfg, &decoy);
+        assert!(
+            victim.join("keep").is_file(),
+            "a symlink inside the store must not delete its outside target"
+        );
+        // The decoy symlink itself may remain; the point is the target survived.
+        assert!(decoy.symlink_metadata().is_ok());
     }
 }

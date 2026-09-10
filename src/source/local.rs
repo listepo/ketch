@@ -382,12 +382,11 @@ mod tests {
 
     #[test]
     fn absolute_path_resolves_relative() {
-        let dir = tempfile::tempdir().unwrap();
-        let prev = std::env::current_dir().unwrap();
-        std::env::set_current_dir(dir.path()).unwrap();
+        // Do not touch the process cwd: unit tests share it and a parallel
+        // suite that also reads cwd would race.
         let got = absolute_path("rel/tool").unwrap();
-        std::env::set_current_dir(prev).unwrap();
-        assert!(got.is_absolute());
-        assert!(got.ends_with("rel/tool"));
+        assert_eq!(got, std::env::current_dir().unwrap().join("rel/tool"));
+        let abs = absolute_path("/tmp/ketch-local-abs-tool").unwrap();
+        assert_eq!(abs, PathBuf::from("/tmp/ketch-local-abs-tool"));
     }
 }

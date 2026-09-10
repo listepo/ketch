@@ -1,4 +1,4 @@
-//! `ketch push`: offering a package to the registry.
+//! `ketch registry push`: offering a package to the registry.
 //!
 //! A `ketch.toml` at a project's root is the same file a registry package
 //! folder holds, so contributing the package is a matter of getting that file
@@ -134,7 +134,9 @@ pub trait Api {
         title: &str,
         body: &str,
     ) -> Result<Option<String>>;
-    fn find_pull(&self, repo: &str, head: &str) -> Result<Option<String>>;
+    /// The open pull request from `head` into `base`. A branch can carry
+    /// pull requests into other bases; those are not this proposal's.
+    fn find_pull(&self, repo: &str, head: &str, base: &str) -> Result<Option<String>>;
 }
 
 /// What `open` did.
@@ -155,11 +157,9 @@ pub struct PullRequest {
 
 /// Put the proposal on a branch and open a pull request for it.
 pub fn open(api: &dyn Api, registry: &str, proposal: &Proposal) -> Result<Outcome> {
-    let repo = api.repository(registry)?.ok_or_else(|| {
-        Error::msg(format!(
-            "registry {registry} does not exist, or the token cannot see it"
-        ))
-    })?;
+    let repo = api
+        .repository(registry)?
+        .ok_or_else(|| missing_registry(registry))?;
     let base = repo.default_branch;
     let head_repo = if repo.can_push {
         registry.to_string()
@@ -210,7 +210,7 @@ pub fn open(api: &dyn Api, registry: &str, proposal: &Proposal) -> Result<Outcom
     }
     // The commit is on the branch already, so finding its pull request is the
     // whole job left.
-    let url = api.find_pull(registry, &head)?.ok_or_else(|| {
+    let url = api.find_pull(registry, &head, &base)?.ok_or_else(|| {
         Error::msg(format!(
             "{registry} refused the pull request for {head}, and none is open"
         ))
@@ -219,6 +219,52 @@ pub fn open(api: &dyn Api, registry: &str, proposal: &Proposal) -> Result<Outcom
         url,
         already_open: true,
     }))
+}
+
+/// The registry's current copy of `<name>/ketch.toml`, from its default branch.
+///
+/// This is the canonical "current config" a local file is measured against:
+/// the text `ketch registry push` diffs and gates its question on, and the
+/// text `open` will find on the registry tip once its branch is cut. `None`
+/// when the registry holds no such file.
+pub fn current(api: &dyn Api, registry: &str, name: &str) -> Result<Option<File>> {
+    let repo = api
+        .repository(registry)?
+        .ok_or_else(|| missing_registry(registry))?;
+    api.file(
+        registry,
+        &repo.default_branch,
+        &format!("{name}/{PACKAGE_FILE}"),
+    )
+}
+
+/// What pushing `proposal` against the registry's [`current`] copy would do.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Plan {
+    /// The registry holds no copy of the package: the pull request adds it.
+    Add,
+    /// The registry holds exactly this text: nothing to propose.
+    Unchanged,
+    /// The registry holds a different text: the pull request updates it.
+    Update,
+}
+
+/// Decide [`Plan`] by exact text equality, mirroring the comparison [`open`]
+/// makes once its branch is cut — answered here before anything is sent.
+pub fn plan(current: Option<&File>, proposal: &Proposal) -> Plan {
+    match current {
+        None => Plan::Add,
+        Some(current) if current.text == proposal.body => Plan::Unchanged,
+        Some(_) => Plan::Update,
+    }
+}
+
+/// The complaint `open` and `current` share, worded once so the two cannot
+/// drift apart.
+fn missing_registry(registry: &str) -> Error {
+    Error::msg(format!(
+        "registry {registry} does not exist, or the token cannot see it"
+    ))
 }
 
 fn pull_request_body(proposal: &Proposal) -> String {
@@ -233,7 +279,7 @@ fn pull_request_body(proposal: &Proposal) -> String {
         lines.push(homepage.clone());
     }
     lines.push(String::new());
-    lines.push("Opened with `ketch push`.".to_string());
+    lines.push("Opened with `ketch registry push`.".to_string());
     lines.join("\n")
 }
 
@@ -248,8 +294,8 @@ fn capitalised(word: &str) -> String {
 /// github.com, through octocrab.
 ///
 /// octocrab is async and the rest of ketch is not, so every call is blocked on
-/// a private single-threaded runtime: `push` makes a dozen sequential requests
-/// and gains nothing from concurrency.
+/// a private single-threaded runtime: `registry push` makes a dozen sequential
+/// requests and gains nothing from concurrency.
 pub struct GitHub {
     runtime: tokio::runtime::Runtime,
     client: Octocrab,
@@ -259,8 +305,9 @@ impl GitHub {
     pub fn new(cfg: &Config) -> Result<GitHub> {
         let token = cfg.github_token.clone().ok_or_else(|| {
             Error::msg(
-                "`ketch push` opens a pull request as you, which needs a GitHub token: \
-                 set KETCH_GITHUB_TOKEN, or `github_token` in config.toml",
+                "opening a registry pull request (`ketch registry push`) is done as \
+                 you, which needs a GitHub token: set KETCH_GITHUB_TOKEN, or \
+                 `github_token` in config.toml",
             )
         })?;
         GitHub::connect(token)
@@ -311,6 +358,21 @@ fn status_of(error: &octocrab::Error) -> Option<u16> {
         octocrab::Error::GitHub { source, .. } => Some(source.status_code.as_u16()),
         _ => None,
     }
+}
+
+/// Turn one contents-API item into a [`File`], refusing the oversized.
+///
+/// GitHub nulls `content` on files over 1 MB; defaulting that to an empty
+/// string would present the file as an update whose diff deletes everything
+/// in it, so it is an error instead.
+fn file_text(path: &str, content: Option<String>, sha: String) -> Result<File> {
+    let text = content.ok_or_else(|| {
+        Error::msg(format!(
+            "{path} is over the 1 MB the contents API returns, so ketch \
+             cannot read it; refusing to treat it as an empty file"
+        ))
+    })?;
+    Ok(File { sha, text })
 }
 
 fn github_error(error: octocrab::Error) -> Error {
@@ -414,13 +476,10 @@ impl Api for GitHub {
                 .r#ref(branch)
                 .send(),
         )?;
-        Ok(found.and_then(|mut items| {
-            let item = items.items.pop()?;
-            Some(File {
-                text: item.decoded_content().unwrap_or_default(),
-                sha: item.sha,
-            })
-        }))
+        found
+            .and_then(|mut items| items.items.pop())
+            .map(|item| file_text(path, item.decoded_content(), item.sha))
+            .transpose()
     }
 
     fn write_file(
@@ -468,7 +527,7 @@ impl Api for GitHub {
         }
     }
 
-    fn find_pull(&self, repo: &str, head: &str) -> Result<Option<String>> {
+    fn find_pull(&self, repo: &str, head: &str, base: &str) -> Result<Option<String>> {
         let (owner, name) = split(repo);
         let page = self.run(
             self.client
@@ -481,7 +540,9 @@ impl Api for GitHub {
         Ok(page
             .items
             .into_iter()
-            .next()
+            // One head can carry open pull requests into several bases; only
+            // the one aimed at ours is this proposal's.
+            .find(|pull| pull.base.ref_field == base)
             .and_then(|pull| pull.html_url.map(|u| u.to_string())))
     }
 }
@@ -502,9 +563,13 @@ mod tests {
     /// A registry in one struct, recording what was asked of it.
     struct Fake {
         can_push: bool,
+        exists: bool,
         branches: Vec<String>,
         file: Option<File>,
         pull_already_open: bool,
+        /// The base the already-open pull request targets: `find_pull`
+        /// answers only when asked for that one.
+        pull_base: String,
         calls: RefCell<Vec<String>>,
     }
 
@@ -512,9 +577,11 @@ mod tests {
         fn maintainer() -> Fake {
             Fake {
                 can_push: true,
+                exists: true,
                 branches: Vec::new(),
                 file: None,
                 pull_already_open: false,
+                pull_base: "main".into(),
                 calls: RefCell::new(Vec::new()),
             }
         }
@@ -531,7 +598,7 @@ mod tests {
     impl Api for Fake {
         fn repository(&self, repo: &str) -> Result<Option<Repo>> {
             self.note(format!("repository {repo}"));
-            Ok(Some(Repo {
+            Ok(self.exists.then(|| Repo {
                 default_branch: "main".into(),
                 can_push: self.can_push,
             }))
@@ -601,9 +668,12 @@ mod tests {
             Ok((!self.pull_already_open).then(|| "https://github.com/acme/registry/pull/1".into()))
         }
 
-        fn find_pull(&self, repo: &str, head: &str) -> Result<Option<String>> {
-            self.note(format!("find_pull {repo} {head}"));
-            Ok(Some("https://github.com/acme/registry/pull/9".into()))
+        fn find_pull(&self, repo: &str, head: &str, base: &str) -> Result<Option<String>> {
+            self.note(format!("find_pull {repo} {head} {base}"));
+            // The pull request the head carries, offered only when it aims
+            // at the base asked for — a pull request into another base is
+            // somebody else's.
+            Ok((base == self.pull_base).then(|| "https://github.com/acme/registry/pull/9".into()))
         }
     }
 
@@ -699,6 +769,103 @@ mod tests {
     }
 
     #[test]
+    fn a_missing_copy_plans_an_add() {
+        assert_eq!(plan(None, &proposal()), Plan::Add);
+    }
+
+    #[test]
+    fn a_verbatim_copy_plans_no_change() {
+        let registry_file = File {
+            sha: "filesha".into(),
+            text: proposal().body,
+        };
+        assert_eq!(plan(Some(&registry_file), &proposal()), Plan::Unchanged);
+    }
+
+    #[test]
+    fn a_differing_copy_plans_an_update() {
+        let registry_file = File {
+            sha: "filesha".into(),
+            text: "name = \"tool\"\nsource = \"github:acme/old\"\n".into(),
+        };
+        assert_eq!(plan(Some(&registry_file), &proposal()), Plan::Update);
+    }
+
+    #[test]
+    fn current_reads_the_package_file_from_the_registrys_default_branch() {
+        let registry_file = File {
+            sha: "filesha".into(),
+            text: "name = \"tool\"\nsource = \"github:acme/tool\"\n".into(),
+        };
+        let api = Fake {
+            file: Some(registry_file.clone()),
+            ..Fake::maintainer()
+        };
+        assert_eq!(
+            current(&api, "acme/registry", "tool").unwrap(),
+            Some(registry_file)
+        );
+        assert_eq!(
+            api.calls(),
+            vec![
+                "repository acme/registry",
+                "file acme/registry main tool/ketch.toml",
+            ]
+        );
+    }
+
+    #[test]
+    fn current_is_none_when_the_registry_holds_no_such_file() {
+        let api = Fake::maintainer();
+        assert_eq!(current(&api, "acme/registry", "tool").unwrap(), None);
+    }
+
+    #[test]
+    fn an_oversized_file_is_an_error_rather_than_an_empty_read() {
+        let error = file_text("tool/ketch.toml", None, "sha".into())
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("tool/ketch.toml"), "{error}");
+        assert!(error.contains("1 MB"), "{error}");
+    }
+
+    #[test]
+    fn content_the_api_returned_maps_to_the_file() {
+        assert_eq!(
+            file_text(
+                "tool/ketch.toml",
+                Some("name = \"tool\"\n".into()),
+                "sha".into()
+            )
+            .unwrap(),
+            File {
+                sha: "sha".into(),
+                text: "name = \"tool\"\n".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn a_missing_registry_fails_current_the_way_it_fails_open() {
+        let from_current = current(&invisible_registry(), "acme/registry", "tool")
+            .unwrap_err()
+            .to_string();
+        let from_open = open(&invisible_registry(), "acme/registry", &proposal())
+            .unwrap_err()
+            .to_string();
+        assert_eq!(from_current, from_open);
+    }
+
+    /// A registry the token cannot see, which is the one way `repository`
+    /// answers `None`.
+    fn invisible_registry() -> Fake {
+        Fake {
+            exists: false,
+            ..Fake::maintainer()
+        }
+    }
+
+    #[test]
     fn a_pull_request_already_open_is_found_rather_than_duplicated() {
         let api = Fake {
             pull_already_open: true,
@@ -714,7 +881,26 @@ mod tests {
         );
         assert!(api
             .calls()
-            .contains(&"find_pull acme/registry acme:ketch/tool".to_string()));
+            .contains(&"find_pull acme/registry acme:ketch/tool main".to_string()));
+    }
+
+    #[test]
+    fn a_pull_request_into_a_different_base_is_not_reported_as_this_proposal() {
+        // The branch already carries a pull request, but into `develop`; the
+        // registry's default branch is `main`, so none of this proposal's
+        // exists even though a head-only lookup would find one.
+        let api = Fake {
+            pull_already_open: true,
+            pull_base: "develop".into(),
+            ..Fake::maintainer()
+        };
+        let error = open(&api, "acme/registry", &proposal())
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("refused the pull request"), "{error}");
+        assert!(api
+            .calls()
+            .contains(&"find_pull acme/registry acme:ketch/tool main".to_string()));
     }
 
     #[test]

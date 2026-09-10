@@ -29,7 +29,44 @@ test-install:
 test-tui:
     cargo test --locked --features tui
 
-check: fmt-check lint test
+# one-time setup: the pinned node from mise.toml, then commitlint onto it
+deps:
+    mise install
+    mise exec -- npm ci
+
+# opt in to the commit-msg hook; undo with `git config --unset core.hooksPath`
+hooks:
+    git config core.hooksPath .githooks
+    @echo "commit-msg hook enabled (.githooks); undo with: git config --unset core.hooksPath"
+
+# commitlint over fixtures whose good-*/bad-* names state the verdict
+lint-commits:
+    #!/bin/sh
+    set -eu
+    mismatches=""
+    for fixture in tests/fixtures/commit-msg/*.txt; do
+        name=$(basename "$fixture" .txt)
+        case "$name" in
+            good-*) want=pass ;;
+            bad-*) want=fail ;;
+            *) echo "lint-commits: $name says neither good nor bad"; exit 1 ;;
+        esac
+        if mise exec -- npx --no-install commitlint --edit "$fixture" >/dev/null 2>&1; then
+            got=pass
+        else
+            got=fail
+        fi
+        if [ "$got" != "$want" ]; then
+            mismatches="$mismatches\n  $name: want $want, got $got"
+        fi
+    done
+    sh -n .githooks/commit-msg
+    if [ -n "$mismatches" ]; then
+        echo "lint-commits: fixtures disagreed with their names:$mismatches"
+        exit 1
+    fi
+
+check: fmt-check lint test lint-commits
 
 # $CARGO_HOME sizes (no deletes) and the build output, wherever cargo puts it
 cache:

@@ -376,8 +376,20 @@ fn resolve_bin_specs(root: &Path, specs: &[BinSpec]) -> Result<Vec<(PathBuf, Str
 /// binary name, or an application the user installed themselves. Taking one
 /// over silently means uninstalling this package later deletes it.
 fn is_ours(link: &Path, owned: &Path, recorded: &[LinkRecord]) -> bool {
-    recorded.iter().any(|r| r.link == link)
-        || std::fs::read_link(link).is_ok_and(|target| target.starts_with(owned))
+    if recorded.iter().any(|r| r.link == link) {
+        return true;
+    }
+    // Lexical `starts_with` alone would treat `owned/../../elsewhere` as ours.
+    let Ok(target) = std::fs::read_link(link) else {
+        return false;
+    };
+    if target
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return false;
+    }
+    target.starts_with(owned)
 }
 
 /// Clear a destination, or explain who already has it.
@@ -1146,5 +1158,33 @@ mod tests {
         std::os::unix::fs::symlink(&ours, &link).unwrap();
         platform.unplace(&[record]).unwrap();
         assert!(link.symlink_metadata().is_err());
+    }
+
+    #[test]
+    fn a_symlink_target_with_dotdot_is_not_treated_as_ours() {
+        let tmp = tempfile::tempdir().unwrap();
+        let owned = tmp.path().join("store/pkg");
+        std::fs::create_dir_all(&owned).unwrap();
+        let elsewhere = tmp.path().join("elsewhere");
+        std::fs::write(&elsewhere, b"x").unwrap();
+        let link = tmp.path().join("bin/tool");
+        std::fs::create_dir_all(link.parent().unwrap()).unwrap();
+        // Lexically under `owned`, but resolves outside via `..`.
+        let sneaky = owned
+            .join("1.0")
+            .join("..")
+            .join("..")
+            .join("..")
+            .join("elsewhere");
+        assert!(
+            sneaky.starts_with(&owned),
+            "precondition: lexical starts_with alone would allow this"
+        );
+        std::os::unix::fs::symlink(&sneaky, &link).unwrap();
+        assert!(
+            !is_ours(&link, &owned, &[]),
+            "`..` in a symlink target must not count as owned"
+        );
+        assert!(destination_available(&link, &owned, &[]).is_err());
     }
 }

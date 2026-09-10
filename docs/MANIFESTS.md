@@ -18,6 +18,25 @@ The same schema is used in three places:
 
 They are searched in that order, so a manifest of your own always wins.
 
+## Writing one
+
+`ketch config create` writes one for you, so the schema below is a reference
+to read rather than a form to memorize. It asks what each field should say —
+source, name, `bin` entries, asset patterns and the rest — showing the default
+so an empty answer keeps it, then previews the assembled file before writing
+it.
+
+```bash
+ketch config create    # asks, previews, writes ./ketch.toml
+```
+
+`--file` writes somewhere else, `--force` replaces a file that is already
+there, and `--yes` writes it without the final confirmation. The answers can
+be piped to stdin instead — one per line, an empty line taking the default —
+so the questionnaire works from a script as well as a terminal. From there,
+offering the file to everyone is a registry pull request — see
+[REGISTRY.md](REGISTRY.md).
+
 ## The smallest one
 
 ```toml

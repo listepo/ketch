@@ -1,0 +1,1 @@
+add a registry search without a type

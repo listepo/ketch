@@ -49,10 +49,10 @@ diesel_migrations = "2.3"
 # ketch's single-binary promise depend on what the host happens to ship, and
 # the release builds both macOS architectures where that answer differs.
 libsqlite3-sys = { version = "0.38.2", features = ["bundled"] }
-# `ketch push` talks to GitHub through octocrab rather than the ureq client the
-# sources use: it needs forks, refs, contents and pull requests, which octocrab
-# already types and paginates. It is async, hence tokio for a runtime to block
-# on; everything else in ketch stays synchronous.
+# `ketch registry push` talks to GitHub through octocrab rather than the ureq
+# client the sources use: it needs forks, refs, contents and pull requests,
+# which octocrab already types and paginates. It is async, hence tokio for a
+# runtime to block on; everything else in ketch stays synchronous.
 octocrab = "0.54"
 tokio = { version = "1", features = ["rt"] }
 

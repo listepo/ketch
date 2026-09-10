@@ -1,6 +1,6 @@
 # ketch, as a ketch package.
 #
-# This is the file `ketch push` sends to the registry (listepo/ketch-registry,
+# This is the file `ketch registry push` sends to the registry (listepo/ketch-registry,
 # folder `ketch/`), and what `ketch self install` resolves through once it is
 # there. It must stay in step with the entry in src/builtin.toml, which serves
 # the same purpose for a machine that has not fetched the registry yet.
