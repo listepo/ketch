@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1](https://github.com/listepo/ketch/releases/tag/v0.3.1) - 2026-09-10
+
+### Fixed
+
+- refuse an install.sh --install-dir outside --root
+- strip escapes from the registry copy in push's diff
+- offer config create a package name it accepts
+- keep a --name through upgrade and sync
+- link dot-named local files and lock local app bundles
+
+### Other
+
+- document installing from disk and local lock entries
+
 ## [0.3.0](https://github.com/listepo/ketch/releases/tag/v0.3.0) - 2026-09-10
 
 ### Added
