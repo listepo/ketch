@@ -151,6 +151,10 @@ pub fn sync(cfg: &Config, args: SyncArgs) -> Result<()> {
 fn request_for(cfg: &Config, entry: &LockedPackage, target: &str) -> Result<InstallRequest> {
     let mut req = InstallRequest::new(spec_for(cfg, entry)?);
     req.require_checksum = cfg.require_checksums;
+    // The recorded name is the one the package lives under, which `--name`
+    // may have chosen. Resolving the source alone would infer another, and
+    // install the package somewhere `lock --check` never looks for it.
+    req.name_override = Some(entry.name.clone());
     // The recorded hash describes an asset for the machine that wrote the
     // lock. Somewhere else it names a file this host cannot even run, so
     // holding the download to it would fail every cross-platform sync.
