@@ -582,10 +582,11 @@ pub fn relink(cfg: &Config, state: &mut State, name: &str) -> Result<()> {
         return Err(Error::EmptyPayload(pkg.prefix.clone()));
     }
     let platform = crate::platform::host()?;
-    platform.unplace(&pkg.links)?;
-
     let manifest = pkg.manifest.clone();
     let version = pkg.version.to_string();
+    // Place first, like `commit`: a failed placement must not take the
+    // working links with it. `replacing` lets the new links reclaim the
+    // destinations this package already owns.
     let links = platform.place(&Placement {
         name: &pkg.name,
         version: &version,
@@ -596,12 +597,20 @@ pub fn relink(cfg: &Config, state: &mut State, name: &str) -> Result<()> {
         apps_dir: &cfg.apps_dir,
         kind: manifest.as_ref().map(|m| m.kind).unwrap_or_default(),
         bin_specs: manifest.as_ref().map(|m| m.bin.as_slice()).unwrap_or(&[]),
-        // `unplace` above only removed links that still pointed at us, so
-        // anything left over is ours to reclaim.
         replacing: &pkg.links,
         link_apps: cfg.link_apps,
         link: true,
     })?;
+
+    let stale: Vec<LinkRecord> = pkg
+        .links
+        .iter()
+        .filter(|l| !links.iter().any(|new| new.link == l.link))
+        .cloned()
+        .collect();
+    if let Err(e) = platform.unplace(&stale) {
+        ui::warn(&format!("could not remove old links for {}: {e}", pkg.name));
+    }
 
     if let Some(entry) = state.get_mut(&pkg.name) {
         entry.links = links;

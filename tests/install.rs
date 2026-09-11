@@ -232,6 +232,40 @@ fn relink_rebuilds_a_link_that_was_deleted_by_hand() {
 }
 
 #[test]
+fn relink_keeps_existing_links_when_placement_fails() {
+    let sandbox = Sandbox::new();
+    publish_tool(&sandbox, "1.0.0");
+    sandbox.ok(&["install", "test:testtool", "--yes"]);
+
+    let link = sandbox.bin().join("testtool");
+    assert!(link.exists(), "install must have linked testtool");
+
+    let pkg_store = sandbox.store().join("testtool");
+    for version in std::fs::read_dir(&pkg_store).expect("store/testtool") {
+        let prefix = version.expect("version dir").path();
+        if !prefix.is_dir() {
+            continue;
+        }
+        for child in std::fs::read_dir(&prefix).expect("prefix") {
+            let path = child.expect("entry").path();
+            if path.is_dir() {
+                std::fs::remove_dir_all(&path).expect("wipe dir");
+            } else {
+                std::fs::remove_file(&path).expect("wipe file");
+            }
+        }
+    }
+
+    sandbox.fails(&["link", "testtool"]);
+    // The store target is gone, so `exists` would follow the dangling
+    // symlink and say no. The link itself must still be there.
+    assert!(
+        std::fs::symlink_metadata(&link).is_ok_and(|m| m.file_type().is_symlink()),
+        "a failed relink must not take the working link with it"
+    );
+}
+
+#[test]
 fn doctor_reports_a_healthy_tree() {
     let sandbox = Sandbox::new();
     publish_tool(&sandbox, "1.0.0");
@@ -239,6 +273,109 @@ fn doctor_reports_a_healthy_tree() {
 
     // Exit status is the assertion: doctor fails when the tree is broken.
     sandbox.ok(&["doctor"]);
+}
+
+#[test]
+fn doctor_json_is_an_object_of_checks() {
+    let sandbox = Sandbox::new();
+    publish_tool(&sandbox, "1.0.0");
+    sandbox.ok(&["install", "test:testtool", "--yes"]);
+
+    let json = sandbox.ok(&["doctor", "--json"]);
+    let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+    assert!(
+        parsed["status"] == "ok" || parsed["status"] == "warn",
+        "unexpected status: {json}"
+    );
+    let checks = parsed["checks"].as_array().expect("checks array");
+    assert!(
+        checks.iter().any(|c| c["name"] == "version"),
+        "version check missing: {json}"
+    );
+    assert!(
+        checks.iter().any(|c| c["name"] == "packages"),
+        "packages check missing: {json}"
+    );
+    assert!(
+        !json.contains("ok  "),
+        "text report leaked into JSON:\n{json}"
+    );
+}
+
+#[test]
+fn doctor_json_still_fails_when_a_check_fails() {
+    let sandbox = Sandbox::new();
+    let failed = sandbox.ketch_off_path(&["doctor", "--json"]);
+    assert!(
+        !failed.status.success(),
+        "doctor --json passed without PATH set up"
+    );
+    let json = String::from_utf8_lossy(&failed.stdout);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&json).expect("valid JSON even on failure");
+    assert_eq!(parsed["status"], "fail", "{json}");
+    assert!(
+        parsed["checks"]
+            .as_array()
+            .expect("checks")
+            .iter()
+            .any(|c| c["status"] == "fail"),
+        "{json}"
+    );
+}
+
+#[test]
+fn doctor_warns_about_a_store_prefix_with_no_state_entry() {
+    let sandbox = Sandbox::new();
+    std::fs::create_dir_all(sandbox.store().join("ghost")).expect("orphan prefix");
+    let json = sandbox.ok(&["doctor", "--json"]);
+    let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+    let store = parsed["checks"]
+        .as_array()
+        .expect("checks")
+        .iter()
+        .find(|c| c["name"] == "orphans")
+        .expect("orphans check");
+    assert_eq!(store["status"], "warn", "{json}");
+    assert!(
+        store["detail"].as_str().unwrap().contains("ghost"),
+        "{json}"
+    );
+}
+
+#[test]
+fn doctor_warns_about_a_stale_lock() {
+    let sandbox = Sandbox::new();
+    std::fs::write(sandbox.root().join(".lock"), "999999999").expect("stale lock");
+    let json = sandbox.ok(&["doctor", "--json"]);
+    let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+    let lock = parsed["checks"]
+        .as_array()
+        .expect("checks")
+        .iter()
+        .find(|c| c["name"] == "lock")
+        .expect("lock check");
+    assert_eq!(lock["status"], "warn", "{json}");
+    assert!(lock["detail"].as_str().unwrap().contains("stale"), "{json}");
+}
+
+#[test]
+fn doctor_warns_about_a_homebrew_cask_left_after_packages_are_gone() {
+    let sandbox = Sandbox::new();
+    std::fs::create_dir_all(sandbox.homebrew().join("Caskroom/ketch")).expect("caskroom");
+    let json = sandbox.ok(&["doctor", "--json"]);
+    let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+    let cask = parsed["checks"]
+        .as_array()
+        .expect("checks")
+        .iter()
+        .find(|c| c["name"] == "cask")
+        .expect("cask check");
+    assert_eq!(cask["status"], "warn", "{json}");
+    assert!(
+        cask["detail"].as_str().unwrap().contains("Caskroom"),
+        "{json}"
+    );
 }
 
 /// A shell startup file is the one thing ketch writes outside its own root, so
@@ -284,6 +421,29 @@ fn a_dry_run_says_what_it_would_do_and_writes_nothing() {
         !sandbox.home().join(".config/fish/config.fish").exists(),
         "a dry run created the file"
     );
+}
+
+#[test]
+fn self_uninstall_dry_run_names_what_it_would_remove_and_removes_nothing() {
+    let sandbox = Sandbox::new();
+    publish_tool(&sandbox, "1.0.0");
+    sandbox.ok(&["install", "test:testtool", "--yes"]);
+    let linked = sandbox.bin().join("testtool");
+    assert!(linked.exists(), "install did not link testtool");
+
+    let out = sandbox.ketch(&["self", "uninstall", "--dry-run"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "dry-run failed\n{stdout}\n{stderr}");
+    assert!(
+        stderr.contains("would remove"),
+        "dry-run did not name the plan:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("cancelled"),
+        "dry-run asked for confirmation:\n{stderr}"
+    );
+    assert!(linked.exists(), "dry-run deleted the installed package");
 }
 
 /// The whole point of `--fix`: a PATH that no shell knows about is the one
@@ -354,6 +514,21 @@ fn a_lockfile_records_what_is_installed_and_sync_puts_it_back() {
     assert!(text.contains("tag = \"v1.0.0\""), "{text}");
     assert!(text.contains("source = \"test:testtool\""), "{text}");
 
+    sandbox.ok(&["lock", "--check", "--file", &lock_arg]);
+
+    // Same tag, different recorded hash: the lock no longer describes the tree.
+    let state_path = sandbox.root().join("state.json");
+    let mut state: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&state_path).expect("read state"))
+            .expect("parse state");
+    state["packages"]["testtool"]["sha256"] = serde_json::json!("b".repeat(64));
+    std::fs::write(
+        &state_path,
+        serde_json::to_string_pretty(&state).expect("render state"),
+    )
+    .expect("write state");
+    sandbox.fails(&["lock", "--check", "--file", &lock_arg]);
+    sandbox.ok(&["sync", "--file", &lock_arg]);
     sandbox.ok(&["lock", "--check", "--file", &lock_arg]);
 
     // Wipe it, then let the lockfile put it back.

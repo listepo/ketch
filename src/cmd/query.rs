@@ -17,6 +17,8 @@ use crate::source::{ListOpts, SourceRegistry};
 use crate::state::State;
 use crate::stats;
 use crate::ui;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
 
 /// Lists installed packages in JSON, name-only, or tabular format.
 ///
@@ -75,18 +77,38 @@ pub fn outdated(cfg: &Config, args: OutdatedArgs) -> Result<()> {
     let state = State::load(cfg)?;
     let sources = SourceRegistry::load(cfg);
     let prerelease = args.prerelease || cfg.prerelease;
+    // Local packages have no upstream release stream; skipping them keeps
+    // `outdated` from treating the synthetic tag as something to refresh.
+    let pkgs: Vec<&InstalledPackage> = state
+        .iter()
+        .filter(|pkg| pkg.source.scheme != "local")
+        .collect();
+
+    let jobs = super::pkg::jobs(cfg, args.jobs).min(pkgs.len());
+    let next = AtomicUsize::new(0);
+    let done = Mutex::new(Vec::new());
+    std::thread::scope(|scope| {
+        for _ in 0..jobs {
+            scope.spawn(|| loop {
+                let i = next.fetch_add(1, Ordering::Relaxed);
+                let Some(pkg) = pkgs.get(i) else { return };
+                ui::step("checking", &pkg.name);
+                let result = install::latest_release(&sources, pkg, prerelease);
+                done.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push((i, result));
+            });
+        }
+    });
+    let mut results = done.into_inner().unwrap_or_else(|e| e.into_inner());
+    results.sort_by_key(|(i, _)| *i);
 
     let mut rows = Vec::new();
     let mut json = Vec::new();
     let (mut checked, mut unreachable) = (0usize, 0usize);
-    for pkg in state.iter() {
-        // Local packages have no upstream release stream; skipping them keeps
-        // `outdated` from treating the synthetic tag as something to refresh.
-        if pkg.source.scheme == "local" {
-            continue;
-        }
-        ui::step("checking", &pkg.name);
-        let release = match install::latest_release(&sources, pkg, prerelease) {
+    for (i, result) in results {
+        let pkg = pkgs[i];
+        let release = match result {
             Ok(r) => r,
             // Reporting is best-effort: one unreachable source must not hide
             // the rest of the answer.
@@ -473,10 +495,15 @@ pub fn search(cfg: &Config, args: SearchArgs) -> Result<()> {
         ui::out("");
     }
 
+    let rest = args.limit.saturating_sub(known.len().min(args.limit));
+    if rest == 0 {
+        return Ok(());
+    }
+
     let sources = SourceRegistry::load(cfg);
     let mut rows = Vec::new();
     for source in sources.all() {
-        let hits = match source.search(query, args.limit) {
+        let hits = match source.search(query, rest) {
             Ok(h) => h,
             Err(e) => {
                 ui::warn(&format!("{}: {e}", source.scheme()));
@@ -491,7 +518,7 @@ pub fn search(cfg: &Config, args: SearchArgs) -> Result<()> {
             ]);
         }
     }
-    rows.truncate(args.limit);
+    rows.truncate(rest);
 
     if rows.is_empty() {
         if known.is_empty() {

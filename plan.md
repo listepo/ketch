@@ -54,6 +54,13 @@ the next milestones build directly on them.
 - **Registry push hardening (follow-ups 7–9).** Oversized contents-API files
   error instead of reading as empty; `find_pull` filters on the asked base;
   registry tarball fetch uses `api_base()` / `KETCH_GITHUB_API`.
+- **`doctor --json`, leftover-cask/orphan/stale-lock checks, `outdated -j`.**
+  The JSON flag was already on the CLI and printed text; it now emits a report
+  object. Doctor names a Homebrew cask left after uninstall, store prefixes
+  with no state entry, and a `.lock` a crashed run left behind. `outdated`
+  checks packages concurrently, like install. The `tap` job fetches
+  `ketch-*.tar.gz` from the published release so a cask failure can be re-run
+  without rebuilding.
 
 ## Follow-ups from the work just done
 
@@ -64,24 +71,12 @@ Small, and each one is a real gap rather than a nice-to-have.
    day ketch ships anything a browser downloads. Needs an App Store Connect
    key, `xcrun notarytool submit --wait` in the build job, and a stapled
    check in the smoke test.
-2. **`ketch self uninstall --dry-run`.** The plan is already computed before
-   the prompt and printed; showing it and stopping is a flag, not a feature.
-3. **Report what the cask left.** `brew uninstall --cask` can fail while the
-   rest of the removal succeeds. The warning says so, but `ketch doctor` on a
-   half-removed install has nothing to say yet.
-4. **A test for the cask itself.** `scripts/cask.sh` output is checked by
+2. **A test for the cask itself.** `scripts/cask.sh` output is checked by
    `brew style` in CI; the install and uninstall steps it generates are only
    exercised by installing the cask for real. A `brew install --cask` smoke
    test on a release would have caught the recursion the `--no-brew` flag now
    prevents.
-5. **A `tap` job that can run on its own.** It takes the tarballs from the
-   run's own build artifacts, so it cannot run without building, and a forced
-   re-run rebuilds and re-uploads the binaries — leaving the tag describing
-   source that no longer produced the shipped bytes. That is what made the
-   v0.2.0 cask failure need the next release to fix. Fetching the assets with
-   `gh release download` instead would make the job re-runnable against a
-   release that already exists.
-6. **Registry CI.** `listepo/ketch-registry` accepts any `ketch.toml` that
+3. **Registry CI.** `listepo/ketch-registry` accepts any `ketch.toml` that
    parses. `ketch registry push` writes them, and nothing validates them
    before merge.
    This is Milestone 5 below, and the cheapest half of it is a workflow that
@@ -270,14 +265,6 @@ Each is small enough to land on its own, in no particular order.
 - **Install ketch's own completions and a man page.** `ketch completions`
   prints a script and nothing installs it; there is no man page at all. Both
   land naturally with Milestone 4, which is building the destinations anyway.
-- **`ketch doctor` for a half-finished tree.** It reports packages whose files
-  are gone and links that dangle. A store prefix with no state entry, and a
-  `.lock` left by a process that died, are both detectable and neither is
-  mentioned.
-- **Concurrency for `ketch outdated`.** It resolves one package at a time,
-  while `install` has had a job pool since the batch work.
-- **`--json` for `doctor`.** Every other query command has it, and a health
-  check is the one most worth reading from a script.
 - **A root that is not the parent of the bin dir.** `install.sh --install-dir`
   derives `KETCH_ROOT` from the directory's parent, so `--install-dir ~/bin`
   makes `~` the ketch root. `self uninstall` is careful about exactly this, but

@@ -129,9 +129,13 @@ impl Source for PluginSource {
             args.push("--prerelease");
         }
         let mut releases: Vec<Release> = self.run(&args)?;
-        // The trait promises drafts are gone and prereleases are filtered; a
-        // plugin that ignores its flags must not change what ketch installs.
-        releases.retain(|r| !r.draft && (opts.include_prerelease || !r.prerelease));
+        // The trait promises drafts are gone. Prereleases are dropped only
+        // when something stable is there to prefer, matching GitHub: a project
+        // that has never cut a stable tag must still be installable.
+        releases.retain(|r| !r.draft);
+        if !opts.include_prerelease && releases.iter().any(|r| !r.prerelease) {
+            releases.retain(|r| !r.prerelease);
+        }
         Ok(releases)
     }
 
@@ -375,7 +379,8 @@ esac
         let plugin = PluginSource::probe(&path).unwrap();
         assert_eq!(plugin.scheme(), "demo");
 
-        // Drafts always go, prereleases only when asked for.
+        // Drafts always go; prereleases only when asked for, unless they are
+        // all the project has shipped.
         let stable = plugin.list_releases("x/y", &ListOpts::default()).unwrap();
         assert_eq!(stable.len(), 1, "draft and prerelease must be dropped");
         assert_eq!(stable[0].tag, "v1.0.0");
@@ -388,6 +393,33 @@ esac
 
         // Unsupported subcommands surface as errors, not as empty results.
         assert!(plugin.describe("x/y").is_err());
+    }
+
+    #[test]
+    fn a_plugin_with_only_prereleases_is_still_installable() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(format!("{PLUGIN_PREFIX}pre"));
+        std::fs::write(
+            &path,
+            format!(
+                r#"#!/bin/sh
+case "$1" in
+  capabilities) echo '{{"protocol":{PROTOCOL_VERSION},"scheme":"pre"}}' ;;
+  releases) echo '[{{"tag":"v2.0.0-rc1","version":"2.0.0-rc1","prerelease":true,"assets":[]}},
+                   {{"tag":"v3.0.0","version":"3.0.0","draft":true,"assets":[]}}]' ;;
+  *) exit 1 ;;
+esac
+"#
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let plugin = PluginSource::probe(&path).unwrap();
+        let releases = plugin.list_releases("x/y", &ListOpts::default()).unwrap();
+        assert_eq!(releases.len(), 1);
+        assert_eq!(releases[0].tag, "v2.0.0-rc1");
+        assert!(releases[0].prerelease);
     }
 
     #[test]

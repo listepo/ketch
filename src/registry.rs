@@ -9,6 +9,7 @@
 //! `<root>/registry`. Nothing fetches it implicitly: a package that resolves
 //! today must keep resolving offline tomorrow.
 
+use crate::changelog;
 use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::extract::{archive::TarGzExtractor, unwrap_single_dir, Extractor};
@@ -148,7 +149,10 @@ fn load_dir(dir: &Path) -> Vec<(Manifest, PathBuf)> {
         match read_package(&path, &name) {
             Ok(manifest) => out.push((manifest, path)),
             // One broken entry must not hide the rest of the registry.
-            Err(e) => crate::ui::warn(&format!("ignoring registry package `{name}`: {e}")),
+            Err(e) => crate::ui::warn(&format!(
+                "ignoring registry package `{}`: {e}",
+                changelog::sanitize(&name)
+            )),
         }
     }
     out

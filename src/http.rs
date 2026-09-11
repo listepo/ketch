@@ -79,13 +79,7 @@ impl Http {
             .request(url, accept, authed)
             .call()
             .map_err(|e| classify(url, e))?;
-        let mut body = String::new();
-        response
-            .into_reader()
-            .take(MAX_API_BODY)
-            .read_to_string(&mut body)
-            .map_err(|e| Error::io(url, e))?;
-        Ok(body)
+        read_limited(response.into_reader(), MAX_API_BODY, url)
     }
 
     /// Like `get_json`, but `None` on 404 instead of an error. Used where a
@@ -192,6 +186,25 @@ fn classify(url: &str, err: ureq::Error) -> Error {
     }
 }
 
+/// Read an API body, refusing a truncated one.
+///
+/// `take(max)` then treating the result as complete would parse a cut-off JSON
+/// or checksum file as if the server had sent it whole. Reading one byte past
+/// the cap is how we tell the two apart.
+fn read_limited(reader: impl Read, max: u64, url: &str) -> Result<String> {
+    let mut buf = Vec::new();
+    reader
+        .take(max.saturating_add(1))
+        .read_to_end(&mut buf)
+        .map_err(|e| Error::io(url, e))?;
+    if buf.len() as u64 > max {
+        return Err(Error::msg(format!(
+            "{url} is larger than {max} bytes; refusing a truncated read"
+        )));
+    }
+    String::from_utf8(buf).map_err(|e| Error::parse(url.to_string(), e.to_string()))
+}
+
 /// Pull `message` out of a JSON error body, else return a trimmed snippet.
 fn extract_message(body: &str) -> Option<String> {
     if let Ok(value) = serde_json::from_str::<serde_json::Value>(body) {
@@ -242,6 +255,23 @@ mod tests {
             Some("bad gateway")
         );
         assert_eq!(extract_message("   "), None);
+    }
+
+    #[test]
+    fn a_body_at_the_cap_is_accepted() {
+        assert_eq!(
+            read_limited(b"abcd".as_slice(), 4, "https://example").unwrap(),
+            "abcd"
+        );
+    }
+
+    #[test]
+    fn a_body_past_the_cap_is_refused_rather_than_truncated() {
+        let err = read_limited(b"abcde".as_slice(), 4, "https://example")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("https://example"), "{err}");
+        assert!(err.contains("truncated"), "{err}");
     }
 
     #[test]

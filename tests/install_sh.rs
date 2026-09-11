@@ -26,3 +26,15 @@ fn an_install_dir_outside_the_root_is_refused_before_anything_runs() {
         .failure()
         .stderr(predicate::str::contains("--install-dir"));
 }
+
+/// `--install-dir` alone names the root as its parent, but ketch still
+/// installs into `<root>/bin`. A path whose last component is not `bin`
+/// would silently land in a sibling of what was asked for.
+#[test]
+fn an_install_dir_must_be_named_bin_even_when_it_names_the_root() {
+    install_sh()
+        .args(["--install-dir", "/tmp/myapp/tools"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--install-dir"));
+}

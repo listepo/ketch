@@ -96,8 +96,10 @@ done
 # silently ignored.
 if [ -n "${INSTALL_DIR}" ]; then
   if [ -z "${ROOT}" ]; then
-    ROOT="$(dirname "${INSTALL_DIR}")"
-  elif [ "${INSTALL_DIR%/}" != "${ROOT%/}/bin" ]; then
+    trimmed="${INSTALL_DIR%/}"
+    ROOT="${trimmed%/*}"
+  fi
+  if [ "${INSTALL_DIR%/}" != "${ROOT%/}/bin" ]; then
     echo "${RED}Error: --install-dir ${INSTALL_DIR} is not ${ROOT%/}/bin, the bin dir of --root ${ROOT}.${NC}" >&2
     echo "ketch always installs into <root>/bin; pass just one of the two." >&2
     exit 1

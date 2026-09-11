@@ -671,7 +671,8 @@ fn usable_file_name(what: &str, value: &str) -> Result<()> {
         Ok(())
     } else {
         Err(Error::msg(format!(
-            "{what} `{value}` is not usable as a file name"
+            "{what} `{}` is not usable as a file name",
+            value.escape_debug()
         )))
     }
 }
@@ -867,6 +868,15 @@ mod tests {
             ..base.clone()
         };
         assert!(bad_link.validate().is_err());
+
+        let bidi_link = Manifest {
+            bin: vec![BinSpec {
+                name: Some("safe\u{202e}sudo".into()),
+                path: None,
+            }],
+            ..base.clone()
+        };
+        assert!(bidi_link.validate().is_err());
 
         let bad_path = Manifest {
             bin: vec![BinSpec {

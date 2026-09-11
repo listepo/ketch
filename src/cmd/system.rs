@@ -40,18 +40,25 @@ pub fn doctor(cfg: &Config, args: DoctorArgs) -> Result<()> {
     checks.push(log_check(cfg));
     checks.push(registry_check(cfg));
     checks.extend(store_checks(cfg));
+    if let Some(check) = lock_check(cfg) {
+        checks.push(check);
+    }
 
-    for check in &checks {
-        let (mark, name) = match check.status {
-            CheckStatus::Ok => (ui::green("ok  "), ui::dim(&check.name)),
-            CheckStatus::Warn => (ui::yellow("warn"), ui::bold(&check.name)),
-            CheckStatus::Fail => (ui::red("fail"), ui::bold(&check.name)),
-        };
-        ui::out(&format!("{mark} {name}  {}", check.detail));
-        // The fix belongs with the problem, not in a summary the user has to
-        // map back onto the list.
-        if let Some(fix) = &check.fix {
-            ui::out(&format!("     {}", ui::dim(fix)));
+    if args.json {
+        print_doctor_json(&checks)?;
+    } else {
+        for check in &checks {
+            let (mark, name) = match check.status {
+                CheckStatus::Ok => (ui::green("ok  "), ui::dim(&check.name)),
+                CheckStatus::Warn => (ui::yellow("warn"), ui::bold(&check.name)),
+                CheckStatus::Fail => (ui::red("fail"), ui::bold(&check.name)),
+            };
+            ui::out(&format!("{mark} {name}  {}", check.detail));
+            // The fix belongs with the problem, not in a summary the user has to
+            // map back onto the list.
+            if let Some(fix) = &check.fix {
+                ui::out(&format!("     {}", ui::dim(fix)));
+            }
         }
     }
 
@@ -63,6 +70,37 @@ pub fn doctor(cfg: &Config, args: DoctorArgs) -> Result<()> {
         return Err(Error::msg(format!("{failed} checks failed")));
     }
     Ok(())
+}
+
+fn print_doctor_json(checks: &[DoctorCheck]) -> Result<()> {
+    let text = serde_json::to_string_pretty(&doctor_report(checks))
+        .map_err(|e| Error::parse("json output".to_string(), e.to_string()))?;
+    ui::out(&text);
+    Ok(())
+}
+
+fn doctor_report(checks: &[DoctorCheck]) -> serde_json::Value {
+    fn status_name(status: CheckStatus) -> &'static str {
+        match status {
+            CheckStatus::Ok => "ok",
+            CheckStatus::Warn => "warn",
+            CheckStatus::Fail => "fail",
+        }
+    }
+    serde_json::json!({
+        "status": status_name(worst_status(checks)),
+        "checks": checks
+            .iter()
+            .map(|c| {
+                serde_json::json!({
+                    "name": c.name,
+                    "status": status_name(c.status),
+                    "detail": c.detail,
+                    "fix": c.fix,
+                })
+            })
+            .collect::<Vec<_>>(),
+    })
 }
 
 /// Repair what `doctor` can repair on its own.
@@ -211,7 +249,101 @@ fn store_checks(cfg: &Config) -> Vec<DoctorCheck> {
         ));
     }
 
+    let known: std::collections::BTreeSet<String> =
+        state.iter().map(|pkg| pkg.name.clone()).collect();
+    let orphans = orphan_store_dirs(&cfg.store_dir, &known);
+    if !orphans.is_empty() {
+        checks.push(DoctorCheck::warn(
+            "orphans",
+            format!(
+                "{} prefixes have no state entry: {}",
+                orphans.len(),
+                orphans.join(", ")
+            ),
+            format!(
+                "Inspect {} and remove what you did not mean to keep.",
+                cfg.store_dir.display()
+            ),
+        ));
+    }
+
+    if let Some(check) = leftover_cask(
+        self_update::cask_dir().as_deref(),
+        state.get(self_update::SELF_NAME).is_some(),
+    ) {
+        checks.push(check);
+    }
+
     checks
+}
+
+/// Store directories whose names are not an installed package.
+fn orphan_store_dirs(
+    store: &std::path::Path,
+    known: &std::collections::BTreeSet<String>,
+) -> Vec<String> {
+    let mut names = Vec::new();
+    let Ok(entries) = std::fs::read_dir(store) else {
+        return names;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if name.starts_with('.') || !entry.path().is_dir() {
+            continue;
+        }
+        if !known.contains(name) {
+            names.push(name.to_string());
+        }
+    }
+    names.sort();
+    names
+}
+
+/// A Homebrew cask left behind after `ketch self uninstall` removed the rest.
+fn leftover_cask(cask: Option<&std::path::Path>, ketch_installed: bool) -> Option<DoctorCheck> {
+    let cask = cask?;
+    if ketch_installed {
+        return None;
+    }
+    Some(DoctorCheck::warn(
+        "cask",
+        format!("Homebrew still has {}", cask.display()),
+        "Run `brew uninstall --cask ketch`.",
+    ))
+}
+
+/// A `.lock` from a running ketch, or one a crashed run left behind.
+fn lock_check(cfg: &Config) -> Option<DoctorCheck> {
+    lock_check_at(&cfg.lock_file, crate::state::process_alive)
+}
+
+fn lock_check_at(path: &std::path::Path, alive: impl Fn(u32) -> bool) -> Option<DoctorCheck> {
+    if !path.exists() {
+        return None;
+    }
+    let holder = std::fs::read_to_string(path)
+        .ok()
+        .and_then(|t| t.trim().parse::<u32>().ok());
+    match holder {
+        Some(pid) if alive(pid) => Some(DoctorCheck::warn(
+            "lock",
+            format!("held by pid {pid}"),
+            "Wait for the other ketch to finish.",
+        )),
+        Some(pid) => Some(DoctorCheck::warn(
+            "lock",
+            format!("stale (pid {pid} is gone)"),
+            format!("Remove {}.", path.display()),
+        )),
+        None => Some(DoctorCheck::warn(
+            "lock",
+            format!("{} is unreadable", path.display()),
+            format!("Remove {}.", path.display()),
+        )),
+    }
 }
 
 /// `ketch path` — the shell setup the rest of ketch only ever hints at.
@@ -454,7 +586,14 @@ pub fn zelf(cfg: &Config, command: SelfCommand) -> Result<()> {
         } => {
             let plan = self_update::uninstall_plan(cfg, keep_packages, no_brew)?;
             for line in plan_lines(&plan) {
-                ui::step("will remove", &line);
+                ui::step(
+                    if dry_run {
+                        "would remove"
+                    } else {
+                        "will remove"
+                    },
+                    &line,
+                );
             }
             if dry_run {
                 return Ok(());
@@ -473,5 +612,93 @@ pub fn zelf(cfg: &Config, command: SelfCommand) -> Result<()> {
             }
             Ok(())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn doctor_json_names_the_worst_status_and_each_check() {
+        let checks = vec![
+            DoctorCheck::ok("version", "ketch 0.3.2"),
+            DoctorCheck::warn("links", "1 broken", "ketch link x"),
+        ];
+        let report = doctor_report(&checks);
+        assert_eq!(report["status"], "warn");
+        assert_eq!(report["checks"][0]["name"], "version");
+        assert_eq!(report["checks"][0]["status"], "ok");
+        assert_eq!(report["checks"][0]["fix"], serde_json::Value::Null);
+        assert_eq!(report["checks"][1]["status"], "warn");
+        assert_eq!(report["checks"][1]["fix"], "ketch link x");
+    }
+
+    #[test]
+    fn doctor_json_fails_when_any_check_fails() {
+        let checks = vec![
+            DoctorCheck::ok("version", "ketch 0.3.2"),
+            DoctorCheck::fail("packages", "1 missing", "ketch install --force x"),
+        ];
+        assert_eq!(doctor_report(&checks)["status"], "fail");
+    }
+
+    #[test]
+    fn orphan_store_dirs_are_names_not_in_state() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir(tmp.path().join("ghost")).unwrap();
+        std::fs::create_dir(tmp.path().join("ripgrep")).unwrap();
+        std::fs::write(tmp.path().join("file"), b"x").unwrap();
+        let known = ["ripgrep".into()].into_iter().collect();
+        assert_eq!(orphan_store_dirs(tmp.path(), &known), vec!["ghost"]);
+    }
+
+    #[test]
+    fn leftover_cask_is_silent_when_ketch_is_still_installed() {
+        assert!(leftover_cask(
+            Some(std::path::Path::new("/opt/homebrew/Caskroom/ketch")),
+            true
+        )
+        .is_none());
+        assert!(leftover_cask(None, false).is_none());
+    }
+
+    #[test]
+    fn leftover_cask_warns_when_the_packages_are_gone() {
+        let check = leftover_cask(
+            Some(std::path::Path::new("/opt/homebrew/Caskroom/ketch")),
+            false,
+        )
+        .unwrap();
+        assert_eq!(check.name, "cask");
+        assert_eq!(check.status, CheckStatus::Warn);
+        assert!(check.detail.contains("Caskroom"));
+    }
+
+    #[test]
+    fn a_missing_lock_file_is_not_a_check() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert!(lock_check_at(&tmp.path().join(".lock"), |_| true).is_none());
+    }
+
+    #[test]
+    fn a_stale_lock_file_is_a_warning() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join(".lock");
+        std::fs::write(&path, "12345\n").unwrap();
+        let check = lock_check_at(&path, |_| false).unwrap();
+        assert_eq!(check.status, CheckStatus::Warn);
+        assert!(check.detail.contains("stale"));
+        assert!(check.detail.contains("12345"));
+    }
+
+    #[test]
+    fn a_held_lock_file_names_the_pid() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join(".lock");
+        std::fs::write(&path, "9").unwrap();
+        let check = lock_check_at(&path, |pid| pid == 9).unwrap();
+        assert!(check.detail.contains("pid 9"));
+        assert!(!check.detail.contains("stale"));
     }
 }

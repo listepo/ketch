@@ -166,6 +166,9 @@ pub fn success(verb: &str, detail: &str) {
 /// Something the user should know but that does not stop the run.
 pub fn warn(detail: &str) {
     log::record(log::Level::Warn, detail);
+    if is_quiet() {
+        return;
+    }
     emit(&format!(
         "{} {}",
         yellow(&format!("{:>10}", "warning")),

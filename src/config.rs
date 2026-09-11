@@ -337,6 +337,7 @@ pub fn sanitize_component(raw: &str) -> String {
         .map(|c| match c {
             '/' | '\\' | ':' | '\0' => '-',
             c if c.is_control() => '-',
+            '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}' => '-',
             c => c,
         })
         .collect();
@@ -383,6 +384,7 @@ mod tests {
         assert_eq!(sanitize_component("../../etc"), "etc");
         assert_eq!(sanitize_component(".."), "unknown");
         assert_eq!(sanitize_component(""), "unknown");
+        assert_eq!(sanitize_component("safe\u{202e}sudo"), "safe-sudo");
     }
 
     #[test]

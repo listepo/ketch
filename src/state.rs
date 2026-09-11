@@ -245,7 +245,7 @@ impl Drop for Lock {
 /// with EPERM, which is indistinguishable from "no such process" through an
 /// exit status alone — and reading it as "gone" steals a lock that is very much
 /// still held.
-fn process_alive(pid: u32) -> bool {
+pub(crate) fn process_alive(pid: u32) -> bool {
     std::process::Command::new("/bin/ps")
         .arg("-p")
         .arg(pid.to_string())

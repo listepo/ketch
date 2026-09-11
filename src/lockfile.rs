@@ -90,6 +90,21 @@ impl LockedPackage {
     pub fn matches_target(&self, target: &str) -> bool {
         self.target == target
     }
+
+    /// True when the installed package is the release this entry pinned.
+    ///
+    /// The tag is always compared. The hash is only a pin on the target that
+    /// recorded it: another machine has a different asset, and a mismatch
+    /// there would be the expected one rather than drift.
+    fn matches_installed(&self, installed: &InstalledPackage) -> bool {
+        if installed.tag != self.tag {
+            return false;
+        }
+        if !self.matches_target(&installed.target.to_string()) {
+            return true;
+        }
+        installed.sha256.eq_ignore_ascii_case(&self.sha256)
+    }
 }
 
 impl Lockfile {
@@ -248,7 +263,7 @@ pub fn plan(lock: &Lockfile, state: &State) -> Plan {
     for entry in &lock.packages {
         match state.iter().find(|p| p.source == entry.source) {
             None => plan.missing.push(entry.clone()),
-            Some(installed) if installed.tag == entry.tag => plan.matched += 1,
+            Some(installed) if entry.matches_installed(installed) => plan.matched += 1,
             Some(installed) => plan.changed.push((entry.clone(), installed.tag.clone())),
         }
     }
@@ -274,7 +289,7 @@ fn is_sha256(text: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{ManifestOrigin, TargetSpec, Version};
+    use crate::model::{Arch, ManifestOrigin, TargetSpec, Version};
 
     fn installed(name: &str, repo: &str, tag: &str) -> InstalledPackage {
         InstalledPackage {
@@ -345,6 +360,44 @@ mod tests {
         let state = state_with(vec![installed("fd", "sharkdp/fd", "v10.2.0")]);
         let plan = plan(&lock_of(&state), &state);
         assert!(plan.is_clean(true));
+        assert_eq!(plan.matched, 1);
+    }
+
+    #[test]
+    fn a_hash_that_drifted_under_the_same_tag_is_not_a_match() {
+        let state = state_with(vec![installed("fd", "sharkdp/fd", "v10.2.0")]);
+        let lock = lock_of(&state);
+        let mut drifted = installed("fd", "sharkdp/fd", "v10.2.0");
+        drifted.sha256 = "b".repeat(64);
+        let plan = plan(&lock, &state_with(vec![drifted]));
+        assert!(!plan.is_clean(false));
+        assert_eq!(plan.matched, 0);
+        assert_eq!(plan.changed.len(), 1);
+    }
+
+    #[test]
+    fn a_hash_on_another_target_is_not_this_machines_pin() {
+        let state = state_with(vec![installed("fd", "sharkdp/fd", "v10.2.0")]);
+        let lock = lock_of(&state);
+        let mut elsewhere = installed("fd", "sharkdp/fd", "v10.2.0");
+        elsewhere.sha256 = "b".repeat(64);
+        elsewhere.target.arch = match elsewhere.target.arch {
+            Arch::Aarch64 => Arch::X86_64,
+            Arch::X86_64 | Arch::Universal => Arch::Aarch64,
+        };
+        let plan = plan(&lock, &state_with(vec![elsewhere]));
+        assert!(plan.is_clean(false));
+        assert_eq!(plan.matched, 1);
+    }
+
+    #[test]
+    fn hash_comparison_is_case_insensitive() {
+        let mut pkg = installed("fd", "sharkdp/fd", "v10.2.0");
+        pkg.sha256 = "ab".repeat(32);
+        let lock = lock_of(&state_with(vec![pkg.clone()]));
+        pkg.sha256 = "AB".repeat(32);
+        let plan = plan(&lock, &state_with(vec![pkg]));
+        assert!(plan.is_clean(false));
         assert_eq!(plan.matched, 1);
     }
 

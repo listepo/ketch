@@ -216,6 +216,10 @@ pub struct OutdatedArgs {
     /// Compare against prereleases too
     #[arg(long = "pre")]
     pub prerelease: bool,
+
+    /// Packages to check at once (default: 4, or `jobs` in config.toml)
+    #[arg(long, short = 'j', value_name = "N")]
+    pub jobs: Option<usize>,
 }
 
 #[derive(Args, Debug, Clone)]

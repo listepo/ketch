@@ -250,9 +250,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/download-artifact@v4
-        with:
-          path: staging
+      # From the published release, not this run's build artifacts: a tap
+      # failure can then be re-run without rebuilding (and re-uploading)
+      # binaries the tag already describes.
+      - name: Fetch release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          mkdir -p dist
+          gh release download "$TAG" --pattern 'ketch-*.tar.gz' --dir dist
+          ls -l dist
 
       - name: Update the cask
         env:
@@ -266,8 +274,8 @@ jobs:
             echo "HOMEBREW_TAP_TOKEN is not set; the cask in $TAP_REPO was not updated" >&2
             exit 1
           fi
-          arm="$(shasum -a 256 staging/aarch64-apple-darwin/ketch-aarch64-apple-darwin.tar.gz | cut -d' ' -f1)"
-          intel="$(shasum -a 256 staging/x86_64-apple-darwin/ketch-x86_64-apple-darwin.tar.gz | cut -d' ' -f1)"
+          arm="$(shasum -a 256 dist/ketch-aarch64-apple-darwin.tar.gz | cut -d' ' -f1)"
+          intel="$(shasum -a 256 dist/ketch-x86_64-apple-darwin.tar.gz | cut -d' ' -f1)"
 
           git clone "https://x-access-token:${TAP_TOKEN}@github.com/${TAP_REPO}.git" tap
           mkdir -p tap/Casks

@@ -320,12 +320,13 @@ pub fn copy_tree(src: &Path, dest: &Path) -> Result<()> {
 pub fn sha256_tree(root: &Path) -> Result<String> {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
-    let mut paths: Vec<PathBuf> = walkdir::WalkDir::new(root)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().is_file())
-        .map(|e| e.into_path())
-        .collect();
+    let mut paths = Vec::new();
+    for entry in walkdir::WalkDir::new(root) {
+        let entry = entry.map_err(|e| Error::io(root, std::io::Error::other(e.to_string())))?;
+        if entry.file_type().is_file() {
+            paths.push(entry.into_path());
+        }
+    }
     paths.sort();
     for path in paths {
         let rel = path.strip_prefix(root).unwrap_or(&path);
@@ -341,6 +342,29 @@ pub fn sha256_tree(root: &Path) -> Result<String> {
 mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn two_identical_trees_hash_the_same() {
+        let a = tempfile::tempdir().unwrap();
+        let b = tempfile::tempdir().unwrap();
+        for dir in [a.path(), b.path()] {
+            std::fs::create_dir(dir.join("Contents")).unwrap();
+            std::fs::write(dir.join("Contents/Info.plist"), b"x").unwrap();
+        }
+        assert_eq!(
+            sha256_tree(a.path()).unwrap(),
+            sha256_tree(b.path()).unwrap()
+        );
+    }
+
+    #[test]
+    fn a_changed_file_changes_the_tree_hash() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a"), b"one").unwrap();
+        let first = sha256_tree(dir.path()).unwrap();
+        std::fs::write(dir.path().join("a"), b"two").unwrap();
+        assert_ne!(first, sha256_tree(dir.path()).unwrap());
+    }
 
     #[test]
     fn classifies_a_bare_binary() {

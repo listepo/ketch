@@ -155,6 +155,9 @@ fn request_for(cfg: &Config, entry: &LockedPackage, target: &str) -> Result<Inst
     // may have chosen. Resolving the source alone would infer another, and
     // install the package somewhere `lock --check` never looks for it.
     req.name_override = Some(entry.name.clone());
+    // Same tag with a different hash is still "already installed" to prepare
+    // unless we say otherwise; sync has to replace the drifted payload.
+    req.force = true;
     // The recorded hash describes an asset for the machine that wrote the
     // lock. Somewhere else it names a file this host cannot even run, so
     // holding the download to it would fail every cross-platform sync.

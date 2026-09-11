@@ -373,9 +373,15 @@ pub fn uninstall_self(cfg: &Config, plan: &UninstallPlan) -> Result<Vec<PathBuf>
 ///
 /// Never `remove_dir_all(root)`: `install.sh --install-dir ~/bin` makes the
 /// root the parent of that directory, which is the user's home in the worst
-/// case. Deleting only the entries ketch creates cannot swallow anything ketch
-/// did not put there, and the leftovers are reported rather than removed.
+/// case. When the root *is* the home directory, the named children (`bin`,
+/// `store`, `cache`, …) are not emptied either — they are shared with the
+/// rest of the account. A dedicated root like `~/.ketch` is still wiped.
 fn remove_root(cfg: &Config, root: &Path) -> Vec<PathBuf> {
+    remove_root_at(cfg, root, dirs::home_dir().as_deref())
+}
+
+fn remove_root_at(cfg: &Config, root: &Path, home: Option<&Path>) -> Vec<PathBuf> {
+    let wipe = home.is_none_or(|h| cfg.root != h);
     let mut removed = Vec::new();
     let dirs = [
         &cfg.bin_dir,
@@ -392,45 +398,59 @@ fn remove_root(cfg: &Config, root: &Path) -> Vec<PathBuf> {
         &cfg.lock_file,
     ];
     for dir in dirs {
-        match std::fs::remove_dir_all(dir) {
-            Ok(()) => removed.push(dir.clone()),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => ui::warn(&format!("{}: {e}", dir.display())),
-        }
+        remove_owned_dir(dir, wipe, &mut removed);
     }
     // The log directory holds the file being written to as this runs, so it
     // goes whole and last among the directories.
     if let Some(logs) = cfg.log_file.parent() {
-        match std::fs::remove_dir_all(logs) {
-            Ok(()) => removed.push(logs.to_path_buf()),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => ui::warn(&format!("{}: {e}", logs.display())),
-        }
+        remove_owned_dir(logs, wipe, &mut removed);
     }
     for file in files {
+        if !wipe {
+            continue;
+        }
         match std::fs::remove_file(file) {
             Ok(()) => removed.push(file.clone()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => ui::warn(&format!("{}: {e}", file.display())),
         }
     }
-    match std::fs::remove_dir(root) {
-        Ok(()) => removed.push(root.to_path_buf()),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        // Anything left is something ketch did not write. Say so and leave it.
-        Err(_) => ui::note(&format!(
-            "{} was left in place: it holds files ketch did not put there",
-            root.display()
-        )),
+    if wipe {
+        match std::fs::remove_dir(root) {
+            Ok(()) => removed.push(root.to_path_buf()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            // Anything left is something ketch did not write. Say so and leave it.
+            Err(_) => ui::note(&format!(
+                "{} was left in place: it holds files ketch did not put there",
+                root.display()
+            )),
+        }
     }
     removed
+}
+
+fn remove_owned_dir(dir: &Path, wipe: bool, removed: &mut Vec<PathBuf>) {
+    let result = if wipe {
+        std::fs::remove_dir_all(dir)
+    } else {
+        std::fs::remove_dir(dir)
+    };
+    match result {
+        Ok(()) => removed.push(dir.to_path_buf()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) if wipe => ui::warn(&format!("{}: {e}", dir.display())),
+        Err(_) => ui::note(&format!(
+            "{} was left in place: it holds files ketch did not put there",
+            dir.display()
+        )),
+    }
 }
 
 /// The Homebrew cask's own directory, when ketch was installed with `brew`.
 ///
 /// Homebrew records a cask under `<prefix>/Caskroom/<token>`, so its presence
 /// is the question "did brew install this?" answered without running anything.
-fn cask_dir() -> Option<PathBuf> {
+pub(crate) fn cask_dir() -> Option<PathBuf> {
     cask_dir_in(&brew_prefixes())
 }
 
@@ -534,5 +554,43 @@ mod tests {
         std::fs::create_dir_all(brew.parent().expect("bin dir")).expect("create bin");
         std::fs::write(&brew, "#!/bin/sh\n").expect("write brew");
         assert_eq!(brew_binary(&cask), brew);
+    }
+
+    #[test]
+    fn uninstall_does_not_wipe_bin_when_the_root_is_home() {
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let home = tmp.path().join("home");
+        std::fs::create_dir_all(&home).expect("home");
+        let cfg = Config::load(Some(home.clone())).expect("config");
+        std::fs::create_dir_all(&cfg.bin_dir).expect("bin");
+        std::fs::write(cfg.bin_dir.join("keep-me"), b"stay").expect("keep-me");
+        std::fs::create_dir_all(&cfg.store_dir).expect("store");
+        std::fs::write(cfg.store_dir.join("mine"), b"also").expect("store file");
+
+        remove_root_at(&cfg, &cfg.root, Some(&home));
+
+        assert_eq!(
+            std::fs::read(cfg.bin_dir.join("keep-me")).expect("kept bin file"),
+            b"stay"
+        );
+        assert_eq!(
+            std::fs::read(cfg.store_dir.join("mine")).expect("kept store file"),
+            b"also"
+        );
+    }
+
+    #[test]
+    fn uninstall_wipes_a_dedicated_root() {
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let home = tmp.path().join("home");
+        let root = tmp.path().join(".ketch");
+        std::fs::create_dir_all(&home).expect("home");
+        let cfg = Config::load(Some(root.clone())).expect("config");
+        std::fs::create_dir_all(&cfg.bin_dir).expect("bin");
+        std::fs::write(cfg.bin_dir.join("gone"), b"x").expect("bin file");
+
+        remove_root_at(&cfg, &cfg.root, Some(&home));
+
+        assert!(!cfg.bin_dir.exists(), "dedicated bin dir should be gone");
     }
 }
