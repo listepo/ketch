@@ -156,6 +156,8 @@ impl Sandbox {
             // Shell setup writes into `$HOME`. Pointing it at the sandbox is
             // what keeps the suite from editing a real `.zshrc`.
             .env("HOME", self.home())
+            // `dirs::home_dir` on Windows reads USERPROFILE, not HOME.
+            .env("USERPROFILE", self.home())
             .env("SHELL", "/bin/zsh")
             // Homebrew's own answer to where it lives, so cask detection looks
             // inside the sandbox and nowhere else.
@@ -228,28 +230,45 @@ impl Sandbox {
     }
 
     fn write_plugin(&self) {
-        let script = format!(
-            "#!/bin/sh\n\
-             set -eu\n\
-             DB={db}\n\
-             case \"$1\" in\n\
-             capabilities) printf '%s' '{caps}' ;;\n\
-             describe) printf 'null' ;;\n\
-             releases) cat \"$DB/$2.releases.json\" ;;\n\
-             search) printf '[]' ;;\n\
-             download) cp \"$2\" \"$3\" ;;\n\
-             *) echo \"unsupported subcommand: $1\" >&2; exit 1 ;;\n\
-             esac\n",
-            db = shell_quote(&self.assets()),
-            caps = r#"{"protocol":1,"scheme":"test","download":true,"search":false}"#,
-        );
-        let path = self
-            .tmp
-            .child("root")
-            .child("plugins")
-            .child("ketch-source-test");
-        path.write_str(&script).expect("write plugin");
-        make_executable(path.path());
+        #[cfg(windows)]
+        {
+            let db = self.assets();
+            let script = format!(
+                "@echo off\r\n                 set \"DB={db}\"\r\n                 if \"%~1\"==\"capabilities\" (echo {{\"protocol\":1,\"scheme\":\"test\",\"download\":true,\"search\":false}} & exit /b 0)\r\n                 if \"%~1\"==\"describe\" (echo null & exit /b 0)\r\n                 if \"%~1\"==\"releases\" (type \"%DB%\\%~2.releases.json\" & exit /b 0)\r\n                 if \"%~1\"==\"search\" (echo [] & exit /b 0)\r\n                 if \"%~1\"==\"download\" (copy /Y \"%~2\" \"%~3\" >nul & exit /b 0)\r\n                 echo unsupported subcommand: %~1 1>&2\r\n                 exit /b 1\r\n",
+                db = db.display(),
+            );
+            let path = self
+                .tmp
+                .child("root")
+                .child("plugins")
+                .child("ketch-source-test.cmd");
+            path.write_str(&script).expect("write plugin");
+        }
+        #[cfg(not(windows))]
+        {
+            let script = format!(
+                "#!/bin/sh\n\
+                 set -eu\n\
+                 DB={db}\n\
+                 case \"$1\" in\n\
+                 capabilities) printf '%s' '{caps}' ;;\n\
+                 describe) printf 'null' ;;\n\
+                 releases) cat \"$DB/$2.releases.json\" ;;\n\
+                 search) printf '[]' ;;\n\
+                 download) cp \"$2\" \"$3\" ;;\n\
+                 *) echo \"unsupported subcommand: $1\" >&2; exit 1 ;;\n\
+                 esac\n",
+                db = shell_quote(&self.assets()),
+                caps = r#"{"protocol":1,"scheme":"test","download":true,"search":false}"#,
+            );
+            let path = self
+                .tmp
+                .child("root")
+                .child("plugins")
+                .child("ketch-source-test");
+            path.write_str(&script).expect("write plugin");
+            make_executable(path.path());
+        }
     }
 }
 
@@ -340,10 +359,29 @@ impl Entry {
     /// An executable that prints `says` when run, so a test can prove the thing
     /// on PATH is the thing that was installed.
     pub fn program(path: &str, says: &str) -> Entry {
-        Entry {
-            path: path.to_string(),
-            body: format!("#!/bin/sh\necho '{says}'\n").into_bytes(),
-            mode: 0o755,
+        #[cfg(windows)]
+        {
+            let path = if path.to_ascii_lowercase().ends_with(".cmd")
+                || path.to_ascii_lowercase().ends_with(".exe")
+                || path.to_ascii_lowercase().ends_with(".bat")
+            {
+                path.to_string()
+            } else {
+                format!("{path}.cmd")
+            };
+            Entry {
+                path,
+                body: format!("@echo off\r\necho {says}\r\n").into_bytes(),
+                mode: 0o755,
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            Entry {
+                path: path.to_string(),
+                body: format!("#!/bin/sh\necho '{says}'\n").into_bytes(),
+                mode: 0o755,
+            }
         }
     }
 }
@@ -411,8 +449,15 @@ fn sha256_file(path: &Path) -> String {
 }
 
 fn make_executable(path: &Path) {
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    }
+    #[cfg(windows)]
+    {
+        let _ = path;
+    }
 }
 
 /// Single-quote a path for the plugin script. Temp dirs contain no quotes, but

@@ -290,6 +290,48 @@ impl Controller {
         }
     }
 
+    /// Leave raw mode and the alternate screen so a line prompt can read stdin.
+    pub fn pause_for_input(self: &Arc<Self>) -> Option<Box<dyn FnOnce() + Send>> {
+        if !self.active.load(Ordering::Acquire) {
+            return None;
+        }
+        crate::ui::disable_tui();
+        {
+            let mut terminal = self.terminal.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(terminal) = terminal.as_mut() {
+                let _ = terminal.show_cursor();
+                let _ = execute!(terminal.backend_mut(), LeaveAlternateScreen);
+            }
+        }
+        let _ = disable_raw_mode();
+        let controller = Arc::clone(self);
+        Some(Box::new(move || {
+            if !controller.active.load(Ordering::Acquire) {
+                return;
+            }
+            if enable_raw_mode().is_err() {
+                return;
+            }
+            let alt_screen_ok = {
+                let mut terminal = controller
+                    .terminal
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                if let Some(terminal) = terminal.as_mut() {
+                    execute!(terminal.backend_mut(), EnterAlternateScreen).is_ok()
+                } else {
+                    false
+                }
+            };
+            if !alt_screen_ok {
+                let _ = disable_raw_mode();
+                return;
+            }
+            crate::ui::enable_tui(Arc::clone(&controller));
+            controller.draw();
+        }))
+    }
+
     /// Restore the terminal now. It is idempotent so every exit path can call it.
     pub fn shutdown(&self) {
         if !self.active.swap(false, Ordering::AcqRel) {
@@ -383,6 +425,8 @@ impl Session {
         };
         let controller = Arc::new(Controller::new(State::new(command, packages), terminal));
         controller.draw();
+        let pause_controller = Arc::clone(&controller);
+        crate::ui::register_tui_input_pause(Box::new(move || pause_controller.pause_for_input()));
         let hook_controller = Arc::clone(&controller);
         let previous_panic_hook = Arc::new(Mutex::new(Some(panic::take_hook())));
         let hook_previous = Arc::clone(&previous_panic_hook);
@@ -410,6 +454,7 @@ impl Session {
 
 impl Drop for Session {
     fn drop(&mut self) {
+        crate::ui::clear_tui_input_pause();
         crate::ui::disable_tui();
         self.controller.shutdown();
         // Panic hooks are process-global, so remove ours and put back the
@@ -601,6 +646,15 @@ mod tests {
 
         state.apply(Event::Leave);
         assert!(state.leave_requested);
+    }
+
+    #[test]
+    fn pause_for_input_is_not_offered_after_shutdown() {
+        let backend = CrosstermBackend::new(io::stderr());
+        let terminal = Terminal::new(backend).unwrap();
+        let controller = Arc::new(Controller::new(State::new("upgrade", []), terminal));
+        controller.shutdown();
+        assert!(controller.pause_for_input().is_none());
     }
 
     #[test]

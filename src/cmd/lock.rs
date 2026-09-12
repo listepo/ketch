@@ -136,10 +136,12 @@ pub fn sync(cfg: &Config, args: SyncArgs) -> Result<()> {
         state.save(cfg)?;
     }
     if !failed.is_empty() {
+        // Extras are only attempted under `--prune`; counting them otherwise
+        // reports failures out of a total the run never touched.
+        let attempted = wanted.len() + if prune { plan.extra.len() } else { 0 };
         return Err(Error::msg(format!(
-            "{} of {} packages failed: {}",
+            "{} of {attempted} packages failed: {}",
             failed.len(),
-            wanted.len() + plan.extra.len(),
             failed.join(", ")
         )));
     }
@@ -163,6 +165,13 @@ fn request_for(cfg: &Config, entry: &LockedPackage, target: &str) -> Result<Inst
     // holding the download to it would fail every cross-platform sync.
     if entry.matches_target(target) {
         req.expected_sha256 = Some(entry.sha256.clone());
+        // A hash is only checkable against the file it was taken from, so the
+        // recorded asset is pinned with it. Re-scoring would pick whatever
+        // scores best today — a release that gained an asset under the same
+        // tag, or a later ketch with different weights — and then report the
+        // mismatch as if the release had been rewritten under the tag the lock
+        // recorded.
+        req.asset_override = Some(entry.asset.clone());
     } else {
         ui::debug(&format!(
             "{}: locked on {}, re-selecting the asset for {target}",
@@ -207,20 +216,23 @@ fn spec_for(cfg: &Config, entry: &LockedPackage) -> Result<PackageSpec> {
 }
 
 fn report_plan(plan: &Plan) {
+    // Names and tags come out of a lockfile, which is a file a colleague may
+    // have written or a repository may have been handed.
+    let clean = crate::changelog::sanitize;
     for entry in &plan.missing {
         ui::out(&format!(
             "{} {} {}",
             ui::green("+"),
-            entry.name,
-            ui::dim(&entry.tag)
+            clean(&entry.name),
+            ui::dim(&clean(&entry.tag))
         ));
     }
     for (entry, have) in &plan.changed {
         ui::out(&format!(
             "{} {} {}",
             ui::yellow("~"),
-            entry.name,
-            ui::dim(&format!("{have} -> {}", entry.tag))
+            clean(&entry.name),
+            ui::dim(&clean(&format!("{have} -> {}", entry.tag)))
         ));
     }
     for name in &plan.extra {

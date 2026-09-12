@@ -5,24 +5,15 @@ a schedule.
 
 ## Linux and Windows
 
-macOS is the only implemented platform. Everything OS-specific sits behind the
-`Platform` trait in `src/platform/`, and nothing above that layer contains
-platform-specific code — the install pipeline, sources, extractors and commands
-are already portable.
+Shipped: `src/platform/linux.rs` and `src/platform/windows.rs`, selected from
+`platform::host()`. Linux places bin-dir symlinks; Windows copies into the bin
+dir and records `CopiedFile`. Trust is `NotApplicable` until signature
+verification exists.
 
-A Linux backend is one new file plus one line in `platform::host()`:
-
-- `score_asset` — read `linux`, `gnu`, `musl`, `x86_64`, `aarch64` from asset
-  names, and prefer static builds when the host libc is uncertain.
-- `place` / `unplace` — symlinks into the bin dir. No `.app` handling, so this
-  is simpler than macOS.
-- `verify_trust` — there is no system-wide equivalent of `codesign`;
-  `NotApplicable` is an honest answer, with signature verification arriving
-  alongside the sigstore work below.
-- `doctor` — is the bin dir on `PATH`, is the store writable.
-
-Windows needs the same, plus `.exe` handling and a `place` that copies rather
-than symlinks by default.
+`ketch path install` on Windows writes the user PATH. `install.sh` fetches the
+host tarball on macOS, Linux and Windows (Git Bash). `release.yml` publishes
+Linux and Windows tarballs next to the signed macOS ones. CI runs each OS's
+suite on that OS.
 
 ## Verifying signatures
 

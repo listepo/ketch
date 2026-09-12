@@ -4,11 +4,19 @@
 //! trait: which release asset is even installable, how a payload becomes
 //! something on PATH, and what "is this code trustworthy" means locally.
 //!
-//! Only macOS is implemented today. Adding Linux means adding a file here and
-//! one line in `host()` — no changes anywhere else in the codebase.
+//! macOS, Linux and Windows each have a backend. Adding another OS means adding
+//! a file here and one arm in `host()` — no changes anywhere else.
 
+pub mod scoring;
+
+#[cfg(target_os = "linux")]
+pub mod linux;
 #[cfg(target_os = "macos")]
 pub mod macos;
+#[cfg(unix)]
+pub mod unix;
+#[cfg(target_os = "windows")]
+pub mod windows;
 
 use crate::config::Config;
 use crate::error::Result;
@@ -40,6 +48,8 @@ pub struct Placement<'a> {
     /// Final home of this version inside the store.
     pub store_dir: &'a Path,
     pub bin_dir: &'a Path,
+    /// macOS `.app` install root; unused on Linux/Windows placement.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub apps_dir: &'a Path,
     pub kind: PackageKind,
     /// Explicit binaries from the manifest. Empty means "discover them".
@@ -50,6 +60,7 @@ pub struct Placement<'a> {
     /// belongs to another package or to the user.
     pub replacing: &'a [LinkRecord],
     /// Symlink `.app` bundles rather than copying them.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub link_apps: bool,
     /// Create user-visible links. False still moves the payload into the
     /// store, so `ketch relink` can expose it later without re-downloading.
@@ -60,10 +71,13 @@ pub struct Placement<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TrustVerdict {
     /// Validly signed and accepted by the system policy.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Trusted { authority: String },
     /// Signed, but the system would still warn (ad-hoc, or unnotarized).
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Weak { detail: String },
     /// No usable signature.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Untrusted { detail: String },
     /// This platform does not do signature checks.
     NotApplicable,
@@ -196,11 +210,19 @@ pub fn host() -> Result<Arc<dyn Platform>> {
     {
         Ok(Arc::new(macos::MacOsPlatform::new()))
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
+    {
+        Ok(Arc::new(linux::LinuxPlatform::new()))
+    }
+    #[cfg(target_os = "windows")]
+    {
+        Ok(Arc::new(windows::WindowsPlatform::new()))
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
     {
         Err(crate::error::Error::msg(format!(
-            "ketch {} supports macOS only. Linux and Windows backends are planned; \
-             see ROADMAP.md — implementing `Platform` in src/platform/ is all that is required.",
+            "ketch {} has no backend for this operating system. \
+             Implementing `Platform` in src/platform/ is all that is required.",
             env!("CARGO_PKG_VERSION")
         )))
     }
@@ -261,7 +283,6 @@ pub const REJECTED_EXTENSIONS: &[&str] = &[
     ".rpm",
     ".apk",
     ".msi",
-    ".exe",
     ".appimage",
     ".snap",
     ".flatpak",
@@ -288,5 +309,23 @@ mod tests {
         assert!(is_sidecar("tool.dmg.asc"));
         assert!(is_sidecar("bundle.intoto.jsonl"));
         assert!(!is_sidecar("rg-14.tar.gz"));
+    }
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn host_is_linux() {
+        assert_eq!(host().unwrap().id(), "linux");
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn host_is_windows() {
+        assert_eq!(host().unwrap().id(), "windows");
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    #[test]
+    fn host_errs_on_an_os_with_no_backend() {
+        let err = host().unwrap_err();
+        assert!(err.to_string().contains("no backend"));
     }
 }

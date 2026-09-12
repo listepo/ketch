@@ -7,7 +7,7 @@
 
 use crate::config::Config;
 use crate::error::{Error, Result};
-use crate::model::{normalize_name, Manifest, ManifestOrigin, PackageSpec};
+use crate::model::{normalize_name, Manifest, ManifestOrigin, PackageRef, PackageSpec};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
@@ -16,7 +16,11 @@ use std::path::{Path, PathBuf};
 pub const BUILTIN_TOML: &str = include_str!("builtin.toml");
 
 /// A file holding several manifests, as `builtin.toml` does.
+///
+/// Strict like `Manifest` itself: this is the shape a user manifest takes, and
+/// a key outside `[[package]]` is a manifest that parsed as nothing at all.
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Registry {
     #[serde(default)]
     package: Vec<Manifest>,
@@ -73,7 +77,7 @@ impl Resolver {
         // An explicit reference still gets a curated manifest when one exists:
         // `ketch install BurntSushi/ripgrep` should link `rg`, not `ripgrep`.
         if let Some(reference) = &spec.reference {
-            if let Some(found) = self.find(|m| &m.source == reference) {
+            if let Some(found) = self.find(|m| same_source(&m.source, reference)) {
                 return Ok(found);
             }
             return Ok((
@@ -161,6 +165,25 @@ fn matches_query(manifest: &Manifest, needle: &str) -> bool {
 fn answers_to(manifest: &Manifest, alias: &str) -> bool {
     normalize_name(&manifest.name) == alias
         || manifest.provides.iter().any(|p| normalize_name(p) == alias)
+}
+
+/// Whether two references name the same package.
+///
+/// GitHub owners and repositories are case-insensitive, so
+/// `burntsushi/ripgrep` is the repository the curated `BurntSushi/ripgrep`
+/// entry describes: without this, a differently-cased reference resolves by
+/// inference and quietly drops the curated `bin`, `provides` and asset rules.
+/// Every other scheme is compared exactly — a `local:` path, on Linux, can
+/// differ only by case and be a different file.
+fn same_source(a: &PackageRef, b: &PackageRef) -> bool {
+    if !a.scheme.eq_ignore_ascii_case(&b.scheme) {
+        return false;
+    }
+    if a.scheme.eq_ignore_ascii_case("github") {
+        a.id.eq_ignore_ascii_case(&b.id)
+    } else {
+        a.id == b.id
+    }
 }
 
 /// Read every `.toml` in the manifest directory.
@@ -253,6 +276,21 @@ mod tests {
             manifest.bin.first().and_then(|b| b.name.as_deref()),
             Some("rg")
         );
+    }
+
+    #[test]
+    fn a_reference_matches_the_curated_entry_whatever_its_case() {
+        // GitHub is case-insensitive, so this is the same repository, and the
+        // curated manifest is what says which binary to link.
+        for reference in ["burntsushi/ripgrep", "BurntSushi/RipGrep"] {
+            let (manifest, origin) = resolver().resolve(&PackageSpec::parse(reference)).unwrap();
+            assert_eq!(origin, ManifestOrigin::Builtin, "{reference}");
+            assert_eq!(
+                manifest.bin.first().and_then(|b| b.name.as_deref()),
+                Some("rg"),
+                "{reference}"
+            );
+        }
     }
 
     #[test]

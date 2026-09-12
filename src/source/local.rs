@@ -98,6 +98,7 @@ impl Source for LocalSource {
                 src.display()
             )));
         }
+        ensure_local_payload(src)?;
         let size = fs::metadata(src).map(|m| m.len()).unwrap_or(0);
         progress.start(Some(size), &asset.name);
         if let Some(parent) = dest.parent() {
@@ -222,9 +223,6 @@ pub fn package_ref(path: &Path) -> PackageRef {
 /// Classify what a local path is, for display and for the install branch.
 pub fn classify(path: &Path) -> Result<LocalKind> {
     let meta = fs::symlink_metadata(path).map_err(|e| Error::io(path, e))?;
-    if meta.file_type().is_symlink() {
-        return Ok(LocalKind::Symlink);
-    }
     if meta.is_dir() {
         let name = path
             .file_name()
@@ -238,6 +236,15 @@ pub fn classify(path: &Path) -> Result<LocalKind> {
             path.display()
         )));
     }
+    if meta.file_type().is_symlink() {
+        let target = fs::metadata(path).map_err(|e| Error::io(path, e))?;
+        if target.is_dir() {
+            return Ok(LocalKind::Symlink);
+        }
+        ensure_is_regular_file(path, &target)?;
+        return Ok(LocalKind::Symlink);
+    }
+    ensure_is_regular_file(path, &meta)?;
     let head = read_head(path)?;
     if looks_like_archive(path, &head) {
         Ok(LocalKind::Archive)
@@ -280,6 +287,35 @@ fn file_url(path: &Path) -> Option<String> {
     Some(format!("file://{}", path.display()))
 }
 
+/// Refuse FIFOs, sockets and devices before `open` or `copy` can block on them.
+///
+/// Directories are left to `classify` / `prepare`; a symlink is followed only
+/// far enough to see whether the payload is a regular file.
+fn ensure_local_payload(path: &Path) -> Result<()> {
+    let meta = fs::symlink_metadata(path).map_err(|e| Error::io(path, e))?;
+    if meta.is_dir() {
+        return Ok(());
+    }
+    if meta.file_type().is_symlink() {
+        let target = fs::metadata(path).map_err(|e| Error::io(path, e))?;
+        if target.is_dir() {
+            return Ok(());
+        }
+        return ensure_is_regular_file(path, &target);
+    }
+    ensure_is_regular_file(path, &meta)
+}
+
+fn ensure_is_regular_file(path: &Path, meta: &fs::Metadata) -> Result<()> {
+    if meta.is_file() {
+        return Ok(());
+    }
+    Err(Error::msg(format!(
+        "local path is not a regular file: {}",
+        path.display()
+    )))
+}
+
 /// Copy a directory tree into `dest`, preserving relative structure. Used for
 /// local `.app` bundles so they reach `place` without a fake archive round-trip.
 pub fn copy_tree(src: &Path, dest: &Path) -> Result<()> {
@@ -301,10 +337,16 @@ pub fn copy_tree(src: &Path, dest: &Path) -> Result<()> {
         if ft.is_dir() {
             fs::create_dir_all(&target).map_err(|e| Error::io(&target, e))?;
         } else if ft.is_symlink() {
-            let link = fs::read_link(entry.path()).map_err(|e| Error::io(entry.path(), e))?;
             #[cfg(unix)]
             {
-                std::os::unix::fs::symlink(&link, &target).map_err(|e| Error::io(&target, e))?;
+                let link = fs::read_link(entry.path()).map_err(|e| Error::io(entry.path(), e))?;
+                crate::platform::unix::symlink(&link, &target)?;
+            }
+            #[cfg(not(unix))]
+            {
+                return Err(Error::msg(
+                    "symlinks in a local tree are not supported on this OS",
+                ));
             }
         } else {
             if let Some(parent) = target.parent() {
@@ -341,7 +383,6 @@ pub fn sha256_tree(root: &Path) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::os::unix::fs::PermissionsExt;
 
     #[test]
     fn two_identical_trees_hash_the_same() {
@@ -371,10 +412,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let bin = dir.path().join("tool");
         fs::write(&bin, b"#!/bin/sh\necho hi\n").unwrap();
-        fs::set_permissions(&bin, fs::Permissions::from_mode(0o755)).unwrap();
         assert_eq!(classify(&bin).unwrap(), LocalKind::Binary);
     }
 
+    #[cfg(unix)]
     #[test]
     fn classifies_a_symlink() {
         let dir = tempfile::tempdir().unwrap();
@@ -404,13 +445,37 @@ mod tests {
         assert_eq!(classify(&app).unwrap(), LocalKind::App);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn refuses_a_named_pipe_before_open_can_block() {
+        use std::process::Command;
+
+        let dir = tempfile::tempdir().unwrap();
+        let fifo = dir.path().join("pipe");
+        let status = Command::new("mkfifo").arg(&fifo).status().unwrap();
+        assert!(status.success(), "mkfifo failed");
+        let err = classify(&fifo).unwrap_err().to_string();
+        assert!(
+            err.contains("not a regular file"),
+            "unexpected error: {err}"
+        );
+    }
+
     #[test]
     fn absolute_path_resolves_relative() {
         // Do not touch the process cwd: unit tests share it and a parallel
         // suite that also reads cwd would race.
         let got = absolute_path("rel/tool").unwrap();
         assert_eq!(got, std::env::current_dir().unwrap().join("rel/tool"));
-        let abs = absolute_path("/tmp/ketch-local-abs-tool").unwrap();
-        assert_eq!(abs, PathBuf::from("/tmp/ketch-local-abs-tool"));
+        #[cfg(unix)]
+        {
+            let abs = absolute_path("/tmp/ketch-local-abs-tool").unwrap();
+            assert_eq!(abs, PathBuf::from("/tmp/ketch-local-abs-tool"));
+        }
+        #[cfg(windows)]
+        {
+            let abs = absolute_path(r"C:\ketch-local-abs-tool").unwrap();
+            assert_eq!(abs, PathBuf::from(r"C:\ketch-local-abs-tool"));
+        }
     }
 }

@@ -1,9 +1,8 @@
-//! Putting the ketch bin directory on PATH, in the user's own shell.
+//! Putting the ketch bin directory on PATH.
 //!
-//! Separate from `platform/` because what has to be edited is a shell's
-//! startup file, not an operating system's: bash, zsh and fish read the same
-//! files wherever they run, so a Linux or Windows backend inherits all of this
-//! unchanged.
+//! On Unix that means a block in bash, zsh or fish startup files. On Windows
+//! it means the user environment (`HKCU\\Environment\\Path`); the same shell
+//! edits still exist for Git Bash.
 //!
 //! This is the only code in ketch that writes outside the ketch root, and it
 //! runs only when the user asks for it — `ketch path install`, or
@@ -282,19 +281,23 @@ pub fn path_check(cfg: &Config) -> DoctorCheck {
         return DoctorCheck::ok("PATH", format!("{bin} is on PATH"));
     }
     let configured = configured_in(cfg);
-    if configured.is_empty() {
+    let user = user_path_configured(cfg);
+    if configured.is_empty() && !user {
         return DoctorCheck::fail(
             "PATH",
             format!("{bin} is not on PATH"),
             "Run `ketch path install`, or `ketch doctor --fix`.",
         );
     }
-    let files: Vec<String> = configured.iter().map(|p| p.display().to_string()).collect();
+    let mut places: Vec<String> = configured.iter().map(|p| p.display().to_string()).collect();
+    if user {
+        places.push("the user PATH".to_string());
+    }
     DoctorCheck::warn(
         "PATH",
         format!(
             "{bin} is set up in {} but not in this shell",
-            files.join(", ")
+            places.join(", ")
         ),
         "Open a new shell.",
     )
@@ -302,7 +305,157 @@ pub fn path_check(cfg: &Config) -> DoctorCheck {
 
 /// The line to add by hand, for a shell ketch does not know.
 pub fn manual_line(cfg: &Config) -> Result<String> {
-    Ok(Shell::Bash.export(bin_dir_str(cfg)?))
+    let bin = bin_dir_str(cfg)?;
+    if cfg!(windows) {
+        Ok(format!("Add {bin} to your user PATH."))
+    } else {
+        Ok(Shell::Bash.export(bin))
+    }
+}
+
+/// True when the Windows user PATH already names the bin dir.
+///
+/// Off Windows this is always false: there is no user environment ketch
+/// owns. An unreadable registry is treated as not configured, like an
+/// unreadable startup file.
+pub fn user_path_configured(cfg: &Config) -> bool {
+    #[cfg(windows)]
+    {
+        read_user_path()
+            .ok()
+            .is_some_and(|path| windows_path_has(&path, &cfg.bin_dir))
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = cfg;
+        false
+    }
+}
+
+/// Put the bin dir on the Windows user PATH.
+///
+/// Uses `[Environment]::SetEnvironmentVariable` so Explorer is notified and a
+/// new terminal sees the change without a logoff. `setx` is not used: it
+/// truncates PATH at 1024 characters.
+#[cfg(windows)]
+pub fn install_user(cfg: &Config, dry_run: bool) -> Result<Outcome> {
+    let current = read_user_path()?;
+    match windows_path_prepend(&current, &cfg.bin_dir) {
+        None => Ok(Outcome::Unchanged),
+        Some(next) => {
+            if !dry_run {
+                write_user_path(&next)?;
+            }
+            Ok(Outcome::Added)
+        }
+    }
+}
+
+/// Take the bin dir back out of the Windows user PATH.
+#[cfg(windows)]
+pub fn uninstall_user(cfg: &Config, dry_run: bool) -> Result<Outcome> {
+    let current = read_user_path()?;
+    match windows_path_remove(&current, &cfg.bin_dir) {
+        None => Ok(Outcome::Unchanged),
+        Some(next) => {
+            if !dry_run {
+                write_user_path(&next)?;
+            }
+            Ok(Outcome::Removed)
+        }
+    }
+}
+
+/// Whether `dir` already appears as an entry in a Windows PATH string.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn windows_path_has(path: &str, dir: &Path) -> bool {
+    windows_path_entries(path).any(|entry| windows_path_eq(entry, dir))
+}
+
+/// Prepend `dir` if it is missing. `None` when it is already present.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn windows_path_prepend(path: &str, dir: &Path) -> Option<String> {
+    if windows_path_has(path, dir) {
+        return None;
+    }
+    let dir = dir.to_string_lossy();
+    if path.is_empty() {
+        Some(dir.into_owned())
+    } else {
+        Some(format!("{dir};{path}"))
+    }
+}
+
+/// Drop `dir` if it is present. `None` when it was not there.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn windows_path_remove(path: &str, dir: &Path) -> Option<String> {
+    if !windows_path_has(path, dir) {
+        return None;
+    }
+    let kept: Vec<&str> = windows_path_entries(path)
+        .filter(|entry| !windows_path_eq(entry, dir))
+        .collect();
+    Some(kept.join(";"))
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+fn windows_path_entries(path: &str) -> impl Iterator<Item = &str> {
+    path.split(';').filter(|s| !s.is_empty())
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+fn windows_path_eq(entry: &str, dir: &Path) -> bool {
+    windows_path_key(Path::new(entry)) == windows_path_key(dir)
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+fn windows_path_key(p: &Path) -> String {
+    let s = p.to_string_lossy().replace('/', "\\");
+    s.trim_end_matches('\\').to_ascii_lowercase()
+}
+
+#[cfg(windows)]
+fn read_user_path() -> Result<String> {
+    let out = std::process::Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "[Environment]::GetEnvironmentVariable('Path','User')",
+        ])
+        .output()
+        .map_err(|e| Error::msg(format!("could not read the user PATH: {e}")))?;
+    if !out.status.success() {
+        return Err(Error::msg(format!(
+            "could not read the user PATH: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        )));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout)
+        .trim_end_matches(['\r', '\n'])
+        .to_string())
+}
+
+/// Write the user Path and broadcast `WM_SETTINGCHANGE`.
+///
+/// The new value travels in an environment variable so a PATH that contains
+/// quotes or `$` cannot break out of the PowerShell command.
+#[cfg(windows)]
+fn write_user_path(value: &str) -> Result<()> {
+    let status = std::process::Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "[Environment]::SetEnvironmentVariable('Path', $env:KETCH_NEW_USER_PATH, 'User')",
+        ])
+        .env("KETCH_NEW_USER_PATH", value)
+        .status()
+        .map_err(|e| Error::msg(format!("could not write the user PATH: {e}")))?;
+    if !status.success() {
+        return Err(Error::msg("could not write the user PATH"));
+    }
+    Ok(())
 }
 
 fn home() -> Result<PathBuf> {
@@ -360,11 +513,27 @@ fn quote_fish(text: &str) -> String {
 /// True when some line the shell will actually run names this directory.
 ///
 /// Comments are skipped so that a file still carrying a commented-out attempt,
-/// or ketch's own markers, does not read as configured.
+/// or ketch's own markers, does not read as configured. The name has to stand
+/// on its own, too: `contains` alone accepts `…/.ketch/bin.bak`, a backup of
+/// the file — `path install` would report the directory as already set up and
+/// add nothing, and `doctor` would point at a new shell that still lacks it.
 fn mentions(text: &str, bin_dir: &str) -> bool {
+    // What can sit next to a directory on `PATH`: a separator, a quote, a
+    // space. Another path character — the `.` of `.bak`, the `/` of a longer
+    // path — means this is a different directory that merely starts the same.
+    let boundary = |byte: u8| {
+        byte.is_ascii_whitespace() || matches!(byte, b':' | b'"' | b'\'' | b'=' | b'(' | b')')
+    };
     text.lines()
         .filter(|line| !line.trim_start().starts_with('#'))
-        .any(|line| line.contains(bin_dir))
+        .any(|line| {
+            let bytes = line.as_bytes();
+            line.match_indices(bin_dir).any(|(start, matched)| {
+                let end = start + matched.len();
+                (start == 0 || boundary(bytes[start - 1]))
+                    && (end == bytes.len() || boundary(bytes[end]))
+            })
+        })
 }
 
 /// Byte range of the ketch block, markers and trailing newline included.
@@ -476,6 +645,22 @@ mod tests {
     use super::*;
 
     const BIN: &str = "/home/u/.ketch/bin";
+
+    #[test]
+    fn a_backup_path_that_starts_with_the_bin_dir_is_not_a_path_entry() {
+        assert!(!mentions(
+            "export PATH=\"/home/u/.ketch/bin.bak:$PATH\"",
+            BIN
+        ));
+        assert!(mentions("export PATH=\"/home/u/.ketch/bin:$PATH\"", BIN));
+        assert!(mentions("set -gx PATH /home/u/.ketch/bin $PATH", BIN));
+        assert!(mentions("export PATH=/home/u/.ketch/bin", BIN));
+        // A longer path is a different directory that merely starts the same.
+        assert!(!mentions(
+            "export PATH=\"/home/u/.ketch/bin/tools:$PATH\"",
+            BIN
+        ));
+    }
 
     fn zsh_block() -> String {
         Shell::Zsh.block(BIN)
@@ -612,5 +797,28 @@ mod tests {
         } else {
             assert!(first.ends_with(".bashrc"));
         }
+    }
+
+    #[test]
+    fn windows_path_prepend_is_idempotent_and_slash_insensitive() {
+        let dir = Path::new(r"C:\Users\u\.ketch\bin");
+        let added = windows_path_prepend(r"C:\Windows\System32", dir).unwrap();
+        assert!(added.starts_with(r"C:\Users\u\.ketch\bin;"));
+        assert!(windows_path_prepend(&added, dir).is_none());
+        assert!(windows_path_has(
+            &added,
+            Path::new("C:/Users/u/.ketch/bin/")
+        ));
+    }
+
+    #[test]
+    fn windows_path_remove_drops_only_the_named_entry() {
+        let dir = Path::new(r"C:\Users\u\.ketch\bin");
+        let path = r"C:\Windows\System32;C:\Users\u\.ketch\bin;C:\Windows";
+        assert_eq!(
+            windows_path_remove(path, dir).as_deref(),
+            Some(r"C:\Windows\System32;C:\Windows")
+        );
+        assert!(windows_path_remove(r"C:\Windows\System32", dir).is_none());
     }
 }

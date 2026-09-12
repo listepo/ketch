@@ -53,11 +53,17 @@ pub fn doctor(cfg: &Config, args: DoctorArgs) -> Result<()> {
                 CheckStatus::Warn => (ui::yellow("warn"), ui::bold(&check.name)),
                 CheckStatus::Fail => (ui::red("fail"), ui::bold(&check.name)),
             };
-            ui::out(&format!("{mark} {name}  {}", check.detail));
+            ui::out(&format!(
+                "{mark} {name}  {}",
+                crate::changelog::sanitize(&check.detail)
+            ));
             // The fix belongs with the problem, not in a summary the user has to
             // map back onto the list.
             if let Some(fix) = &check.fix {
-                ui::out(&format!("     {}", ui::dim(fix)));
+                ui::out(&format!(
+                    "     {}",
+                    ui::dim(&crate::changelog::sanitize(fix))
+                ));
             }
         }
     }
@@ -114,24 +120,39 @@ fn doctor_report(checks: &[DoctorCheck]) -> serde_json::Value {
 /// Failures are warned about rather than returned: `doctor` exists to finish
 /// its report even when part of the machine is broken.
 fn fix(cfg: &Config) {
-    if cfg.bin_dir_on_path() || !shell::configured_in(cfg).is_empty() {
+    if cfg.bin_dir_on_path()
+        || !shell::configured_in(cfg).is_empty()
+        || shell::user_path_configured(cfg)
+    {
         return;
     }
-    let shells = match shell::detect() {
-        Ok(shells) if !shells.is_empty() => shells,
-        Ok(_) => {
-            ui::warn("could not tell which shell you use; run `ketch path install --shell <name>`");
-            return;
+    #[cfg(windows)]
+    {
+        match shell::install_user(cfg, false) {
+            Ok(outcome) => report_user(outcome, false),
+            Err(e) => ui::warn(&e.to_string()),
         }
-        Err(e) => {
-            ui::warn(&e.to_string());
-            return;
-        }
-    };
-    for sh in shells {
-        match shell::install(cfg, sh, false) {
-            Ok(change) => report(&change, false),
-            Err(e) => ui::warn(&format!("{}: {e}", sh.name())),
+    }
+    #[cfg(not(windows))]
+    {
+        let shells = match shell::detect() {
+            Ok(shells) if !shells.is_empty() => shells,
+            Ok(_) => {
+                ui::warn(
+                    "could not tell which shell you use; run `ketch path install --shell <name>`",
+                );
+                return;
+            }
+            Err(e) => {
+                ui::warn(&e.to_string());
+                return;
+            }
+        };
+        for sh in shells {
+            match shell::install(cfg, sh, false) {
+                Ok(change) => report(&change, false),
+                Err(e) => ui::warn(&format!("{}: {e}", sh.name())),
+            }
         }
     }
 }
@@ -355,7 +376,7 @@ pub fn path(cfg: &Config, command: Option<PathCommand>) -> Result<()> {
     match command.unwrap_or(PathCommand::Status) {
         PathCommand::Status => status(cfg),
         PathCommand::Install(args) => install(cfg, args),
-        PathCommand::Uninstall(args) => uninstall(args),
+        PathCommand::Uninstall(args) => uninstall(cfg, args),
     }
 }
 
@@ -375,6 +396,17 @@ fn status(cfg: &Config) -> Result<()> {
     let detected = shell::detect().unwrap_or_default();
     let configured = shell::configured_in(cfg);
     let mut rows = Vec::new();
+    if cfg!(windows) {
+        rows.push(vec![
+            "user PATH".to_string(),
+            if shell::user_path_configured(cfg) {
+                "configured".to_string()
+            } else {
+                "not set up".to_string()
+            },
+            r"HKCU\Environment\Path".to_string(),
+        ]);
+    }
     for sh in Shell::ALL {
         let file = shell_file(sh)?;
         let state = if configured.contains(&file) {
@@ -400,6 +432,21 @@ fn install(cfg: &Config, args: PathInstallArgs) -> Result<()> {
         return Ok(());
     }
     let mut changed = false;
+    #[cfg(windows)]
+    {
+        let want_user = args.common.shell.is_empty() || args.common.all;
+        if want_user {
+            let outcome = shell::install_user(cfg, args.common.dry_run)?;
+            changed |= outcome != Outcome::Unchanged;
+            report_user(outcome, args.common.dry_run);
+            if args.common.shell.is_empty() && !args.common.all {
+                if changed && !args.common.dry_run {
+                    ui::out("Open a new terminal to pick it up.");
+                }
+                return Ok(());
+            }
+        }
+    }
     for sh in chosen(&args.common)? {
         let change = shell::install(cfg, sh, args.common.dry_run)?;
         changed |= change.outcome != Outcome::Unchanged;
@@ -411,7 +458,22 @@ fn install(cfg: &Config, args: PathInstallArgs) -> Result<()> {
     Ok(())
 }
 
-fn uninstall(args: PathArgs) -> Result<()> {
+fn uninstall(cfg: &Config, args: PathArgs) -> Result<()> {
+    #[cfg(not(windows))]
+    let _ = cfg;
+    #[cfg(windows)]
+    {
+        let want_user = args.shell.is_empty() || args.all;
+        if want_user {
+            match shell::uninstall_user(cfg, args.dry_run) {
+                Ok(outcome) => report_user(outcome, args.dry_run),
+                Err(e) => ui::warn(&e.to_string()),
+            }
+            if args.shell.is_empty() && !args.all {
+                return Ok(());
+            }
+        }
+    }
     for sh in chosen(&args)? {
         report(&shell::uninstall(sh, args.dry_run)?, args.dry_run);
     }
@@ -466,10 +528,27 @@ fn plan_lines(plan: &self_update::UninstallPlan) -> Vec<String> {
     for file in &plan.shell_files {
         lines.push(format!("the PATH block in {}", file.display()));
     }
+    if plan.user_path {
+        lines.push("the user PATH".to_string());
+    }
     if plan.cask.is_some() {
         lines.push("the Homebrew cask".to_string());
     }
     lines
+}
+
+#[cfg(windows)]
+fn report_user(outcome: Outcome, dry_run: bool) {
+    let detail = r"user PATH (HKCU\Environment\Path)";
+    match outcome {
+        Outcome::Added if dry_run => ui::step("would add", detail),
+        Outcome::Updated if dry_run => ui::step("would update", detail),
+        Outcome::Removed if dry_run => ui::step("would remove", detail),
+        Outcome::Added => ui::success("added", detail),
+        Outcome::Updated => ui::success("updated", detail),
+        Outcome::Removed => ui::success("removed", detail),
+        Outcome::Unchanged => ui::step("unchanged", detail),
+    }
 }
 
 fn report(change: &shell::Change, dry_run: bool) {
@@ -531,9 +610,9 @@ pub fn plugin(cfg: &Config, command: PluginCommand) -> Result<()> {
 
 pub fn zelf(cfg: &Config, command: SelfCommand) -> Result<()> {
     match command {
-        SelfCommand::Install { force } => {
+        SelfCommand::Install { force, link_dir } => {
             let version = self_update::current_version();
-            match self_update::install_self(cfg, force) {
+            match self_update::install_self(cfg, force, link_dir.as_deref()) {
                 Ok(out) => {
                     let detail = match &out.replaced {
                         Some(old) if old != &out.package.version => {

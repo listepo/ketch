@@ -158,6 +158,16 @@ impl Lockfile {
         let mut seen = BTreeSet::new();
         for pkg in &self.packages {
             let named = format!("{where_}: package `{}`", pkg.name);
+            // A target that is not one ketch recognises silently turns the
+            // entry into a cross-target one: the recorded asset and hash stop
+            // applying, and a hash that drifted under the tag reads as clean.
+            if pkg.target.parse::<crate::model::TargetSpec>().is_err() {
+                return Err(Error::msg(format!(
+                    "{named} names `{}` as its target, which ketch does not know. \
+                     Expected `<os>-<arch>`, e.g. `macos-aarch64`.",
+                    pkg.target
+                )));
+            }
             if pkg.name.trim().is_empty() {
                 return Err(Error::msg(format!("{where_}: a package has no name")));
             }

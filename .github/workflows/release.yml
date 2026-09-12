@@ -47,6 +47,7 @@ jobs:
       version: ${{ steps.decide.outputs.version }}
       tag: ${{ steps.decide.outputs.tag }}
       publish: ${{ steps.decide.outputs.publish }}
+      ref: ${{ steps.decide.outputs.ref }}
     steps:
       - uses: actions/checkout@v4
 
@@ -68,12 +69,26 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
           if [ "$FORCE" = "true" ]; then
+            # Repairing a published release must rebuild that tag's commit, not
+            # whatever HEAD is now. A force with no tag is a first publish that
+            # should have been an ordinary run.
+            if ! git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+              echo "$tag does not exist; force only rebuilds a published release" >&2
+              exit 1
+            fi
+            ref="$(git ls-remote origin "refs/tags/${tag}^{commit}" | awk '{print $1; exit}')"
+            if [ -z "$ref" ]; then
+              echo "could not resolve $tag to a commit" >&2
+              exit 1
+            fi
+            echo "ref=$ref" >> "$GITHUB_OUTPUT"
             echo "publish=true" >> "$GITHUB_OUTPUT"
-            echo "$tag: forced, publishing again"
+            echo "$tag: forced, publishing $ref again"
           elif git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
             echo "publish=false" >> "$GITHUB_OUTPUT"
             echo "$tag is already released; nothing to do"
           else
+            echo "ref=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
             echo "publish=true" >> "$GITHUB_OUTPUT"
             echo "$tag has no tag yet; releasing it"
           fi
@@ -86,6 +101,8 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.ref }}
 
       - run: rustup component add rustfmt clippy
       - uses: Swatinem/rust-cache@v2
@@ -101,12 +118,33 @@ jobs:
 
   build:
     needs: [version, verify]
-    runs-on: macos-latest
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     strategy:
+      fail-fast: false
       matrix:
-        target: [aarch64-apple-darwin, x86_64-apple-darwin]
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            sign: true
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            sign: true
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            sign: false
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+            sign: false
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            sign: false
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.ref }}
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -118,6 +156,7 @@ jobs:
       # same way an untested one is: it would be discovered by whoever installs
       # it, not here.
       - name: Import signing certificate
+        if: matrix.sign
         env:
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
           MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
@@ -157,21 +196,25 @@ jobs:
         run: scripts/package.sh ${{ matrix.target }} dist
 
       - name: Remove signing keychain
-        if: always() && env.SIGNING_KEYCHAIN != ''
+        if: always() && matrix.sign && env.SIGNING_KEYCHAIN != ''
         run: security delete-keychain "$SIGNING_KEYCHAIN"
 
       # The arm64 runner can build the x86_64 slice but cannot run it, so only
       # the native one is smoke-tested here.
       - name: Smoke test
-        if: matrix.target == 'aarch64-apple-darwin'
+        if: matrix.target != 'x86_64-apple-darwin'
         run: |
           tar -xzf dist/ketch-${{ matrix.target }}.tar.gz -C "$RUNNER_TEMP"
-          "$RUNNER_TEMP/ketch" --version
-          # What was signed must still be signed after the round trip through
-          # tar, and by a Developer ID, not ad hoc.
-          codesign --verify --strict "$RUNNER_TEMP/ketch"
-          codesign --display --verbose=2 "$RUNNER_TEMP/ketch" 2>&1 \
-            | grep -q 'Authority=Developer ID Application'
+          bin="$RUNNER_TEMP/ketch"
+          if [ -f "$RUNNER_TEMP/ketch.exe" ]; then
+            bin="$RUNNER_TEMP/ketch.exe"
+          fi
+          "$bin" --version
+          if [ "${{ matrix.sign }}" = "true" ]; then
+            codesign --verify --strict "$RUNNER_TEMP/ketch"
+            codesign --display --verbose=2 "$RUNNER_TEMP/ketch" 2>&1 \
+              | grep -q 'Authority=Developer ID Application'
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
@@ -186,6 +229,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.ref }}
 
       - uses: actions/download-artifact@v4
         with:
@@ -228,9 +273,13 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/* --clobber
           else
+            # The trigger SHA is this run's workflow file, not necessarily the
+            # commit being rebuilt. A forced re-run after main has moved must
+            # still tag the commit that was checked out and built.
+            target="$(git rev-parse HEAD)"
             gh release create "$TAG" dist/* \
               --draft \
-              --target "$GITHUB_SHA" \
+              --target "$target" \
               --title "$TAG" \
               "${notes[@]}"
           fi
@@ -259,19 +308,29 @@ jobs:
           TAG: ${{ needs.version.outputs.tag }}
         run: |
           mkdir -p dist
-          gh release download "$TAG" --pattern 'ketch-*.tar.gz' --dir dist
+          gh release download "$TAG" --pattern 'ketch-*-apple-darwin.tar.gz' --dir dist
           ls -l dist
 
-      - name: Update the cask
+      - name: Generate the cask
         env:
           # A token that can push to listepo/homebrew-tap. The default
           # GITHUB_TOKEN is scoped to this repository, so it cannot.
           TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           TAP_REPO: listepo/homebrew-tap
           VERSION: ${{ needs.version.outputs.version }}
+          TAG: ${{ needs.version.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           if [ -z "$TAP_TOKEN" ]; then
             echo "HOMEBREW_TAP_TOKEN is not set; the cask in $TAP_REPO was not updated" >&2
+            exit 1
+          fi
+          # Checksums come from the published tag; the version advertised in
+          # the cask must be that tag's, not HEAD's Cargo.toml if they differ.
+          release_tag="$(gh release view "$TAG" --json tagName --jq .tagName)"
+          release_version="${release_tag#v}"
+          if [ "$release_version" != "$VERSION" ]; then
+            echo "cask version $release_version from $TAG does not match workflow version $VERSION" >&2
             exit 1
           fi
           arm="$(shasum -a 256 dist/ketch-aarch64-apple-darwin.tar.gz | cut -d' ' -f1)"
@@ -279,9 +338,28 @@ jobs:
 
           git clone "https://x-access-token:${TAP_TOKEN}@github.com/${TAP_REPO}.git" tap
           mkdir -p tap/Casks
-          scripts/cask.sh "$VERSION" "$arm" "$intel" > tap/Casks/ketch.rb
-          brew style tap/Casks/ketch.rb
+          scripts/cask.sh "$release_version" "$arm" "$intel" > tap/Casks/ketch.rb
 
+      - name: Lint the cask
+        run: brew style tap/Casks/ketch.rb
+
+      # brew style only checks syntax; install and uninstall postflights run
+      # for real only under `brew install --cask`. Smoke the file about to be
+      # pushed so a broken bootstrap (e.g. recursive brew uninstall) never
+      # reaches the tap.
+      - name: Smoke test the cask
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+        run: |
+          set -euo pipefail
+          # `./` so Homebrew treats this as a local cask file, not a tap named tap.
+          brew install --cask --verbose ./tap/Casks/ketch.rb
+          brew uninstall --cask ketch
+
+      - name: Push the cask
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
           cd tap
           # The tap starts life empty; the first release makes its main branch.
           git rev-parse --verify HEAD >/dev/null 2>&1 || git checkout -q -B main

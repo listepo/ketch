@@ -245,6 +245,7 @@ impl Drop for Lock {
 /// with EPERM, which is indistinguishable from "no such process" through an
 /// exit status alone — and reading it as "gone" steals a lock that is very much
 /// still held.
+#[cfg(unix)]
 pub(crate) fn process_alive(pid: u32) -> bool {
     std::process::Command::new("/bin/ps")
         .arg("-p")
@@ -256,6 +257,30 @@ pub(crate) fn process_alive(pid: u32) -> bool {
         .status()
         .map(|s| s.success())
         .unwrap_or(true) // Unsure means "assume held" — never steal on doubt.
+}
+
+/// `tasklist` rather than OpenProcess: keeps the crate free of a Windows-sys
+/// dependency, and a missing tool still fails closed (assume held).
+#[cfg(windows)]
+pub(crate) fn process_alive(pid: u32) -> bool {
+    let output = std::process::Command::new("tasklist")
+        .args(["/FI", &format!("PID eq {pid}"), "/NH"])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .output();
+    match output {
+        Ok(out) => {
+            let text = String::from_utf8_lossy(&out.stdout);
+            // tasklist prints "INFO: No tasks..." when the pid is gone.
+            out.status.success() && text.contains(&pid.to_string())
+        }
+        Err(_) => true,
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+pub(crate) fn process_alive(_pid: u32) -> bool {
+    true
 }
 
 #[cfg(test)]

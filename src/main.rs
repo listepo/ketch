@@ -4,6 +4,11 @@
 //! `Config`, and hand off to a command. Every failure path converges here so a
 //! single place decides how errors are shown and what the process exits with.
 
+#![cfg_attr(
+    not(any(target_os = "macos", target_os = "linux", target_os = "windows")),
+    allow(dead_code)
+)]
+
 mod changelog;
 mod cli;
 mod cmd;
@@ -97,7 +102,7 @@ fn run(cli: Cli) -> Result<()> {
 
     let cfg = config::Config::load(cli.global.root.clone())?;
     cfg.ensure_dirs()?;
-    log::init(&cfg);
+    log::init(&cfg, cli.global.verbose);
 
     #[cfg(feature = "tui")]
     let _tui = start_tui(&cli);

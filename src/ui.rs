@@ -55,6 +55,50 @@ pub fn disable_tui() {
     *TUI.lock().unwrap_or_else(|e| e.into_inner()) = None;
 }
 
+/// Hook installed by an active TUI session so prompts can leave raw mode.
+#[cfg(feature = "tui")]
+type TuiInputPause = Box<dyn Fn() -> Option<Box<dyn FnOnce() + Send>> + Send + Sync>;
+
+#[cfg(feature = "tui")]
+static TUI_INPUT_PAUSE: Mutex<Option<TuiInputPause>> = Mutex::new(None);
+
+/// Register the pause hook for one TUI session.
+#[cfg(feature = "tui")]
+pub fn register_tui_input_pause(hook: TuiInputPause) {
+    *TUI_INPUT_PAUSE.lock().unwrap_or_else(|e| e.into_inner()) = Some(hook);
+}
+
+/// Drop the pause hook when the TUI session ends.
+#[cfg(feature = "tui")]
+pub fn clear_tui_input_pause() {
+    *TUI_INPUT_PAUSE.lock().unwrap_or_else(|e| e.into_inner()) = None;
+}
+
+fn pause_tui_for_input() -> Option<Box<dyn FnOnce() + Send>> {
+    #[cfg(feature = "tui")]
+    {
+        TUI_INPUT_PAUSE
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .and_then(|hook| hook())
+    }
+    #[cfg(not(feature = "tui"))]
+    {
+        None
+    }
+}
+
+/// Run one line-oriented prompt while an optional TUI session is suspended.
+fn with_tui_input_paused<R>(f: impl FnOnce() -> R) -> R {
+    let resume = pause_tui_for_input();
+    let result = f();
+    if let Some(resume) = resume {
+        resume();
+    }
+    result
+}
+
 #[cfg(feature = "tui")]
 fn tui_controller() -> Option<Arc<crate::tui::Controller>> {
     TUI.lock().unwrap_or_else(|e| e.into_inner()).clone()
@@ -80,6 +124,22 @@ fn strip_ansi(text: &str) -> String {
 
 fn held() -> std::sync::MutexGuard<'static, Option<MultiProgress>> {
     BARS.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Strip what somebody else's text has no business carrying into a terminal.
+///
+/// Everything ketch shows that it did not write itself comes from a client app:
+/// release asset names, the release notes, a registry `ketch.toml`, a source
+/// plugin's output. An escape sequence among them can rewrite the screen above
+/// — including the confirmation the user is about to answer — and a bidi
+/// override can make a line read as the reverse of what it says. The filter is
+/// [`crate::changelog::sanitize`], the guard a changelog already passes
+/// through, applied here so that a status line, a warning, a table cell and an
+/// error message cannot each forget it.
+///
+/// Only the text is filtered, never the colours: painting happens after.
+fn printable(text: &str) -> String {
+    crate::changelog::sanitize(text)
 }
 
 pub fn init(color: Option<bool>, quiet: bool, verbose: bool) {
@@ -151,7 +211,11 @@ pub fn step(verb: &str, detail: &str) {
     if is_quiet() {
         return;
     }
-    emit(&format!("{} {}", blue(&format!("{verb:>10}")), detail));
+    emit(&format!(
+        "{} {}",
+        blue(&format!("{verb:>10}")),
+        printable(detail)
+    ));
 }
 
 /// Something finished well.
@@ -160,7 +224,11 @@ pub fn success(verb: &str, detail: &str) {
     if is_quiet() {
         return;
     }
-    emit(&format!("{} {}", green(&format!("{verb:>10}")), detail));
+    emit(&format!(
+        "{} {}",
+        green(&format!("{verb:>10}")),
+        printable(detail)
+    ));
 }
 
 /// Something the user should know but that does not stop the run.
@@ -172,7 +240,7 @@ pub fn warn(detail: &str) {
     emit(&format!(
         "{} {}",
         yellow(&format!("{:>10}", "warning")),
-        detail
+        printable(detail)
     ));
 }
 
@@ -185,7 +253,7 @@ pub fn note(detail: &str) {
     emit(&format!(
         "{} {}",
         dim(&format!("{:>10}", "note")),
-        dim(detail)
+        dim(&printable(detail))
     ));
 }
 
@@ -196,7 +264,7 @@ pub fn debug(detail: &str) {
         emit(&format!(
             "{} {}",
             dim(&format!("{:>10}", "debug")),
-            dim(detail)
+            dim(&printable(detail))
         ));
     }
 }
@@ -218,12 +286,20 @@ pub fn error(err: &crate::error::Error) {
     }
     log::record(log::Level::Error, &logged);
 
-    emit(&format!("{} {err}", red(&format!("{:>10}", "error"))));
+    emit(&format!(
+        "{} {}",
+        red(&format!("{:>10}", "error")),
+        printable(&err.to_string())
+    ));
     for line in &details {
-        emit(&format!("{} {}", " ".repeat(10), dim(line)));
+        emit(&format!("{} {}", " ".repeat(10), dim(&printable(line))));
     }
     if let Some(hint) = &hint {
-        emit(&format!("{} {hint}", cyan(&format!("{:>10}", "hint"))));
+        emit(&format!(
+            "{} {}",
+            cyan(&format!("{:>10}", "hint")),
+            printable(hint)
+        ));
     }
 }
 
@@ -268,20 +344,22 @@ pub fn question(question: &str, default: bool) -> bool {
 /// consent: silently taking the default answer to "remove this?" is not a
 /// quieter version of asking, it is a different program.
 fn ask(question: &str, default: bool) -> bool {
-    if !std::io::stdin().is_terminal() {
-        return default;
-    }
-    let suffix = if default { "[Y/n]" } else { "[y/N]" };
-    eprint!(
-        "{} {question} {suffix} ",
-        yellow(&format!("{:>10}", "confirm"))
-    );
-    let _ = std::io::stderr().flush();
-    let mut answer = String::new();
-    if std::io::stdin().read_line(&mut answer).is_err() {
-        return default;
-    }
-    boolean_answer(&answer, default)
+    with_tui_input_paused(|| {
+        if !std::io::stdin().is_terminal() {
+            return default;
+        }
+        let suffix = if default { "[Y/n]" } else { "[y/N]" };
+        eprint!(
+            "{} {question} {suffix} ",
+            yellow(&format!("{:>10}", "confirm"))
+        );
+        let _ = std::io::stderr().flush();
+        let mut answer = String::new();
+        if std::io::stdin().read_line(&mut answer).is_err() {
+            return default;
+        }
+        boolean_answer(&answer, default)
+    })
 }
 
 /// Interpret one questionnaire or confirmation answer.
@@ -301,20 +379,22 @@ fn boolean_answer(answer: &str, default: bool) -> bool {
 /// answer, so a pipe with nothing in it still gets the default rather than a
 /// hang.
 pub fn prompt(question: &str, default: &str) -> String {
-    let hint = if default.is_empty() { "none" } else { default };
-    eprint!(
-        "{} {question} [{hint}] ",
-        cyan(&format!("{:>10}", "answer"))
-    );
-    let _ = std::io::stderr().flush();
-    let mut answer = String::new();
-    let _ = std::io::stdin().read_line(&mut answer);
-    let trimmed = answer.trim();
-    if trimmed.is_empty() {
-        default.to_string()
-    } else {
-        trimmed.to_string()
-    }
+    with_tui_input_paused(|| {
+        let hint = if default.is_empty() { "none" } else { default };
+        eprint!(
+            "{} {question} [{hint}] ",
+            cyan(&format!("{:>10}", "answer"))
+        );
+        let _ = std::io::stderr().flush();
+        let mut answer = String::new();
+        let _ = std::io::stdin().read_line(&mut answer);
+        let trimmed = answer.trim();
+        if trimmed.is_empty() {
+            default.to_string()
+        } else {
+            trimmed.to_string()
+        }
+    })
 }
 
 /// Ask for a field that has no default.
@@ -322,25 +402,27 @@ pub fn prompt(question: &str, default: &str) -> String {
 /// End of input is an error rather than an answer: inventing a `source` would
 /// write a config nobody asked for and say nothing about it.
 pub fn prompt_required(question: &str) -> crate::error::Result<String> {
-    eprint!("{} {question} ", cyan(&format!("{:>10}", "answer")));
-    let _ = std::io::stderr().flush();
-    let mut answer = String::new();
-    match std::io::stdin().read_line(&mut answer) {
-        Ok(0) => Err(crate::error::Error::msg(format!(
-            "{question} needs an answer, and stdin has none — run this in a terminal"
-        ))),
-        Ok(_) => {
-            let trimmed = answer.trim();
-            if trimmed.is_empty() {
-                Err(crate::error::Error::msg(format!(
-                    "{question} has no default and cannot be left empty"
-                )))
-            } else {
-                Ok(trimmed.to_string())
+    with_tui_input_paused(|| {
+        eprint!("{} {question} ", cyan(&format!("{:>10}", "answer")));
+        let _ = std::io::stderr().flush();
+        let mut answer = String::new();
+        match std::io::stdin().read_line(&mut answer) {
+            Ok(0) => Err(crate::error::Error::msg(format!(
+                "{question} needs an answer, and stdin has none — run this in a terminal"
+            ))),
+            Ok(_) => {
+                let trimmed = answer.trim();
+                if trimmed.is_empty() {
+                    Err(crate::error::Error::msg(format!(
+                        "{question} has no default and cannot be left empty"
+                    )))
+                } else {
+                    Ok(trimmed.to_string())
+                }
             }
+            Err(e) => Err(crate::error::Error::io("stdin", e)),
         }
-        Err(e) => Err(crate::error::Error::io("stdin", e)),
-    }
+    })
 }
 
 /// Human-readable byte count.
@@ -595,31 +677,50 @@ pub fn truncate(text: &str, width: usize) -> String {
 
 /// Render rows as an aligned table. Empty input produces no output.
 pub fn table(headers: &[&str], rows: &[Vec<String>]) {
+    for line in table_lines(headers, rows) {
+        out(&line);
+    }
+}
+
+/// The table's lines, built rather than printed so a test can read them.
+///
+/// Cells carry client-app text — asset names, descriptions, package files — so
+/// they are filtered here, and measured after filtering: an escape sequence
+/// counted as printable width would push every later column out of line.
+fn table_lines(headers: &[&str], rows: &[Vec<String>]) -> Vec<String> {
     if rows.is_empty() {
-        return;
+        return Vec::new();
     }
     let cols = headers.len();
+    let cells: Vec<Vec<String>> = rows
+        .iter()
+        .map(|row| {
+            row.iter()
+                .take(cols)
+                .map(|cell| printable(cell))
+                .collect::<Vec<String>>()
+        })
+        .collect();
     let mut widths: Vec<usize> = headers.iter().map(|h| h.chars().count()).collect();
-    for row in rows {
-        for (i, cell) in row.iter().take(cols).enumerate() {
+    for row in &cells {
+        for (i, cell) in row.iter().enumerate() {
             widths[i] = widths[i].max(cell.chars().count());
         }
     }
-    let header: Vec<String> = headers
-        .iter()
-        .enumerate()
-        .map(|(i, h)| format!("{:<width$}", h, width = widths[i]))
-        .collect();
-    out(&bold(header.join("  ").trim_end()));
-    for row in rows {
-        let line: Vec<String> = row
+
+    let padded = |cells: &[String]| -> String {
+        let line: Vec<String> = cells
             .iter()
-            .take(cols)
             .enumerate()
             .map(|(i, c)| format!("{:<width$}", c, width = widths[i]))
             .collect();
-        out(line.join("  ").trim_end());
-    }
+        line.join("  ").trim_end().to_string()
+    };
+
+    let header: Vec<String> = headers.iter().map(|h| h.to_string()).collect();
+    let mut lines = vec![bold(&padded(&header))];
+    lines.extend(cells.iter().map(|row| padded(row)));
+    lines
 }
 
 #[cfg(test)]
@@ -635,10 +736,56 @@ mod tests {
     }
 
     #[test]
+    fn a_table_cell_cannot_redraw_the_terminal_or_shift_its_columns() {
+        let rows = vec![vec![
+            "evil\u{1b}[2K\u{1b}[1;31mFAKE\u{1b}[0m.tar.gz".to_string(),
+            "12".to_string(),
+        ]];
+        let lines = table_lines(&["asset", "score"], &rows);
+        assert_eq!(lines.len(), 2);
+        assert!(!lines[1].contains('\u{1b}'), "{:?}", lines[1]);
+        assert!(
+            lines[1].starts_with("evil[2K[1;31mFAKE[0m.tar.gz"),
+            "{:?}",
+            lines[1]
+        );
+        // The sequence is not counted as width: the score still lines up with
+        // the header's second column start in the first row, where nothing was
+        // filtered.
+        // The padding is the filtered length: counted with the sequences, the
+        // next column would start 15 characters too far right.
+        let asset_width = "evil[2K[1;31mFAKE[0m.tar.gz".chars().count();
+        assert_eq!(lines[1].find("12"), Some(asset_width + 2));
+    }
+
+    #[test]
     fn truncates_on_char_boundaries() {
         assert_eq!(truncate("abcdef", 10), "abcdef");
         assert_eq!(truncate("abcdef", 4), "abc…");
         // Multi-byte input must not panic or split a character.
         assert_eq!(truncate("ünïcödé-package", 6), "ünïcö…");
+    }
+
+    #[cfg(feature = "tui")]
+    #[test]
+    fn interactive_prompts_pause_an_active_tui_session() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+
+        let paused = Arc::new(AtomicBool::new(false));
+        let resumed = Arc::new(AtomicBool::new(false));
+        let pause_flag = Arc::clone(&paused);
+        let resume_flag = Arc::clone(&resumed);
+        register_tui_input_pause(Box::new(move || {
+            pause_flag.store(true, Ordering::SeqCst);
+            let resume_flag = Arc::clone(&resume_flag);
+            Some(Box::new(move || resume_flag.store(true, Ordering::SeqCst)))
+        }));
+
+        let value = with_tui_input_paused(|| 7);
+        assert_eq!(value, 7);
+        assert!(paused.load(Ordering::SeqCst));
+        assert!(resumed.load(Ordering::SeqCst));
+        clear_tui_input_pause();
     }
 }

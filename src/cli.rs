@@ -120,7 +120,7 @@ pub enum Command {
         command: RegistryCommand,
     },
 
-    /// Put the ketch bin directory on your shell's PATH
+    /// Put the ketch bin directory on PATH
     Path {
         #[command(subcommand)]
         command: Option<PathCommand>,
@@ -386,6 +386,17 @@ pub enum ConfigCommand {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum RegistryCommand {
+    /// Validate a registry tree (every `ketch.toml`) the way CI will
+    Validate {
+        /// Registry tree to validate (default: current directory)
+        #[arg(value_name = "DIR")]
+        dir: Option<PathBuf>,
+
+        /// Emit JSON instead of text
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Compare this project's `ketch.toml` with the registry's copy, show the
     /// difference, and open a pull request with it
     Push {
@@ -409,9 +420,9 @@ pub enum RegistryCommand {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum PathCommand {
-    /// Add the bin directory to your shell's startup file
+    /// Add the bin directory to PATH
     Install(PathInstallArgs),
-    /// Take out the block `ketch path install` added
+    /// Take the bin directory back off PATH
     Uninstall(PathArgs),
     /// Show which shells have been set up
     Status,
@@ -438,7 +449,7 @@ pub struct PathInstallArgs {
     pub common: PathArgs,
 
     /// Print the line to add by hand instead of editing anything
-    #[arg(long, conflicts_with_all = ["all", "dry_run"])]
+    #[arg(long, conflicts_with_all = ["all", "dry_run", "shell"])]
     pub print: bool,
 }
 
@@ -461,6 +472,9 @@ pub enum SelfCommand {
         /// Reinstall even when this version is already the package
         #[arg(long, short)]
         force: bool,
+        /// Place a bootstrap link or copy here, pointing at the bin-dir binary
+        #[arg(long, value_name = "DIR")]
+        link_dir: Option<PathBuf>,
     },
     /// Upgrade ketch to the latest release
     Update {

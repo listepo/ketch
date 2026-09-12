@@ -113,6 +113,30 @@ impl fmt::Display for TargetSpec {
     }
 }
 
+/// The inverse of the `Display` form, for values that arrive as text — a
+/// lockfile entry, a command line.
+impl std::str::FromStr for TargetSpec {
+    type Err = String;
+
+    fn from_str(text: &str) -> std::result::Result<Self, Self::Err> {
+        let unknown = || format!("`{text}` is not a target; expected `<os>-<arch>`");
+        let (os, arch) = text.split_once('-').ok_or_else(unknown)?;
+        let os = match os {
+            "macos" => Os::MacOs,
+            "linux" => Os::Linux,
+            "windows" => Os::Windows,
+            _ => return Err(unknown()),
+        };
+        let arch = match arch {
+            "aarch64" => Arch::Aarch64,
+            "x86_64" => Arch::X86_64,
+            "universal" => Arch::Universal,
+            _ => return Err(unknown()),
+        };
+        Ok(TargetSpec { os, arch })
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Package identity
 // ---------------------------------------------------------------------------
@@ -750,6 +774,9 @@ impl fmt::Display for LocalKind {
 pub enum LinkKind {
     /// Symlink in the bin dir pointing into the store.
     Symlink,
+    /// A regular file copied into the bin dir. Windows cannot create unprivileged
+    /// symlinks, so identity is the file's own bytes against the store copy.
+    CopiedFile,
     /// A `.app` copied out to the applications dir; removing it is a delete.
     CopiedApp,
     /// A `.app` symlinked into the applications dir.
@@ -802,7 +829,9 @@ pub struct InstalledPackage {
 
 impl InstalledPackage {
     pub fn binaries(&self) -> impl Iterator<Item = &LinkRecord> {
-        self.links.iter().filter(|l| l.kind == LinkKind::Symlink)
+        self.links
+            .iter()
+            .filter(|l| matches!(l.kind, LinkKind::Symlink | LinkKind::CopiedFile))
     }
 }
 

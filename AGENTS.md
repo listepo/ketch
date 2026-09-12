@@ -39,9 +39,11 @@ the host's own `CHANGELOG.md` is written for it by release-plz. The host is
 also a client of itself: `ketch self install` records it in `state.json` as
 the package `ketch`, and the root `ketch.toml` is its manifest.
 
-macOS is the only implemented platform. `src/platform/mod.rs` gates it with
-`#[cfg(target_os = "macos")]` and returns a clear error elsewhere, so a Linux
-backend means implementing the `Platform` trait — nothing above it changes.
+macOS, Linux and Windows each have a `Platform` backend in `src/platform/`.
+`host()` selects it. Another OS still means implementing that trait — nothing
+above it changes. End-to-end tests are gated with `#[cfg(target_os = "...")]`
+so `cargo test` on a host runs that OS's suite. CI runs that suite on macOS,
+Linux and Windows.
 
 ## Commands
 
@@ -105,8 +107,8 @@ diffs. Combine `predicates` with `assert_cmd` rather than parsing output
 manually. Every bug fix should add the narrowest regression test that would
 fail without the fix.
 
-CI runs `fmt --check`, `clippy -D warnings` and `test` on macOS. All three must
-pass before a change is done.
+CI runs `fmt --check`, `clippy -D warnings` and `test` on macOS, and clippy
+plus `test` on Linux and Windows. All of those must pass before a change is done.
 
 ## Installing tools
 
@@ -165,8 +167,8 @@ conditional, multi-stage Rust automation.
 | `src/install.rs` | the install/uninstall/relink pipeline every command shares |
 | `src/source/` | where releases come from: GitHub built in, plugins external |
 | `src/extract/` | archive formats, selected by sniffing content not file names |
-| `src/platform/` | OS-specific placement, linking, trust checks |
-| `src/shell.rs` | putting the bin dir on PATH in bash, zsh and fish |
+| `src/platform/` | OS-specific placement, linking, trust checks (`macos.rs`, `linux.rs`, `windows.rs`) |
+| `src/shell.rs` | putting the bin dir on PATH in bash, zsh and fish, and on Windows the user environment |
 | `src/registry.rs` | the fetched package registry (see `docs/REGISTRY.md`) |
 | `src/manifest.rs` | resolving a name to a `Manifest` across four tiers |
 | `src/model.rs` | every type that crosses a module boundary |
@@ -185,7 +187,8 @@ conditional, multi-stage Rust automation.
 | `scripts/release.sh` | the same version bump and pull request, by hand |
 | `plan.md` | what is being built next, and what each piece would take |
 | `scripts/cask.sh` | the Homebrew cask, generated into `listepo/homebrew-tap` on release |
-| `install.sh` | the `curl | bash` installer; only bootstraps `ketch self install` |
+| `install.sh` | the `curl | bash` installer for macOS and Linux; only bootstraps `ketch self install` |
+| `install.ps1` | the `irm | iex` installer for Windows; same bootstrap as `install.sh` |
 | `.github/dependabot.yml` | weekly `chore(deps)` pull requests for cargo, npm and GitHub Actions; not `mise.toml` |
 
 The rule that keeps `cmd/` thin: anything touching the install tree belongs in
@@ -196,11 +199,14 @@ are in the wrong file.
 `src/shell.rs` is the one module that writes outside the ketch root, and it
 does so only when asked: `ketch path install`, `ketch doctor --fix` and
 `ketch self uninstall`, which takes the block back out of every startup file
-that has one rather than only the shell running now. It edits
-a shell startup file between two markers, so the block can be found again,
-rewritten when the root moves, and removed without guessing which line was
-ketch's. It follows a symlinked startup file to its target before writing,
-because that file is very often a link into a dotfiles repository.
+that has one rather than only the shell running now, and on Windows takes the
+bin dir out of the user PATH. It edits a shell startup file between two
+markers, so the block can be found again, rewritten when the root moves, and
+removed without guessing which line was ketch's. It follows a symlinked
+startup file to its target before writing, because that file is very often a
+link into a dotfiles repository. On Windows `ketch path install` writes
+`HKCU\Environment\Path` via `[Environment]::SetEnvironmentVariable` so a new
+terminal sees it without a logoff; `setx` is not used, because it truncates.
 
 ## Conventions
 
@@ -258,9 +264,13 @@ Reuse the guards that exist rather than writing new ones:
 - `config::validate_repo` — anything that becomes `github.com/owner/repo`.
 - `self_update::remove_root` — takes the ketch root apart by naming the
   directories and files ketch creates, then removes the root itself only if
-  nothing else is left in it. `install.sh --install-dir ~/bin` makes the root
-  that directory's parent, so a `remove_dir_all` on the root is a way to delete
-  someone's home directory. Anything left behind is reported, never removed.
+  nothing else is left in it. Older `install.sh --install-dir ~/bin` derived
+  the root as that directory's parent (`$HOME`); a `remove_dir_all` on the
+  root would delete someone's home. Current `install.sh` keeps `--root`
+  (default `~/.ketch`) independent of `--install-dir`. Uninstall still refuses
+  to wipe named children when the root is `$HOME`, because a leftover tree
+  from those older installers can still look like that. Anything left
+  behind is reported, never removed.
 - `changelog::sanitize` — drops escape sequences and bidi overrides from client
   prose before it is printed. A changelog and the registry's copy of a package
   file, shown as `ketch registry push`'s review diff, are the places ketch shows
@@ -316,7 +326,8 @@ reminder, not a rejection, when the staged diff touches `src/cli.rs` or
 `v<version from Cargo.toml>` already exist as a tag? If it does, that version
 has shipped and the run stops there in seconds. If it does not, this merge is a
 release: the whole gate runs again, both macOS architectures are built and
-signed, the tarballs and an aggregate `SHA256SUMS` go up on a **draft** release
+signed, Linux and Windows binaries are packed unsigned, the tarballs and an
+aggregate `SHA256SUMS` go up on a **draft** release
 — which has no tag — and the last step publishes that draft, which is what
 creates the tag, at the commit that was built.
 

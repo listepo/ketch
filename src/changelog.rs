@@ -124,16 +124,32 @@ pub fn from_release(notes: Option<&str>) -> Option<Entry> {
 /// where it is printed, which would leave every caller to remember.
 ///
 /// `ketch registry push` borrows it for the registry's copy of a package file,
-/// the other whole file someone else wrote that ketch prints.
+/// the other whole file someone else wrote that ketch prints, and `ui::` uses it
+/// on every status line, table cell and error that carries somebody else's text.
 pub(crate) fn sanitize(text: &str) -> String {
     text.chars()
         .filter(|&c| match c {
             '\n' | '\t' => true,
             // `is_control` is C0, DEL and C1 — including U+009B, which some
             // terminals still take as a CSI introducer on its own.
-            _ => !c.is_control() && !matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}'),
+            _ => !c.is_control() && !is_invisible(c),
         })
         .collect()
+}
+
+/// Characters that take up no space but change how the text around them is
+/// laid out: bidi controls and marks, zero-width characters, line and paragraph
+/// separators, and the invisible tag block. Dropping only the overrides leaves
+/// U+202E's quieter relatives — LRM, RLM, ALM — free to reorder a line in any
+/// bidi-aware renderer.
+fn is_invisible(c: char) -> bool {
+    matches!(c,
+        '\u{00ad}' | '\u{061c}'
+        | '\u{200b}'..='\u{200f}'
+        | '\u{202a}'..='\u{202e}'
+        | '\u{2060}'..='\u{206f}'
+        | '\u{feff}'
+        | '\u{e0000}'..='\u{e007f}')
 }
 
 /// The block of a Markdown changelog belonging to one version.
@@ -170,29 +186,47 @@ struct Heading {
 }
 
 /// Every heading in the file, in order.
+///
+/// Fenced code blocks are skipped: a shell snippet's `# 1.2.2 is the one to
+/// pin` is a comment, and read as a level-1 heading it ends the section it sits
+/// in — or starts one in the middle of a snippet.
 fn headings(lines: &[&str]) -> Vec<Heading> {
     let mut out = Vec::new();
+    let mut fenced = false;
     let mut i = 0;
     while i < lines.len() {
-        if let Some(level) = atx_level(lines[i]) {
-            out.push(Heading {
-                start: i,
-                body: i + 1,
-                level,
-                text: lines[i].trim().to_string(),
-            });
-        } else if underlined(lines[i], lines.get(i + 1).copied().unwrap_or("")) {
-            out.push(Heading {
-                start: i,
-                body: i + 2,
-                level: 1,
-                text: lines[i].trim().to_string(),
-            });
+        if fence_line(lines[i]) {
+            fenced = !fenced;
             i += 1;
+            continue;
+        }
+        if !fenced {
+            if let Some(level) = atx_level(lines[i]) {
+                out.push(Heading {
+                    start: i,
+                    body: i + 1,
+                    level,
+                    text: lines[i].trim().to_string(),
+                });
+            } else if underlined(lines[i], lines.get(i + 1).copied().unwrap_or("")) {
+                out.push(Heading {
+                    start: i,
+                    body: i + 2,
+                    level: 1,
+                    text: lines[i].trim().to_string(),
+                });
+                i += 1;
+            }
         }
         i += 1;
     }
     out
+}
+
+/// A ``` or ~~~ fence, with or without an info string.
+fn fence_line(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    trimmed.starts_with("```") || trimmed.starts_with("~~~")
 }
 
 /// `##` and friends.
@@ -399,6 +433,46 @@ older
         assert_eq!(entry.body, "[2J]0;pwnedrealtextreversedm");
         assert!(!entry.body.contains('\u{1b}'));
         assert!(!entry.body.contains('\r'));
+    }
+
+    #[test]
+    fn sanitising_drops_the_invisible_characters_that_reorder_a_line() {
+        // U+202E is the loud one; its neighbours reorder text just as well and
+        // are just as invisible.
+        let hostile = "a\u{200e}b\u{200f}c\u{61c}d\u{200b}e\u{feff}f\u{2066}g\u{e0041}";
+        assert_eq!(sanitize(hostile), "abcdefg");
+    }
+
+    #[test]
+    fn a_hash_inside_a_fenced_block_is_a_comment_not_a_heading() {
+        let text = "\
+# Changelog
+
+## [1.2.3] - 2024-05-01
+
+- the real 1.2.3 body
+
+```sh
+# 1.2.2 is the one to pin
+ketch install demo@1.2.2
+```
+
+## [1.2.2] - 2024-04-01
+
+- older
+";
+        let (heading, body) = section(text, "1.2.3").expect("1.2.3 section");
+        assert_eq!(heading.as_deref(), Some("## [1.2.3] - 2024-05-01"));
+        assert!(body.contains("the real 1.2.3 body"), "{body}");
+        assert!(body.contains("ketch install demo@1.2.2"), "{body}");
+        assert!(
+            !body.contains("older"),
+            "the section ran past 1.2.2: {body}"
+        );
+
+        let (heading, body) = section(text, "1.2.2").expect("1.2.2 section");
+        assert_eq!(heading.as_deref(), Some("## [1.2.2] - 2024-04-01"));
+        assert_eq!(body, "- older");
     }
 
     #[test]

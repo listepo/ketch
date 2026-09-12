@@ -239,7 +239,11 @@ pub fn upgrade(cfg: &Config, args: UpgradeArgs) -> Result<()> {
     if args.dry_run {
         return Ok(());
     }
-    if !args.yes && !ui::confirm(&format!("upgrade {} packages?", plan.len()), true) {
+    // Defaulting to yes here would answer the question on the user's behalf
+    // whenever stdin is not a terminal: `ketch upgrade </dev/null` in a script
+    // would upgrade everything unpinned without ever being asked. `--yes` is
+    // how a script says yes.
+    if !args.yes && !ui::confirm(&format!("upgrade {} packages?", plan.len()), false) {
         return Ok(());
     }
 
@@ -378,7 +382,9 @@ fn report(out: &Installed) {
         ));
     }
     if let Some(notes) = pkg.manifest.as_ref().and_then(|m| m.notes.as_deref()) {
-        ui::out(notes);
+        // The package author's own words, printed for the user: filtered like
+        // any other client-app text that reaches a terminal.
+        ui::out(&crate::changelog::sanitize(notes));
     }
 }
 

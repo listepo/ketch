@@ -5,7 +5,7 @@
 
 use super::{ListOpts, Source};
 use crate::config::validate_repo;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::http::Http;
 use crate::model::{Checksum, Release, ReleaseAsset, SourceInfo, Version, VersionSpec};
 use crate::ui::ProgressSink;
@@ -118,9 +118,10 @@ impl From<GhAsset> for ReleaseAsset {
     fn from(asset: GhAsset) -> Self {
         ReleaseAsset {
             name: asset.name,
-            // Deliberately the public URL rather than the API one: the API
-            // redirects to a different host, and following that redirect with
-            // an Authorization header would hand the token to a CDN.
+            // The public URL rather than the API one: the API redirects to a
+            // different host, and while ureq drops the Authorization header on
+            // that hop, this URL is also what a browser and `curl -L` use, so a
+            // private repository needs the token on the request itself.
             url: asset.browser_download_url,
             size: asset.size,
             content_type: asset.content_type,
@@ -174,6 +175,15 @@ fn parse_digest(raw: &str) -> Option<String> {
     is_sha256(hex).then(|| hex.to_ascii_lowercase())
 }
 
+/// `1.2.3` as `v1.2.3`, when the request did not already carry a prefix.
+///
+/// Only the one spelling is tried: a repository tagging `release-1.2.3` is not
+/// guessable from the version, and the listing fallback still covers it.
+fn v_prefixed(tag: &str) -> Option<String> {
+    let tag = tag.trim();
+    (!tag.is_empty() && !tag.starts_with(['v', 'V'])).then(|| format!("v{tag}"))
+}
+
 fn is_sha256(hex: &str) -> bool {
     hex.len() == 64 && hex.bytes().all(|b| b.is_ascii_hexdigit())
 }
@@ -205,6 +215,18 @@ fn is_aggregate_checksum_file(name: &str) -> bool {
     claims_checksums
         && !crate::platform::is_sidecar(&lower)
         && !NOT_A_CHECKSUM_LIST.iter().any(|s| lower.ends_with(s))
+}
+
+/// The asset a `.sha256` sidecar carries the checksum for.
+///
+/// The extension is matched without regard to case: releases publish
+/// `Tool.zip.SHA256` as readily as the lowercase spelling, and a sidecar that
+/// goes unrecognised is a published checksum ketch silently never checks.
+fn sidecar_target(name: &str) -> Option<&str> {
+    const EXT: &str = ".sha256";
+    name.to_ascii_lowercase()
+        .ends_with(EXT)
+        .then(|| &name[..name.len() - EXT.len()])
 }
 
 /// Parse the `sha256sum` output format: `<hex><space><space|*><name>`.
@@ -281,6 +303,20 @@ impl Source for GitHubSource {
                 return Ok(Release::from(release));
             }
         }
+        // `@1.2.3` for a repository that tags `v1.2.3` is the common spelling of
+        // the same request. Without this the tag endpoint misses and the
+        // fallback only ever looks at the newest page, so an older release is
+        // reported as not existing at all.
+        if let VersionSpec::Exact(tag) = want {
+            if let Some(prefixed) = v_prefixed(tag) {
+                let suffix = format!("/releases/tags/{}", urlencode_path_segment(&prefixed));
+                let found: Option<GhRelease> =
+                    self.http.get_json_opt(&self.repo_url(id, &suffix)?, true)?;
+                if let Some(release) = found.filter(|r| !r.draft) {
+                    return Ok(Release::from(release));
+                }
+            }
+        }
         let opts = &super::opts_for(want, opts);
         let releases = self.list_releases(id, opts)?;
         super::pick(id, releases, want, opts)
@@ -305,14 +341,14 @@ impl Source for GitHubSource {
         // cap on how many are worth fetching, the one file that decides this
         // install must never be the one left out — and a release can easily
         // publish thirty sidecars with ours near the end.
-        let wanted_sidecar = format!("{wanted}.sha256");
         let mut candidates: Vec<&ReleaseAsset> = release.assets.iter().collect();
-        candidates.sort_by_key(|a| a.name != wanted_sidecar);
+        candidates.sort_by_key(|a| sidecar_target(&a.name) != Some(wanted));
 
         let mut fetches = 0;
+        let mut fetch_error: Option<Error> = None;
         for asset in candidates {
-            let sidecar = asset.name.ends_with(".sha256");
-            if !sidecar && !is_aggregate_checksum_file(&asset.name) {
+            let sidecar = sidecar_target(&asset.name);
+            if sidecar.is_none() && !is_aggregate_checksum_file(&asset.name) {
                 continue;
             }
             // Aggregates count too: the heuristic that spots them is a name
@@ -323,24 +359,42 @@ impl Source for GitHubSource {
                 break;
             }
             fetches += 1;
-            // A checksum file that will not download is not a reason to fail
-            // the install; it just means we fall back to whatever else we have.
-            let Ok(body) = self.http.get_text(&asset.url, false) else {
-                crate::ui::debug(&format!("could not read checksums from {}", asset.name));
-                continue;
+            // Authenticated like the assets themselves: a private repository
+            // publishes its sidecars privately too.
+            let body = match self.http.get_text(&asset.url, true) {
+                Ok(body) => body,
+                // A missing checksum file is ordinary; a dead network or a 403
+                // is not, and must not be reported as "no published checksum".
+                Err(Error::Http { status: 404, .. }) => continue,
+                Err(e) => {
+                    fetch_error = Some(Error::msg(format!(
+                        "could not fetch checksum file {}: {e}",
+                        asset.name
+                    )));
+                    continue;
+                }
             };
-            if sidecar {
-                let target = asset.name.trim_end_matches(".sha256").to_string();
-                if let Some(hex) = parse_checksum_file(&body).into_values().next().or_else(|| {
-                    let first = body.split_whitespace().next().unwrap_or("");
-                    is_sha256(first).then(|| first.to_ascii_lowercase())
-                }) {
-                    out.entry(target).or_insert(hex);
+            match sidecar {
+                Some(target) => {
+                    if let Some(hex) =
+                        parse_checksum_file(&body).into_values().next().or_else(|| {
+                            let first = body.split_whitespace().next().unwrap_or("");
+                            is_sha256(first).then(|| first.to_ascii_lowercase())
+                        })
+                    {
+                        out.entry(target.to_string()).or_insert(hex);
+                    }
                 }
-            } else {
-                for (name, hex) in parse_checksum_file(&body) {
-                    out.entry(name).or_insert(hex);
+                None => {
+                    for (name, hex) in parse_checksum_file(&body) {
+                        out.entry(name).or_insert(hex);
+                    }
                 }
+            }
+        }
+        if !out.contains_key(wanted) {
+            if let Some(err) = fetch_error {
+                return Err(err);
             }
         }
         Ok(out)
@@ -352,9 +406,13 @@ impl Source for GitHubSource {
         dest: &Path,
         progress: &dyn ProgressSink,
     ) -> Result<String> {
-        // Anonymous on purpose: see the note on `ReleaseAsset::from`.
+        // The token goes on the request, not on the redirect: ureq is built
+        // with `RedirectAuthHeaders::Never`, so the cross-host hop to the CDN
+        // that actually serves the bytes carries no Authorization header. What
+        // it does carry is the difference between a private repository
+        // installing and answering 404.
         self.http
-            .download(&asset.url, dest, &asset.headers, false, progress)
+            .download(&asset.url, dest, &asset.headers, true, progress)
     }
 
     fn search(&self, query: &str, limit: usize) -> Result<Vec<SourceInfo>> {
@@ -456,6 +514,17 @@ not-a-hash                                                          junk.txt
     }
 
     #[test]
+    fn names_the_asset_a_sidecar_belongs_to_whatever_case_it_is_written_in() {
+        assert_eq!(sidecar_target("rg-14.tar.gz.sha256"), Some("rg-14.tar.gz"));
+        assert_eq!(sidecar_target("Tool.zip.SHA256"), Some("Tool.zip"));
+        assert_eq!(sidecar_target("Tool.zip.Sha256"), Some("Tool.zip"));
+        // Not a sidecar: no extension to strip, and a checksum list is the
+        // other branch.
+        assert_eq!(sidecar_target("SHA256SUMS"), None);
+        assert_eq!(sidecar_target("sha256"), None);
+    }
+
+    #[test]
     fn derives_a_browsable_url_from_the_api_base() {
         let source = GitHubSource {
             http: Arc::new(Http::anonymous()),
@@ -474,6 +543,59 @@ not-a-hash                                                          junk.txt
             api: DEFAULT_API.to_string(),
         };
         assert!(source.repo_url("https://attacker.invalid/x", "").is_err());
+    }
+
+    #[test]
+    fn a_checksum_fetch_failure_is_not_reported_as_a_missing_file() {
+        use crate::model::{Release, ReleaseAsset, Version};
+        use std::collections::BTreeMap;
+
+        let source = GitHubSource {
+            http: Arc::new(Http::anonymous()),
+            api: DEFAULT_API.to_string(),
+        };
+        let release = Release {
+            version: Version::parse("1.0.0"),
+            tag: "v1.0.0".into(),
+            prerelease: false,
+            draft: false,
+            published_at: None,
+            notes: None,
+            assets: vec![
+                ReleaseAsset {
+                    name: "tool.tar.gz".into(),
+                    url: "https://example.invalid/tool.tar.gz".into(),
+                    size: 0,
+                    content_type: None,
+                    digest: None,
+                    headers: BTreeMap::new(),
+                },
+                ReleaseAsset {
+                    name: "tool.tar.gz.sha256".into(),
+                    url: "http://127.0.0.1:1/unreachable".into(),
+                    size: 0,
+                    content_type: None,
+                    digest: None,
+                    headers: BTreeMap::new(),
+                },
+            ],
+        };
+        let err = source
+            .checksums("owner/repo", &release, "tool.tar.gz")
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("could not fetch checksum file"),
+            "unexpected error: {err}"
+        );
+        assert!(
+            !err.contains("no published checksum"),
+            "fetch failure looked like a missing checksum: {err}"
+        );
+        assert!(
+            !err.contains("does not exist"),
+            "fetch failure looked like a missing file: {err}"
+        );
     }
 
     #[test]

@@ -126,15 +126,29 @@ struct Sink {
 
 static SINK: Mutex<Option<Sink>> = Mutex::new(None);
 
+/// File log level for this run. `--verbose` raises the sink to debug so
+/// `ui::debug` detail lands in the log even when the configured level is info.
+fn file_level(configured: Level, verbose: bool) -> Level {
+    if configured == Level::Off {
+        return Level::Off;
+    }
+    if verbose && configured < Level::Debug {
+        Level::Debug
+    } else {
+        configured
+    }
+}
+
 /// Open the log for this run. Called once, as soon as the config exists.
 ///
 /// The failure is deliberately soft: an unwritable log is a warning on stderr,
 /// not a reason for `ketch install` to stop working.
-pub fn init(cfg: &Config) {
-    if cfg.log_level == Level::Off {
+pub fn init(cfg: &Config, verbose: bool) {
+    let level = file_level(cfg.log_level, verbose);
+    if level == Level::Off {
         return;
     }
-    match open(&cfg.log_file, cfg.log_level, cfg.log_format) {
+    match open(&cfg.log_file, level, cfg.log_format) {
         Ok(sink) => {
             set(Some(sink));
             record(
@@ -339,5 +353,24 @@ mod tests {
         assert_eq!("ndjson".parse(), Ok(Format::Json));
         assert_eq!("text".parse(), Ok(Format::Text));
         assert!("xml".parse::<Format>().is_err());
+    }
+
+    #[test]
+    fn verbose_writes_debug_detail_to_the_log_file() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("ketch.log");
+        let previous = {
+            let mut sink = guard();
+            sink.take()
+        };
+
+        let sink = open(&path, file_level(Level::Info, true), Format::Text).expect("open");
+        set(Some(sink));
+        record(Level::Debug, "root /tmp/ketch · target aarch64 · token no");
+        set(previous);
+
+        let contents = std::fs::read_to_string(&path).expect("read log");
+        assert!(contents.contains("DEBUG"));
+        assert!(contents.contains("root /tmp/ketch"));
     }
 }

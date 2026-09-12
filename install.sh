@@ -28,17 +28,15 @@ print_help() {
   cat <<EOF
 Usage: install.sh [OPTIONS]
 
-Install ketch, a Rust CLI for managing GitHub-released apps on macOS.
+Install ketch, a Rust CLI for managing GitHub-released apps.
 
 OPTIONS:
   --version <TAG>      Install specific version (default: latest)
-  --root <DIR>         Ketch root, where ketch keeps its store and bin dir
-                       (default: $DEFAULT_ROOT)
-  --install-dir <DIR>  The root's bin dir, as another way to name the root:
-                       the root becomes its parent. Beside --root it must be
-                       <root>/bin (default: $DEFAULT_INSTALL_DIR)
-  --no-modify-path     Don't modify PATH in shell config files
-  --help              Show this help message
+  --root <DIR>         Ketch store root (default: $DEFAULT_ROOT)
+  --install-dir <DIR>  Bootstrap location: where this script places a ketch
+                       binary on your PATH (default: <root>/bin)
+  --no-modify-path     Don't put the bin dir on PATH
+  --help               Show this help message
 EOF
 }
 
@@ -50,11 +48,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Parse arguments. ROOT and INSTALL_DIR stay empty unless given, so the check
-# below can tell a flag that was passed from one left at its default.
+# Parse arguments. INSTALL_DIR stays empty unless given so we can tell an
+# explicit --install-dir from the default <root>/bin after ROOT is resolved.
 VERSION=""
 ROOT=""
 INSTALL_DIR=""
+INSTALL_DIR_EXPLICIT=0
 NO_MODIFY_PATH=0
 
 while [ $# -gt 0 ]; do
@@ -72,6 +71,7 @@ while [ $# -gt 0 ]; do
     --install-dir)
       shift
       INSTALL_DIR="$1"
+      INSTALL_DIR_EXPLICIT=1
       shift
       ;;
     --no-modify-path)
@@ -90,24 +90,22 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# --install-dir names the root's bin dir, so all it can say is where the root
-# is. Alone, the root is its parent; beside a --root it has to agree, because
-# ketch always installs into <root>/bin and one of the two would otherwise be
-# silently ignored.
-if [ -n "${INSTALL_DIR}" ]; then
-  if [ -z "${ROOT}" ]; then
-    trimmed="${INSTALL_DIR%/}"
-    ROOT="${trimmed%/*}"
-  fi
-  if [ "${INSTALL_DIR%/}" != "${ROOT%/}/bin" ]; then
-    echo "${RED}Error: --install-dir ${INSTALL_DIR} is not ${ROOT%/}/bin, the bin dir of --root ${ROOT}.${NC}" >&2
-    echo "ketch always installs into <root>/bin; pass just one of the two." >&2
-    exit 1
-  fi
-fi
 ROOT="${ROOT:-${DEFAULT_ROOT}}"
+INSTALL_DIR="${INSTALL_DIR:-${ROOT%/}/bin}"
 
-# The parsed root controls self-installation and every managed path below.
+# Both may be relative, and the script cds into a temp directory below: a
+# relative path would be created inside it and deleted with it on exit, leaving
+# nothing installed. Resolve them against the directory the user ran this in.
+case "${ROOT}" in
+  /*) ;;
+  *) ROOT="${PWD}/${ROOT}" ;;
+esac
+case "${INSTALL_DIR}" in
+  /*) ;;
+  *) INSTALL_DIR="${PWD}/${INSTALL_DIR}" ;;
+esac
+
+# KETCH_ROOT is only --root (or its default), never derived from --install-dir.
 KETCH_ROOT="${ROOT}"
 export KETCH_ROOT
 
@@ -118,31 +116,39 @@ if [ "$(id -u)" -eq 0 ]; then
   exit 1
 fi
 
-# Detect OS
+# Detect OS and the rustc target install.sh will fetch.
 OS="$(uname -s)"
-if [ "${OS}" != "Darwin" ]; then
-  echo "${RED}Error: ketch is macOS-only at the moment.${NC}" >&2
-  echo "See https://github.com/${SELF_REPO}/roadmap for platform support." >&2
-  exit 1
-fi
-
-# Detect architecture
 ARCH="$(uname -m)"
-# Check if running under Rosetta on Apple Silicon
-if [ "${ARCH}" = "x86_64" ]; then
-  TRANSLATED="$(sysctl -n sysctl.proc_translated 2>/dev/null || echo 0)"
-  if [ "${TRANSLATED}" = "1" ]; then
-    # Running translated, so the real machine is arm64
-    ARCH="arm64"
-  fi
-fi
+case "${OS}" in
+  Darwin)
+    TRIPLE_VENDOR_OS="apple-darwin"
+    # Rosetta reports x86_64; the machine, and the tarball we want, is arm64.
+    if [ "${ARCH}" = "x86_64" ]; then
+      TRANSLATED="$(sysctl -n sysctl.proc_translated 2>/dev/null || echo 0)"
+      if [ "${TRANSLATED}" = "1" ]; then
+        ARCH="arm64"
+      fi
+    fi
+    ;;
+  Linux)
+    TRIPLE_VENDOR_OS="unknown-linux-gnu"
+    ;;
+  MINGW*|MSYS*|CYGWIN*)
+    TRIPLE_VENDOR_OS="pc-windows-msvc"
+    BINARY_NAME="ketch.exe"
+    ;;
+  *)
+    echo "${RED}Error: Unsupported OS: ${OS}${NC}" >&2
+    echo "ketch ships macOS, Linux and Windows releases." >&2
+    exit 1
+    ;;
+esac
 
-# Map architecture to tarball name component
 case "${ARCH}" in
-  arm64)
+  arm64|aarch64)
     TARBALL_ARCH="aarch64"
     ;;
-  x86_64)
+  x86_64|amd64)
     TARBALL_ARCH="x86_64"
     ;;
   *)
@@ -150,6 +156,7 @@ case "${ARCH}" in
     exit 1
     ;;
 esac
+TARBALL_NAME="ketch-${TARBALL_ARCH}-${TRIPLE_VENDOR_OS}.tar.gz"
 
 # Resolve version
 if [ -z "${VERSION}" ]; then
@@ -194,7 +201,7 @@ TEMP_DIR="$(mktemp -d)" || {
 cd "${TEMP_DIR}"
 
 # Determine download URLs
-TARBALL_URL="https://github.com/${SELF_REPO}/releases/download/${VERSION}/ketch-${TARBALL_ARCH}-apple-darwin.tar.gz"
+TARBALL_URL="https://github.com/${SELF_REPO}/releases/download/${VERSION}/${TARBALL_NAME}"
 CHECKSUMS_URL="https://github.com/${SELF_REPO}/releases/download/${VERSION}/SHA256SUMS"
 
 # Download tarball and checksums
@@ -219,14 +226,24 @@ else
   }
 fi
 
-# Verify checksum
+# Verify checksum. Linux ships sha256sum, macOS shasum; either is enough.
+file_sha256() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    echo "${RED}Error: shasum or sha256sum required but not found.${NC}" >&2
+    exit 1
+  fi
+}
+
 echo "Verifying checksum..."
-# shasum output: "hash  filename"
-EXPECTED_HASH="$(grep "ketch-${TARBALL_ARCH}-apple-darwin.tar.gz" SHA256SUMS | awk '{print $1}' || true)"
-ACTUAL_HASH="$(shasum -a 256 ketch.tar.gz | awk '{print $1}')"
+EXPECTED_HASH="$(grep "${TARBALL_NAME}" SHA256SUMS | awk '{print $1}' || true)"
+ACTUAL_HASH="$(file_sha256 ketch.tar.gz)"
 
 if [ -z "${EXPECTED_HASH}" ]; then
-  echo "${RED}Error: SHA256SUMS does not list ketch-${TARBALL_ARCH}-apple-darwin.tar.gz.${NC}" >&2
+  echo "${RED}Error: SHA256SUMS does not list ${TARBALL_NAME}.${NC}" >&2
   echo "Refusing to install an unverified binary." >&2
   exit 1
 fi
@@ -277,8 +294,19 @@ fi
 # the bin dir and recorded like any other package, so `ketch list` shows it
 # and `ketch self update` is an ordinary upgrade.
 chmod 755 "${BINARY_PATH}"
-xattr -d com.apple.quarantine "${BINARY_PATH}" 2>/dev/null || true
-"${BINARY_PATH}" self install || {
+if [ "${OS}" = "Darwin" ]; then
+  xattr -d com.apple.quarantine "${BINARY_PATH}" 2>/dev/null || true
+fi
+SELF_INSTALL=(self install)
+if [ "${INSTALL_DIR_EXPLICIT}" -eq 1 ]; then
+  mkdir -p "${INSTALL_DIR}" || {
+    echo "${RED}Error: Failed to create bootstrap directory: ${INSTALL_DIR}${NC}" >&2
+    exit 1
+  }
+  # ketch records the bootstrap link on the package and removes it on uninstall.
+  SELF_INSTALL+=(--link-dir "${INSTALL_DIR}")
+fi
+"${BINARY_PATH}" "${SELF_INSTALL[@]}" || {
   echo "${RED}Error: ketch could not install itself into ${ROOT}.${NC}" >&2
   exit 1
 }

@@ -10,7 +10,8 @@ env:
 
 jobs:
   check:
-    # macOS is the only implemented platform, so it is the only one worth gating on.
+    # macOS gate: unit tests plus macos e2e. Linux e2e is check-linux;
+    # Windows e2e is check-windows.
     runs-on: macos-latest
     steps:
       # Full history: the commit-message check below ranges from the pull
@@ -90,10 +91,68 @@ jobs:
       - name: Test
         run: cargo test --all-targets --locked
 
+  # Linux compile, unit tests, and tests/install_linux.rs (cfg linux).
+  check-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: rustup component add clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Lint
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Test
+        run: cargo test --all-targets --locked
+
+  # Windows compile, unit tests, and tests/install_windows.rs (cfg windows).
+  check-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: rustup component add clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Lint
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Test
+        run: cargo test --all-targets --locked
+
+      - name: PowerShell syntax
+        shell: pwsh
+        run: |
+          $errors = $null
+          $null = [System.Management.Automation.Language.Parser]::ParseFile('install.ps1', [ref]$null, [ref]$errors)
+          if ($errors) { $errors | Format-List *; exit 1 }
+          ./install.ps1 --help
+
   # Packaging is exercised on every pull request, so it breaks here rather than
   # halfway through a release, after the merge that started one.
   package:
-    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
 
@@ -106,23 +165,30 @@ jobs:
           bash -n scripts/release.sh
 
       - name: Package the host target
-        run: scripts/package.sh aarch64-apple-darwin dist
+        run: scripts/package.sh ${{ matrix.target }} dist
 
       # Everything install.sh relies on: an aggregate SHA256SUMS it can grep, a
       # checksum that verifies, and a `ketch` binary it can find and run.
       - name: The tarball is what install.sh expects
         run: |
           cd dist
-          shasum -a 256 *.tar.gz > SHA256SUMS
-          shasum -a 256 -c SHA256SUMS
+          if command -v shasum >/dev/null 2>&1; then
+            shasum -a 256 *.tar.gz > SHA256SUMS
+            shasum -a 256 -c SHA256SUMS
+            hash() { shasum -a 256 "$1" | awk '{print $1}'; }
+          else
+            sha256sum *.tar.gz > SHA256SUMS
+            sha256sum -c SHA256SUMS
+            hash() { sha256sum "$1" | awk '{print $1}'; }
+          fi
 
-          tarball=ketch-aarch64-apple-darwin.tar.gz
+          tarball=ketch-${{ matrix.target }}.tar.gz
           expected=$(grep "$tarball" SHA256SUMS | awk '{print $1}')
-          actual=$(shasum -a 256 "$tarball" | awk '{print $1}')
+          actual=$(hash "$tarball")
           [ "$expected" = "$actual" ] || { echo "checksum line unusable" >&2; exit 1; }
 
           mkdir -p unpacked && tar -xzf "$tarball" -C unpacked
-          binary=$(find unpacked -name ketch -type f | head -1)
+          binary=$(find unpacked \( -name ketch -o -name ketch.exe \) -type f | head -1)
           [ -n "$binary" ] || { echo "no ketch binary in the tarball" >&2; exit 1; }
           "$binary" --version
 
@@ -132,6 +198,7 @@ jobs:
       # checksums are placeholders; rubocop only reads the shape of the file.
       # `brew style` applies its cask rules by the `Casks/` directory name.
       - name: The generated cask passes brew style
+        if: runner.os == 'macOS'
         run: |
           mkdir -p cask/Casks
           # Two different digests: rubocop rejects a cask that gives both
