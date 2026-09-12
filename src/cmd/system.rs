@@ -129,14 +129,8 @@ fn fix(cfg: &Config) {
     #[cfg(windows)]
     {
         match shell::install_user(cfg, false) {
-            Ok(outcome) => {
-                report_user(outcome, false);
-                return;
-            }
-            Err(e) => {
-                ui::warn(&e.to_string());
-                return;
-            }
+            Ok(outcome) => report_user(outcome, false),
+            Err(e) => ui::warn(&e.to_string()),
         }
     }
     #[cfg(not(windows))]

@@ -623,6 +623,7 @@ mod tests {
     /// A zip the way Windows tools write one: every member 0644, with no
     /// execute bit anywhere. Gradle and Maven `-bin.zip` distributions are
     /// these.
+    #[cfg(unix)]
     fn write_zip_with_mode(path: &std::path::Path, members: &[(&str, &[u8], u32)]) {
         let file = std::fs::File::create(path).unwrap();
         let mut writer = zip::ZipWriter::new(file);

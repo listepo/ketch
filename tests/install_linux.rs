@@ -113,7 +113,7 @@ fn relink_rebuilds_a_link_that_was_deleted_by_hand() {
     sandbox.ok(&["install", "test:testtool", "--yes"]);
     let link = sandbox.bin().join("testtool");
     std::fs::remove_file(&link).unwrap();
-    sandbox.ok(&["relink", "--yes"]);
+    sandbox.ok(&["link", "testtool"]);
     assert_eq!(run(&link), "testtool 1.0.0");
 }
 
