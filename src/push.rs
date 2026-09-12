@@ -174,7 +174,7 @@ pub fn open(api: &dyn Api, registry: &str, proposal: &Proposal) -> Result<Outcom
 
     // Always branch from the registry's current tip. A branch left by an
     // earlier push carries an earlier proposal and nothing else worth keeping.
-    let branch = format!("ketch/{}", proposal.name);
+    let branch = branch_for(&proposal.name);
     if api.branch(&head_repo, &branch)?.is_some() {
         api.reset_branch(&head_repo, &branch, &base_sha)?;
     } else {
@@ -265,6 +265,35 @@ fn missing_registry(registry: &str) -> Error {
     Error::msg(format!(
         "registry {registry} does not exist, or the token cannot see it"
     ))
+}
+
+/// The branch a proposal is pushed on, derived from the package name.
+///
+/// `Manifest::validate` accepts names git refuses in a ref — spaces, `~`, `^`,
+/// `?`, `*`, `[`, `..`, a trailing `.lock` — and a package name is a folder
+/// name, not a ref. Replacing those characters keeps one branch per package and
+/// lets the pull request be opened instead of failing on a 422 nobody can read.
+fn branch_for(name: &str) -> String {
+    let mut safe: String = name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.') {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    safe = safe.replace("..", "-");
+    if let Some(stem) = safe.strip_suffix(".lock") {
+        safe = stem.to_string();
+    }
+    let safe = safe.trim_matches(['.', '-']);
+    if safe.is_empty() {
+        "ketch/package".to_string()
+    } else {
+        format!("ketch/{safe}")
+    }
 }
 
 fn pull_request_body(proposal: &Proposal) -> String {
@@ -550,6 +579,30 @@ impl Api for GitHub {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_branch_name_is_drawn_from_a_package_name_git_would_refuse() {
+        // Every one of these is a name `Manifest::validate` accepts and git
+        // refuses in a ref.
+        for (name, want) in [
+            ("my tool", "ketch/my-tool"),
+            ("a~b^c?d*e[f", "ketch/a-b-c-d-e-f"),
+            ("dots..inside", "ketch/dots-inside"),
+            ("almost.lock", "ketch/almost"),
+            ("plain", "ketch/plain"),
+        ] {
+            assert_eq!(branch_for(name), want, "{name}");
+        }
+        for name in ["my tool", "dots..inside", "almost.lock"] {
+            let branch = branch_for(name);
+            assert!(
+                !branch.contains([' ', '~', '^', '?', '*', '[', ':'])
+                    && !branch.contains("..")
+                    && !branch.ends_with(".lock"),
+                "{name} -> {branch} is not a ref git accepts"
+            );
+        }
+    }
 
     #[test]
     fn the_client_is_built_from_synchronous_code_without_a_running_runtime() {

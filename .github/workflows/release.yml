@@ -262,7 +262,7 @@ jobs:
           gh release download "$TAG" --pattern 'ketch-*.tar.gz' --dir dist
           ls -l dist
 
-      - name: Update the cask
+      - name: Generate the cask
         env:
           # A token that can push to listepo/homebrew-tap. The default
           # GITHUB_TOKEN is scoped to this repository, so it cannot.
@@ -280,8 +280,27 @@ jobs:
           git clone "https://x-access-token:${TAP_TOKEN}@github.com/${TAP_REPO}.git" tap
           mkdir -p tap/Casks
           scripts/cask.sh "$VERSION" "$arm" "$intel" > tap/Casks/ketch.rb
-          brew style tap/Casks/ketch.rb
 
+      - name: Lint the cask
+        run: brew style tap/Casks/ketch.rb
+
+      # brew style only checks syntax; install and uninstall postflights run
+      # for real only under `brew install --cask`. Smoke the file about to be
+      # pushed so a broken bootstrap (e.g. recursive brew uninstall) never
+      # reaches the tap.
+      - name: Smoke test the cask
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+        run: |
+          set -euo pipefail
+          # `./` so Homebrew treats this as a local cask file, not a tap named tap.
+          brew install --cask --verbose ./tap/Casks/ketch.rb
+          brew uninstall --cask ketch
+
+      - name: Push the cask
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
           cd tap
           # The tap starts life empty; the first release makes its main branch.
           git rev-parse --verify HEAD >/dev/null 2>&1 || git checkout -q -B main

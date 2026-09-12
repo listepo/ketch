@@ -2,7 +2,7 @@
 //!
 //! Offline, like the rest of the end-to-end suite — the `local` source never
 //! touches the network.
-#![cfg(target_os = "macos")]
+#![cfg(unix)]
 
 mod support;
 
@@ -15,6 +15,7 @@ fn write_program(path: &std::path::Path, says: &str) {
 }
 
 /// A minimal `.app` bundle whose executable prints `says`.
+#[cfg(target_os = "macos")]
 fn write_app(app: &std::path::Path, says: &str) {
     let macos = app.join("Contents/MacOS");
     std::fs::create_dir_all(&macos).expect("create bundle");
@@ -39,6 +40,7 @@ fn a_local_binary_whose_name_starts_with_a_dot_still_links() {
 
 /// A bundle is hashed as a tree rather than downloaded, and that path has to
 /// be held to the lockfile exactly like a file is.
+#[cfg(target_os = "macos")]
 #[test]
 fn sync_refuses_a_local_app_that_changed_since_the_lock() {
     let sandbox = Sandbox::new();
@@ -59,6 +61,7 @@ fn sync_refuses_a_local_app_that_changed_since_the_lock() {
 
 /// A local path has no published checksum to require; the policy has to treat
 /// a bundle the same as a file rather than refuse one and wave the other on.
+#[cfg(target_os = "macos")]
 #[test]
 fn require_checksum_treats_a_local_app_like_a_local_binary() {
     let sandbox = Sandbox::new();

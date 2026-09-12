@@ -283,11 +283,12 @@ pub fn path_check(cfg: &Config) -> DoctorCheck {
     }
     let configured = configured_in(cfg);
     if configured.is_empty() {
-        return DoctorCheck::fail(
-            "PATH",
-            format!("{bin} is not on PATH"),
-            "Run `ketch path install`, or `ketch doctor --fix`.",
-        );
+        let fix = if cfg!(windows) {
+            format!("Add {bin} to your user PATH, then open a new terminal.")
+        } else {
+            "Run `ketch path install`, or `ketch doctor --fix`.".to_string()
+        };
+        return DoctorCheck::fail("PATH", format!("{bin} is not on PATH"), fix);
     }
     let files: Vec<String> = configured.iter().map(|p| p.display().to_string()).collect();
     DoctorCheck::warn(
@@ -360,11 +361,27 @@ fn quote_fish(text: &str) -> String {
 /// True when some line the shell will actually run names this directory.
 ///
 /// Comments are skipped so that a file still carrying a commented-out attempt,
-/// or ketch's own markers, does not read as configured.
+/// or ketch's own markers, does not read as configured. The name has to stand
+/// on its own, too: `contains` alone accepts `…/.ketch/bin.bak`, a backup of
+/// the file — `path install` would report the directory as already set up and
+/// add nothing, and `doctor` would point at a new shell that still lacks it.
 fn mentions(text: &str, bin_dir: &str) -> bool {
+    // What can sit next to a directory on `PATH`: a separator, a quote, a
+    // space. Another path character — the `.` of `.bak`, the `/` of a longer
+    // path — means this is a different directory that merely starts the same.
+    let boundary = |byte: u8| {
+        byte.is_ascii_whitespace() || matches!(byte, b':' | b'"' | b'\'' | b'=' | b'(' | b')')
+    };
     text.lines()
         .filter(|line| !line.trim_start().starts_with('#'))
-        .any(|line| line.contains(bin_dir))
+        .any(|line| {
+            let bytes = line.as_bytes();
+            line.match_indices(bin_dir).any(|(start, matched)| {
+                let end = start + matched.len();
+                (start == 0 || boundary(bytes[start - 1]))
+                    && (end == bytes.len() || boundary(bytes[end]))
+            })
+        })
 }
 
 /// Byte range of the ketch block, markers and trailing newline included.
@@ -476,6 +493,22 @@ mod tests {
     use super::*;
 
     const BIN: &str = "/home/u/.ketch/bin";
+
+    #[test]
+    fn a_backup_path_that_starts_with_the_bin_dir_is_not_a_path_entry() {
+        assert!(!mentions(
+            "export PATH=\"/home/u/.ketch/bin.bak:$PATH\"",
+            BIN
+        ));
+        assert!(mentions("export PATH=\"/home/u/.ketch/bin:$PATH\"", BIN));
+        assert!(mentions("set -gx PATH /home/u/.ketch/bin $PATH", BIN));
+        assert!(mentions("export PATH=/home/u/.ketch/bin", BIN));
+        // A longer path is a different directory that merely starts the same.
+        assert!(!mentions(
+            "export PATH=\"/home/u/.ketch/bin/tools:$PATH\"",
+            BIN
+        ));
+    }
 
     fn zsh_block() -> String {
         Shell::Zsh.block(BIN)

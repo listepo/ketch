@@ -4,11 +4,19 @@
 //! trait: which release asset is even installable, how a payload becomes
 //! something on PATH, and what "is this code trustworthy" means locally.
 //!
-//! Only macOS is implemented today. Adding Linux means adding a file here and
-//! one line in `host()` — no changes anywhere else in the codebase.
+//! macOS, Linux and Windows each have a backend. Adding another OS means adding
+//! a file here and one arm in `host()` — no changes anywhere else.
 
+pub mod scoring;
+
+#[cfg(target_os = "linux")]
+pub mod linux;
 #[cfg(target_os = "macos")]
 pub mod macos;
+#[cfg(unix)]
+pub mod unix;
+#[cfg(target_os = "windows")]
+pub mod windows;
 
 use crate::config::Config;
 use crate::error::Result;
@@ -196,11 +204,19 @@ pub fn host() -> Result<Arc<dyn Platform>> {
     {
         Ok(Arc::new(macos::MacOsPlatform::new()))
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
+    {
+        Ok(Arc::new(linux::LinuxPlatform::new()))
+    }
+    #[cfg(target_os = "windows")]
+    {
+        Ok(Arc::new(windows::WindowsPlatform::new()))
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
     {
         Err(crate::error::Error::msg(format!(
-            "ketch {} supports macOS only. Linux and Windows backends are planned; \
-             see ROADMAP.md — implementing `Platform` in src/platform/ is all that is required.",
+            "ketch {} has no backend for this operating system. \
+             Implementing `Platform` in src/platform/ is all that is required.",
             env!("CARGO_PKG_VERSION")
         )))
     }
@@ -261,7 +277,6 @@ pub const REJECTED_EXTENSIONS: &[&str] = &[
     ".rpm",
     ".apk",
     ".msi",
-    ".exe",
     ".appimage",
     ".snap",
     ".flatpak",
@@ -288,5 +303,23 @@ mod tests {
         assert!(is_sidecar("tool.dmg.asc"));
         assert!(is_sidecar("bundle.intoto.jsonl"));
         assert!(!is_sidecar("rg-14.tar.gz"));
+    }
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn host_is_linux() {
+        assert_eq!(host().unwrap().id(), "linux");
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn host_is_windows() {
+        assert_eq!(host().unwrap().id(), "windows");
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    #[test]
+    fn host_errs_on_an_os_with_no_backend() {
+        let err = host().unwrap_err();
+        assert!(err.to_string().contains("no backend"));
     }
 }

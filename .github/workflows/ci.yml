@@ -10,7 +10,8 @@ env:
 
 jobs:
   check:
-    # macOS is the only implemented platform, so it is the only one worth gating on.
+    # macOS gate: unit tests plus macos e2e. Linux e2e is check-linux;
+    # Windows e2e is the `cross` workflow.
     runs-on: macos-latest
     steps:
       # Full history: the commit-message check below ranges from the pull
@@ -87,6 +88,23 @@ jobs:
 
       # Unit tests and the end-to-end suite in tests/, which drives the real
       # binary against a throwaway root. Both are offline.
+      - name: Test
+        run: cargo test --all-targets --locked
+
+  # Linux compile, unit tests, and tests/install_linux.rs (cfg linux).
+  check-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: rustup component add clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Lint
+        run: cargo clippy --all-targets --locked -- -D warnings
+
       - name: Test
         run: cargo test --all-targets --locked
 

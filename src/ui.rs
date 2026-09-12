@@ -82,6 +82,22 @@ fn held() -> std::sync::MutexGuard<'static, Option<MultiProgress>> {
     BARS.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+/// Strip what somebody else's text has no business carrying into a terminal.
+///
+/// Everything ketch shows that it did not write itself comes from a client app:
+/// release asset names, the release notes, a registry `ketch.toml`, a source
+/// plugin's output. An escape sequence among them can rewrite the screen above
+/// — including the confirmation the user is about to answer — and a bidi
+/// override can make a line read as the reverse of what it says. The filter is
+/// [`crate::changelog::sanitize`], the guard a changelog already passes
+/// through, applied here so that a status line, a warning, a table cell and an
+/// error message cannot each forget it.
+///
+/// Only the text is filtered, never the colours: painting happens after.
+fn printable(text: &str) -> String {
+    crate::changelog::sanitize(text)
+}
+
 pub fn init(color: Option<bool>, quiet: bool, verbose: bool) {
     let enabled = color.unwrap_or_else(|| {
         std::io::stderr().is_terminal()
@@ -151,7 +167,11 @@ pub fn step(verb: &str, detail: &str) {
     if is_quiet() {
         return;
     }
-    emit(&format!("{} {}", blue(&format!("{verb:>10}")), detail));
+    emit(&format!(
+        "{} {}",
+        blue(&format!("{verb:>10}")),
+        printable(detail)
+    ));
 }
 
 /// Something finished well.
@@ -160,7 +180,11 @@ pub fn success(verb: &str, detail: &str) {
     if is_quiet() {
         return;
     }
-    emit(&format!("{} {}", green(&format!("{verb:>10}")), detail));
+    emit(&format!(
+        "{} {}",
+        green(&format!("{verb:>10}")),
+        printable(detail)
+    ));
 }
 
 /// Something the user should know but that does not stop the run.
@@ -172,7 +196,7 @@ pub fn warn(detail: &str) {
     emit(&format!(
         "{} {}",
         yellow(&format!("{:>10}", "warning")),
-        detail
+        printable(detail)
     ));
 }
 
@@ -185,7 +209,7 @@ pub fn note(detail: &str) {
     emit(&format!(
         "{} {}",
         dim(&format!("{:>10}", "note")),
-        dim(detail)
+        dim(&printable(detail))
     ));
 }
 
@@ -196,7 +220,7 @@ pub fn debug(detail: &str) {
         emit(&format!(
             "{} {}",
             dim(&format!("{:>10}", "debug")),
-            dim(detail)
+            dim(&printable(detail))
         ));
     }
 }
@@ -218,12 +242,20 @@ pub fn error(err: &crate::error::Error) {
     }
     log::record(log::Level::Error, &logged);
 
-    emit(&format!("{} {err}", red(&format!("{:>10}", "error"))));
+    emit(&format!(
+        "{} {}",
+        red(&format!("{:>10}", "error")),
+        printable(&err.to_string())
+    ));
     for line in &details {
-        emit(&format!("{} {}", " ".repeat(10), dim(line)));
+        emit(&format!("{} {}", " ".repeat(10), dim(&printable(line))));
     }
     if let Some(hint) = &hint {
-        emit(&format!("{} {hint}", cyan(&format!("{:>10}", "hint"))));
+        emit(&format!(
+            "{} {}",
+            cyan(&format!("{:>10}", "hint")),
+            printable(hint)
+        ));
     }
 }
 
@@ -595,31 +627,50 @@ pub fn truncate(text: &str, width: usize) -> String {
 
 /// Render rows as an aligned table. Empty input produces no output.
 pub fn table(headers: &[&str], rows: &[Vec<String>]) {
+    for line in table_lines(headers, rows) {
+        out(&line);
+    }
+}
+
+/// The table's lines, built rather than printed so a test can read them.
+///
+/// Cells carry client-app text — asset names, descriptions, package files — so
+/// they are filtered here, and measured after filtering: an escape sequence
+/// counted as printable width would push every later column out of line.
+fn table_lines(headers: &[&str], rows: &[Vec<String>]) -> Vec<String> {
     if rows.is_empty() {
-        return;
+        return Vec::new();
     }
     let cols = headers.len();
+    let cells: Vec<Vec<String>> = rows
+        .iter()
+        .map(|row| {
+            row.iter()
+                .take(cols)
+                .map(|cell| printable(cell))
+                .collect::<Vec<String>>()
+        })
+        .collect();
     let mut widths: Vec<usize> = headers.iter().map(|h| h.chars().count()).collect();
-    for row in rows {
-        for (i, cell) in row.iter().take(cols).enumerate() {
+    for row in &cells {
+        for (i, cell) in row.iter().enumerate() {
             widths[i] = widths[i].max(cell.chars().count());
         }
     }
-    let header: Vec<String> = headers
-        .iter()
-        .enumerate()
-        .map(|(i, h)| format!("{:<width$}", h, width = widths[i]))
-        .collect();
-    out(&bold(header.join("  ").trim_end()));
-    for row in rows {
-        let line: Vec<String> = row
+
+    let padded = |cells: &[String]| -> String {
+        let line: Vec<String> = cells
             .iter()
-            .take(cols)
             .enumerate()
             .map(|(i, c)| format!("{:<width$}", c, width = widths[i]))
             .collect();
-        out(line.join("  ").trim_end());
-    }
+        line.join("  ").trim_end().to_string()
+    };
+
+    let header: Vec<String> = headers.iter().map(|h| h.to_string()).collect();
+    let mut lines = vec![bold(&padded(&header))];
+    lines.extend(cells.iter().map(|row| padded(row)));
+    lines
 }
 
 #[cfg(test)]
@@ -632,6 +683,29 @@ mod tests {
         assert_eq!(bytes(1024), "1.0 KiB");
         assert_eq!(bytes(1536), "1.5 KiB");
         assert_eq!(bytes(5 * 1024 * 1024), "5.0 MiB");
+    }
+
+    #[test]
+    fn a_table_cell_cannot_redraw_the_terminal_or_shift_its_columns() {
+        let rows = vec![vec![
+            "evil\u{1b}[2K\u{1b}[1;31mFAKE\u{1b}[0m.tar.gz".to_string(),
+            "12".to_string(),
+        ]];
+        let lines = table_lines(&["asset", "score"], &rows);
+        assert_eq!(lines.len(), 2);
+        assert!(!lines[1].contains('\u{1b}'), "{:?}", lines[1]);
+        assert!(
+            lines[1].starts_with("evil[2K[1;31mFAKE[0m.tar.gz"),
+            "{:?}",
+            lines[1]
+        );
+        // The sequence is not counted as width: the score still lines up with
+        // the header's second column start in the first row, where nothing was
+        // filtered.
+        // The padding is the filtered length: counted with the sequences, the
+        // next column would start 15 characters too far right.
+        let asset_width = "evil[2K[1;31mFAKE[0m.tar.gz".chars().count();
+        assert_eq!(lines[1].find("12"), Some(asset_width + 2));
     }
 
     #[test]

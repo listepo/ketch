@@ -303,8 +303,12 @@ pub fn copy_tree(src: &Path, dest: &Path) -> Result<()> {
         } else if ft.is_symlink() {
             let link = fs::read_link(entry.path()).map_err(|e| Error::io(entry.path(), e))?;
             #[cfg(unix)]
+            crate::platform::unix::symlink(&link, &target)?;
+            #[cfg(not(unix))]
             {
-                std::os::unix::fs::symlink(&link, &target).map_err(|e| Error::io(&target, e))?;
+                return Err(Error::msg(
+                    "symlinks in a local tree are not supported on this OS",
+                ));
             }
         } else {
             if let Some(parent) = target.parent() {
@@ -341,7 +345,6 @@ pub fn sha256_tree(root: &Path) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::os::unix::fs::PermissionsExt;
 
     #[test]
     fn two_identical_trees_hash_the_same() {
@@ -371,10 +374,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let bin = dir.path().join("tool");
         fs::write(&bin, b"#!/bin/sh\necho hi\n").unwrap();
-        fs::set_permissions(&bin, fs::Permissions::from_mode(0o755)).unwrap();
         assert_eq!(classify(&bin).unwrap(), LocalKind::Binary);
     }
 
+    #[cfg(unix)]
     #[test]
     fn classifies_a_symlink() {
         let dir = tempfile::tempdir().unwrap();

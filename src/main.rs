@@ -4,6 +4,11 @@
 //! `Config`, and hand off to a command. Every failure path converges here so a
 //! single place decides how errors are shown and what the process exits with.
 
+#![cfg_attr(
+    not(any(target_os = "macos", target_os = "linux", target_os = "windows")),
+    allow(dead_code)
+)]
+
 mod changelog;
 mod cli;
 mod cmd;

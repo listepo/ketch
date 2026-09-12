@@ -61,6 +61,14 @@ the next milestones build directly on them.
   checks packages concurrently, like install. The `tap` job fetches
   `ketch-*.tar.gz` from the published release so a cask failure can be re-run
   without rebuilding.
+- **`ketch registry validate`.** Fail-closed check of a registry tree: every
+  `ketch.toml` through `Manifest::validate`, plus name/alias collisions. The
+  client still warns and skips; this is what `listepo/ketch-registry` CI
+  should run. `--json` for machines.
+- **Cask install/uninstall smoke.** The `tap` job `brew install --cask`s the
+  generated file and uninstalls it before pushing to the tap.
+- **`install.sh` root is `--root`.** `--install-dir` no longer names the store;
+  it is an optional bootstrap PATH location. Default root stays `~/.ketch`.
 
 ## Follow-ups from the work just done
 
@@ -71,37 +79,486 @@ Small, and each one is a real gap rather than a nice-to-have.
    day ketch ships anything a browser downloads. Needs an App Store Connect
    key, `xcrun notarytool submit --wait` in the build job, and a stapled
    check in the smoke test.
-2. **A test for the cask itself.** `scripts/cask.sh` output is checked by
-   `brew style` in CI; the install and uninstall steps it generates are only
-   exercised by installing the cask for real. A `brew install --cask` smoke
-   test on a release would have caught the recursion the `--no-brew` flag now
-   prevents.
-3. **Registry CI.** `listepo/ketch-registry` accepts any `ketch.toml` that
-   parses. `ketch registry push` writes them, and nothing validates them
-   before merge.
-   This is Milestone 5 below, and the cheapest half of it is a workflow that
-   runs the same `Manifest::validate` the client does.
+2. **Registry CI in `listepo/ketch-registry`.** `ketch registry validate`
+   exists in this repo; the registry repository still needs a workflow that
+   runs it on every pull request. Offline-install of changed entries against
+   a fixture is the rest of Milestone 5.
+
+## Known bugs, not yet fixed
+
+Four read-only audits of the tree — code, tooling, documentation, and an
+adversarial review of the working-tree diff — turned these up. What was cheap
+and narrow is fixed already: `unplace`/`is_ours` no longer delete a file the
+user put where a link used to be, `install.sh` no longer links the installed
+binary to itself when `--install-dir` respells `<root>/bin` (nor resolves a
+relative `--root` inside its own temp dir), a Windows-built zip whose members
+have no execute bit installs, `registry validate` refuses a symlinked
+`ketch.toml` and a `local:` entry and sees two folders that land on one name, a
+curated manifest is found from a differently-cased `owner/repo`, nested manifest
+tables reject unknown keys, a lockfile entry with an unrecognised `target` is
+refused, a locked asset is pinned so its hash stays checkable, an empty
+`KETCH_ROOT`/`KETCH_APPS_DIR` is treated as unset, and client-app text is
+filtered on its way to the terminal.
+
+Everything below was proven against the real binary, in a scratch tree, or by a
+trace; nothing here is a style opinion.
+
+**Priority.** **P1** — data loss, a security hole, a hang, or a documented
+workflow that silently does the wrong thing: fix before the next release.
+**P2** — a wrong result, exit status, message or artefact on a path people hit;
+there is a way around it, and there should not have to be. **P3** — cosmetic,
+rare, a documentation inaccuracy, or a judgement call.
+
+**Size.** **S** — a few lines in one file, plus its regression test. **M** — one
+module: a helper, a field, a failable path, plus tests. **L** — cross-file: a
+new flag, a recorded field, a protocol or JSON-shape change, with docs and
+tests.
+
+### Code
+
+| Bug | Pri | Size | Where |
+| --- | --- | --- | --- |
+| A plugin that orphans a child holding its stdout hangs ketch forever | P1 | M | `src/source/plugin.rs` |
+| `install local:<fifo>` hangs for ever on a path that is not a regular file | P2 | S | `src/source/local.rs` |
+| `self uninstall` leaves `install.sh`'s bootstrap link dangling on `PATH` | P2 | L | `src/self_update.rs` |
+| The process lock can be stolen from a live holder | P2 | M | `src/state.rs` |
+| An empty `KETCH_GITHUB_TOKEN` voids the whole token fallback chain | P2 | S | `src/config.rs` |
+| `--verbose` detail never reaches the log, which two docs promise it does | P2 | S | `src/ui.rs` |
+| `ketch info` fails for an installed package whose source is unavailable | P2 | M | `src/cmd/query.rs` |
+| `changelog <pkg>@<version> --file` says an installed package is not installed | P2 | S | `src/cmd/query.rs` |
+| `outdated --json` cannot say that some checks failed | P2 | M | `src/cmd/query.rs` |
+| The registry swap deletes the working copy before the rename | P2 | S | `src/registry.rs` |
+| A payload entry point that is a symlink is never discovered | P2 | S | `src/platform/macos.rs` |
+| `registry validate` silently passes a tree whose `ketch.toml` is a symlink | P2 | S | `src/registry.rs` |
+| A user's own copied `.app` is still deleted where a stale `CopiedApp` record matches | P2 | S | `src/platform/unix.rs` |
+| Any confirmation during a `--tui` session hangs the terminal with no way out | P2 | M | `src/tui/mod.rs` |
+| Answers the questionnaire accepts can still fail validation and discard the whole run | P2 | S | `src/cmd/config.rs` |
+| An empty boolean environment variable fails every command | P2 | S | `src/config.rs` |
+| A checksum file that could not be fetched is reported as one that does not exist | P2 | S | `src/source/github.rs` |
+| `registry push` skips the extra checks the registry itself applies | P2 | S | `src/push.rs` |
+| `local:` symlink to an archive or a `.app` can never install | P3 | S | `src/source/local.rs` |
+| `self update --dry-run` says "would update" when it would not | P3 | S | `src/cmd/system.rs` |
+| A table cell with a newline or a tab breaks the row and its columns | P3 | S | `src/ui.rs` |
+| The log keeps the bidi and zero-width characters the terminal strips | P3 | S | `src/log.rs` |
+| Release notes and `info --json` prose are printed unfiltered | P3 | S | `src/cmd/system.rs` |
+| `install.sh --version 0.3.2` cannot find a release tagged `v0.3.2` | P3 | S | `install.sh` |
+| An exact version older than the newest 30 releases is not found | P3 | M | `src/source/github.rs` |
+| Foreign operating systems other than Linux/Windows are still scored | P3 | S | `src/platform/scoring.rs` |
+| `.dmg`/`.pkg` are detected by extension ahead of content | P3 | S | `src/extract/macos.rs` |
+| `is_rejected` matches `sources` inside `resources` | P3 | S | `src/platform/mod.rs` |
+| tar directory members lose their mode and mtime | P3 | S | `src/extract/archive.rs` |
+| `find_mount_point` takes the first mount, not the last | P3 | S | `src/extract/macos.rs` |
+| TUI rows can be keyed by two names for one package | P3 | M | `src/tui/mod.rs` |
+| `self update` replaces whatever binary is running | P3 | S | `src/self_update.rs` |
+| A lockfile with an empty `asset` fails `sync` instead of re-selecting | P3 | S | `src/lockfile.rs` |
+| `allow(dead_code)` crate-wide on non-macOS weakens the Linux lint | P3 | S | `src/main.rs` |
+| The `tui` feature is never compiled by CI and never shipped | P3 | S | `Cargo.toml`, CI |
+| Ambient `KETCH_*` variables leak into every end-to-end test | P3 | S | `tests/support/mod.rs` |
+| A plugin's `digest.algo` is ignored, so a sha512 digest fails as a mismatch | P3 | S | `src/install.rs` |
+| Plugin stderr is dropped on timeout, oversize and non-UTF-8 | P3 | S | `src/source/plugin.rs` |
+| `ketch history --limit 0` says nothing was ever recorded | P3 | S | `src/cmd/query.rs` |
+| Three tests are weaker than their names: two pass without their fix, one asserts with `or` | P3 | S | `src/registry.rs`, `src/extract/archive.rs`, `tests/registry_push.rs` |
+| The terminal filter and the strict nested tables have no failure-path test | P3 | S | `src/ui.rs`, `src/manifest.rs` |
+| `rstest` and `insta` are declared but unused | P3 | S | `Cargo.toml` |
+
+### Release tooling
+
+| Bug | Pri | Size | Where |
+| --- | --- | --- | --- |
+| A `force` dispatch republishes the version at HEAD, not the tag being repaired | P1 | M | `.github/workflows/release.yml` |
+| The `tap` job can write a cask whose version and checksums come from different releases | P2 | S | `.github/workflows/release.yml` |
+| The breaking-change reminder is skipped by a `!` anywhere before the colon | P3 | S | `.githooks/commit-msg` |
+| `just check` is not the CI gate: it runs doctests and no packaging | P3 | S | `Justfile` |
+| `release.sh` scrapes `cargo metadata` by regex and leaves a branch behind on abort | P3 | S | `scripts/release.sh` |
+
+### Documentation
+
+| Bug | Pri | Size | Where |
+| --- | --- | --- | --- |
+| `ketch registry push` is documented as validating exactly like the registry | P2 | S | `docs/REGISTRY.md` |
+| A user manifest is documented as contributable as-is, but the registry adds rules | P3 | S | `docs/REGISTRY.md` |
+| Batch install is documented as writing in the order asked; it writes in completion order | P3 | S | `README.md` |
+| `src/shell.rs` is called the only writer outside the root; `/Applications`, the binary and the cask are too | P3 | S | `AGENTS.md` |
+| "Nothing is written outside the tree except…" omits `ketch.lock`, `ketch.toml` and the in-place self-update | P3 | S | `README.md` |
+| `brew uninstall --cask ketch` keeps every package; the README's removal story does not say so | P3 | S | `README.md` |
+| ROADMAP promises every version stays in the store; an upgrade deletes the old prefix | P3 | S | `ROADMAP.md` |
+| "The installer only runs `ketch self install`" — it also runs `path install` and writes the bootstrap copy | P3 | S | `README.md` |
+| `--name` help is narrower than the flag the code accepts | P3 | S | `src/cli.rs` |
+| `link`, `unlink`, `self version` and `path status` exist but are documented nowhere | P3 | S | `src/cli.rs` + docs |
+| PLUGINS.md lists `releases <id> [--prerelease] [--limit N]`; the client sends `--limit N --prerelease` | P3 | S | `docs/PLUGINS.md` |
+| The config table omits `self_repo`, `KETCH_GITHUB_API` and the 16-job cap | P3 | S | `README.md` |
+| LOCKFILE.md's "Refused" table omits the unknown-`target` check added in this pass | P3 | S | `docs/LOCKFILE.md` |
+
+### P1
+
+- **A plugin that orphans a child holding its stdout hangs ketch forever.**
+  `source/plugin.rs` kills only the direct child and then joins its reader
+  threads inside `thread::scope`; EOF on the inherited pipe never comes while a
+  grandchild holds it, so the 30 s deadline its own documentation promises
+  bounds nothing. Measured against the real binary: a plugin whose `capabilities`
+  branch runs `( sleep 45 ) &` and exits immediately made `ketch plugin list`
+  return after **48 s**; with a longer grandchild it never returns. Discovery
+  probes every plugin on every source-loading command, so one such plugin hangs
+  `install`, `search` and `info` too. Fix: run the child in its own process
+  group and `killpg` it on the deadline, and bound the reader side (a channel
+  with a timeout, the threads detached) so `output()` returns within the
+  deadline whatever the grandchildren do.
+- **A `force` dispatch republishes the version at HEAD, not the tag being
+  repaired.** The `version` job derives `TAG`/`VERSION` from `cargo metadata` at
+  the checked-out commit and never looks at the dispatch inputs, while the
+  publish step does `gh release upload "$TAG" dist/* --clobber`. So the
+  documented recovery path — dispatch with `force` to re-run a failed upload or
+  cask push — only works while HEAD still carries the version being repaired;
+  on any later commit it publishes a *different* version's assets under that
+  other tag and leaves the broken release untouched. Fix: take the tag from the
+  dispatch input (or refuse a run whose `GITHUB_SHA` is not the tag's commit)
+  and fail loudly instead of republishing.
+
+### P2
+
+- **`install local:<fifo>` hangs for ever on a path that is not a regular
+  file.** `source/local.rs` classifies by opening the path, so a FIFO with no
+  writer blocks in `open(2)` before anything can time out (reproduced: still
+  running four seconds in, killed by hand), and a character device never reaches
+  EOF. The registry tier no longer accepts `local:` entries at all, but a user
+  manifest or `--path` still can. Fix: classify with `symlink_metadata` and
+  refuse anything that is not a regular file, a symlink or a directory before
+  opening it.
+- **`self uninstall` leaves `install.sh`'s bootstrap link dangling.** Proven
+  live: install with an explicit `--install-dir`, then `self uninstall --yes`
+  removes the root and leaves `<install-dir>/ketch -> <root>/bin/ketch`
+  pointing at nothing, so the command the user was told is on their `PATH` stops
+  working (in the cross-filesystem case it is a stale copy that never follows an
+  update). Fix: `ketch self install --link-dir <dir>` records that link as a
+  `LinkRecord` so `install::uninstall` takes it back; `install.sh` passes it and
+  stops writing outside the root on its own.
+- **The process lock can be stolen from a live holder.** B reads a dead pid,
+  forks `ps` to check, and by the time it renames, A has reclaimed the lock and
+  written its own pid — `rename` is not compare-and-swap, so B moves A's live
+  lock aside and both proceed, and A's `Drop` then deletes B's file. A failed
+  pid write is also swallowed, leaving an empty lock everyone treats as stale.
+  Fix: after the rename, re-read the moved file and claim it only if it still
+  holds the value judged stale; otherwise rename it back and report `Locked`.
+- **An empty `KETCH_GITHUB_TOKEN` voids the whole token chain.** Proven:
+  `KETCH_GITHUB_TOKEN= GH_TOKEN=ghp_… ketch doctor` reports `token no`, while
+  unsetting the first reports `token yes` — `Some("")` short-circuits every
+  `.or_else` before the trailing `filter`, which is the opposite of what
+  `config.rs` says about empty variables two lines above. Fix: filter empties
+  before the chain, as `KETCH_APPS_DIR` and `KETCH_REGISTRY` already do.
+- **`--verbose` detail never reaches the log, which two docs promise it does.**
+  `ui::debug` records at `Level::Debug`, but the sink writes only records at or
+  below `cfg.log_level` (default `info`), and `--verbose` raises only the
+  terminal level. Both `README.md` and the module comment in `log.rs` promise
+  the log holds "the debug detail `--verbose` would have shown". Fix: raise the
+  file level with `--verbose`, or correct both sentences.
+- **`ketch info` fails for an installed package whose source is unavailable.**
+  A missing or too-new plugin makes `info` exit 1 with `no source is registered
+  for scheme …`, though the comment above the manifest fallback promises that an
+  installed package always has an answer, and `outdated` only warns. Fix: make
+  the source optional there and warn about the fields that need it.
+- **`changelog <pkg>@<version> --file` says an installed package is not
+  installed.** `elsewhere` treats any exact version as "not local", and
+  `state.find` is handed the raw `pkg@version` string, which matches no key. So
+  the shipped `CHANGELOG.md` on disk is refused with "not installed", and
+  without `--file` the same command goes to the network instead. Fix: compare
+  the requested version with the installed tag, and look the package up by
+  `spec.alias`.
+- **`outdated --json` cannot say that some checks failed.** The text output
+  prints "N could not be checked"; `--json` prints `[]` at exit 0 for the same
+  run, so a machine consumer cannot tell "everything is current" from "the
+  network was down" — the distinction the comment above it says must not be
+  lost. Fix: carry the unreachable count in the JSON object.
+- **The registry swap deletes the working copy before the rename that replaces
+  it.** `swap_in` removes `<root>/registry` and only then renames the fresh tree
+  in, so any rename failure (EXDEV on a mount point, EACCES, ENOSPC) leaves no
+  registry at all, and there is a window where a concurrent `ketch install` sees
+  `registry::exists() == false`. Fix: rename the old tree aside, rename the new
+  one in, then remove the old — with the old tree put back if the second rename
+  fails.
+- **A payload entry point that is a symlink is never discovered.**
+  `discover_executables` keeps only regular files, so `bin/tool ->
+  ../libexec/realtool` links `realtool` under its internal name and leaves
+  `tool` off `PATH`; when the real file sits in a `NOISE_DIRS` directory
+  (`lib/`), discovery is empty and the install fails with `EmptyPayload`. Fix:
+  accept a symlink whose resolved target is a regular file inside the payload,
+  keeping the `bin/` preference keyed on the entry's own path.
+- **`registry validate` silently passes a tree whose `ketch.toml` is a symlink.**
+  The guard added in this pass stops `check_tree` reading through a link — which
+  was the trust-boundary bug — but it also removes the folder from
+  `package_dirs`, so with any other valid package present the run reports
+  "validated" and exits 0 while that package is never checked. `load_dir` drops
+  it silently for the same reason, which is how a registry entry can go missing
+  with nothing said. The function's own comment names exactly this hazard. Fix:
+  keep the no-read-through rule and fail closed — report a `ketch.toml` that is
+  a link (or not a regular file) as a `ValidationError` in `check_tree`, and
+  warn in `load_dir`.
+- **A user's own copied `.app` is still deleted where a stale `CopiedApp` record
+  matches.** The new `still_placed` has the disk decide for symlinks, but for a
+  copied bundle any directory at the recorded path still counts as ours, so
+  `unlink`/`uninstall` removes it and the next install overwrites it — the same
+  class of data loss the symlink and file cases were fixed for, with a narrower
+  trigger (a `link_apps = false` install, then the user replaces
+  `/Applications/Foo.app` with their own copy). Recorded as residual rather than
+  fixed: a real identity check wants a marker (a tree hash, as local `.app`
+  installs already compute). The cheap guard is to require the recorded target
+  to still exist under the store, and to cover the directory case in
+  `unplace_leaves_a_file_the_user_put_where_a_link_was`.
+- **Any confirmation during a `--tui` session hangs the terminal with no way
+  out.** The session enters raw mode before the command is dispatched, and in
+  raw mode Enter is a carriage return while `ui::ask` reads a line — which wants
+  a newline — with `ISIG` off, so Ctrl-C and Ctrl-D are bytes rather than a
+  signal or EOF. `ketch upgrade --tui` stops at its prompt and no key escapes
+  it, leaving the alternate screen up. Reachable only from a source build with
+  `--features tui`: the release binary has no `--tui` at all (see the CI row in
+  the table), which is the only reason this is P2 rather than P1. Fix: leave the
+  alternate screen and `disable_raw_mode()` around any `confirm`/`prompt` and
+  re-enter afterwards, or refuse a session for commands that can prompt.
+- **Answers the questionnaire accepts can still fail validation and discard the
+  whole run.** `cmd/config.rs` validates nothing while asking — a `bin` path of
+  `/usr/bin/rg` or `../rg`, a link name of `sub/dir`, an `extra_paths` answer of
+  `../../etc/x` or a `provides` answer of `my tool` are all accepted — and
+  `Manifest::validate` runs once at the end, so every other answer is thrown
+  away with one message and nothing written. `wizard.rs` claims values that
+  cannot be used verbatim are refused "here, not when installing", and
+  `config create` already re-asks for `source` and `name`. Fix: apply the same
+  predicate at the prompt and re-ask, keeping the final `validate()` as a
+  backstop.
+- **An empty boolean environment variable fails every command.** Proven:
+  `KETCH_LINK_APPS=`, `KETCH_PRERELEASE=`, `KETCH_ALLOW_EMULATION=`,
+  `KETCH_STRIP_QUARANTINE=` and `KETCH_REQUIRE_CHECKSUMS=` each exit 1 with
+  "must be a boolean, not ``", from `ketch list` upwards. Every neighbouring
+  setting in the same function treats a set-but-empty variable as unset —
+  `KETCH_ROOT` and `KETCH_APPS_DIR` were fixed to do so in this pass — and a CI
+  job that clears a variable this way should not lose the tool. Fix:
+  `.filter(|v| !v.trim().is_empty())` in `env_bool`, like the others.
+- **A checksum file that could not be fetched is reported as one that does not
+  exist.** `GitHubSource::checksums` swallows a failed sidecar request (403 rate
+  limit, a private repository, a dead network) with a `--verbose`-only debug
+  line, and the install then says "published no checksum; trusting <hash> on
+  first use" — which is false — or, under `require_checksums`, fails with
+  `ChecksumMissing` instead of the HTTP error that actually happened. Fix:
+  remember that a checksum file existed and could not be read, and say that.
+- **`registry push` skips the extra checks the registry itself applies.** `push`
+  stops at `Manifest::deserialize` + `Manifest::validate`, while
+  `registry::read_package` also refuses a `local:` source and a `name` that
+  disagrees with the folder — so a file the docs call valid opens a pull request
+  that registry CI then rejects. Fix: run the same check in `push::load`, or
+  move the rule into `Manifest::validate`.
+- **The `tap` job can write a cask whose version and checksums come from
+  different releases.** `VERSION` comes from `needs.version` (HEAD) while the
+  tarballs are fetched by `TAG` from the published release, so on any path where
+  they disagree the tap advertises a version/checksum pair that cannot both be
+  right. Fix: derive the version from the tag the assets came from and assert
+  the two agree.
+
+### P2 (documentation)
+
+- **`ketch registry push` is documented as validating exactly like the
+  registry.** `push::load` stops at `Manifest::validate`, so a file with
+  `source = "local:./dist"` passes, opens a pull request, and is then rejected
+  by the same validation CI runs — the doc sentence is the contract, and the
+  code should keep it (see the `push` row in the Code table).
+
+### P3
+
+- **`local:` symlink to an archive or a `.app` can never install.** `classify`
+  returns `Symlink` for any symlink, so `install --path link.tar.gz` forges a
+  `bin` entry named after the link and then fails with "manifest expects
+  `link.tar.gz` but the release payload does not contain it". Fix: classify a
+  non-dangling link by what it points at.
+- **`self update --dry-run` says "would update" when it would not.**
+  `replaced: false` covers both "already current" and "dry run", and the verb is
+  chosen from `dry_run` alone.
+- **A table cell with a newline or a tab breaks the row and its columns.**
+  Proven: a registry `ketch.toml` with a multi-line `description` prints its
+  second line unindented under `ketch search`'s table, and a literal tab shifts
+  every later column. `table` has to fold its cells onto one line.
+- **The log keeps the bidi and zero-width characters the terminal strips.**
+  Proven: a registry folder named `evil\u{202e}pkg` reaches stderr as `evilpkg`
+  and the log file as `evil\u{202e}pkg`. `log::escape` drops `is_control()`
+  characters but not the invisible formatting ones, though the file is meant to
+  be `cat`ed.
+- **Release notes and `info --json` prose are printed unfiltered.** `ketch self
+  update` prints the release body with `ui::out`, and `ketch info --json`
+  serialises manifest prose as it stands; serde escapes C0 but not bidi
+  overrides, which is exactly why `registry validate --json` was fixed in this
+  pass.
+- **`install.sh --version 0.3.2` cannot find a release tagged `v0.3.2`.**
+  `release.yml` creates the tag as `v$version` and `install.sh` pastes
+  `--version` straight into the download URL, so the number a user reads off
+  `ketch --version` gives "Failed to download". The cask already builds
+  `v#{version}` itself.
+- **An exact version older than the newest 30 releases is not found.** The
+  `v`-prefix retry added in this pass covers the everyday spelling, but the
+  fallback still lists one page: a tag spelled another way (`release-1.2.3`) on
+  a busy repository ends in `no release found`.
+- **Foreign operating systems other than Linux and Windows are still scored.**
+  A release shipping only `freebsd`/`netbsd`/`plan9` assets has one accepted (as
+  an emulated `x86_64` build, score 33) and linked instead of failing.
+- **`.dmg`/`.pkg` are detected by extension ahead of content.** Both sit first
+  in the macOS extractor list and accept the file name alone, which
+  `extract/mod.rs` says never happens.
+- **`is_rejected` matches `sources` inside `resources`**, because
+  `NON_BINARY_TOKENS` is matched with `contains`, so
+  `tool-1.0-macos-arm64-resources.tar.gz` is refused as source code.
+- **tar directory members lose their mode and mtime.** `EntryType::Directory`
+  goes through `walk_inside`/`create_dir` and never `entry.unpack`, so a
+  `private/` member at 0700 lands 0755.
+- **`find_mount_point` takes the first mount, not the last.** `.find`
+  contradicts its own doc comment; a DMG with a helper volume mounted first
+  gives `copy_volume` the wrong volume. Suspected — no multi-volume DMG to
+  reproduce with, but the parser takes text, so a fixture is cheap.
+- **TUI rows can be keyed by two names for one package.** `prepare` emits
+  `PackageSpec::label()` (an alias, or a path) while `commit` emits
+  `manifest.name`, so a row spins at "Installing" for ever.
+- **`self update` replaces whatever binary is running.** With no `ketch` entry
+  in `state.json` it copies the release over `current_exe()` with no check that
+  the path is inside the root. Judgement call, not a proven defect.
+- **`rstest` and `insta` are declared in `[dev-dependencies]` but used
+  nowhere**, so `cargo test` builds both for nothing.
+- **The breaking-change reminder is skipped by a `!` anywhere before the
+  colon.** `case "${subject%%:*}" in *!*) exit 0` accepts `feat(api!): …`,
+  which commitlint does not treat as a breaking marker, so the reminder the
+  hook exists for never prints.
+- **`just check` is not the CI gate.** It runs `cargo test --locked` (which
+  includes doctests) where CI runs `--all-targets`, and it runs neither
+  `scripts/package.sh` nor the cask check that CI's `package` job gates on;
+  `AGENTS.md` calls it "the whole CI gate".
+- **`release.sh` scrapes `cargo metadata` with a regex** that depends on
+  `"name"` immediately preceding `"version"`, and aborts after committing but
+  before pushing, leaving a branch behind with "nothing was pushed" as its only
+  explanation.
+- **A lockfile with an empty `asset` fails `sync` instead of re-selecting.**
+  `LockedPackage::validate` checks name, tag, source and hash but not `asset`,
+  so `asset = ""` is a valid file; the override added in this pass then makes
+  `choose_asset` fail with "release `x` has no asset named ``" where the old
+  path re-scored and installed. Fix: refuse a blank `asset` (the hash means
+  nothing without the file it names), or treat an empty override as none.
+- **`allow(dead_code)` crate-wide on non-macOS weakens the lint the new Linux
+  job exists to run.** It silences every dead item in the crate there, so
+  genuinely dead code in shared modules (`http.rs`, `ui.rs`, `extract/`) is no
+  longer caught on Linux — macOS CI still sees it, so the loss is small, but the
+  attribute should sit on the modules only the macOS backend reaches.
+- **The `tui` feature is never compiled by CI and never shipped.** It is a
+  non-default feature, no CI job passes `--features tui`, and `scripts/package.sh`
+  builds without it, so `src/tui/mod.rs` is invisible to `cargo test`, to
+  `clippy --all-targets` and to every release — while the flag sits in the CLI
+  surface and in the docs. A source build with the feature gets a module nothing
+  has compiled since the last time somebody did; the hang above is the proof.
+- **Ambient `KETCH_*` variables leak into every end-to-end test.** The sandbox
+  helper removes only the three token variables, while `Config::load` reads
+  eleven other `KETCH_*` settings from the environment *before* the sandbox's
+  own `config.toml`. A developer shell exporting `KETCH_LOG_FORMAT=json`,
+  `KETCH_REQUIRE_CHECKSUMS=1`, `KETCH_PRERELEASE=1` or `KETCH_LINK_APPS=1` gets
+  failures that have nothing to do with the change under test. Fix: clear the
+  whole namespace in the helper, then set the sandbox values.
+- **A plugin's `digest.algo` is ignored, so a non-sha256 digest fails the
+  install as a mismatch.** The wire type carries the algorithm and
+  `docs/PLUGINS.md` never restricts it, but `install::verify_checksum` compares
+  the hex against its own sha256 unconditionally: a plugin that publishes a
+  correct `sha512` digest earns a security-sounding `ChecksumMismatch`. Fix: use
+  the digest only when `algo` is `sha256`, otherwise fall through to
+  `checksums()`, and document the restriction.
+- **Plugin stderr is dropped on exactly the failures a plugin author needs it
+  for.** Only the non-zero-exit path carries stderr into the error; a plugin
+  killed at the deadline, one that writes more than 8 MiB, and one that writes
+  non-UTF-8 all report without it, though `docs/PLUGINS.md` promises the
+  plugin's stderr is shown.
+- **`ketch history --limit 0` says nothing was ever recorded.** `--limit` is a
+  `u32`, `LIMIT 0` yields no rows, and the empty-result branch prints the
+  "nothing was ever recorded" message for both an empty database and a limit
+  that asked for nothing — a report that lies about the machine's history.
+- **Three tests are weaker than their names.** `check_tree_treats_name_collisions_as_errors`
+  passes against the old `collisions()` too (the `fd`/`zfd` message it asserts
+  was already produced), so it is behaviour cover, not regression cover — the
+  `foo`/`foo.git` test is the one that fails without the rewrite. The four
+  Mach-O asserts in `recognises_program_headers` pass on the pre-fix code
+  (`is_program_head` is unchanged by this pass), so they document behaviour
+  rather than prove the zip fix — that test is
+  `a_program_in_a_zip_without_an_execute_bit_still_comes_out_runnable`.
+  `registry_validate_rejects_a_bin_name_that_would_escape` asserts
+  `contains(".zshrc").or(contains("file name"))`, which passes for an unrelated
+  failure that happens to mention a file name.
+- **The terminal filter and the strict nested tables have no failure-path
+  test.** `ui.rs` covers `table_lines` only: `step`, `success`, `warn`, `error`
+  and the two `debug` paths are filtered by the same helper but nothing fails if
+  one of them stops calling it. `deny_unknown_fields` on `Registry` has no test
+  showing that a `[[package]]` file with a stray top-level key is refused
+  instead of parsing as no packages at all.
+- **Documentation inaccuracies**: the registry's extra rules for a contributed
+  manifest, batch-install ordering, `src/shell.rs` as the only outside writer,
+  what is written outside `~/.ketch`, the Homebrew uninstall story, ROADMAP's
+  "every version stays in the store", the installer's full set of steps,
+  `--name`'s help text, the four undocumented commands, PLUGINS.md's flag order,
+  the config table's missing keys, and LOCKFILE.md's missing unknown-`target`
+  row. Each is one sentence in the file named in the table above.
+
+### Checked and cleared
+
+The working-tree fixes were re-reviewed adversarially and survived: the
+`is_inside_store` split keeps every `..` the state file contributes below the
+store while accepting one inherited from the root, `ensure_executable` can only
+ever add owner r-x, the ownership rule still recognises every link ketch itself
+creates (a version bump or `relink` cannot lose ownership), ureq does not forward
+the `Authorization` header across the CDN redirect so the token reaches no new
+host, the `v`-prefix retry returns early on an exact match, the zip fix touches
+only members the archive left non-executable with a real program head, and no
+caller passes pre-coloured text into a filtered field.
+
+Worth recording so nobody re-investigates them: the `commit-msg` hook's
+commitlint-missing branch is **not** inverted (installed → "fix the message",
+missing → "run `just deps`", both correct); `ConfigFile`, `Manifest`,
+`AssetSelector` and `BinSpec` all reject unknown keys; asset names and
+`SHA256SUMS` are consistent across `package.sh`, both workflows, `install.sh`
+and the generated cask; the generated cask parses and passes `brew style`; the
+diesel migration matches `table!` column for column; `site/sync-docs.py`
+regenerates exactly what is committed; and `actionlint` plus `shellcheck` are
+clean over the workflows and scripts.
 
 ## Milestone 0 — cross-platform contracts
 
 **Goal:** make today's macOS assumptions explicit before a second backend
 exists to inherit them.
 
-1. Inventory `src/platform/macos.rs`, `src/shell.rs`, extraction and the tests
-   for Unix-only APIs, executable-bit assumptions, symlink semantics and
-   case-sensitivity assumptions.
-2. Move only genuinely shared asset-token scoring, destination ownership and
-   executable-discovery helpers into `src/platform/mod.rs`. macOS policy stays
-   in the macOS backend.
-3. Add table-driven unit tests for asset classification and placement
-   preflight that run on any host without the active backend.
-4. Add CI jobs that compile and unit-test the target matrix; end-to-end tests
-   per platform as each becomes real.
+**Shipped (working tree):**
+
+- Inventory of Unix-only APIs in `macos.rs`, extraction and tests.
+- `src/platform/scoring.rs` — token matching, sidecar/format rejection,
+  container bonus, build-artifact names. Compiled on every OS.
+- `src/platform/unix.rs` — `remove_any`, `ensure_executable`, `symlink`,
+  `is_ours`, `destination_available`, `clear_destination`, `writable`.
+  macOS placement policy (`place`, `move_into_store`, `link_binary`,
+  `preflight_destinations`) stays in `macos.rs`.
+- `extract/macos` gated `#[cfg(target_os = "macos")]`.
+- CI `check-linux` on `ubuntu-latest`: clippy + `cargo test --all-targets
+  --locked`. End-to-end `tests/install.rs` and `tests/local_install.rs` stay
+  `cfg(macos)`.
+- `self_update::replace_binary` and `local::copy_tree` use the unix helpers
+  behind `cfg(unix)`.
+
+**Also shipped (working tree):**
+
+- `score_macos_asset(name, host_arch, allow_emulation)` in `scoring.rs`;
+  `MacOsPlatform::score_asset` is a wrapper. Classification tables run
+  without the backend (Linux CI included).
+- Table-driven `is_ours` / `destination_available` / `clear_destination`
+  cases in `unix.rs` (recorded `LinkRecord`, regular file, directory).
+- `extract/archive.rs` and macOS `link_binary` / linked-app placement use
+  `unix::symlink`. Remaining Unix filesystem APIs in archive extraction
+  are correct on Linux; isolating them for Windows is Milestone 2.
+- `#[cfg(not(target_os = "macos"))]` tests: `host()` errors with "macOS
+  only"; `ketch doctor` and `ketch install` fail the same way; `ketch
+  list` still works.
+
+Do not start `src/platform/linux.rs` here. That is Milestone 1.
 
 **Exit criteria:** macOS behaviour and persisted link records unchanged; the
 `Platform` trait is sufficient for Linux with no command-level `cfg`s.
 
 ## Milestone 1 — Linux
+
+**Shipped** in the working tree (see `src/platform/linux.rs`,
+`tests/install_linux.rs`, `.github/workflows/cross.yml`).
 
 **Goal:** native Linux CLI releases, with no `.app` or macOS trust behaviour
 leaking into the experience.
@@ -128,6 +585,10 @@ leaking into the experience.
 for Linux tar/zip assets with no macOS-specific output or writes.
 
 ## Milestone 2 — Windows
+
+**Shipped** in the working tree except user-PATH edits (doctor tells the
+user to add the bin dir by hand). See `src/platform/windows.rs`,
+`tests/install_windows.rs`.
 
 **Goal:** native Windows assets, with ownership and uninstall behaviour intact.
 
@@ -259,16 +720,11 @@ explanation comes from the production resolver.
   archive, bare binary, symlink, or macOS `.app` from disk; `list`/`info`
   (text + JSON) surface `local_kind` and path; `outdated` skips them.
 
-
 Each is small enough to land on its own, in no particular order.
 
 - **Install ketch's own completions and a man page.** `ketch completions`
   prints a script and nothing installs it; there is no man page at all. Both
   land naturally with Milestone 4, which is building the destinations anyway.
-- **A root that is not the parent of the bin dir.** `install.sh --install-dir`
-  derives `KETCH_ROOT` from the directory's parent, so `--install-dir ~/bin`
-  makes `~` the ketch root. `self uninstall` is careful about exactly this, but
-  the honest fix is for the installer to take a root of its own.
 
 ## Release sequencing
 

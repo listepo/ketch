@@ -638,8 +638,11 @@ pub fn latest_release(
     prerelease: bool,
 ) -> Result<Release> {
     let source = sources.for_ref(&pkg.source)?;
+    // A manifest that asks for prereleases got one at install time; asking for
+    // `latest` without it here would then report the package as up to date
+    // forever, however many prereleases it has moved through since.
     let opts = ListOpts {
-        include_prerelease: prerelease,
+        include_prerelease: prerelease || pkg.manifest.as_ref().is_some_and(|m| m.prerelease),
         ..Default::default()
     };
     source.resolve(&pkg.source.id, &VersionSpec::Latest, &opts)
@@ -872,7 +875,17 @@ fn remove_store_dir(cfg: &Config, prefix: &Path) {
 /// symlinks and rejecting `..` escapes a corrupted state file could invent.
 fn is_inside_store(store: &Path, prefix: &Path) -> bool {
     use std::path::Component;
-    if prefix
+    // Only the part below the store is the state file's to choose: a root
+    // written with a `..` in it (`KETCH_ROOT=../ketch`) carries that component
+    // in both paths, and refusing it there would quietly disable every cleanup
+    // — uninstall would drop the state entry and leave the payload forever.
+    let Ok(below) = prefix.strip_prefix(store) else {
+        return false;
+    };
+    if below == Path::new("") {
+        return false;
+    }
+    if below
         .components()
         .any(|c| matches!(c, Component::ParentDir))
     {
@@ -887,7 +900,7 @@ fn is_inside_store(store: &Path, prefix: &Path) -> bool {
     // rejecting `..` above. Compare against the caller's store path as given
     // so a not-yet-canonical root still matches the prefixes `package_dir`
     // wrote into state.
-    prefix.starts_with(store) && prefix != store
+    true
 }
 
 /// Deletes a store directory when dropped, unless the install got far enough to
@@ -1100,5 +1113,27 @@ mod tests {
         );
         // The decoy symlink itself may remain; the point is the target survived.
         assert!(decoy.symlink_metadata().is_ok());
+    }
+
+    #[test]
+    fn a_root_written_with_dotdot_still_cleans_up_after_itself() {
+        let tmp = tempfile::tempdir().unwrap();
+        let work = tmp.path().join("work");
+        std::fs::create_dir_all(&work).unwrap();
+        // `KETCH_ROOT=../ketch` keeps the `..` in the root path, and so in
+        // every store prefix below it. Those are the root's components, not the
+        // state file's, and refusing them disables every cleanup there is.
+        let cfg = Config::load(Some(work.join("../ketch"))).unwrap();
+        cfg.ensure_dirs().unwrap();
+        let prefix = cfg.store_dir.join("tool").join("1.0.0");
+        std::fs::create_dir_all(&prefix).unwrap();
+        std::fs::write(prefix.join("tool"), b"x").unwrap();
+
+        remove_store_dir(&cfg, &prefix);
+
+        assert!(
+            !prefix.exists(),
+            "a `..` that came from the root must not stop the payload being removed"
+        );
     }
 }

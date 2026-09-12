@@ -91,8 +91,16 @@ impl Config {
     /// assert!(config.root.is_absolute());
     /// ```
     pub fn load(root_override: Option<PathBuf>) -> Result<Self> {
+        // A variable that is set but empty means "unset" here, as it does for
+        // every other setting below. `KETCH_ROOT=` is what a CI job writes when
+        // it clears a variable, and reading it literally makes the working
+        // directory the ketch root and fills it with store/, bin/ and cache/.
         let root = root_override
-            .or_else(|| std::env::var_os("KETCH_ROOT").map(PathBuf::from))
+            .or_else(|| {
+                std::env::var_os("KETCH_ROOT")
+                    .filter(|v| !v.is_empty())
+                    .map(PathBuf::from)
+            })
             .map(|p| expand_tilde(&p))
             .map(|p| absolute_path(&p))
             .transpose()?
@@ -111,6 +119,7 @@ impl Config {
         // Environment over file, as every other setting here resolves: the file
         // is the standing preference, the variable is this run's override.
         let apps_dir = std::env::var_os("KETCH_APPS_DIR")
+            .filter(|v| !v.is_empty())
             .map(|v| expand_tilde(Path::new(&v)))
             .or_else(|| file.apps_dir.map(|p| expand_tilde(&p)))
             .unwrap_or_else(|| PathBuf::from("/Applications"));
@@ -315,8 +324,12 @@ fn env_bool(key: &str) -> Result<Option<bool>> {
 pub fn validate_repo(what: &str, raw: String) -> Result<String> {
     let repo = raw.trim().trim_start_matches("github:");
     let mut parts = repo.split('/');
+    // `.` is not a traversal, but it is not an owner or a repository either:
+    // `a/.` becomes a URL the path parser rewrites into a different endpoint
+    // than the one that was named.
+    let named = |part: &str| !part.is_empty() && part != "." && part != "..";
     let shaped = matches!((parts.next(), parts.next(), parts.next()), (Some(o), Some(r), None)
-        if !o.is_empty() && !r.is_empty());
+        if named(o) && named(r));
     let printable = repo
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '/'));

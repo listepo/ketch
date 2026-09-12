@@ -7,8 +7,34 @@ use super::{safe_member_path, Extractor};
 use crate::error::{Error, Result};
 use std::fs::File;
 use std::io::{BufReader, Read};
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Component, Path, PathBuf};
+
+fn set_unix_mode(path: &Path, mode: u32) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))
+            .map_err(|e| Error::io(path, e))
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = mode;
+        let _ = path;
+        Ok(())
+    }
+}
+
+fn write_symlink(target: &Path, link: &Path) -> Result<()> {
+    #[cfg(unix)]
+    {
+        crate::platform::unix::symlink(target, link)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (target, link);
+        Ok(())
+    }
+}
 
 /// `.tar.gz` / `.tgz`
 pub struct TarGzExtractor;
@@ -196,7 +222,7 @@ fn unpack_tar<R: Read>(reader: R, dest: &Path) -> Result<()> {
                     .into_owned();
                 check_link_target(&safe, &target)?;
                 ensure_parent(dest, &out)?;
-                std::os::unix::fs::symlink(&target, &out).map_err(|e| Error::io(&out, e))?;
+                write_symlink(&target, &out)?;
             }
             EntryType::Link => {
                 // A tar hard link names its target from the archive root.
@@ -324,16 +350,25 @@ impl Extractor for ZipExtractor {
                     .map_err(|e| Error::io(&out, e))?;
                 let target = PathBuf::from(target.trim());
                 check_link_target(&safe, &target)?;
-                std::os::unix::fs::symlink(&target, &out).map_err(|e| Error::io(&out, e))?;
+                write_symlink(&target, &out)?;
                 continue;
             }
 
             let mut file = File::create(&out).map_err(|e| Error::io(&out, e))?;
             std::io::copy(&mut entry, &mut file).map_err(|e| Error::io(&out, e))?;
+            drop(file);
             // Without this, every binary in a zip lands non-executable.
             if let Some(mode) = mode {
-                std::fs::set_permissions(&out, std::fs::Permissions::from_mode(mode & 0o7777))
-                    .map_err(|e| Error::io(&out, e))?;
+                set_unix_mode(&out, mode & 0o7777)?;
+            }
+            // A zip written on Windows — Java's `ZipOutputStream`, .NET, Gradle
+            // distributions — marks every member 0644 or carries no unix mode
+            // at all. Placement only links files it can run, so from the
+            // outside that payload looks like it contains nothing. The bytes
+            // are the evidence left: a program header says the file is one.
+            if is_program_head(&crate::extract::read_head(&out).unwrap_or_default()) {
+                #[cfg(unix)]
+                crate::platform::unix::ensure_executable(&out)?;
             }
         }
         Ok(())
@@ -362,8 +397,7 @@ impl Extractor for GzFileExtractor {
         drop(written);
         // A lone gzipped file in a release is a program; nothing else is
         // published this way.
-        std::fs::set_permissions(&out, std::fs::Permissions::from_mode(0o755))
-            .map_err(|e| Error::io(&out, e))
+        set_unix_mode(&out, 0o755)
     }
 }
 
@@ -381,8 +415,7 @@ impl Extractor for RawBinaryExtractor {
             .unwrap_or_else(|| "payload".to_string());
         let out = dest.join(safe_member_path(Path::new(&name))?);
         std::fs::copy(src, &out).map_err(|e| Error::io(&out, e))?;
-        std::fs::set_permissions(&out, std::fs::Permissions::from_mode(0o755))
-            .map_err(|e| Error::io(&out, e))
+        set_unix_mode(&out, 0o755)
     }
 }
 
@@ -391,6 +424,11 @@ impl Extractor for RawBinaryExtractor {
 /// Used to tell "a program" from "a README that happens to be marked +x".
 pub fn is_program_head(head: &[u8]) -> bool {
     if head.starts_with(b"#!") {
+        return true;
+    }
+    // DOS/Windows PE. The next two bytes are the PE offset; the MZ magic is enough
+    // to tell a program from a text file published with the same name.
+    if head.starts_with(b"MZ") {
         return true;
     }
     if head.starts_with(b"\x7fELF") {
@@ -411,7 +449,10 @@ pub fn is_program_head(head: &[u8]) -> bool {
 mod tests {
     use super::*;
     use std::io::Write;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
 
+    #[cfg(unix)]
     fn symlink_entry(builder: &mut tar::Builder<Vec<u8>>, name: &str, target: &str) {
         let mut header = tar::Header::new_gnu();
         header.set_entry_type(tar::EntryType::Symlink);
@@ -423,6 +464,7 @@ mod tests {
     /// The escape this guards against is not hypothetical: every member name
     /// below passes `safe_member_path` and `check_link_target`, because both
     /// reason about the name while the kernel resolves the link.
+    #[cfg(unix)]
     #[test]
     fn a_planted_symlink_is_never_written_through() {
         let mut builder = tar::Builder::new(Vec::new());
@@ -462,6 +504,7 @@ mod tests {
         assert!(!dest.join("e").exists(), "the symlink was resolved anyway");
     }
 
+    #[cfg(unix)]
     #[test]
     fn ordinary_symlinks_inside_the_payload_still_work() {
         let mut builder = tar::Builder::new(Vec::new());
@@ -497,6 +540,7 @@ mod tests {
         encoder.finish().unwrap()
     }
 
+    #[cfg(unix)]
     #[test]
     fn extracts_a_tar_gz_and_keeps_the_executable_bit() {
         let dir = tempfile::tempdir().unwrap();
@@ -575,12 +619,68 @@ mod tests {
         assert!(check_link_target(Path::new("tool"), Path::new("../outside")).is_err());
     }
 
+    /// A zip the way Windows tools write one: every member 0644, with no
+    /// execute bit anywhere. Gradle and Maven `-bin.zip` distributions are
+    /// these.
+    fn write_zip_with_mode(path: &std::path::Path, members: &[(&str, &[u8], u32)]) {
+        let file = std::fs::File::create(path).unwrap();
+        let mut writer = zip::ZipWriter::new(file);
+        for (name, body, mode) in members {
+            let options: zip::write::SimpleFileOptions =
+                zip::write::SimpleFileOptions::default().unix_permissions(*mode);
+            writer.start_file(*name, options).unwrap();
+            writer.write_all(body).unwrap();
+        }
+        writer.finish().unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_program_in_a_zip_without_an_execute_bit_still_comes_out_runnable() {
+        let tmp = tempfile::tempdir().unwrap();
+        let archive = tmp.path().join("payload.zip");
+        write_zip_with_mode(
+            &archive,
+            &[
+                ("bin/tool", b"#!/bin/sh\necho hi\n", 0o644),
+                ("README.md", b"# hello\n", 0o644),
+            ],
+        );
+
+        let dest = tmp.path().join("out");
+        std::fs::create_dir_all(&dest).unwrap();
+        ZipExtractor.extract(&archive, &dest).unwrap();
+
+        let mode = std::fs::metadata(dest.join("bin/tool"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o7777;
+        assert_eq!(mode, 0o744, "placement only links a file it can run");
+        // A file that is not a program keeps the mode the archive gave it.
+        let mode = std::fs::metadata(dest.join("README.md"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o7777;
+        assert_eq!(mode, 0o644);
+    }
+
     #[test]
     fn recognises_program_headers() {
         assert!(is_program_head(b"#!/bin/sh"));
-        assert!(is_program_head(&[0xcf, 0xfa, 0xed, 0xfe, 0, 0]));
+        assert!(is_program_head(b"MZ\x90\x00"));
+        // The four magic numbers as they appear in a file: the byte order in
+        // the name is the one the file itself is written in, not the one the
+        // constant is spelled in.
+        assert!(is_program_head(&[0xfe, 0xed, 0xfa, 0xcf, 0, 0])); // Mach-O 64 BE
+        assert!(is_program_head(&[0xcf, 0xfa, 0xed, 0xfe, 0, 0])); // Mach-O 64 LE
+        assert!(is_program_head(&[0xfe, 0xed, 0xfa, 0xce, 0, 0])); // Mach-O 32 BE
+        assert!(is_program_head(&[0xce, 0xfa, 0xed, 0xfe, 0, 0])); // Mach-O 32 LE
+        assert!(is_program_head(&[0xca, 0xfe, 0xba, 0xbe, 0, 0])); // universal
         assert!(is_program_head(b"\x7fELF\x02"));
         assert!(!is_program_head(b"# Readme\n"));
+        assert!(!is_program_head(b"plain text, not a program\n"));
         assert!(!is_program_head(b""));
     }
 }

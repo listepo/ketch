@@ -224,11 +224,8 @@ fn replace_binary(exe: &Path, fresh: &Path) -> Result<()> {
         return Err(restore(Error::io(exe, e)));
     }
     #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        if let Err(e) = std::fs::set_permissions(exe, std::fs::Permissions::from_mode(0o755)) {
-            return Err(restore(Error::io(exe, e)));
-        }
+    if let Err(e) = crate::platform::unix::ensure_executable(exe) {
+        return Err(restore(e));
     }
 
     match Command::new(exe).arg("--version").output() {

@@ -76,6 +76,12 @@ all. Run `ketch update` when a package is missing or out of date.
 
 ## Contributing a package
 
+Registry CI and `ketch registry validate <dir>` run the same checks over every
+package folder: each `ketch.toml` is parsed, passed through
+[`Manifest::validate`](../MANIFESTS.md), and name collisions fail the run.
+A broken entry on someone's machine only warns and is skipped; in the registry
+repository those problems must be fixed before merge.
+
 A `ketch.toml` at the root of a project is the same file its registry folder
 would hold, so contributing it is one command, run from that root:
 

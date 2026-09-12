@@ -53,11 +53,17 @@ pub fn doctor(cfg: &Config, args: DoctorArgs) -> Result<()> {
                 CheckStatus::Warn => (ui::yellow("warn"), ui::bold(&check.name)),
                 CheckStatus::Fail => (ui::red("fail"), ui::bold(&check.name)),
             };
-            ui::out(&format!("{mark} {name}  {}", check.detail));
+            ui::out(&format!(
+                "{mark} {name}  {}",
+                crate::changelog::sanitize(&check.detail)
+            ));
             // The fix belongs with the problem, not in a summary the user has to
             // map back onto the list.
             if let Some(fix) = &check.fix {
-                ui::out(&format!("     {}", ui::dim(fix)));
+                ui::out(&format!(
+                    "     {}",
+                    ui::dim(&crate::changelog::sanitize(fix))
+                ));
             }
         }
     }

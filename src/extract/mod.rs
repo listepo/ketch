@@ -5,6 +5,8 @@
 //! `.zip` while being a tarball.
 
 pub mod archive;
+
+#[cfg(target_os = "macos")]
 pub mod macos;
 
 use crate::error::{Error, Result};

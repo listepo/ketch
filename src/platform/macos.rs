@@ -5,13 +5,18 @@
 //! CLI binary and a `.app` bundle, and trust checks run `codesign`/`spctl`
 //! before any quarantine flag is cleared.
 
+use super::scoring::looks_like_build_artifact;
+use super::unix::{
+    clear_destination, destination_available, discover_executables, link_binary, remove_any,
+    resolve_bin_specs, symlink, writable,
+};
 use super::{AssetScore, DoctorCheck, Placement, Platform, TrustVerdict};
 use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::extract::archive::is_program_head;
 use crate::extract::macos::copy_tree;
 use crate::extract::Extractor;
-use crate::model::{glob_match, Arch, BinSpec, LinkKind, LinkRecord, Os, PackageKind, TargetSpec};
+use crate::model::{Arch, LinkKind, LinkRecord, PackageKind, TargetSpec};
 use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::os::unix::fs::PermissionsExt;
@@ -34,82 +39,6 @@ impl MacOsPlatform {
             target: TargetSpec::host(),
         }
     }
-}
-
-/// Directories inside a payload that never hold the program itself.
-const NOISE_DIRS: &[&str] = &[
-    "share",
-    "doc",
-    "docs",
-    "man",
-    "completions",
-    "complete",
-    "etc",
-    "lib",
-    "include",
-    "licenses",
-    "_internal",
-    "resources",
-];
-
-/// Extra tokens that mark a macOS asset as a build by-product.
-const BYPRODUCT_TOKENS: &[&str] = &["dsym", "debuginfo", "symbols"];
-
-// ---------------------------------------------------------------------------
-// Asset scoring
-// ---------------------------------------------------------------------------
-
-/// Does `needle` appear in `haystack` as a whole token?
-///
-/// Plain `contains` is not usable here: `darwin` contains `win`, `install`
-/// contains `all`, and either would misroute an asset to the wrong platform.
-fn token_at(haystack: &str, needle: &str) -> bool {
-    let bytes = haystack.as_bytes();
-    haystack.match_indices(needle).any(|(start, matched)| {
-        let end = start + matched.len();
-        let left = start == 0 || !bytes[start - 1].is_ascii_alphanumeric();
-        let right = end == bytes.len() || !bytes[end].is_ascii_alphanumeric();
-        left && right
-    })
-}
-
-fn find_token(haystack: &str, tokens: &[&'static str]) -> Option<&'static str> {
-    tokens.iter().copied().find(|t| token_at(haystack, t))
-}
-
-/// Bonus and label for the container format, read off the file name.
-///
-/// The spread is deliberately small: it only breaks ties between assets that
-/// already agree on OS and architecture.
-fn container_bonus(lower: &str) -> (i32, &'static str) {
-    const KNOWN: &[(&str, i32, &str)] = &[
-        (".tar.gz", 8, "tar.gz"),
-        (".tgz", 8, "tar.gz"),
-        (".tar.xz", 7, "tar.xz"),
-        (".txz", 7, "tar.xz"),
-        (".tar.bz2", 5, "tar.bz2"),
-        (".tar", 6, "tar"),
-        (".zip", 6, "zip"),
-        (".gz", 5, "gz"),
-        (".dmg", 3, "dmg"),
-        (".pkg", 2, "pkg"),
-    ];
-    for (suffix, bonus, label) in KNOWN {
-        if lower.ends_with(suffix) {
-            return (*bonus, label);
-        }
-    }
-    // No recognised container: most likely the bare executable.
-    (4, "raw")
-}
-
-fn is_rejected(lower: &str) -> bool {
-    super::is_sidecar(lower)
-        || super::NON_BINARY_TOKENS.iter().any(|t| lower.contains(t))
-        || super::REJECTED_EXTENSIONS
-            .iter()
-            .any(|e| lower.ends_with(e))
-        || BYPRODUCT_TOKENS.iter().any(|t| token_at(lower, t))
 }
 
 // ---------------------------------------------------------------------------
@@ -150,17 +79,6 @@ fn first_line(text: &str) -> String {
 // ---------------------------------------------------------------------------
 // Placement helpers
 // ---------------------------------------------------------------------------
-
-/// Remove whatever is at `path` — file, symlink or directory — treating "it
-/// was not there" as success.
-fn remove_any(path: &Path) -> std::io::Result<()> {
-    match std::fs::symlink_metadata(path) {
-        Ok(meta) if meta.is_dir() => std::fs::remove_dir_all(path),
-        Ok(_) => std::fs::remove_file(path),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(e),
-    }
-}
 
 /// A path next to `original`, so swapping the two is a rename that never
 /// crosses a filesystem.
@@ -209,16 +127,6 @@ fn move_into_store(payload: &Path, store: &Path) -> Result<()> {
     Ok(())
 }
 
-fn ensure_executable(path: &Path) -> Result<()> {
-    let meta = std::fs::metadata(path).map_err(|e| Error::io(path, e))?;
-    let mode = meta.permissions().mode();
-    if mode & 0o111 != 0 {
-        return Ok(());
-    }
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode | 0o111))
-        .map_err(|e| Error::io(path, e))
-}
-
 /// True when `path` sits inside *another* bundle — a helper app nested in the
 /// one being installed, which must not be placed in the applications directory
 /// on its own.
@@ -239,73 +147,6 @@ fn is_inside_bundle(path: &Path, root: &Path) -> bool {
         })
 }
 
-/// A raw binary asset lands under the asset's own file name — `jq-macos-arm64`
-/// — which is not what anyone wants on PATH. Rename to the package name only
-/// when the discovered name plainly carries build metadata and there is no
-/// second binary that the rename could collide with.
-fn looks_like_build_artifact(name: &str) -> bool {
-    let lower = name.to_ascii_lowercase();
-    let platform_token = [
-        Os::MacOs.tokens(),
-        Arch::Aarch64.tokens(),
-        Arch::X86_64.tokens(),
-        Arch::Universal.tokens(),
-    ]
-    .iter()
-    .flat_map(|set| set.iter())
-    .any(|t| token_at(&lower, t));
-
-    platform_token || has_version_run(&lower)
-}
-
-/// True for names carrying something like `1.2` or `v3`.
-fn has_version_run(lower: &str) -> bool {
-    let bytes = lower.as_bytes();
-    bytes
-        .windows(3)
-        .any(|w| w[0].is_ascii_digit() && w[1] == b'.' && w[2].is_ascii_digit())
-        || bytes
-            .windows(2)
-            .any(|w| w[0] == b'v' && w[1].is_ascii_digit())
-}
-
-/// Every executable file in the payload that is a plausible entry point.
-fn discover_executables(platform: &MacOsPlatform, root: &Path) -> Vec<PathBuf> {
-    let mut found: Vec<PathBuf> = walkdir::WalkDir::new(root)
-        .max_depth(4)
-        .follow_links(false)
-        .into_iter()
-        .filter_entry(|e| {
-            // Never descend into a bundle or a docs tree looking for a CLI.
-            let name = e.file_name().to_string_lossy().to_ascii_lowercase();
-            e.path() == root
-                || !(name.ends_with(".app")
-                    || name.ends_with(".framework")
-                    || NOISE_DIRS.contains(&name.as_str()))
-        })
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().is_file())
-        .map(|e| e.into_path())
-        .filter(|p| platform.is_executable(p))
-        .collect();
-
-    // A `bin/` directory is an explicit statement about what to expose.
-    let in_bin: Vec<PathBuf> = found
-        .iter()
-        .filter(|p| {
-            p.parent()
-                .and_then(|d| d.file_name())
-                .is_some_and(|n| n == "bin")
-        })
-        .cloned()
-        .collect();
-    if !in_bin.is_empty() {
-        found = in_bin;
-    }
-    found.sort();
-    found
-}
-
 fn find_app_bundles(root: &Path) -> Vec<PathBuf> {
     walkdir::WalkDir::new(root)
         .max_depth(3)
@@ -319,100 +160,6 @@ fn find_app_bundles(root: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
-/// Resolve the manifest's explicit binary list against the extracted payload.
-fn resolve_bin_specs(root: &Path, specs: &[BinSpec]) -> Result<Vec<(PathBuf, String)>> {
-    let candidates: Vec<PathBuf> = walkdir::WalkDir::new(root)
-        .max_depth(6)
-        .follow_links(false)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().is_file())
-        .map(|e| e.into_path())
-        .collect();
-
-    let mut out = Vec::new();
-    for spec in specs {
-        let matched = match &spec.path {
-            Some(pattern) => candidates.iter().find(|p| {
-                p.strip_prefix(root)
-                    .ok()
-                    .is_some_and(|rel| glob_match(pattern, &rel.to_string_lossy()))
-            }),
-            None => {
-                let want = spec.name.as_deref().unwrap_or_default();
-                candidates
-                    .iter()
-                    .find(|p| p.file_name().is_some_and(|n| n == want))
-            }
-        };
-        let path = matched.ok_or_else(|| {
-            Error::msg(format!(
-                "manifest expects `{}` but the release payload does not contain it",
-                spec.path
-                    .clone()
-                    .or_else(|| spec.name.clone())
-                    .unwrap_or_else(|| "<unnamed>".into())
-            ))
-        })?;
-        let name = spec.name.clone().unwrap_or_else(|| {
-            path.file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .into_owned()
-        });
-        out.push((path.clone(), name));
-    }
-    Ok(out)
-}
-
-/// Whether an occupied destination is this package's own to replace.
-///
-/// Two kinds of evidence. A symlink pointing into `owned` — the package's
-/// directory in the store, covering every version of it — was made by ketch for
-/// this package. A copied `.app` leaves no mark on disk at all, so the only
-/// evidence there is the record written when it was placed.
-///
-/// Anything else is somebody else's: another package that claims the same
-/// binary name, or an application the user installed themselves. Taking one
-/// over silently means uninstalling this package later deletes it.
-fn is_ours(link: &Path, owned: &Path, recorded: &[LinkRecord]) -> bool {
-    if recorded.iter().any(|r| r.link == link) {
-        return true;
-    }
-    // Lexical `starts_with` alone would treat `owned/../../elsewhere` as ours.
-    let Ok(target) = std::fs::read_link(link) else {
-        return false;
-    };
-    if target
-        .components()
-        .any(|c| matches!(c, std::path::Component::ParentDir))
-    {
-        return false;
-    }
-    target.starts_with(owned)
-}
-
-/// Clear a destination, or explain who already has it.
-fn clear_destination(link: &Path, owned: &Path, recorded: &[LinkRecord]) -> Result<()> {
-    destination_available(link, owned, recorded)?;
-    remove_any(link).map_err(|e| Error::io(link, e))
-}
-
-fn destination_available(link: &Path, owned: &Path, recorded: &[LinkRecord]) -> Result<()> {
-    match std::fs::symlink_metadata(link) {
-        Ok(_) if !is_ours(link, owned, recorded) => Err(Error::msg(format!(
-            "{} already exists and was not installed by ketch for this package; \
-             move it aside first",
-            link.display()
-        ))),
-        Ok(_) => Ok(()),
-        Err(_) => Ok(()),
-    }
-}
-
-/// Check all destinations before replacing any old links. A multi-binary
-/// upgrade must not install its first link and only then discover that its
-/// second name belongs to another package.
 fn preflight_destinations(
     platform: &MacOsPlatform,
     plan: &Placement<'_>,
@@ -487,27 +234,6 @@ fn preflight_destinations(
     Ok(())
 }
 
-fn link_binary(
-    target: &Path,
-    bin_dir: &Path,
-    name: &str,
-    owned: &Path,
-    recorded: &[LinkRecord],
-) -> Result<LinkRecord> {
-    std::fs::create_dir_all(bin_dir).map_err(|e| Error::io(bin_dir, e))?;
-    let link = bin_dir.join(name);
-    clear_destination(&link, owned, recorded)?;
-
-    // zip archives and `ditto` both lose the execute bit often enough.
-    ensure_executable(target)?;
-    std::os::unix::fs::symlink(target, &link).map_err(|e| Error::io(&link, e))?;
-    Ok(LinkRecord {
-        link,
-        target: target.to_path_buf(),
-        kind: LinkKind::Symlink,
-    })
-}
-
 fn place_app(
     bundle: &Path,
     apps_dir: &Path,
@@ -521,7 +247,7 @@ fn place_app(
     clear_destination(&link, owned, recorded)?;
 
     if link_apps {
-        std::os::unix::fs::symlink(bundle, &link).map_err(|e| Error::io(&link, e))?;
+        symlink(bundle, &link)?;
         return Ok(LinkRecord {
             link,
             target: bundle.to_path_buf(),
@@ -549,69 +275,7 @@ impl Platform for MacOsPlatform {
     }
 
     fn score_asset(&self, asset_name: &str, allow_emulation: bool) -> Option<AssetScore> {
-        let lower = asset_name.trim().to_ascii_lowercase();
-        if lower.is_empty() || is_rejected(&lower) {
-            return None;
-        }
-
-        // Anything that names a foreign OS is not ours, whatever else it says.
-        if find_token(&lower, Os::Linux.tokens()).is_some()
-            || find_token(&lower, Os::Windows.tokens()).is_some()
-        {
-            return None;
-        }
-
-        let mut score = 0;
-        let mut reason = Vec::new();
-        match find_token(&lower, Os::MacOs.tokens()) {
-            Some(token) => {
-                score += 50;
-                reason.push(token.to_string());
-            }
-            // No OS in the name at all: single-platform projects do this, so it
-            // stays a candidate but loses to anything explicit.
-            None => score += 15,
-        }
-
-        let host = self.target.arch;
-        let (arch, emulated) = if find_token(&lower, host.tokens()).is_some() {
-            score += 40;
-            (host, false)
-        } else if find_token(&lower, Arch::Universal.tokens()).is_some() {
-            score += 35;
-            (Arch::Universal, false)
-        } else if host == Arch::Aarch64 && find_token(&lower, Arch::X86_64.tokens()).is_some() {
-            score += 10;
-            (Arch::X86_64, true)
-        } else if find_token(&lower, Arch::Aarch64.tokens()).is_some()
-            || find_token(&lower, Arch::X86_64.tokens()).is_some()
-        {
-            // Names a real architecture, just not one this machine can run.
-            return None;
-        } else {
-            score += 18;
-            (Arch::Universal, false)
-        };
-
-        if emulated {
-            if !allow_emulation {
-                return None;
-            }
-            reason.push("x86_64 under Rosetta".to_string());
-        } else {
-            reason.push(arch.to_string());
-        }
-
-        let (bonus, container) = container_bonus(&lower);
-        score += bonus;
-        reason.push(container.to_string());
-
-        Some(AssetScore {
-            score,
-            arch,
-            emulated,
-            reason: reason.join(" / "),
-        })
+        super::scoring::score_macos_asset(asset_name, self.target.arch, allow_emulation)
     }
 
     fn extractors(&self) -> Vec<Box<dyn Extractor>> {
@@ -705,22 +369,7 @@ impl Platform for MacOsPlatform {
     }
 
     fn unplace(&self, links: &[LinkRecord]) -> Result<()> {
-        for record in links {
-            // A symlink that no longer points where we put it belongs to
-            // something else now — another package that took the name over, or
-            // the user. Removing it would break whatever owns it.
-            if std::fs::read_link(&record.link).is_ok_and(|t| t != record.target) {
-                crate::ui::debug(&format!(
-                    "leaving {}: it no longer points at {}",
-                    record.link.display(),
-                    record.target.display()
-                ));
-                continue;
-            }
-            // Anything already gone is fine: uninstall stays idempotent.
-            remove_any(&record.link).map_err(|e| Error::io(&record.link, e))?;
-        }
-        Ok(())
+        super::unix::unplace(links)
     }
 
     fn verify_trust(&self, path: &Path) -> Result<TrustVerdict> {
@@ -868,97 +517,9 @@ impl Platform for MacOsPlatform {
     }
 }
 
-fn writable(dir: &Path) -> std::result::Result<(), String> {
-    if !dir.exists() {
-        return Err("does not exist".to_string());
-    }
-    tempfile::Builder::new()
-        .prefix(".ketch-probe")
-        .tempfile_in(dir)
-        .map(|_| ())
-        .map_err(|e| e.to_string())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn score(name: &str) -> Option<AssetScore> {
-        MacOsPlatform::new().score_asset(name, true)
-    }
-
-    #[test]
-    fn token_matching_respects_word_boundaries() {
-        // The whole reason `contains` is not good enough.
-        assert!(!token_at("x86_64-apple-darwin", "win"));
-        assert!(token_at("tool-windows-amd64.zip", "windows"));
-        assert!(!token_at("tool-install.tar.gz", "all"));
-        assert!(token_at("tool-universal-all.zip", "all"));
-    }
-
-    #[test]
-    fn rejects_foreign_platforms_and_sidecars() {
-        for name in [
-            "rg-14.1.0-x86_64-unknown-linux-musl.tar.gz",
-            "tool-windows-amd64.zip",
-            "rg-14.1.0-aarch64-apple-darwin.tar.gz.sha256",
-            "ripgrep_14.1.0_amd64.deb",
-            "checksums.txt",
-            "tool-macos-arm64.dSYM.zip",
-        ] {
-            assert!(score(name).is_none(), "should have rejected {name}");
-        }
-    }
-
-    #[test]
-    fn prefers_the_native_architecture_over_emulation() {
-        let native = score("rg-14.1.0-aarch64-apple-darwin.tar.gz").unwrap();
-        let rosetta = score("rg-14.1.0-x86_64-apple-darwin.tar.gz").unwrap();
-        let host = TargetSpec::host().arch;
-        if host == Arch::Aarch64 {
-            assert!(native.score > rosetta.score);
-            assert!(rosetta.emulated && !native.emulated);
-            // Emulation is a choice, not a default the user cannot refuse.
-            assert!(MacOsPlatform::new()
-                .score_asset("rg-14.1.0-x86_64-apple-darwin.tar.gz", false)
-                .is_none());
-        }
-    }
-
-    #[test]
-    fn universal_builds_are_accepted_on_any_mac() {
-        let universal = score("tool-1.0-universal2-apple-darwin.tar.gz").unwrap();
-        assert_eq!(universal.arch, Arch::Universal);
-        assert!(!universal.emulated);
-    }
-
-    #[test]
-    fn names_without_an_os_still_qualify_but_rank_lower() {
-        let explicit = score("tool_1.0_darwin_arm64.tar.gz").unwrap();
-        let bare = score("tool_1.0_arm64.tar.gz").unwrap();
-        assert!(explicit.score > bare.score);
-    }
-
-    #[test]
-    fn recognises_build_metadata_in_a_binary_name() {
-        assert!(looks_like_build_artifact("jq-macos-arm64"));
-        assert!(looks_like_build_artifact("tool-v1.2.3"));
-        assert!(!looks_like_build_artifact("rg"));
-        assert!(!looks_like_build_artifact("fd"));
-    }
-
-    #[test]
-    fn making_a_binary_executable_does_not_grant_read_access() {
-        let tmp = tempfile::tempdir().unwrap();
-        let path = tmp.path().join("tool");
-        std::fs::write(&path, b"#!/bin/sh\n").unwrap();
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
-
-        ensure_executable(&path).unwrap();
-
-        let mode = std::fs::metadata(path).unwrap().permissions().mode() & 0o7777;
-        assert_eq!(mode, 0o711);
-    }
 
     #[test]
     fn app_bundles_are_found_but_their_helpers_are_not() {
@@ -997,6 +558,44 @@ mod tests {
         );
         assert!(!store.with_file_name("1.0.old").exists());
         assert!(!store.with_file_name("1.0.incoming").exists());
+    }
+
+    #[test]
+    fn unplace_leaves_a_file_the_user_put_where_a_link_was() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = tmp.path().join("store/pkg/1.0");
+        std::fs::create_dir_all(&store).unwrap();
+        let target = store.join("tool");
+        std::fs::write(&target, b"#!/bin/sh\n").unwrap();
+
+        let bin = tmp.path().join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let link = bin.join("tool");
+        let record = LinkRecord {
+            link: link.clone(),
+            target: target.clone(),
+            kind: LinkKind::Symlink,
+        };
+        let platform = MacOsPlatform::new();
+
+        // The link ketch made is ketch's to remove.
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        platform.unplace(std::slice::from_ref(&record)).unwrap();
+        assert!(std::fs::symlink_metadata(&link).is_err());
+
+        // The user replaced it with a copy of their own: the record is stale,
+        // and removing what is there would delete their file.
+        std::fs::write(&link, b"the user's own build").unwrap();
+        platform.unplace(std::slice::from_ref(&record)).unwrap();
+        assert_eq!(
+            std::fs::read(&link).unwrap(),
+            b"the user's own build",
+            "a stale record must not authorize deleting the user's file"
+        );
+
+        // Already gone is not a failure: uninstall stays idempotent.
+        std::fs::remove_file(&link).unwrap();
+        platform.unplace(&[record]).unwrap();
     }
 
     #[test]
@@ -1158,33 +757,5 @@ mod tests {
         std::os::unix::fs::symlink(&ours, &link).unwrap();
         platform.unplace(&[record]).unwrap();
         assert!(link.symlink_metadata().is_err());
-    }
-
-    #[test]
-    fn a_symlink_target_with_dotdot_is_not_treated_as_ours() {
-        let tmp = tempfile::tempdir().unwrap();
-        let owned = tmp.path().join("store/pkg");
-        std::fs::create_dir_all(&owned).unwrap();
-        let elsewhere = tmp.path().join("elsewhere");
-        std::fs::write(&elsewhere, b"x").unwrap();
-        let link = tmp.path().join("bin/tool");
-        std::fs::create_dir_all(link.parent().unwrap()).unwrap();
-        // Lexically under `owned`, but resolves outside via `..`.
-        let sneaky = owned
-            .join("1.0")
-            .join("..")
-            .join("..")
-            .join("..")
-            .join("elsewhere");
-        assert!(
-            sneaky.starts_with(&owned),
-            "precondition: lexical starts_with alone would allow this"
-        );
-        std::os::unix::fs::symlink(&sneaky, &link).unwrap();
-        assert!(
-            !is_ours(&link, &owned, &[]),
-            "`..` in a symlink target must not count as owned"
-        );
-        assert!(destination_available(&link, &owned, &[]).is_err());
     }
 }

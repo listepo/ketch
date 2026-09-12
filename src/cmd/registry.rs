@@ -1,21 +1,24 @@
-//! `ketch registry`: offering a package to the registry, with a review step.
+//! `ketch registry`: validate a registry tree and offer packages to it.
 //!
-//! `push` puts a project's `ketch.toml` in front of the people who curate
-//! the registry, as a pull request — but looks before it leaps. The
+//! `validate` is the fail-closed check registry CI runs over every package
+//! folder. `push` puts a project's `ketch.toml` in front of the people who
+//! curate the registry, as a pull request — but looks before it leaps. The
 //! registry's current copy of the package file is fetched first, so an
 //! update shows its diff and asks before the pull request is opened, and a
 //! package the registry has never seen says so before it is added.
 
 use crate::cli::RegistryCommand;
 use crate::config::{self, Config};
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::push;
+use crate::registry;
 use crate::ui;
 use std::path::PathBuf;
 
 /// Entry point for `ketch registry <command>`.
 pub fn run(cfg: &Config, command: RegistryCommand) -> Result<()> {
     match command {
+        RegistryCommand::Validate { dir, json } => validate(dir, json),
         RegistryCommand::Push {
             file,
             registry,
@@ -23,6 +26,79 @@ pub fn run(cfg: &Config, command: RegistryCommand) -> Result<()> {
             yes,
         } => push(cfg, file, registry, dry_run, yes),
     }
+}
+
+/// `ketch registry validate`: every package folder, parsed and checked.
+fn validate(dir: Option<PathBuf>, json: bool) -> Result<()> {
+    let dir = dir.unwrap_or_else(|| PathBuf::from("."));
+    let report = registry::check_tree(&dir);
+
+    if json {
+        print_validate_json(&report)?;
+    } else {
+        for error in &report.errors {
+            // One error per line, so a CI log can be grepped for them; the
+            // paths and messages come from a tree someone else wrote, so they
+            // pass through the same filter a changelog does. `--json` keeps the
+            // original text for whoever wants it.
+            ui::out(&one_line(&format!(
+                "{}: {}",
+                crate::changelog::sanitize(&error.path),
+                crate::changelog::sanitize(&error.message),
+            )));
+        }
+        if report.errors.is_empty() {
+            ui::success("validated", &count(report.packages, "package"));
+        }
+    }
+
+    // The errors themselves are the output a failing run exists to produce, so
+    // they are already on stdout; this is what sets the exit code, and it is
+    // the same sentence in both formats.
+    if !report.errors.is_empty() {
+        return Err(Error::msg(count(report.errors.len(), "validation error")));
+    }
+    Ok(())
+}
+
+/// Fold a message onto one line: a parse error can span several.
+fn one_line(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// `1 package` / `2 packages`, for the two counts this command reports.
+fn count(n: usize, what: &str) -> String {
+    format!("{n} {what}{}", if n == 1 { "" } else { "s" })
+}
+
+fn print_validate_json(report: &registry::Report) -> Result<()> {
+    let status = if report.errors.is_empty() {
+        "ok"
+    } else {
+        "fail"
+    };
+    let errors = report
+        .errors
+        .iter()
+        .map(|error| {
+            // JSON is a machine format, but it is printed to a terminal too:
+            // serde escapes control characters and not bidi overrides, and a
+            // package file someone else wrote can carry either.
+            serde_json::json!({
+                "path": crate::changelog::sanitize(&error.path),
+                "message": crate::changelog::sanitize(&error.message),
+            })
+        })
+        .collect::<Vec<_>>();
+    let value = serde_json::json!({
+        "status": status,
+        "packages": report.packages,
+        "errors": errors,
+    });
+    let text = serde_json::to_string_pretty(&value)
+        .map_err(|e| Error::parse("json output".to_string(), e.to_string()))?;
+    ui::out(&text);
+    Ok(())
 }
 
 /// `ketch registry push`: this project's package file, as a registry pull

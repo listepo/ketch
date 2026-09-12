@@ -39,9 +39,11 @@ the host's own `CHANGELOG.md` is written for it by release-plz. The host is
 also a client of itself: `ketch self install` records it in `state.json` as
 the package `ketch`, and the root `ketch.toml` is its manifest.
 
-macOS is the only implemented platform. `src/platform/mod.rs` gates it with
-`#[cfg(target_os = "macos")]` and returns a clear error elsewhere, so a Linux
-backend means implementing the `Platform` trait — nothing above it changes.
+macOS, Linux and Windows each have a `Platform` backend in `src/platform/`.
+`host()` selects it. Another OS still means implementing that trait — nothing
+above it changes. End-to-end tests are gated with `#[cfg(target_os = "...")]`
+so `cargo test` on a host runs that OS's suite. Windows CI is
+`.github/workflows/cross.yml` (`workflow_dispatch`).
 
 ## Commands
 
@@ -165,7 +167,7 @@ conditional, multi-stage Rust automation.
 | `src/install.rs` | the install/uninstall/relink pipeline every command shares |
 | `src/source/` | where releases come from: GitHub built in, plugins external |
 | `src/extract/` | archive formats, selected by sniffing content not file names |
-| `src/platform/` | OS-specific placement, linking, trust checks |
+| `src/platform/` | OS-specific placement, linking, trust checks (`macos.rs`, `linux.rs`, `windows.rs`) |
 | `src/shell.rs` | putting the bin dir on PATH in bash, zsh and fish |
 | `src/registry.rs` | the fetched package registry (see `docs/REGISTRY.md`) |
 | `src/manifest.rs` | resolving a name to a `Manifest` across four tiers |
@@ -258,9 +260,13 @@ Reuse the guards that exist rather than writing new ones:
 - `config::validate_repo` — anything that becomes `github.com/owner/repo`.
 - `self_update::remove_root` — takes the ketch root apart by naming the
   directories and files ketch creates, then removes the root itself only if
-  nothing else is left in it. `install.sh --install-dir ~/bin` makes the root
-  that directory's parent, so a `remove_dir_all` on the root is a way to delete
-  someone's home directory. Anything left behind is reported, never removed.
+  nothing else is left in it. Older `install.sh --install-dir ~/bin` derived
+  the root as that directory's parent (`$HOME`); a `remove_dir_all` on the
+  root would delete someone's home. Current `install.sh` keeps `--root`
+  (default `~/.ketch`) independent of `--install-dir`. Uninstall still refuses
+  to wipe named children when the root is `$HOME`, because a leftover tree
+  from those older installers can still look like that. Anything left
+  behind is reported, never removed.
 - `changelog::sanitize` — drops escape sequences and bidi overrides from client
   prose before it is printed. A changelog and the registry's copy of a package
   file, shown as `ketch registry push`'s review diff, are the places ketch shows

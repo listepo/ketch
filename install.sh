@@ -32,13 +32,11 @@ Install ketch, a Rust CLI for managing GitHub-released apps on macOS.
 
 OPTIONS:
   --version <TAG>      Install specific version (default: latest)
-  --root <DIR>         Ketch root, where ketch keeps its store and bin dir
-                       (default: $DEFAULT_ROOT)
-  --install-dir <DIR>  The root's bin dir, as another way to name the root:
-                       the root becomes its parent. Beside --root it must be
-                       <root>/bin (default: $DEFAULT_INSTALL_DIR)
+  --root <DIR>         Ketch store root (default: $DEFAULT_ROOT)
+  --install-dir <DIR>  Bootstrap location: where this script places a ketch
+                       binary on your PATH (default: <root>/bin)
   --no-modify-path     Don't modify PATH in shell config files
-  --help              Show this help message
+  --help               Show this help message
 EOF
 }
 
@@ -50,11 +48,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Parse arguments. ROOT and INSTALL_DIR stay empty unless given, so the check
-# below can tell a flag that was passed from one left at its default.
+# Parse arguments. INSTALL_DIR stays empty unless given so we can tell an
+# explicit --install-dir from the default <root>/bin after ROOT is resolved.
 VERSION=""
 ROOT=""
 INSTALL_DIR=""
+INSTALL_DIR_EXPLICIT=0
 NO_MODIFY_PATH=0
 
 while [ $# -gt 0 ]; do
@@ -72,6 +71,7 @@ while [ $# -gt 0 ]; do
     --install-dir)
       shift
       INSTALL_DIR="$1"
+      INSTALL_DIR_EXPLICIT=1
       shift
       ;;
     --no-modify-path)
@@ -90,24 +90,22 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# --install-dir names the root's bin dir, so all it can say is where the root
-# is. Alone, the root is its parent; beside a --root it has to agree, because
-# ketch always installs into <root>/bin and one of the two would otherwise be
-# silently ignored.
-if [ -n "${INSTALL_DIR}" ]; then
-  if [ -z "${ROOT}" ]; then
-    trimmed="${INSTALL_DIR%/}"
-    ROOT="${trimmed%/*}"
-  fi
-  if [ "${INSTALL_DIR%/}" != "${ROOT%/}/bin" ]; then
-    echo "${RED}Error: --install-dir ${INSTALL_DIR} is not ${ROOT%/}/bin, the bin dir of --root ${ROOT}.${NC}" >&2
-    echo "ketch always installs into <root>/bin; pass just one of the two." >&2
-    exit 1
-  fi
-fi
 ROOT="${ROOT:-${DEFAULT_ROOT}}"
+INSTALL_DIR="${INSTALL_DIR:-${ROOT%/}/bin}"
 
-# The parsed root controls self-installation and every managed path below.
+# Both may be relative, and the script cds into a temp directory below: a
+# relative path would be created inside it and deleted with it on exit, leaving
+# nothing installed. Resolve them against the directory the user ran this in.
+case "${ROOT}" in
+  /*) ;;
+  *) ROOT="${PWD}/${ROOT}" ;;
+esac
+case "${INSTALL_DIR}" in
+  /*) ;;
+  *) INSTALL_DIR="${PWD}/${INSTALL_DIR}" ;;
+esac
+
+# KETCH_ROOT is only --root (or its default), never derived from --install-dir.
 KETCH_ROOT="${ROOT}"
 export KETCH_ROOT
 
@@ -282,6 +280,33 @@ xattr -d com.apple.quarantine "${BINARY_PATH}" 2>/dev/null || true
   echo "${RED}Error: ketch could not install itself into ${ROOT}.${NC}" >&2
   exit 1
 }
+
+# A bootstrap dir outside <root>/bin gets a link to the installed binary — a
+# link and not a copy, because `ketch self update` replaces `<root>/bin/ketch`
+# in place: a copy would go on running the version it was made from. `ln -s`
+# also works across filesystems, where a hard link would not.
+if [ "${INSTALL_DIR_EXPLICIT}" -eq 1 ]; then
+  mkdir -p "${INSTALL_DIR}" || {
+    echo "${RED}Error: Failed to create bootstrap directory: ${INSTALL_DIR}${NC}" >&2
+    exit 1
+  }
+  # Compare where the two directories really are. `/tmp/x/bin` and
+  # `/private/tmp/x/bin`, a doubled slash and a `./` in the middle all name one
+  # directory, and a string compare says otherwise — then the link below points
+  # the installed binary at itself and takes the install with it.
+  INSTALL_DIR="$(cd "${INSTALL_DIR}" && pwd -P)"
+  BIN_DIR="$(cd "${ROOT%/}/bin" && pwd -P)"
+  if [ "${INSTALL_DIR}" != "${BIN_DIR}" ]; then
+    BOOTSTRAP_PATH="${INSTALL_DIR}/${BINARY_NAME}"
+    if ! ln -sfn "${INSTALL_PATH}" "${BOOTSTRAP_PATH}"; then
+      cp "${INSTALL_PATH}" "${BOOTSTRAP_PATH}" || {
+        echo "${RED}Error: Failed to place ${BINARY_NAME} in ${INSTALL_DIR}.${NC}" >&2
+        exit 1
+      }
+    fi
+    chmod 755 "${BOOTSTRAP_PATH}"
+  fi
+fi
 
 # Wire up PATH. ketch owns this: `ketch path install` knows bash, zsh and fish,
 # quotes the directory properly, and can undo itself — which is more than this

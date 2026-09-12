@@ -140,3 +140,93 @@ fn tui_request_falls_back_without_terminal_escape_sequences_in_ci() {
         .stdout("nothing installed\n")
         .stderr(predicate::str::contains("\x1b").not());
 }
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+mod unsupported_host {
+    use assert_cmd::Command;
+    use assert_fs::prelude::*;
+    use predicates::prelude::*;
+
+    #[test]
+    fn doctor_fails_when_the_host_is_unsupported() {
+        let temp = assert_fs::TempDir::new().unwrap();
+        let root = temp.child("ketch-root");
+
+        let assert = Command::cargo_bin("ketch")
+            .unwrap()
+            .args(["--root", root.path().to_str().unwrap(), "doctor"])
+            .env("NO_COLOR", "1")
+            .assert()
+            .failure();
+
+        let stdout = String::from_utf8_lossy(&assert.get_output().stdout);
+        let stderr = String::from_utf8_lossy(&assert.get_output().stderr);
+        let combined = format!("{stdout}{stderr}");
+        assert!(
+            combined.contains("macOS only"),
+            "doctor did not report an unsupported host:
+stdout:
+{stdout}
+stderr:
+{stderr}"
+        );
+        assert!(
+            !combined.to_ascii_lowercase().contains("internal error"),
+            "doctor reported an internal error:
+{combined}"
+        );
+    }
+
+    #[test]
+    fn list_still_works_on_an_unsupported_host() {
+        let temp = assert_fs::TempDir::new().unwrap();
+        let root = temp.child("ketch-root");
+
+        Command::cargo_bin("ketch")
+            .unwrap()
+            .args(["--root", root.path().to_str().unwrap(), "list"])
+            .env("NO_COLOR", "1")
+            .assert()
+            .success()
+            .stdout(
+                "nothing installed
+",
+            )
+            .stderr(predicate::str::is_empty());
+    }
+
+    #[test]
+    fn install_fails_with_macos_only_on_an_unsupported_host() {
+        let temp = assert_fs::TempDir::new().unwrap();
+        let root = temp.child("ketch-root");
+
+        let assert = Command::cargo_bin("ketch")
+            .unwrap()
+            .args([
+                "--root",
+                root.path().to_str().unwrap(),
+                "install",
+                "ripgrep",
+            ])
+            .env("NO_COLOR", "1")
+            .assert()
+            .failure();
+
+        let stdout = String::from_utf8_lossy(&assert.get_output().stdout);
+        let stderr = String::from_utf8_lossy(&assert.get_output().stderr);
+        let combined = format!("{stdout}{stderr}");
+        assert!(
+            combined.contains("macOS only"),
+            "install did not report macOS-only limitation:
+stdout:
+{stdout}
+stderr:
+{stderr}"
+        );
+        assert!(
+            !combined.to_ascii_lowercase().contains("internal error"),
+            "install reported an internal error:
+{combined}"
+        );
+    }
+}

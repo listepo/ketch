@@ -386,6 +386,17 @@ pub enum ConfigCommand {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum RegistryCommand {
+    /// Validate a registry tree (every `ketch.toml`) the way CI will
+    Validate {
+        /// Registry tree to validate (default: current directory)
+        #[arg(value_name = "DIR")]
+        dir: Option<PathBuf>,
+
+        /// Emit JSON instead of text
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Compare this project's `ketch.toml` with the registry's copy, show the
     /// difference, and open a pull request with it
     Push {
@@ -438,7 +449,7 @@ pub struct PathInstallArgs {
     pub common: PathArgs,
 
     /// Print the line to add by hand instead of editing anything
-    #[arg(long, conflicts_with_all = ["all", "dry_run"])]
+    #[arg(long, conflicts_with_all = ["all", "dry_run", "shell"])]
     pub print: bool,
 }
 

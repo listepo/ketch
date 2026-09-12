@@ -105,6 +105,7 @@ ketch doctor --fix         # and repair the PATH setup while it is there
 ketch path install         # put ~/.ketch/bin on PATH in bash, zsh and fish
 ketch config create        # write a ketch.toml by answering questions
 ketch registry push        # offer it to the registry, showing the diff first
+ketch registry validate    # check a registry tree the way registry CI does
 ketch self update          # upgrade ketch itself
 ketch self uninstall       # remove ketch and everything it installed
 ```
@@ -278,8 +279,10 @@ A token is not required, but it raises GitHub's rate limit considerably.
 
 ## Platform support
 
-macOS only for now. The OS-specific parts sit behind one `Platform` trait, so
-a Linux or Windows backend means implementing that trait and nothing above it.
+macOS, Linux and Windows. Each OS has a `Platform` backend that picks a release
+asset, unpacks it and places binaries; everything above that trait is shared.
+`cargo test` runs the suite for the host OS. Linux CI does that on every PR;
+Windows is the `cross` workflow (run by hand).
 [ROADMAP.md](ROADMAP.md) says what that would take, along with everything else
 ketch does not do yet.
 

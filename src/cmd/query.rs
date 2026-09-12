@@ -46,7 +46,7 @@ pub fn list(cfg: &Config, args: ListArgs) -> Result<()> {
     }
     if args.names_only {
         for pkg in &packages {
-            ui::out(&pkg.name);
+            ui::out(&crate::changelog::sanitize(&pkg.name));
         }
         return Ok(());
     }
@@ -249,11 +249,19 @@ pub fn info(cfg: &Config, args: InfoArgs) -> Result<()> {
         .as_deref()
         .or_else(|| described.as_ref().and_then(|d| d.description.as_deref()));
     if let Some(text) = description {
-        ui::out(text);
+        // A registry or user manifest's prose: somebody else's text on its way
+        // to a terminal.
+        ui::out(&crate::changelog::sanitize(text));
     }
     ui::out("");
 
-    let field = |label: &str, value: String| ui::out(&format!("{:<12} {value}", ui::dim(label)));
+    let field = |label: &str, value: String| {
+        ui::out(&format!(
+            "{:<12} {}",
+            ui::dim(label),
+            crate::changelog::sanitize(&value)
+        ))
+    };
     field("source", manifest.source.to_string());
     if let Some(url) = source.web_url(&manifest.source.id) {
         field("url", url);
@@ -502,11 +510,13 @@ pub fn search(cfg: &Config, args: SearchArgs) -> Result<()> {
 
     let sources = SourceRegistry::load(cfg);
     let mut rows = Vec::new();
+    let mut unreachable = 0usize;
     for source in sources.all() {
         let hits = match source.search(query, rest) {
             Ok(h) => h,
             Err(e) => {
                 ui::warn(&format!("{}: {e}", source.scheme()));
+                unreachable += 1;
                 continue;
             }
         };
@@ -522,6 +532,15 @@ pub fn search(cfg: &Config, args: SearchArgs) -> Result<()> {
 
     if rows.is_empty() {
         if known.is_empty() {
+            // Saying "no results" after every source failed would be a claim
+            // about the world made from no evidence at all — the mistake
+            // `outdated` and `upgrade` already refuse to make.
+            if unreachable > 0 {
+                return Err(Error::msg(format!(
+                    "no source could be searched for `{query}` ({unreachable} failed); \
+                     nothing was found, and nothing was ruled out either"
+                )));
+            }
             ui::out(&format!("no results for `{query}`"));
         }
         return Ok(());
