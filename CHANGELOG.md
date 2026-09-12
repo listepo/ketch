@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/listepo/ketch/releases/tag/v0.4.0) - 2026-09-12
+
+### Added
+
+- [**breaking**] install CLI releases on Linux and Windows
+
+### Fixed
+
+- hold lockfiles to their hashes and leave links intact if relink fails
+
+### Other
+
+- add dependabot for cargo, npm and github actions ([#35](https://github.com/listepo/ketch/pull/35))
+
 ## [0.3.2](https://github.com/listepo/ketch/releases/tag/v0.3.2) - 2026-09-10
 
 ### Other
