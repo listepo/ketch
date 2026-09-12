@@ -49,7 +49,7 @@ jobs:
       publish: ${{ steps.decide.outputs.publish }}
       ref: ${{ steps.decide.outputs.ref }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Is this version released yet?
         id: decide
@@ -100,7 +100,7 @@ jobs:
     if: needs.version.outputs.publish == 'true'
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.version.outputs.ref }}
 
@@ -142,7 +142,7 @@ jobs:
             os: windows-latest
             sign: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.version.outputs.ref }}
 
@@ -228,7 +228,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.version.outputs.ref }}
 
@@ -297,7 +297,7 @@ jobs:
     needs: [version, publish]
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # From the published release, not this run's build artifacts: a tap
       # failure can then be re-run without rebuilding (and re-uploading)
