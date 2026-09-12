@@ -37,7 +37,7 @@ jobs:
       # mise owns the pin but is not installed on GitHub runners, so
       # setup-node runs the version mise.toml names. A number written here
       # instead would be a second pin that drifts the first time one changes.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         if: github.event_name == 'pull_request'
         with:
           node-version: ${{ steps.node_pin.outputs.version }}
