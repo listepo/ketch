@@ -91,7 +91,7 @@ jobs:
           fi
           echo "site ok: $(find . -name '*.html' | wc -l) pages"
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         if: github.event_name != 'pull_request'
         with:
           path: site/public
