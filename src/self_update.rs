@@ -63,7 +63,12 @@ pub fn install_self(cfg: &Config, force: bool) -> Result<Installed> {
     // and the platform refuses to replace a file ketch did not put there. It
     // is moved aside rather than deleted so that a failed install still leaves
     // a ketch on PATH; the running image survives either way.
-    let flat = cfg.bin_dir.join(SELF_NAME);
+    let flat_name = if cfg!(windows) {
+        "ketch.exe"
+    } else {
+        SELF_NAME
+    };
+    let flat = cfg.bin_dir.join(flat_name);
     let aside = std::fs::symlink_metadata(&flat)
         .is_ok_and(|m| m.is_file())
         .then(|| flat.with_extension("old"));
@@ -268,6 +273,8 @@ pub struct UninstallPlan {
     pub root: Option<PathBuf>,
     /// Shell startup files holding a ketch PATH block.
     pub shell_files: Vec<PathBuf>,
+    /// The Windows user PATH names the bin dir.
+    pub user_path: bool,
     /// The Homebrew cask's own directory, when ketch came from `brew`.
     pub cask: Option<PathBuf>,
     /// The running binary, when it lives inside the root and so goes with it.
@@ -295,6 +302,7 @@ pub fn uninstall_plan(cfg: &Config, keep_packages: bool, no_brew: bool) -> Resul
         } else {
             crate::shell::files_with_block()
         },
+        user_path: !keep_packages && crate::shell::user_path_configured(cfg),
         cask: (!no_brew).then(cask_dir).flatten(),
         exe: current_exe().ok().filter(|exe| exe.starts_with(&cfg.root)),
     })
@@ -339,6 +347,14 @@ pub fn uninstall_self(cfg: &Config, plan: &UninstallPlan) -> Result<Vec<PathBuf>
             Ok(true) => removed.push(file.clone()),
             Ok(false) => {}
             Err(e) => ui::warn(&format!("{}: {e}", file.display())),
+        }
+    }
+
+    #[cfg(windows)]
+    if plan.user_path {
+        match crate::shell::uninstall_user(cfg, false) {
+            Ok(_) => {}
+            Err(e) => ui::warn(&format!("user PATH: {e}")),
         }
     }
 

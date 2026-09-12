@@ -33,9 +33,14 @@ if [ -z "$TARGET_DIR" ]; then
   echo "could not determine Cargo's target directory" >&2
   exit 1
 fi
-BINARY="$TARGET_DIR/$TARGET/release/ketch"
-if [ ! -x "$BINARY" ]; then
-  echo "no binary at $BINARY" >&2
+if [ -f "$TARGET_DIR/$TARGET/release/ketch.exe" ]; then
+  BINARY="$TARGET_DIR/$TARGET/release/ketch.exe"
+  PACKED_NAME="ketch.exe"
+elif [ -f "$TARGET_DIR/$TARGET/release/ketch" ]; then
+  BINARY="$TARGET_DIR/$TARGET/release/ketch"
+  PACKED_NAME="ketch"
+else
+  echo "no binary at $TARGET_DIR/$TARGET/release/ketch[.exe]" >&2
   exit 1
 fi
 
@@ -45,9 +50,9 @@ OUT_DIR="$(cd "$OUT_DIR" && pwd)"
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 
-cp "$BINARY" "$STAGE/ketch"
+cp "$BINARY" "$STAGE/$PACKED_NAME"
 cp README.md LICENSE "$STAGE/"
-chmod 755 "$STAGE/ketch"
+chmod 755 "$STAGE/$PACKED_NAME"
 
 if [ -n "${KETCH_SIGN_IDENTITY:-}" ]; then
   echo "==> signing as $KETCH_SIGN_IDENTITY"
@@ -59,7 +64,11 @@ if [ -n "${KETCH_SIGN_IDENTITY:-}" ]; then
 fi
 
 TARBALL="$OUT_DIR/ketch-$TARGET.tar.gz"
-tar -czf "$TARBALL" -C "$STAGE" ketch README.md LICENSE
+tar -czf "$TARBALL" -C "$STAGE" "$PACKED_NAME" README.md LICENSE
 
 echo "==> $TARBALL"
-shasum -a 256 "$TARBALL"
+if command -v shasum >/dev/null 2>&1; then
+  shasum -a 256 "$TARBALL"
+elif command -v sha256sum >/dev/null 2>&1; then
+  sha256sum "$TARBALL"
+fi

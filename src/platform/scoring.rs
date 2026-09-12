@@ -99,9 +99,11 @@ fn has_version_run(lower: &str) -> bool {
 }
 
 /// Extra tokens that mark a macOS asset as a build by-product.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 const BYPRODUCT_TOKENS: &[&str] = &["dsym", "debuginfo", "symbols"];
 
 /// Score a release asset name for macOS without constructing a platform backend.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) fn score_macos_asset(
     asset_name: &str,
     host_arch: Arch,

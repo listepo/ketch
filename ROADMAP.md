@@ -10,12 +10,10 @@ Shipped: `src/platform/linux.rs` and `src/platform/windows.rs`, selected from
 dir and records `CopiedFile`. Trust is `NotApplicable` until signature
 verification exists.
 
-Windows user PATH is still manual — `ketch path install` edits POSIX shells,
-not the user environment. Linux and Windows end-to-end tests run from the
-`cross` workflow (`workflow_dispatch`), not on every pull request.
-
-Host release assets are still macOS tarballs. Linux/Windows binaries are
-built in that workflow; they are not published by `release.yml` yet.
+`ketch path install` on Windows writes the user PATH. `install.sh` fetches the
+host tarball on macOS, Linux and Windows (Git Bash). `release.yml` publishes
+Linux and Windows tarballs next to the signed macOS ones. CI runs each OS's
+suite on that OS.
 
 ## Verifying signatures
 

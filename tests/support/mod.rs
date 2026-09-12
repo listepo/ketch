@@ -156,6 +156,8 @@ impl Sandbox {
             // Shell setup writes into `$HOME`. Pointing it at the sandbox is
             // what keeps the suite from editing a real `.zshrc`.
             .env("HOME", self.home())
+            // `dirs::home_dir` on Windows reads USERPROFILE, not HOME.
+            .env("USERPROFILE", self.home())
             .env("SHELL", "/bin/zsh")
             // Homebrew's own answer to where it lives, so cask detection looks
             // inside the sandbox and nowhere else.

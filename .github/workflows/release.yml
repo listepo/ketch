@@ -101,10 +101,29 @@ jobs:
 
   build:
     needs: [version, verify]
-    runs-on: macos-latest
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     strategy:
+      fail-fast: false
       matrix:
-        target: [aarch64-apple-darwin, x86_64-apple-darwin]
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            sign: true
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            sign: true
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            sign: false
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+            sign: false
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            sign: false
     steps:
       - uses: actions/checkout@v4
 
@@ -118,6 +137,7 @@ jobs:
       # same way an untested one is: it would be discovered by whoever installs
       # it, not here.
       - name: Import signing certificate
+        if: matrix.sign
         env:
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
           MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
@@ -157,21 +177,26 @@ jobs:
         run: scripts/package.sh ${{ matrix.target }} dist
 
       - name: Remove signing keychain
-        if: always() && env.SIGNING_KEYCHAIN != ''
+        if: always() && matrix.sign && env.SIGNING_KEYCHAIN != ''
         run: security delete-keychain "$SIGNING_KEYCHAIN"
 
       # The arm64 runner can build the x86_64 slice but cannot run it, so only
       # the native one is smoke-tested here.
+      # The arm64 macOS runner can build the x86_64 slice but cannot run it.
       - name: Smoke test
-        if: matrix.target == 'aarch64-apple-darwin'
+        if: matrix.target != 'x86_64-apple-darwin'
         run: |
           tar -xzf dist/ketch-${{ matrix.target }}.tar.gz -C "$RUNNER_TEMP"
-          "$RUNNER_TEMP/ketch" --version
-          # What was signed must still be signed after the round trip through
-          # tar, and by a Developer ID, not ad hoc.
-          codesign --verify --strict "$RUNNER_TEMP/ketch"
-          codesign --display --verbose=2 "$RUNNER_TEMP/ketch" 2>&1 \
-            | grep -q 'Authority=Developer ID Application'
+          bin="$RUNNER_TEMP/ketch"
+          if [ -f "$RUNNER_TEMP/ketch.exe" ]; then
+            bin="$RUNNER_TEMP/ketch.exe"
+          fi
+          "$bin" --version
+          if [ "${{ matrix.sign }}" = "true" ]; then
+            codesign --verify --strict "$RUNNER_TEMP/ketch"
+            codesign --display --verbose=2 "$RUNNER_TEMP/ketch" 2>&1 \
+              | grep -q 'Authority=Developer ID Application'
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
@@ -259,7 +284,7 @@ jobs:
           TAG: ${{ needs.version.outputs.tag }}
         run: |
           mkdir -p dist
-          gh release download "$TAG" --pattern 'ketch-*.tar.gz' --dir dist
+          gh release download "$TAG" --pattern 'ketch-*-apple-darwin.tar.gz' --dir dist
           ls -l dist
 
       - name: Generate the cask

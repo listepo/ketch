@@ -48,6 +48,8 @@ pub struct Placement<'a> {
     /// Final home of this version inside the store.
     pub store_dir: &'a Path,
     pub bin_dir: &'a Path,
+    /// macOS `.app` install root; unused on Linux/Windows placement.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub apps_dir: &'a Path,
     pub kind: PackageKind,
     /// Explicit binaries from the manifest. Empty means "discover them".
@@ -58,6 +60,7 @@ pub struct Placement<'a> {
     /// belongs to another package or to the user.
     pub replacing: &'a [LinkRecord],
     /// Symlink `.app` bundles rather than copying them.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub link_apps: bool,
     /// Create user-visible links. False still moves the payload into the
     /// store, so `ketch relink` can expose it later without re-downloading.
@@ -68,10 +71,13 @@ pub struct Placement<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TrustVerdict {
     /// Validly signed and accepted by the system policy.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Trusted { authority: String },
     /// Signed, but the system would still warn (ad-hoc, or unnotarized).
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Weak { detail: String },
     /// No usable signature.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Untrusted { detail: String },
     /// This platform does not do signature checks.
     NotApplicable,

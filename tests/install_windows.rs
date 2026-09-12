@@ -129,3 +129,36 @@ fn doctor_reports_writable_dirs_without_macos_output() {
     assert!(!out.to_ascii_lowercase().contains("macos only"), "{out}");
     assert!(!out.contains(".app"), "{out}");
 }
+
+/// `ketch path install` writes HKCU\\Environment\\Path, not a shell file.
+/// The sandbox bin dir is unique, so a leftover is a dead temp path; Drop
+/// still takes it back out if the assertions fail.
+#[test]
+fn path_install_puts_the_bin_dir_on_the_user_path() {
+    let sandbox = Sandbox::new();
+    struct Restore<'a>(&'a Sandbox);
+    impl Drop for Restore<'_> {
+        fn drop(&mut self) {
+            let _ = self.0.ketch(&["path", "uninstall"]);
+        }
+    }
+    let _restore = Restore(&sandbox);
+
+    sandbox.ok(&["path", "install"]);
+    let status = sandbox.ok(&["path", "status"]);
+    assert!(
+        status
+            .lines()
+            .any(|l| l.contains("user PATH") && l.contains("configured")),
+        "user PATH should be configured:\n{status}"
+    );
+
+    sandbox.ok(&["path", "uninstall"]);
+    let status = sandbox.ok(&["path", "status"]);
+    assert!(
+        status
+            .lines()
+            .any(|l| l.contains("user PATH") && l.contains("not set up")),
+        "user PATH should be empty of this bin dir:\n{status}"
+    );
+}

@@ -120,7 +120,7 @@ pub enum Command {
         command: RegistryCommand,
     },
 
-    /// Put the ketch bin directory on your shell's PATH
+    /// Put the ketch bin directory on PATH
     Path {
         #[command(subcommand)]
         command: Option<PathCommand>,
@@ -420,9 +420,9 @@ pub enum RegistryCommand {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum PathCommand {
-    /// Add the bin directory to your shell's startup file
+    /// Add the bin directory to PATH
     Install(PathInstallArgs),
-    /// Take out the block `ketch path install` added
+    /// Take the bin directory back off PATH
     Uninstall(PathArgs),
     /// Show which shells have been set up
     Status,

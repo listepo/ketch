@@ -5,7 +5,7 @@
 //! copy is recorded so uninstall can prove identity before deleting.
 
 use super::scoring::looks_like_build_artifact;
-use super::{AssetScore, DoctorCheck, Placement, Platform, TrustVerdict};
+use super::{AssetScore, DoctorCheck, Placement, Platform};
 use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::extract::archive::is_program_head;

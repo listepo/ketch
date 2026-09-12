@@ -42,8 +42,8 @@ the package `ketch`, and the root `ketch.toml` is its manifest.
 macOS, Linux and Windows each have a `Platform` backend in `src/platform/`.
 `host()` selects it. Another OS still means implementing that trait — nothing
 above it changes. End-to-end tests are gated with `#[cfg(target_os = "...")]`
-so `cargo test` on a host runs that OS's suite. Windows CI is
-`.github/workflows/cross.yml` (`workflow_dispatch`).
+so `cargo test` on a host runs that OS's suite. CI runs that suite on macOS,
+Linux and Windows.
 
 ## Commands
 
@@ -107,8 +107,8 @@ diffs. Combine `predicates` with `assert_cmd` rather than parsing output
 manually. Every bug fix should add the narrowest regression test that would
 fail without the fix.
 
-CI runs `fmt --check`, `clippy -D warnings` and `test` on macOS. All three must
-pass before a change is done.
+CI runs `fmt --check`, `clippy -D warnings` and `test` on macOS, and clippy
+plus `test` on Linux and Windows. All of those must pass before a change is done.
 
 ## Installing tools
 
@@ -168,7 +168,7 @@ conditional, multi-stage Rust automation.
 | `src/source/` | where releases come from: GitHub built in, plugins external |
 | `src/extract/` | archive formats, selected by sniffing content not file names |
 | `src/platform/` | OS-specific placement, linking, trust checks (`macos.rs`, `linux.rs`, `windows.rs`) |
-| `src/shell.rs` | putting the bin dir on PATH in bash, zsh and fish |
+| `src/shell.rs` | putting the bin dir on PATH in bash, zsh and fish, and on Windows the user environment |
 | `src/registry.rs` | the fetched package registry (see `docs/REGISTRY.md`) |
 | `src/manifest.rs` | resolving a name to a `Manifest` across four tiers |
 | `src/model.rs` | every type that crosses a module boundary |
@@ -198,11 +198,14 @@ are in the wrong file.
 `src/shell.rs` is the one module that writes outside the ketch root, and it
 does so only when asked: `ketch path install`, `ketch doctor --fix` and
 `ketch self uninstall`, which takes the block back out of every startup file
-that has one rather than only the shell running now. It edits
-a shell startup file between two markers, so the block can be found again,
-rewritten when the root moves, and removed without guessing which line was
-ketch's. It follows a symlinked startup file to its target before writing,
-because that file is very often a link into a dotfiles repository.
+that has one rather than only the shell running now, and on Windows takes the
+bin dir out of the user PATH. It edits a shell startup file between two
+markers, so the block can be found again, rewritten when the root moves, and
+removed without guessing which line was ketch's. It follows a symlinked
+startup file to its target before writing, because that file is very often a
+link into a dotfiles repository. On Windows `ketch path install` writes
+`HKCU\Environment\Path` via `[Environment]::SetEnvironmentVariable` so a new
+terminal sees it without a logoff; `setx` is not used, because it truncates.
 
 ## Conventions
 
@@ -322,7 +325,8 @@ reminder, not a rejection, when the staged diff touches `src/cli.rs` or
 `v<version from Cargo.toml>` already exist as a tag? If it does, that version
 has shipped and the run stops there in seconds. If it does not, this merge is a
 release: the whole gate runs again, both macOS architectures are built and
-signed, the tarballs and an aggregate `SHA256SUMS` go up on a **draft** release
+signed, Linux and Windows binaries are packed unsigned, the tarballs and an
+aggregate `SHA256SUMS` go up on a **draft** release
 — which has no tag — and the last step publishes that draft, which is what
 creates the tag, at the commit that was built.
 

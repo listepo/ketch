@@ -4,7 +4,7 @@
 //! only. There is no `.app` equivalent and no quarantine to clear.
 
 use super::unix::{place_cli, unplace, writable};
-use super::{AssetScore, DoctorCheck, Placement, Platform, TrustVerdict};
+use super::{AssetScore, DoctorCheck, Placement, Platform};
 use crate::config::Config;
 use crate::error::Result;
 use crate::extract::archive::is_program_head;

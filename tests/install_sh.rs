@@ -57,14 +57,26 @@ fn help_describes_root_and_install_dir_without_naming_the_root() {
         .stdout(predicate::str::contains("--root"))
         .stdout(predicate::str::contains("--install-dir"))
         .stdout(predicate::str::contains("names the root").not())
-        .stdout(predicate::str::contains("the root becomes its parent").not());
+        .stdout(predicate::str::contains("the root becomes its parent").not())
+        .stdout(predicate::str::contains("macOS-only").not());
+}
+
+/// The script used to abort on anything but Darwin before flags were even
+/// exercised. The host tarball names are the contract with package.sh.
+#[test]
+fn the_script_names_linux_and_windows_release_tarballs() {
+    let src = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/install.sh"));
+    assert!(src.contains("unknown-linux-gnu"), "{src}");
+    assert!(src.contains("pc-windows-msvc"), "{src}");
+    assert!(!src.contains("macOS-only at the moment"), "{src}");
 }
 
 /// The whole script, with the network replaced by a stub `curl` and the release
 /// by a stub `ketch`.
 ///
-/// macOS-only for the same reason the script is: it refuses to run anywhere
-/// else before any of this is reached.
+/// macOS: the script fetches a host tarball and runs `self install`. Linux CI
+/// runners are often root, which the script refuses; the package job covers
+/// the Linux tarball instead. Windows Git Bash is `target_os = "windows"`.
 #[cfg(target_os = "macos")]
 mod against_a_stub_release {
     use assert_cmd::Command;
@@ -122,7 +134,10 @@ mod against_a_stub_release {
             dir.child("SHA256SUMS")
                 .write_str(&format!(
                     "{digest}  ketch-aarch64-apple-darwin.tar.gz\n\
-                     {digest}  ketch-x86_64-apple-darwin.tar.gz\n"
+                     {digest}  ketch-x86_64-apple-darwin.tar.gz\n\
+                     {digest}  ketch-aarch64-unknown-linux-gnu.tar.gz\n\
+                     {digest}  ketch-x86_64-unknown-linux-gnu.tar.gz\n\
+                     {digest}  ketch-x86_64-pc-windows-msvc.tar.gz\n"
                 ))
                 .unwrap();
 

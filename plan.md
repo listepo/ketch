@@ -557,8 +557,8 @@ Do not start `src/platform/linux.rs` here. That is Milestone 1.
 
 ## Milestone 1 — Linux
 
-**Shipped** in the working tree (see `src/platform/linux.rs`,
-`tests/install_linux.rs`, `.github/workflows/cross.yml`).
+**Shipped** (see `src/platform/linux.rs`, `src/platform/windows.rs`,
+`tests/install_linux.rs`, `tests/install_windows.rs`).
 
 **Goal:** native Linux CLI releases, with no `.app` or macOS trust behaviour
 leaking into the experience.

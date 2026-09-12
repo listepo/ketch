@@ -13,7 +13,7 @@ ships, verifies it, and puts it on your `PATH`.
 [![ci](https://github.com/listepo/ketch/actions/workflows/ci.yml/badge.svg)](https://github.com/listepo/ketch/actions/workflows/ci.yml)
 [![site](https://github.com/listepo/ketch/actions/workflows/pages.yml/badge.svg)](https://github.com/listepo/ketch/actions/workflows/pages.yml)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-![platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)
+![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)
 
 [Website](https://listepo.github.io/ketch/) ·
 [Documentation](https://listepo.github.io/ketch/docs/) ·
@@ -59,7 +59,8 @@ ketch self uninstall
 ```
 
 That takes everything with it — every package ketch installed, the whole
-`~/.ketch` tree, the `PATH` block in your shell startup files, and the Homebrew
+`~/.ketch` tree, the `PATH` block in your shell startup files, the user PATH on
+Windows, and the Homebrew
 cask if that is how ketch arrived. It lists what it is about to delete and asks
 first, because none of it can be recovered afterwards. `--keep-packages` removes
 only ketch and leaves the tools it installed alone.
@@ -102,7 +103,7 @@ ketch lock                 # write ketch.lock from what is installed
 ketch sync                 # install what ketch.lock names, at those versions
 ketch doctor               # check the environment and the install tree
 ketch doctor --fix         # and repair the PATH setup while it is there
-ketch path install         # put ~/.ketch/bin on PATH in bash, zsh and fish
+ketch path install         # put ~/.ketch/bin on PATH
 ketch config create        # write a ketch.toml by answering questions
 ketch registry push        # offer it to the registry, showing the diff first
 ketch registry validate    # check a registry tree the way registry CI does
@@ -224,11 +225,13 @@ ketch path install      # edit the ones you use
 ketch path uninstall    # take the block back out
 ```
 
-It detects bash, zsh and fish — the shell `$SHELL` names, plus any whose startup
-file you already keep — and writes one block between markers, so it can rewrite
-it if the root moves and remove it cleanly later. `--shell <name>` picks one,
-`--all` takes all three, `--dry-run` shows the edit without making it, and
-`--print` gives you the line to paste somewhere ketch does not know about.
+On Unix it detects bash, zsh and fish — the shell `$SHELL` names, plus any whose
+startup file you already keep — and writes one block between markers, so it can
+rewrite it if the root moves and remove it cleanly later. On Windows it writes
+the user PATH, which every new terminal reads. `--shell <name>` picks a Unix
+shell, `--all` takes every target ketch knows, `--dry-run` shows the edit
+without making it, and `--print` gives you the line to paste somewhere ketch
+does not know about.
 
 A line you added yourself is left alone rather than duplicated. `ketch doctor`
 reports the PATH as a failure when no shell knows about it, as a warning when a
@@ -281,10 +284,9 @@ A token is not required, but it raises GitHub's rate limit considerably.
 
 macOS, Linux and Windows. Each OS has a `Platform` backend that picks a release
 asset, unpacks it and places binaries; everything above that trait is shared.
-`cargo test` runs the suite for the host OS. Linux CI does that on every PR;
-Windows is the `cross` workflow (run by hand).
-[ROADMAP.md](ROADMAP.md) says what that would take, along with everything else
-ketch does not do yet.
+`cargo test` runs the suite for the host OS; CI does that on macOS, Linux and
+Windows. `ketch path install` on Windows writes the user PATH. Releases publish
+a tarball per target; `install.sh` fetches the one for the machine it runs on.
 
 ## Documentation
 
