@@ -1095,6 +1095,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn refuses_a_store_symlink_that_points_outside() {
         let root = tempfile::tempdir().unwrap();

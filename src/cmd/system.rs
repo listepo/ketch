@@ -139,21 +139,26 @@ fn fix(cfg: &Config) {
             }
         }
     }
-    let shells = match shell::detect() {
-        Ok(shells) if !shells.is_empty() => shells,
-        Ok(_) => {
-            ui::warn("could not tell which shell you use; run `ketch path install --shell <name>`");
-            return;
-        }
-        Err(e) => {
-            ui::warn(&e.to_string());
-            return;
-        }
-    };
-    for sh in shells {
-        match shell::install(cfg, sh, false) {
-            Ok(change) => report(&change, false),
-            Err(e) => ui::warn(&format!("{}: {e}", sh.name())),
+    #[cfg(not(windows))]
+    {
+        let shells = match shell::detect() {
+            Ok(shells) if !shells.is_empty() => shells,
+            Ok(_) => {
+                ui::warn(
+                    "could not tell which shell you use; run `ketch path install --shell <name>`",
+                );
+                return;
+            }
+            Err(e) => {
+                ui::warn(&e.to_string());
+                return;
+            }
+        };
+        for sh in shells {
+            match shell::install(cfg, sh, false) {
+                Ok(change) => report(&change, false),
+                Err(e) => ui::warn(&format!("{}: {e}", sh.name())),
+            }
         }
     }
 }

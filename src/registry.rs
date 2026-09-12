@@ -574,6 +574,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn check_tree_never_reads_through_a_symlinked_package_file() {
         // The tree is somebody else's: a link here would have ketch read — and

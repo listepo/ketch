@@ -558,6 +558,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn bzip2_archives_use_the_same_traversal_guard_as_tar() {
         let mut builder = tar::Builder::new(Vec::new());

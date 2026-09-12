@@ -108,6 +108,7 @@ impl Platform for LinuxPlatform {
 mod tests {
     use super::*;
     use crate::model::{LinkKind, PackageKind};
+    use crate::platform::TrustVerdict;
     use std::os::unix::fs::PermissionsExt;
     use std::path::PathBuf;
 

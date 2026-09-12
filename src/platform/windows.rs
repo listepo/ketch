@@ -502,11 +502,11 @@ mod tests {
             .place(&placement(&payload, &store, &bin, tmp.path()))
             .unwrap_err();
         assert!(err.to_string().contains("already exists"));
-        assert!(std::fs::read(bin.join("tool.cmd"))
-            .unwrap()
-            .windows(b"user")
-            .next()
-            .is_some());
+        let body = std::fs::read(bin.join("tool.cmd")).unwrap();
+        assert!(
+            body.windows(4).any(|w| w == b"user"),
+            "user-owned file must be left alone"
+        );
     }
 
     #[test]

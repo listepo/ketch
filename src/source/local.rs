@@ -301,9 +301,11 @@ pub fn copy_tree(src: &Path, dest: &Path) -> Result<()> {
         if ft.is_dir() {
             fs::create_dir_all(&target).map_err(|e| Error::io(&target, e))?;
         } else if ft.is_symlink() {
-            let link = fs::read_link(entry.path()).map_err(|e| Error::io(entry.path(), e))?;
             #[cfg(unix)]
-            crate::platform::unix::symlink(&link, &target)?;
+            {
+                let link = fs::read_link(entry.path()).map_err(|e| Error::io(entry.path(), e))?;
+                crate::platform::unix::symlink(&link, &target)?;
+            }
             #[cfg(not(unix))]
             {
                 return Err(Error::msg(
