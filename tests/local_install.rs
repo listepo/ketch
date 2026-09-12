@@ -140,10 +140,10 @@ fn local_binary_install_appears_in_list_and_info_json() {
 
     // outdated must not error on a tree that is only local packages
     let outdated = sandbox.ok(&["outdated", "--json"]);
-    assert!(
-        outdated.trim() == "[]" || outdated.contains('['),
-        "{outdated}"
-    );
+    let parsed: serde_json::Value = serde_json::from_str(&outdated).expect("valid outdated json");
+    assert_eq!(parsed["status"], "ok");
+    assert!(parsed["outdated"].as_array().expect("outdated").is_empty());
+    assert!(parsed["failed"].as_array().expect("failed").is_empty());
 }
 
 #[test]

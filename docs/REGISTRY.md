@@ -46,6 +46,7 @@ stranger's disk, so it is checked before it is trusted:
 | Refused | Why |
 | --- | --- |
 | an unknown key (`binary = …` for `bin = …`) | a misspelt key that is silently ignored installs the wrong thing and complains nowhere |
+| a `local:` source | a registry entry must name a release anyone can fetch, not a path on one machine's disk |
 | `name` that disagrees with the folder | the package would be unreachable under the name its folder advertises |
 | a `name` or `bin.name` that is not a usable file name | `name` becomes a directory in the store and `bin.name` a link in `~/.ketch/bin`; `../../.zshrc` is not a binary |
 | a `bin.path` or `extra_paths` entry containing `..` | paths are relative to the extracted payload and must stay inside it |
@@ -77,7 +78,8 @@ all. Run `ketch update` when a package is missing or out of date.
 ## Contributing a package
 
 Registry CI and `ketch registry validate <dir>` run the same checks over every
-package folder: each `ketch.toml` is parsed, passed through
+package folder: each `ketch.toml` is parsed, checked against its folder name,
+refused when `source` is `local:`, passed through
 [`Manifest::validate`](../MANIFESTS.md), and name collisions fail the run.
 A broken entry on someone's machine only warns and is skipped; in the registry
 repository those problems must be fixed before merge.

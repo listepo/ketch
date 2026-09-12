@@ -55,6 +55,50 @@ pub fn disable_tui() {
     *TUI.lock().unwrap_or_else(|e| e.into_inner()) = None;
 }
 
+/// Hook installed by an active TUI session so prompts can leave raw mode.
+#[cfg(feature = "tui")]
+type TuiInputPause = Box<dyn Fn() -> Option<Box<dyn FnOnce() + Send>> + Send + Sync>;
+
+#[cfg(feature = "tui")]
+static TUI_INPUT_PAUSE: Mutex<Option<TuiInputPause>> = Mutex::new(None);
+
+/// Register the pause hook for one TUI session.
+#[cfg(feature = "tui")]
+pub fn register_tui_input_pause(hook: TuiInputPause) {
+    *TUI_INPUT_PAUSE.lock().unwrap_or_else(|e| e.into_inner()) = Some(hook);
+}
+
+/// Drop the pause hook when the TUI session ends.
+#[cfg(feature = "tui")]
+pub fn clear_tui_input_pause() {
+    *TUI_INPUT_PAUSE.lock().unwrap_or_else(|e| e.into_inner()) = None;
+}
+
+fn pause_tui_for_input() -> Option<Box<dyn FnOnce() + Send>> {
+    #[cfg(feature = "tui")]
+    {
+        TUI_INPUT_PAUSE
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .and_then(|hook| hook())
+    }
+    #[cfg(not(feature = "tui"))]
+    {
+        None
+    }
+}
+
+/// Run one line-oriented prompt while an optional TUI session is suspended.
+fn with_tui_input_paused<R>(f: impl FnOnce() -> R) -> R {
+    let resume = pause_tui_for_input();
+    let result = f();
+    if let Some(resume) = resume {
+        resume();
+    }
+    result
+}
+
 #[cfg(feature = "tui")]
 fn tui_controller() -> Option<Arc<crate::tui::Controller>> {
     TUI.lock().unwrap_or_else(|e| e.into_inner()).clone()
@@ -300,20 +344,22 @@ pub fn question(question: &str, default: bool) -> bool {
 /// consent: silently taking the default answer to "remove this?" is not a
 /// quieter version of asking, it is a different program.
 fn ask(question: &str, default: bool) -> bool {
-    if !std::io::stdin().is_terminal() {
-        return default;
-    }
-    let suffix = if default { "[Y/n]" } else { "[y/N]" };
-    eprint!(
-        "{} {question} {suffix} ",
-        yellow(&format!("{:>10}", "confirm"))
-    );
-    let _ = std::io::stderr().flush();
-    let mut answer = String::new();
-    if std::io::stdin().read_line(&mut answer).is_err() {
-        return default;
-    }
-    boolean_answer(&answer, default)
+    with_tui_input_paused(|| {
+        if !std::io::stdin().is_terminal() {
+            return default;
+        }
+        let suffix = if default { "[Y/n]" } else { "[y/N]" };
+        eprint!(
+            "{} {question} {suffix} ",
+            yellow(&format!("{:>10}", "confirm"))
+        );
+        let _ = std::io::stderr().flush();
+        let mut answer = String::new();
+        if std::io::stdin().read_line(&mut answer).is_err() {
+            return default;
+        }
+        boolean_answer(&answer, default)
+    })
 }
 
 /// Interpret one questionnaire or confirmation answer.
@@ -333,20 +379,22 @@ fn boolean_answer(answer: &str, default: bool) -> bool {
 /// answer, so a pipe with nothing in it still gets the default rather than a
 /// hang.
 pub fn prompt(question: &str, default: &str) -> String {
-    let hint = if default.is_empty() { "none" } else { default };
-    eprint!(
-        "{} {question} [{hint}] ",
-        cyan(&format!("{:>10}", "answer"))
-    );
-    let _ = std::io::stderr().flush();
-    let mut answer = String::new();
-    let _ = std::io::stdin().read_line(&mut answer);
-    let trimmed = answer.trim();
-    if trimmed.is_empty() {
-        default.to_string()
-    } else {
-        trimmed.to_string()
-    }
+    with_tui_input_paused(|| {
+        let hint = if default.is_empty() { "none" } else { default };
+        eprint!(
+            "{} {question} [{hint}] ",
+            cyan(&format!("{:>10}", "answer"))
+        );
+        let _ = std::io::stderr().flush();
+        let mut answer = String::new();
+        let _ = std::io::stdin().read_line(&mut answer);
+        let trimmed = answer.trim();
+        if trimmed.is_empty() {
+            default.to_string()
+        } else {
+            trimmed.to_string()
+        }
+    })
 }
 
 /// Ask for a field that has no default.
@@ -354,25 +402,27 @@ pub fn prompt(question: &str, default: &str) -> String {
 /// End of input is an error rather than an answer: inventing a `source` would
 /// write a config nobody asked for and say nothing about it.
 pub fn prompt_required(question: &str) -> crate::error::Result<String> {
-    eprint!("{} {question} ", cyan(&format!("{:>10}", "answer")));
-    let _ = std::io::stderr().flush();
-    let mut answer = String::new();
-    match std::io::stdin().read_line(&mut answer) {
-        Ok(0) => Err(crate::error::Error::msg(format!(
-            "{question} needs an answer, and stdin has none — run this in a terminal"
-        ))),
-        Ok(_) => {
-            let trimmed = answer.trim();
-            if trimmed.is_empty() {
-                Err(crate::error::Error::msg(format!(
-                    "{question} has no default and cannot be left empty"
-                )))
-            } else {
-                Ok(trimmed.to_string())
+    with_tui_input_paused(|| {
+        eprint!("{} {question} ", cyan(&format!("{:>10}", "answer")));
+        let _ = std::io::stderr().flush();
+        let mut answer = String::new();
+        match std::io::stdin().read_line(&mut answer) {
+            Ok(0) => Err(crate::error::Error::msg(format!(
+                "{question} needs an answer, and stdin has none — run this in a terminal"
+            ))),
+            Ok(_) => {
+                let trimmed = answer.trim();
+                if trimmed.is_empty() {
+                    Err(crate::error::Error::msg(format!(
+                        "{question} has no default and cannot be left empty"
+                    )))
+                } else {
+                    Ok(trimmed.to_string())
+                }
             }
+            Err(e) => Err(crate::error::Error::io("stdin", e)),
         }
-        Err(e) => Err(crate::error::Error::io("stdin", e)),
-    }
+    })
 }
 
 /// Human-readable byte count.
@@ -714,5 +764,28 @@ mod tests {
         assert_eq!(truncate("abcdef", 4), "abc…");
         // Multi-byte input must not panic or split a character.
         assert_eq!(truncate("ünïcödé-package", 6), "ünïcö…");
+    }
+
+    #[cfg(feature = "tui")]
+    #[test]
+    fn interactive_prompts_pause_an_active_tui_session() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+
+        let paused = Arc::new(AtomicBool::new(false));
+        let resumed = Arc::new(AtomicBool::new(false));
+        let pause_flag = Arc::clone(&paused);
+        let resume_flag = Arc::clone(&resumed);
+        register_tui_input_pause(Box::new(move || {
+            pause_flag.store(true, Ordering::SeqCst);
+            let resume_flag = Arc::clone(&resume_flag);
+            Some(Box::new(move || resume_flag.store(true, Ordering::SeqCst)))
+        }));
+
+        let value = with_tui_input_paused(|| 7);
+        assert_eq!(value, 7);
+        assert!(paused.load(Ordering::SeqCst));
+        assert!(resumed.load(Ordering::SeqCst));
+        clear_tui_input_pause();
     }
 }

@@ -128,6 +128,14 @@ jobs:
       - name: Test
         run: cargo test --all-targets --locked
 
+      - name: PowerShell syntax
+        shell: pwsh
+        run: |
+          $errors = $null
+          $null = [System.Management.Automation.Language.Parser]::ParseFile('install.ps1', [ref]$null, [ref]$errors)
+          if ($errors) { $errors | Format-List *; exit 1 }
+          ./install.ps1 --help
+
   # Packaging is exercised on every pull request, so it breaks here rather than
   # halfway through a release, after the merge that started one.
   package:

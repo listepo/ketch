@@ -297,37 +297,19 @@ chmod 755 "${BINARY_PATH}"
 if [ "${OS}" = "Darwin" ]; then
   xattr -d com.apple.quarantine "${BINARY_PATH}" 2>/dev/null || true
 fi
-"${BINARY_PATH}" self install || {
-  echo "${RED}Error: ketch could not install itself into ${ROOT}.${NC}" >&2
-  exit 1
-}
-
-# A bootstrap dir outside <root>/bin gets a link to the installed binary — a
-# link and not a copy, because `ketch self update` replaces `<root>/bin/ketch`
-# in place: a copy would go on running the version it was made from. `ln -s`
-# also works across filesystems, where a hard link would not.
+SELF_INSTALL=(self install)
 if [ "${INSTALL_DIR_EXPLICIT}" -eq 1 ]; then
   mkdir -p "${INSTALL_DIR}" || {
     echo "${RED}Error: Failed to create bootstrap directory: ${INSTALL_DIR}${NC}" >&2
     exit 1
   }
-  # Compare where the two directories really are. `/tmp/x/bin` and
-  # `/private/tmp/x/bin`, a doubled slash and a `./` in the middle all name one
-  # directory, and a string compare says otherwise — then the link below points
-  # the installed binary at itself and takes the install with it.
-  INSTALL_DIR="$(cd "${INSTALL_DIR}" && pwd -P)"
-  BIN_DIR="$(cd "${ROOT%/}/bin" && pwd -P)"
-  if [ "${INSTALL_DIR}" != "${BIN_DIR}" ]; then
-    BOOTSTRAP_PATH="${INSTALL_DIR}/${BINARY_NAME}"
-    if ! ln -sfn "${INSTALL_PATH}" "${BOOTSTRAP_PATH}"; then
-      cp "${INSTALL_PATH}" "${BOOTSTRAP_PATH}" || {
-        echo "${RED}Error: Failed to place ${BINARY_NAME} in ${INSTALL_DIR}.${NC}" >&2
-        exit 1
-      }
-    fi
-    chmod 755 "${BOOTSTRAP_PATH}"
-  fi
+  # ketch records the bootstrap link on the package and removes it on uninstall.
+  SELF_INSTALL+=(--link-dir "${INSTALL_DIR}")
 fi
+"${BINARY_PATH}" "${SELF_INSTALL[@]}" || {
+  echo "${RED}Error: ketch could not install itself into ${ROOT}.${NC}" >&2
+  exit 1
+}
 
 # Wire up PATH. ketch owns this: `ketch path install` knows bash, zsh and fish,
 # quotes the directory properly, and can undo itself — which is more than this

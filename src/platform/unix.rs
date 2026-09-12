@@ -82,6 +82,7 @@ pub(crate) fn still_placed(record: &LinkRecord) -> bool {
         }
         LinkKind::CopiedApp => {
             std::fs::symlink_metadata(&record.link).is_ok_and(|meta| meta.is_dir())
+                && record.target.exists()
         }
     }
 }
@@ -199,6 +200,34 @@ pub(crate) fn move_into_store(payload: &Path, store: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Keep a payload symlink if its target is a regular file inside the tree.
+fn payload_executable_entry(entry: &walkdir::DirEntry, root: &Path) -> Option<PathBuf> {
+    let path = entry.path();
+    if entry.file_type().is_file() {
+        return Some(path.to_path_buf());
+    }
+    if !entry.file_type().is_symlink() {
+        return None;
+    }
+    let target = std::fs::read_link(path).ok()?;
+    let resolved = if target.is_absolute() {
+        target
+    } else {
+        path.parent()?.join(target)
+    };
+    let rel = resolved.strip_prefix(root).ok()?;
+    if rel
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return None;
+    }
+    std::fs::metadata(&resolved)
+        .ok()
+        .filter(|meta| meta.is_file())
+        .map(|_| path.to_path_buf())
+}
+
 /// Every executable file in the payload that is a plausible entry point.
 pub(crate) fn discover_executables(platform: &dyn Platform, root: &Path) -> Vec<PathBuf> {
     let mut found: Vec<PathBuf> = walkdir::WalkDir::new(root)
@@ -213,8 +242,7 @@ pub(crate) fn discover_executables(platform: &dyn Platform, root: &Path) -> Vec<
                     || NOISE_DIRS.contains(&name.as_str()))
         })
         .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().is_file())
-        .map(|e| e.into_path())
+        .filter_map(|e| payload_executable_entry(&e, root))
         .filter(|p| platform.is_executable(p))
         .collect();
 
@@ -542,16 +570,24 @@ mod tests {
         assert!(destination_available(&link, &owned, &recorded).is_ok());
 
         // A copied bundle leaves no symlink behind, so the record is the only
-        // evidence there can be.
+        // evidence there can be — and only while the store copy is still there.
         let tmp = tempfile::tempdir().unwrap();
         let (owned, link) = prepare_destination(&tmp, Occupant::Directory);
+        let target = owned.join("1.0/App.app");
+        std::fs::create_dir_all(&target).unwrap();
         let recorded = [LinkRecord {
             link: link.clone(),
-            target: owned.join("1.0/App.app"),
+            target: target.clone(),
             kind: LinkKind::CopiedApp,
         }];
         assert!(is_ours(&link, &owned, &recorded));
         assert!(destination_available(&link, &owned, &recorded).is_ok());
+
+        std::fs::remove_dir_all(&target).unwrap();
+        assert!(
+            !is_ours(&link, &owned, &recorded),
+            "a CopiedApp record must not outlive the store copy it names"
+        );
     }
 
     #[test]

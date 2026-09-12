@@ -13,7 +13,13 @@ cover the cases where it does, and the formats you would write when it does.
 curl -fsSL https://raw.githubusercontent.com/listepo/ketch/main/install.sh | bash
 ```
 
-Then put `~/.ketch/bin` on your `PATH`. `ketch doctor` reports whether it is,
+On Windows:
+
+```powershell
+irm https://raw.githubusercontent.com/listepo/ketch/main/install.ps1 | iex
+```
+
+Then put `~/.ketch/bin` on your `PATH` (or `%USERPROFILE%\.ketch\bin` on Windows). `ketch doctor` reports whether it is,
 along with anything else that needs attention.
 
 ## Everyday use

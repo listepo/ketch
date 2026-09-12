@@ -135,6 +135,7 @@ fn still_placed(record: &LinkRecord) -> bool {
         }
         LinkKind::CopiedApp => {
             std::fs::symlink_metadata(&record.link).is_ok_and(|meta| meta.is_dir())
+                && record.target.exists()
         }
     }
 }
@@ -178,6 +179,33 @@ pub(crate) fn windows_bin_name(name: &str) -> String {
     }
 }
 
+fn payload_executable_entry(entry: &walkdir::DirEntry, root: &Path) -> Option<PathBuf> {
+    let path = entry.path();
+    if entry.file_type().is_file() {
+        return Some(path.to_path_buf());
+    }
+    if !entry.file_type().is_symlink() {
+        return None;
+    }
+    let target = std::fs::read_link(path).ok()?;
+    let resolved = if target.is_absolute() {
+        target
+    } else {
+        path.parent()?.join(target)
+    };
+    let rel = resolved.strip_prefix(root).ok()?;
+    if rel
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return None;
+    }
+    std::fs::metadata(&resolved)
+        .ok()
+        .filter(|meta| meta.is_file())
+        .map(|_| path.to_path_buf())
+}
+
 fn discover_executables(platform: &WindowsPlatform, root: &Path) -> Vec<PathBuf> {
     let mut found: Vec<PathBuf> = walkdir::WalkDir::new(root)
         .max_depth(4)
@@ -188,8 +216,7 @@ fn discover_executables(platform: &WindowsPlatform, root: &Path) -> Vec<PathBuf>
             e.path() == root || !NOISE_DIRS.contains(&name.as_str())
         })
         .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().is_file())
-        .map(|e| e.into_path())
+        .filter_map(|e| payload_executable_entry(&e, root))
         .filter(|p| platform.is_executable(p))
         .collect();
     let in_bin: Vec<PathBuf> = found
@@ -532,5 +559,31 @@ mod tests {
         std::fs::write(&link, cmd_body("mine")).unwrap();
         p.unplace(&[record]).unwrap();
         assert!(link.is_file(), "the user's file must survive");
+    }
+
+    #[test]
+    fn unplace_refuses_to_delete_a_replaced_copied_app_without_a_store_target() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = tmp.path().join("store/pkg/1.0");
+        let bundle = store.join("Thing.app");
+        std::fs::create_dir_all(bundle.join("Contents")).unwrap();
+        std::fs::write(bundle.join("Contents/Info.plist"), b"x").unwrap();
+        let apps = tmp.path().join("Applications");
+        std::fs::create_dir_all(&apps).unwrap();
+        let link = apps.join("Thing.app");
+        std::fs::create_dir_all(link.join("Contents")).unwrap();
+        std::fs::write(link.join("Contents/mine.txt"), b"the user's own copy").unwrap();
+        std::fs::remove_dir_all(&store).unwrap();
+        let record = LinkRecord {
+            link: link.clone(),
+            target: bundle,
+            kind: LinkKind::CopiedApp,
+        };
+        let p = WindowsPlatform::new();
+        p.unplace(std::slice::from_ref(&record)).unwrap();
+        assert!(
+            link.join("Contents/mine.txt").is_file(),
+            "a stale record must not authorize deleting the user's bundle"
+        );
     }
 }

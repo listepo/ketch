@@ -104,7 +104,8 @@ pub fn outdated(cfg: &Config, args: OutdatedArgs) -> Result<()> {
     results.sort_by_key(|(i, _)| *i);
 
     let mut rows = Vec::new();
-    let mut json = Vec::new();
+    let mut outdated = Vec::new();
+    let mut failed = Vec::new();
     let (mut checked, mut unreachable) = (0usize, 0usize);
     for (i, result) in results {
         let pkg = pkgs[i];
@@ -114,6 +115,10 @@ pub fn outdated(cfg: &Config, args: OutdatedArgs) -> Result<()> {
             // the rest of the answer.
             Err(e) => {
                 ui::warn(&format!("{}: {e}", pkg.name));
+                failed.push(serde_json::json!({
+                    "name": pkg.name,
+                    "error": e.to_string(),
+                }));
                 unreachable += 1;
                 continue;
             }
@@ -135,7 +140,7 @@ pub fn outdated(cfg: &Config, args: OutdatedArgs) -> Result<()> {
                 String::new()
             },
         ]);
-        json.push(serde_json::json!({
+        outdated.push(serde_json::json!({
             "name": pkg.name,
             "installed": pkg.version.to_string(),
             "latest": release.version.to_string(),
@@ -144,16 +149,21 @@ pub fn outdated(cfg: &Config, args: OutdatedArgs) -> Result<()> {
         }));
     }
 
-    // An empty answer because nothing could be reached is not the same answer
-    // as an empty answer because nothing is out of date, and `[]` on stdout
-    // with an exit status of 0 says the second either way.
-    if checked == 0 && unreachable > 0 {
-        return Err(Error::msg(format!(
-            "could not check any of the {unreachable} packages; see the warnings above"
-        )));
+    if args.json {
+        print_json(&outdated_report(checked, &outdated, &failed))?;
+    }
+    if unreachable > 0 {
+        return Err(Error::msg(if checked == 0 {
+            format!("could not check any of the {unreachable} packages; see the warnings above")
+        } else {
+            format!(
+                "{unreachable} of {} packages could not be checked; see the warnings above",
+                pkgs.len()
+            )
+        }));
     }
     if args.json {
-        return print_json(&json);
+        return Ok(());
     }
     if rows.is_empty() {
         ui::out(&if unreachable > 0 {
@@ -189,23 +199,33 @@ pub fn info(cfg: &Config, args: InfoArgs) -> Result<()> {
     };
 
     let sources = SourceRegistry::load(cfg);
-    let source = sources.for_ref(&manifest.source)?;
-    let described = source.describe(&manifest.source.id).unwrap_or_else(|e| {
-        ui::debug(&format!("describe failed: {e}"));
-        None
+    let source = match sources.for_ref(&manifest.source) {
+        Ok(s) => Some(s),
+        Err(e) => {
+            ui::warn(&format!("{}: {e}", manifest.name));
+            None
+        }
+    };
+    let described = source.as_ref().and_then(|s| {
+        s.describe(&manifest.source.id).unwrap_or_else(|e| {
+            ui::debug(&format!("describe failed: {e}"));
+            None
+        })
     });
     let opts = ListOpts {
         include_prerelease: cfg.prerelease || manifest.prerelease,
         ..Default::default()
     };
-    let release: Option<Release> =
-        match source.resolve(&manifest.source.id, &VersionSpec::Latest, &opts) {
+    let release: Option<Release> = match source.as_ref() {
+        Some(s) => match s.resolve(&manifest.source.id, &VersionSpec::Latest, &opts) {
             Ok(r) => Some(r),
             Err(e) => {
                 ui::warn(&format!("{}: {e}", manifest.name));
                 None
             }
-        };
+        },
+        None => None,
+    };
 
     let scored = match &release {
         Some(r) if args.assets => {
@@ -219,7 +239,7 @@ pub fn info(cfg: &Config, args: InfoArgs) -> Result<()> {
         return print_json(&serde_json::json!({
             "name": manifest.name,
             "source": manifest.source.to_string(),
-            "url": source.web_url(&manifest.source.id),
+            "url": source.as_ref().and_then(|s| s.web_url(&manifest.source.id)),
             "description": manifest.description.clone().or_else(|| described.as_ref().and_then(|d| d.description.clone())),
             "homepage": manifest.homepage.clone().or_else(|| described.as_ref().and_then(|d| d.homepage.clone())),
             "stars": described.as_ref().and_then(|d| d.stars),
@@ -263,7 +283,7 @@ pub fn info(cfg: &Config, args: InfoArgs) -> Result<()> {
         ))
     };
     field("source", manifest.source.to_string());
-    if let Some(url) = source.web_url(&manifest.source.id) {
+    if let Some(url) = source.as_ref().and_then(|s| s.web_url(&manifest.source.id)) {
         field("url", url);
     }
     if let Some(home) = manifest
@@ -355,15 +375,18 @@ pub fn info(cfg: &Config, args: InfoArgs) -> Result<()> {
 pub fn changelog(cfg: &Config, args: ChangelogArgs) -> Result<()> {
     let state = State::load(cfg)?;
     let spec = PackageSpec::parse(&args.package);
-    let installed = state.find(&args.package).cloned();
+    let installed = installed_for_spec(&state, &spec, &args.package);
     // Only the installed version has a file; any other release is the source's
-    // to answer for.
-    let elsewhere = args.latest || matches!(spec.version, VersionSpec::Exact(_));
+    // to answer for. `--file` always reads the payload on disk when installed.
+    let elsewhere = !args.file && (args.latest || matches!(spec.version, VersionSpec::Exact(_)));
 
     let mut whole_file = None;
     if !args.release {
         if let Some(pkg) = installed.as_ref().filter(|_| !elsewhere) {
-            let version = pkg.version.to_string();
+            let version = match &spec.version {
+                VersionSpec::Exact(v) => v.clone(),
+                VersionSpec::Latest => pkg.version.to_string(),
+            };
             match changelog::find_file(&pkg.prefix) {
                 Some(path) => {
                     let entry = changelog::from_file(&path, Some(&version))?;
@@ -668,17 +691,92 @@ pub fn stats(cfg: &Config, args: StatsArgs) -> Result<()> {
     Ok(())
 }
 
+/// `pkg@version` is not a state key. Look up by alias or source ref so
+/// `--file` still finds the payload on disk.
+fn installed_for_spec(state: &State, spec: &PackageSpec, raw: &str) -> Option<InstalledPackage> {
+    if let Some(pkg) = state.find(raw) {
+        return Some(pkg.clone());
+    }
+    if let Some(alias) = &spec.alias {
+        if let Some(pkg) = state.find(alias) {
+            return Some(pkg.clone());
+        }
+    }
+    if let Some(reference) = &spec.reference {
+        if let Some(pkg) = state.find(&reference.to_string()) {
+            return Some(pkg.clone());
+        }
+        if let Some(pkg) = state.find(&reference.id) {
+            return Some(pkg.clone());
+        }
+    }
+    None
+}
+
 /// Serializes a value as pretty-printed JSON and writes it to standard output.
-///
-/// # Examples
-///
-/// ```
-/// let value = serde_json::json!({"name": "example"});
-/// print_json(&value).unwrap();
-/// ```
 fn print_json<T: serde::Serialize>(value: &T) -> Result<()> {
     let text = serde_json::to_string_pretty(value)
         .map_err(|e| Error::parse("json output".to_string(), e.to_string()))?;
     ui::out(&text);
     Ok(())
+}
+
+fn outdated_status(checked: usize, failed: usize) -> &'static str {
+    if failed == 0 {
+        "ok"
+    } else if checked == 0 {
+        "fail"
+    } else {
+        "partial"
+    }
+}
+
+fn outdated_report(
+    checked: usize,
+    outdated: &[serde_json::Value],
+    failed: &[serde_json::Value],
+) -> serde_json::Value {
+    serde_json::json!({
+        "status": outdated_status(checked, failed.len()),
+        "outdated": outdated,
+        "failed": failed,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn outdated_json_names_the_worst_status_and_each_failure() {
+        let outdated = vec![serde_json::json!({
+            "name": "ripgrep",
+            "installed": "14.0.0",
+            "latest": "14.1.0",
+            "tag": "v14.1.0",
+            "pinned": false,
+        })];
+        let failed = vec![serde_json::json!({
+            "name": "ghost",
+            "error": "no releases",
+        })];
+        let report = outdated_report(1, &outdated, &failed);
+        assert_eq!(report["status"], "partial");
+        assert_eq!(report["outdated"][0]["name"], "ripgrep");
+        assert_eq!(report["failed"][0]["name"], "ghost");
+        assert_eq!(report["failed"][0]["error"], "no releases");
+    }
+
+    #[test]
+    fn outdated_json_marks_a_total_failure() {
+        let report = outdated_report(
+            0,
+            &[],
+            &[serde_json::json!({
+                "name": "ghost",
+                "error": "offline",
+            })],
+        );
+        assert_eq!(report["status"], "fail");
+    }
 }

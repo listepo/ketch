@@ -47,6 +47,7 @@ jobs:
       version: ${{ steps.decide.outputs.version }}
       tag: ${{ steps.decide.outputs.tag }}
       publish: ${{ steps.decide.outputs.publish }}
+      ref: ${{ steps.decide.outputs.ref }}
     steps:
       - uses: actions/checkout@v4
 
@@ -68,12 +69,26 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
           if [ "$FORCE" = "true" ]; then
+            # Repairing a published release must rebuild that tag's commit, not
+            # whatever HEAD is now. A force with no tag is a first publish that
+            # should have been an ordinary run.
+            if ! git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+              echo "$tag does not exist; force only rebuilds a published release" >&2
+              exit 1
+            fi
+            ref="$(git ls-remote origin "refs/tags/${tag}^{commit}" | awk '{print $1; exit}')"
+            if [ -z "$ref" ]; then
+              echo "could not resolve $tag to a commit" >&2
+              exit 1
+            fi
+            echo "ref=$ref" >> "$GITHUB_OUTPUT"
             echo "publish=true" >> "$GITHUB_OUTPUT"
-            echo "$tag: forced, publishing again"
+            echo "$tag: forced, publishing $ref again"
           elif git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
             echo "publish=false" >> "$GITHUB_OUTPUT"
             echo "$tag is already released; nothing to do"
           else
+            echo "ref=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
             echo "publish=true" >> "$GITHUB_OUTPUT"
             echo "$tag has no tag yet; releasing it"
           fi
@@ -86,6 +101,8 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.ref }}
 
       - run: rustup component add rustfmt clippy
       - uses: Swatinem/rust-cache@v2
@@ -126,6 +143,8 @@ jobs:
             sign: false
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.ref }}
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -182,7 +201,6 @@ jobs:
 
       # The arm64 runner can build the x86_64 slice but cannot run it, so only
       # the native one is smoke-tested here.
-      # The arm64 macOS runner can build the x86_64 slice but cannot run it.
       - name: Smoke test
         if: matrix.target != 'x86_64-apple-darwin'
         run: |
@@ -211,6 +229,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.ref }}
 
       - uses: actions/download-artifact@v4
         with:
@@ -253,9 +273,13 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/* --clobber
           else
+            # The trigger SHA is this run's workflow file, not necessarily the
+            # commit being rebuilt. A forced re-run after main has moved must
+            # still tag the commit that was checked out and built.
+            target="$(git rev-parse HEAD)"
             gh release create "$TAG" dist/* \
               --draft \
-              --target "$GITHUB_SHA" \
+              --target "$target" \
               --title "$TAG" \
               "${notes[@]}"
           fi
@@ -294,9 +318,19 @@ jobs:
           TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           TAP_REPO: listepo/homebrew-tap
           VERSION: ${{ needs.version.outputs.version }}
+          TAG: ${{ needs.version.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           if [ -z "$TAP_TOKEN" ]; then
             echo "HOMEBREW_TAP_TOKEN is not set; the cask in $TAP_REPO was not updated" >&2
+            exit 1
+          fi
+          # Checksums come from the published tag; the version advertised in
+          # the cask must be that tag's, not HEAD's Cargo.toml if they differ.
+          release_tag="$(gh release view "$TAG" --json tagName --jq .tagName)"
+          release_version="${release_tag#v}"
+          if [ "$release_version" != "$VERSION" ]; then
+            echo "cask version $release_version from $TAG does not match workflow version $VERSION" >&2
             exit 1
           fi
           arm="$(shasum -a 256 dist/ketch-aarch64-apple-darwin.tar.gz | cut -d' ' -f1)"
@@ -304,7 +338,7 @@ jobs:
 
           git clone "https://x-access-token:${TAP_TOKEN}@github.com/${TAP_REPO}.git" tap
           mkdir -p tap/Casks
-          scripts/cask.sh "$VERSION" "$arm" "$intel" > tap/Casks/ketch.rb
+          scripts/cask.sh "$release_version" "$arm" "$intel" > tap/Casks/ketch.rb
 
       - name: Lint the cask
         run: brew style tap/Casks/ketch.rb

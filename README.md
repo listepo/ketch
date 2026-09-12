@@ -38,6 +38,12 @@ ketch install local:/abs/or/rel      # same thing, as a package ref
 curl -fsSL https://raw.githubusercontent.com/listepo/ketch/main/install.sh | bash
 ```
 
+On Windows:
+
+```powershell
+irm https://raw.githubusercontent.com/listepo/ketch/main/install.ps1 | iex
+```
+
 or with Homebrew:
 
 ```bash
@@ -286,7 +292,7 @@ macOS, Linux and Windows. Each OS has a `Platform` backend that picks a release
 asset, unpacks it and places binaries; everything above that trait is shared.
 `cargo test` runs the suite for the host OS; CI does that on macOS, Linux and
 Windows. `ketch path install` on Windows writes the user PATH. Releases publish
-a tarball per target; `install.sh` fetches the one for the machine it runs on.
+a tarball per target; `install.sh` and `install.ps1` fetch the one for the machine they run on.
 
 ## Documentation
 

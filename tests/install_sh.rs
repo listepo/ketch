@@ -91,13 +91,36 @@ mod against_a_stub_release {
     /// A stand-in for the host binary. `self install` copies itself where the
     /// real one would put itself, so the script's own steps — and nothing else
     /// — decide where the binary and the bootstrap link end up.
-    const STUB_KETCH: &str = "#!/bin/bash\n\
-        case \"${1:-}\" in\n\
-        \x20 self) mkdir -p \"${KETCH_ROOT}/bin\" && cp \"$0\" \"${KETCH_ROOT}/bin/ketch\" ;;\n\
-        \x20 path) ;;\n\
-        \x20 *) echo 'ketch (stub)' ;;\n\
-        esac\n\
-        exit 0\n";
+    const STUB_KETCH: &str = r#"#!/bin/bash
+case "${1:-}" in
+  self)
+    mkdir -p "${KETCH_ROOT}/bin"
+    cp "$0" "${KETCH_ROOT}/bin/ketch"
+    link_dir=""
+    shift
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --link-dir)
+          shift
+          link_dir="${1:-}"
+          ;;
+      esac
+      shift
+    done
+    if [ -n "${link_dir}" ]; then
+      mkdir -p "${link_dir}"
+      dest="$(cd "${link_dir}" && pwd -P)"
+      bin="$(cd "${KETCH_ROOT}/bin" && pwd -P)"
+      if [ "${dest}" != "${bin}" ]; then
+        ln -sfn "${KETCH_ROOT}/bin/ketch" "${link_dir}/ketch"
+      fi
+    fi
+    ;;
+  path) ;;
+  *) echo 'ketch (stub)' ;;
+esac
+exit 0
+"#;
 
     /// Serves the three URLs the script asks for, and nothing else.
     const STUB_CURL: &str = "#!/bin/bash\n\

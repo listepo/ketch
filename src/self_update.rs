@@ -14,7 +14,7 @@
 use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::install::{InstallRequest, Installed};
-use crate::model::{AssetSelector, PackageSpec, Version, VersionSpec};
+use crate::model::{AssetSelector, LinkKind, LinkRecord, PackageSpec, Version, VersionSpec};
 use crate::source::{ListOpts, SourceRegistry};
 use crate::state::{Lock, State};
 use crate::{install, ui};
@@ -46,7 +46,7 @@ pub fn current_version() -> Version {
 /// downloaded, and this path is the one that verifies it against the published
 /// checksum. Returns `Error::AlreadyInstalled` when this version already is the
 /// package and `force` is off, like any other install.
-pub fn install_self(cfg: &Config, force: bool) -> Result<Installed> {
+pub fn install_self(cfg: &Config, force: bool, link_dir: Option<&Path>) -> Result<Installed> {
     let _lock = Lock::acquire(cfg)?;
     let mut state = State::load(cfg)?;
     // Built-in sources only, as in `update`.
@@ -76,6 +76,9 @@ pub fn install_self(cfg: &Config, force: bool) -> Result<Installed> {
         std::fs::rename(&flat, aside).map_err(|e| Error::io(&flat, e))?;
     }
     let result = install::install(cfg, &sources, &mut state, &req).and_then(|out| {
+        if let Some(dir) = link_dir {
+            record_bootstrap_link(cfg, &mut state, dir)?;
+        }
         state.save(cfg)?;
         Ok(out)
     });
@@ -91,6 +94,153 @@ pub fn install_self(cfg: &Config, force: bool) -> Result<Installed> {
         }
     }
     result
+}
+
+/// The bootstrap binary name on this platform.
+fn bootstrap_binary_name() -> &'static str {
+    if cfg!(windows) {
+        "ketch.exe"
+    } else {
+        SELF_NAME
+    }
+}
+
+/// Whether a link record is the install.sh bootstrap outside the bin dir.
+fn is_bootstrap_record(record: &LinkRecord, bin_dir: &Path) -> bool {
+    let target = bin_dir.join(bootstrap_binary_name());
+    record.target == target
+        && record
+            .link
+            .file_name()
+            .is_some_and(|n| n == bootstrap_binary_name())
+        && record
+            .link
+            .parent()
+            .is_some_and(|parent| canonical_dir(parent).ok() != Some(bin_dir.to_path_buf()))
+}
+
+/// Resolve a directory the way install.sh does before comparing paths.
+fn canonical_dir(path: &Path) -> Result<PathBuf> {
+    if !path.exists() {
+        if let Some(parent) = path.parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
+            }
+        }
+        std::fs::create_dir_all(path).map_err(|e| Error::io(path, e))?;
+    }
+    std::fs::canonicalize(path).map_err(|e| Error::io(path, e))
+}
+
+fn remove_any(path: &Path) -> std::io::Result<()> {
+    match std::fs::symlink_metadata(path) {
+        Ok(meta) if meta.is_dir() => std::fs::remove_dir_all(path),
+        Ok(_) => std::fs::remove_file(path),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e),
+    }
+}
+
+/// Record a bootstrap link or copy outside `<root>/bin`, for install.sh.
+///
+/// The link follows `<root>/bin/ketch` so `self update` keeps the bootstrap
+/// path current. Uninstall removes it through the package's link records.
+fn record_bootstrap_link(cfg: &Config, state: &mut State, link_dir: &Path) -> Result<()> {
+    let platform = crate::platform::host()?;
+    let bin_dir = canonical_dir(&cfg.bin_dir)?;
+    let link_dir = canonical_dir(link_dir)?;
+    let target = cfg.bin_dir.join(bootstrap_binary_name());
+
+    let old: Vec<LinkRecord> = state
+        .get(SELF_NAME)
+        .map(|pkg| {
+            pkg.links
+                .iter()
+                .filter(|record| is_bootstrap_record(record, &bin_dir))
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default();
+    if !old.is_empty() {
+        platform.unplace(&old)?;
+    }
+
+    if link_dir == bin_dir {
+        if let Some(entry) = state.get_mut(SELF_NAME) {
+            entry
+                .links
+                .retain(|record| !is_bootstrap_record(record, &bin_dir));
+        }
+        return Ok(());
+    }
+
+    if !target.is_file() {
+        return Err(Error::msg(format!(
+            "{} is missing after install",
+            target.display()
+        )));
+    }
+
+    let link = link_dir.join(bootstrap_binary_name());
+    let recorded = state
+        .get(SELF_NAME)
+        .map(|pkg| pkg.links.as_slice())
+        .unwrap_or(&[]);
+    clear_bootstrap_destination(&link, recorded)?;
+    let record = create_bootstrap_link(&link, &target)?;
+
+    let Some(entry) = state.get_mut(SELF_NAME) else {
+        return Err(Error::msg("ketch package not installed"));
+    };
+    entry
+        .links
+        .retain(|record| !is_bootstrap_record(record, &bin_dir));
+    entry.links.push(record);
+    Ok(())
+}
+
+fn clear_bootstrap_destination(link: &Path, recorded: &[LinkRecord]) -> Result<()> {
+    match std::fs::symlink_metadata(link) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Ok(_) if recorded.iter().any(|record| record.link == link) => {
+            remove_any(link).map_err(|e| Error::io(link, e))
+        }
+        Ok(_) => Err(Error::msg(format!(
+            "{} already exists and was not installed by ketch for this package; move it aside first",
+            link.display()
+        ))),
+        Err(e) => Err(Error::io(link, e)),
+    }
+}
+
+fn create_bootstrap_link(link: &Path, target: &Path) -> Result<LinkRecord> {
+    if let Some(parent) = link.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
+    }
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(target, link).map_err(|e| Error::io(link, e))?;
+    #[cfg(windows)]
+    std::fs::copy(target, link).map_err(|e| Error::io(link, e))?;
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = (link, target);
+        Err(Error::msg("bootstrap links are not supported on this OS"))
+    }
+    #[cfg(any(unix, windows))]
+    Ok(LinkRecord {
+        link: link.to_path_buf(),
+        target: target.to_path_buf(),
+        kind: {
+            #[cfg(unix)]
+            {
+                LinkKind::Symlink
+            }
+            #[cfg(windows)]
+            {
+                LinkKind::CopiedFile
+            }
+        },
+    })
 }
 
 /// Where the running binary lives, with symlinks resolved so we replace the
@@ -605,5 +755,89 @@ mod tests {
         remove_root_at(&cfg, &cfg.root, Some(&home));
 
         assert!(!cfg.bin_dir.exists(), "dedicated bin dir should be gone");
+    }
+
+    fn installed_ketch(prefix: PathBuf) -> crate::model::InstalledPackage {
+        crate::model::InstalledPackage {
+            name: SELF_NAME.into(),
+            version: Version::parse("1.0.0"),
+            source: crate::model::PackageRef::github("listepo/ketch"),
+            tag: "v1.0.0".into(),
+            target: crate::model::TargetSpec::host(),
+            asset_name: "a.tar.gz".into(),
+            sha256: "0".repeat(64),
+            checksum_verified: true,
+            installed_at: 0,
+            prefix,
+            links: Vec::new(),
+            pinned: false,
+            origin: crate::model::ManifestOrigin::Inferred,
+            manifest: None,
+            local_kind: None,
+            local_path: None,
+        }
+    }
+
+    #[test]
+    fn a_bootstrap_link_dir_is_recorded_and_placed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg = Config::load(Some(tmp.path().join("root"))).unwrap();
+        std::fs::create_dir_all(&cfg.bin_dir).unwrap();
+        let bin = cfg.bin_dir.join(bootstrap_binary_name());
+        std::fs::write(&bin, b"ketch").unwrap();
+
+        let mut state = State::load(&cfg).unwrap();
+        state.insert(installed_ketch(cfg.store_dir.join(SELF_NAME)));
+        let bootstrap = tmp.path().join("bootstrap");
+        record_bootstrap_link(&cfg, &mut state, &bootstrap).unwrap();
+
+        let link = std::fs::canonicalize(&bootstrap)
+            .unwrap()
+            .join(bootstrap_binary_name());
+        #[cfg(unix)]
+        {
+            assert!(
+                link.symlink_metadata().unwrap().file_type().is_symlink(),
+                "the bootstrap path must follow the bin-dir binary"
+            );
+            assert_eq!(
+                std::fs::canonicalize(std::fs::read_link(&link).unwrap()).unwrap(),
+                std::fs::canonicalize(&bin).unwrap()
+            );
+        }
+        #[cfg(windows)]
+        {
+            assert!(link.is_file());
+            assert_eq!(std::fs::read(&link).unwrap(), b"ketch");
+        }
+        let pkg = state.get(SELF_NAME).unwrap();
+        assert_eq!(pkg.links.len(), 1);
+        assert_eq!(pkg.links[0].link, link);
+        assert_eq!(
+            std::fs::canonicalize(&pkg.links[0].target).unwrap(),
+            std::fs::canonicalize(&bin).unwrap()
+        );
+    }
+
+    #[test]
+    fn a_link_dir_that_is_the_bin_dir_is_left_alone() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg = Config::load(Some(tmp.path().join("root"))).unwrap();
+        std::fs::create_dir_all(&cfg.bin_dir).unwrap();
+        let bin = cfg.bin_dir.join(bootstrap_binary_name());
+        std::fs::write(&bin, b"ketch").unwrap();
+
+        let mut state = State::load(&cfg).unwrap();
+        state.insert(installed_ketch(cfg.store_dir.join(SELF_NAME)));
+        record_bootstrap_link(&cfg, &mut state, &cfg.bin_dir.clone()).unwrap();
+
+        assert!(
+            std::fs::symlink_metadata(&bin)
+                .unwrap()
+                .file_type()
+                .is_file(),
+            "the installed binary must still be the binary, not a link to itself"
+        );
+        assert!(state.get(SELF_NAME).unwrap().links.is_empty());
     }
 }

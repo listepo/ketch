@@ -610,9 +610,9 @@ pub fn plugin(cfg: &Config, command: PluginCommand) -> Result<()> {
 
 pub fn zelf(cfg: &Config, command: SelfCommand) -> Result<()> {
     match command {
-        SelfCommand::Install { force } => {
+        SelfCommand::Install { force, link_dir } => {
             let version = self_update::current_version();
-            match self_update::install_self(cfg, force) {
+            match self_update::install_self(cfg, force, link_dir.as_deref()) {
                 Ok(out) => {
                     let detail = match &out.replaced {
                         Some(old) if old != &out.package.version => {

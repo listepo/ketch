@@ -232,33 +232,50 @@ fn file_name(path: &Path) -> String {
 /// it is killed. Without them a single misbehaving plugin hangs every ketch
 /// command, because discovery probes all of them before anything else runs.
 fn output(path: &Path, args: &[&str]) -> Result<String> {
+    run_plugin(path, args, PLUGIN_TIMEOUT)
+}
+
+fn run_plugin(path: &Path, args: &[&str], timeout: Duration) -> Result<String> {
     let fail = |detail: String| Error::Plugin {
         name: file_name(path),
         detail,
     };
-    let mut child = Command::new(path)
+    let mut command = Command::new(path);
+    command
         .args(args)
         .env("KETCH_PROTOCOL_VERSION", PROTOCOL_VERSION.to_string())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    set_process_group(&mut command);
+    let mut child = command
         .spawn()
         .map_err(|e| fail(format!("could not run {}: {e}", path.display())))?;
 
+    let pid = child.id();
+    let deadline = Instant::now() + timeout;
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
-    let (out, err, status) = std::thread::scope(|scope| {
-        // Both pipes are drained at once. Filling either one blocks the child,
-        // and a child blocked writing to stderr never closes stdout.
-        let reading_out = scope.spawn(move || capped(stdout));
-        let reading_err = scope.spawn(move || capped(stderr));
-        let status = wait_with_deadline(&mut child, PLUGIN_TIMEOUT);
-        (
-            reading_out.join().unwrap_or_default(),
-            reading_err.join().unwrap_or_default(),
-            status,
-        )
-    });
+    // Both pipes are drained at once. Filling either one blocks the child,
+    // and a child blocked writing to stderr never closes stdout.
+    let reading_out = std::thread::spawn(move || capped(stdout));
+    let reading_err = std::thread::spawn(move || capped(stderr));
+    let status = wait_with_deadline(&mut child, timeout);
+    // A plugin may exit while a grandchild still holds a pipe; killing only
+    // the direct child leaves reader threads blocked on EOF past the deadline.
+    kill_process_tree(pid);
+    // Each join consumes whatever time is left, not the original remainder:
+    // two sequential waits of `remaining` would otherwise double the deadline.
+    let out = join_with_timeout(
+        reading_out,
+        deadline.saturating_duration_since(Instant::now()),
+    )
+    .unwrap_or_default();
+    let err = join_with_timeout(
+        reading_err,
+        deadline.saturating_duration_since(Instant::now()),
+    )
+    .unwrap_or_default();
 
     let status = status.map_err(fail)?;
     if out.len() as u64 > PLUGIN_MAX_OUTPUT {
@@ -287,18 +304,30 @@ fn capped<R: std::io::Read>(pipe: Option<R>) -> Vec<u8> {
     buf
 }
 
-/// Wait for the child, killing it if it outstays its welcome.
+/// Wait for the child, killing its process tree if it outstays its welcome.
 fn wait_with_deadline(
     child: &mut std::process::Child,
     timeout: Duration,
 ) -> std::result::Result<ExitStatus, String> {
+    let pid = child.id();
     let deadline = Instant::now() + timeout;
     loop {
         match child.try_wait() {
             Ok(Some(status)) => return Ok(status),
             Ok(None) if Instant::now() >= deadline => {
+                kill_process_tree(pid);
+                // Direct SIGKILL as well: process-group kill can fail when
+                // `kill -SIGNAL -pid` is parsed as two signals, and then
+                // `wait()` would sit out the child's remaining sleep.
                 let _ = child.kill();
-                let _ = child.wait();
+                let give_up = Instant::now() + Duration::from_millis(500);
+                loop {
+                    match child.try_wait() {
+                        Ok(Some(_)) | Err(_) => break,
+                        Ok(None) if Instant::now() >= give_up => break,
+                        Ok(None) => std::thread::sleep(PLUGIN_POLL),
+                    }
+                }
                 return Err(format!(
                     "did not answer within {}s and was stopped",
                     timeout.as_secs()
@@ -306,10 +335,82 @@ fn wait_with_deadline(
             }
             Ok(None) => std::thread::sleep(PLUGIN_POLL),
             Err(e) => {
-                let _ = child.kill();
+                kill_process_tree(pid);
                 return Err(format!("could not be waited on: {e}"));
             }
         }
+    }
+}
+
+/// Start the plugin in its own process group so descendants share one kill target.
+#[cfg(unix)]
+fn set_process_group(command: &mut Command) {
+    use std::os::unix::process::CommandExt;
+    command.process_group(0);
+}
+
+#[cfg(windows)]
+fn set_process_group(command: &mut Command) {
+    use std::os::windows::process::CommandExt;
+    // CREATE_NEW_PROCESS_GROUP — descendants stay in one tree for taskkill /T.
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+    command.creation_flags(CREATE_NEW_PROCESS_GROUP);
+}
+
+#[cfg(not(any(unix, windows)))]
+fn set_process_group(_command: &mut Command) {}
+
+/// Stop every descendant, not only the direct child ketch spawned.
+#[cfg(unix)]
+fn kill_process_tree(pid: u32) {
+    if pid == 0 {
+        return;
+    }
+    // Negative pid is a process group; `--` so `-PID` is not a signal.
+    // The pid itself is killed too if the group leader has already exited.
+    let pgid = format!("-{pid}");
+    let pid_s = pid.to_string();
+    for target in [pgid.as_str(), pid_s.as_str()] {
+        let _ = Command::new("kill")
+            .args(["-s", "KILL", "--", target])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+}
+
+#[cfg(windows)]
+fn kill_process_tree(pid: u32) {
+    if pid == 0 {
+        return;
+    }
+    let _ = Command::new("taskkill")
+        .args(["/PID", &pid.to_string(), "/T", "/F"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+}
+
+#[cfg(not(any(unix, windows)))]
+fn kill_process_tree(_pid: u32) {}
+
+/// Join a reader thread, but only until the plugin deadline.
+fn join_with_timeout<T: Send + 'static>(
+    handle: std::thread::JoinHandle<T>,
+    timeout: Duration,
+) -> Option<T> {
+    if timeout.is_zero() {
+        return None;
+    }
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(handle.join());
+    });
+    match rx.recv_timeout(timeout) {
+        Ok(Ok(value)) => Some(value),
+        _ => None,
     }
 }
 
@@ -328,11 +429,10 @@ mod tests {
 
     #[test]
     fn a_plugin_that_never_finishes_is_killed() {
-        let mut child = Command::new("/bin/sh")
-            .args(["-c", "sleep 60"])
-            .stdin(Stdio::null())
-            .spawn()
-            .unwrap();
+        let mut command = Command::new("/bin/sh");
+        command.args(["-c", "sleep 60"]).stdin(Stdio::null());
+        set_process_group(&mut command);
+        let mut child = command.spawn().unwrap();
         let started = Instant::now();
         let outcome = wait_with_deadline(&mut child, Duration::from_millis(100));
         assert!(
@@ -340,6 +440,42 @@ mod tests {
             "a hung plugin must not be waited on forever"
         );
         assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn a_plugin_that_orphans_a_child_holding_stdout_is_stopped_within_the_deadline() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(format!("{PLUGIN_PREFIX}orphan"));
+        std::fs::write(
+            &path,
+            format!(
+                r#"#!/bin/sh
+case "$1" in
+  capabilities)
+    # bash waits for `&` jobs when the script exits; exec replaces the
+    # shell so it cannot. The sleeper keeps the inherited stdout pipe.
+    sleep 5 &
+    exec /usr/bin/printf '%s\n' '{{"protocol":{PROTOCOL_VERSION},"scheme":"orphan"}}'
+    ;;
+  *) exit 1 ;;
+esac
+"#
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let started = Instant::now();
+        let outcome = run_plugin(&path, &["capabilities"], Duration::from_secs(2));
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed < Duration::from_secs(4),
+            "must return within the deadline, not after the grandchild's sleep (took {elapsed:?})"
+        );
+        assert!(
+            outcome.is_ok(),
+            "stdout should be read once the grandchild is stopped: {outcome:?}"
+        );
     }
 
     #[test]

@@ -69,6 +69,15 @@ pub fn read_head(path: &Path) -> Result<Vec<u8>> {
 /// Absolute paths and `..` components are refused outright; the result is
 /// always a relative path safe to join onto the destination.
 pub fn safe_member_path(raw: &Path) -> Result<PathBuf> {
+    // Check the raw string before `components()`: on Windows a backslash is a
+    // separator, so `a\\b` would otherwise become the ordinary relative path
+    // `a/b` and slip through. Archive member names must never carry one.
+    if raw.to_string_lossy().contains('\\') {
+        return Err(Error::msg(format!(
+            "refusing archive entry with unsafe name: {}",
+            raw.display()
+        )));
+    }
     let mut safe = PathBuf::new();
     for component in raw.components() {
         match component {

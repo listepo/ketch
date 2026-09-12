@@ -187,7 +187,8 @@ conditional, multi-stage Rust automation.
 | `scripts/release.sh` | the same version bump and pull request, by hand |
 | `plan.md` | what is being built next, and what each piece would take |
 | `scripts/cask.sh` | the Homebrew cask, generated into `listepo/homebrew-tap` on release |
-| `install.sh` | the `curl | bash` installer; only bootstraps `ketch self install` |
+| `install.sh` | the `curl | bash` installer for macOS and Linux; only bootstraps `ketch self install` |
+| `install.ps1` | the `irm | iex` installer for Windows; same bootstrap as `install.sh` |
 | `.github/dependabot.yml` | weekly `chore(deps)` pull requests for cargo, npm and GitHub Actions; not `mise.toml` |
 
 The rule that keeps `cmd/` thin: anything touching the install tree belongs in

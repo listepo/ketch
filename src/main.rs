@@ -102,7 +102,7 @@ fn run(cli: Cli) -> Result<()> {
 
     let cfg = config::Config::load(cli.global.root.clone())?;
     cfg.ensure_dirs()?;
-    log::init(&cfg);
+    log::init(&cfg, cli.global.verbose);
 
     #[cfg(feature = "tui")]
     let _tui = start_tui(&cli);

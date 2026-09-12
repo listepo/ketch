@@ -472,6 +472,9 @@ pub enum SelfCommand {
         /// Reinstall even when this version is already the package
         #[arg(long, short)]
         force: bool,
+        /// Place a bootstrap link or copy here, pointing at the bin-dir binary
+        #[arg(long, value_name = "DIR")]
+        link_dir: Option<PathBuf>,
     },
     /// Upgrade ketch to the latest release
     Update {

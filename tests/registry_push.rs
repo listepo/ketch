@@ -290,6 +290,36 @@ fn registry_push_without_a_token_explains_what_to_set_before_touching_the_networ
 }
 
 #[test]
+fn registry_push_refuses_a_local_source() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let root = temp.child("ketch-root");
+    let project = temp.child("tool");
+    project.create_dir_all().unwrap();
+    project
+        .child("ketch.toml")
+        .write_str("name = \"tool\"\nsource = \"local:/etc/passwd\"\n")
+        .unwrap();
+
+    Command::cargo_bin("ketch")
+        .unwrap()
+        .current_dir(project.path())
+        .args([
+            "--root",
+            root.path().to_str().unwrap(),
+            "registry",
+            "push",
+            "--dry-run",
+        ])
+        .env("NO_COLOR", "1")
+        .env_remove("KETCH_GITHUB_TOKEN")
+        .env_remove("GITHUB_TOKEN")
+        .env_remove("GH_TOKEN")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("local path"));
+}
+
+#[test]
 fn registry_push_refuses_a_package_file_with_an_unknown_key() {
     let temp = assert_fs::TempDir::new().unwrap();
     let root = temp.child("ketch-root");

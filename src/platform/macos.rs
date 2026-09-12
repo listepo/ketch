@@ -596,6 +596,33 @@ mod tests {
         // Already gone is not a failure: uninstall stays idempotent.
         std::fs::remove_file(&link).unwrap();
         platform.unplace(&[record]).unwrap();
+
+        // A copied `.app` whose store copy is gone: same stale-record class.
+        let store = tmp.path().join("store/thing/1.0");
+        let bundle = store.join("Thing.app");
+        std::fs::create_dir_all(bundle.join("Contents")).unwrap();
+        std::fs::write(bundle.join("Contents/Info.plist"), b"x").unwrap();
+        let apps = tmp.path().join("Applications");
+        std::fs::create_dir_all(&apps).unwrap();
+        let app_link = apps.join("Thing.app");
+        copy_tree(&bundle, &app_link).unwrap();
+        let app_record = LinkRecord {
+            link: app_link.clone(),
+            target: bundle.clone(),
+            kind: LinkKind::CopiedApp,
+        };
+
+        platform.unplace(std::slice::from_ref(&app_record)).unwrap();
+        assert!(!app_link.exists());
+
+        std::fs::create_dir_all(app_link.join("Contents")).unwrap();
+        std::fs::write(app_link.join("Contents/mine.txt"), b"the user's own copy").unwrap();
+        std::fs::remove_dir_all(&store).unwrap();
+        platform.unplace(std::slice::from_ref(&app_record)).unwrap();
+        assert!(
+            app_link.join("Contents/mine.txt").is_file(),
+            "a stale record must not authorize deleting the user's bundle"
+        );
     }
 
     #[test]

@@ -5,7 +5,7 @@
 
 use super::{ListOpts, Source};
 use crate::config::validate_repo;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::http::Http;
 use crate::model::{Checksum, Release, ReleaseAsset, SourceInfo, Version, VersionSpec};
 use crate::ui::ProgressSink;
@@ -345,6 +345,7 @@ impl Source for GitHubSource {
         candidates.sort_by_key(|a| sidecar_target(&a.name) != Some(wanted));
 
         let mut fetches = 0;
+        let mut fetch_error: Option<Error> = None;
         for asset in candidates {
             let sidecar = sidecar_target(&asset.name);
             if sidecar.is_none() && !is_aggregate_checksum_file(&asset.name) {
@@ -358,13 +359,20 @@ impl Source for GitHubSource {
                 break;
             }
             fetches += 1;
-            // A checksum file that will not download is not a reason to fail
-            // the install; it just means we fall back to whatever else we have.
             // Authenticated like the assets themselves: a private repository
             // publishes its sidecars privately too.
-            let Ok(body) = self.http.get_text(&asset.url, true) else {
-                crate::ui::debug(&format!("could not read checksums from {}", asset.name));
-                continue;
+            let body = match self.http.get_text(&asset.url, true) {
+                Ok(body) => body,
+                // A missing checksum file is ordinary; a dead network or a 403
+                // is not, and must not be reported as "no published checksum".
+                Err(Error::Http { status: 404, .. }) => continue,
+                Err(e) => {
+                    fetch_error = Some(Error::msg(format!(
+                        "could not fetch checksum file {}: {e}",
+                        asset.name
+                    )));
+                    continue;
+                }
             };
             match sidecar {
                 Some(target) => {
@@ -382,6 +390,11 @@ impl Source for GitHubSource {
                         out.entry(name).or_insert(hex);
                     }
                 }
+            }
+        }
+        if !out.contains_key(wanted) {
+            if let Some(err) = fetch_error {
+                return Err(err);
             }
         }
         Ok(out)
@@ -530,6 +543,59 @@ not-a-hash                                                          junk.txt
             api: DEFAULT_API.to_string(),
         };
         assert!(source.repo_url("https://attacker.invalid/x", "").is_err());
+    }
+
+    #[test]
+    fn a_checksum_fetch_failure_is_not_reported_as_a_missing_file() {
+        use crate::model::{Release, ReleaseAsset, Version};
+        use std::collections::BTreeMap;
+
+        let source = GitHubSource {
+            http: Arc::new(Http::anonymous()),
+            api: DEFAULT_API.to_string(),
+        };
+        let release = Release {
+            version: Version::parse("1.0.0"),
+            tag: "v1.0.0".into(),
+            prerelease: false,
+            draft: false,
+            published_at: None,
+            notes: None,
+            assets: vec![
+                ReleaseAsset {
+                    name: "tool.tar.gz".into(),
+                    url: "https://example.invalid/tool.tar.gz".into(),
+                    size: 0,
+                    content_type: None,
+                    digest: None,
+                    headers: BTreeMap::new(),
+                },
+                ReleaseAsset {
+                    name: "tool.tar.gz.sha256".into(),
+                    url: "http://127.0.0.1:1/unreachable".into(),
+                    size: 0,
+                    content_type: None,
+                    digest: None,
+                    headers: BTreeMap::new(),
+                },
+            ],
+        };
+        let err = source
+            .checksums("owner/repo", &release, "tool.tar.gz")
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("could not fetch checksum file"),
+            "unexpected error: {err}"
+        );
+        assert!(
+            !err.contains("no published checksum"),
+            "fetch failure looked like a missing checksum: {err}"
+        );
+        assert!(
+            !err.contains("does not exist"),
+            "fetch failure looked like a missing file: {err}"
+        );
     }
 
     #[test]

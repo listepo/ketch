@@ -122,7 +122,16 @@ impl Config {
             .filter(|v| !v.is_empty())
             .map(|v| expand_tilde(Path::new(&v)))
             .or_else(|| file.apps_dir.map(|p| expand_tilde(&p)))
-            .unwrap_or_else(|| PathBuf::from("/Applications"));
+            .unwrap_or_else(|| {
+                // `/Applications` is absolute on Unix and the macOS convention.
+                // On Windows it is a relative path, so Config::load would refuse
+                // every run; park unused app bundles under the root instead.
+                if cfg!(target_os = "macos") {
+                    PathBuf::from("/Applications")
+                } else {
+                    root.join("apps")
+                }
+            });
 
         // A relative apps dir would resolve against whatever directory the
         // user happened to run ketch from, and install somewhere different
@@ -160,10 +169,21 @@ impl Config {
                 .unwrap_or_else(|| REGISTRY_REPO.to_string()),
         )?;
 
+        // Each variable is filtered before the next is tried: `KETCH_GITHUB_TOKEN=`
+        // is how CI clears a secret without blocking GITHUB_TOKEN or GH_TOKEN.
         let github_token = std::env::var("KETCH_GITHUB_TOKEN")
             .ok()
-            .or_else(|| std::env::var("GITHUB_TOKEN").ok())
-            .or_else(|| std::env::var("GH_TOKEN").ok())
+            .filter(|t| !t.trim().is_empty())
+            .or_else(|| {
+                std::env::var("GITHUB_TOKEN")
+                    .ok()
+                    .filter(|t| !t.trim().is_empty())
+            })
+            .or_else(|| {
+                std::env::var("GH_TOKEN")
+                    .ok()
+                    .filter(|t| !t.trim().is_empty())
+            })
             .or(file.github_token)
             .filter(|t| !t.trim().is_empty());
 
@@ -308,6 +328,10 @@ fn env_bool(key: &str) -> Result<Option<bool>> {
         Err(std::env::VarError::NotPresent) => return Ok(None),
         Err(e) => return Err(Error::Config(format!("{key}: {e}"))),
     };
+    // `KETCH_PRERELEASE=` clears the override without forcing a parse error.
+    if value.trim().is_empty() {
+        return Ok(None);
+    }
     match value.trim().to_ascii_lowercase().as_str() {
         "1" | "true" | "yes" | "on" => Ok(Some(true)),
         "0" | "false" | "no" | "off" => Ok(Some(false)),
@@ -415,5 +439,26 @@ mod tests {
         std::env::remove_var(KEY);
 
         assert!(error.to_string().contains(KEY));
+    }
+
+    #[test]
+    fn an_empty_ketch_github_token_falls_back_to_the_next_token_variable() {
+        std::env::set_var("KETCH_GITHUB_TOKEN", "");
+        std::env::set_var("GITHUB_TOKEN", "ghp_fallback");
+
+        let cfg = Config::load(Some(std::env::temp_dir().join("ketch-empty-token-test"))).unwrap();
+
+        std::env::remove_var("KETCH_GITHUB_TOKEN");
+        std::env::remove_var("GITHUB_TOKEN");
+
+        assert_eq!(cfg.github_token.as_deref(), Some("ghp_fallback"));
+    }
+
+    #[test]
+    fn an_empty_boolean_environment_variable_is_treated_as_unset() {
+        const KEY: &str = "KETCH_TEST_BOOLEAN_EMPTY";
+        std::env::set_var(KEY, "");
+        assert_eq!(env_bool(KEY).unwrap(), None);
+        std::env::remove_var(KEY);
     }
 }

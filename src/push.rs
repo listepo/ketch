@@ -74,6 +74,15 @@ pub fn load(path: &Path) -> Result<Proposal> {
     manifest
         .validate()
         .map_err(|e| Error::parse(what.as_str(), e.to_string()))?;
+    // Same rule as `registry::read_package`: a shared entry must name a release
+    // anyone can fetch, not a path on one machine's disk.
+    if manifest.source.scheme == "local" {
+        return Err(Error::parse(
+            what.as_str(),
+            "a registry package cannot install from a local path; use `github:owner/repo`"
+                .to_string(),
+        ));
+    }
     Ok(Proposal {
         name,
         body,
@@ -976,6 +985,15 @@ mod tests {
         let file = dir.path().join("ketch.toml");
         std::fs::write(&file, "name = \"../evil\"\nsource = \"github:acme/tool\"\n").unwrap();
         assert!(load(&file).is_err());
+    }
+
+    #[test]
+    fn a_local_source_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("ketch.toml");
+        std::fs::write(&file, "name = \"tool\"\nsource = \"local:/etc/passwd\"\n").unwrap();
+        let error = load(&file).unwrap_err().to_string();
+        assert!(error.contains("local path"), "{error}");
     }
 
     #[test]

@@ -96,10 +96,33 @@ fn swap_in(cfg: &Config, tree: &Path, repo: &str) -> Result<usize> {
         )));
     }
     if cfg.registry_dir.exists() {
-        std::fs::remove_dir_all(&cfg.registry_dir).map_err(|e| Error::io(&cfg.registry_dir, e))?;
+        // Move the working copy aside first. Deleting it before the new tree
+        // is in place would leave no registry if the second rename failed
+        // (EXDEV, EACCES, ENOSPC) or if another ketch ran in the gap.
+        let aside = aside_path(&cfg.registry_dir);
+        if aside.exists() {
+            std::fs::remove_dir_all(&aside).map_err(|e| Error::io(&aside, e))?;
+        }
+        std::fs::rename(&cfg.registry_dir, &aside).map_err(|e| Error::io(&cfg.registry_dir, e))?;
+        if let Err(e) = std::fs::rename(tree, &cfg.registry_dir) {
+            let _ = std::fs::rename(&aside, &cfg.registry_dir);
+            return Err(Error::io(&cfg.registry_dir, e));
+        }
+        let _ = std::fs::remove_dir_all(&aside);
+    } else {
+        std::fs::rename(tree, &cfg.registry_dir).map_err(|e| Error::io(&cfg.registry_dir, e))?;
     }
-    std::fs::rename(tree, &cfg.registry_dir).map_err(|e| Error::io(&cfg.registry_dir, e))?;
     Ok(count)
+}
+
+/// Sibling of the live registry, unique per process so a leftover aside from a
+/// crashed run is not the path this swap uses.
+fn aside_path(registry_dir: &Path) -> PathBuf {
+    let name = registry_dir
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy();
+    registry_dir.with_file_name(format!(".{name}.aside-{}", std::process::id()))
 }
 
 /// One package file that failed [`check_tree`].
@@ -131,7 +154,7 @@ pub fn check_tree(dir: &Path) -> Report {
         return unreadable(dir, "no such directory");
     }
 
-    let folders = package_dirs(dir);
+    let folders = candidate_package_dirs(dir);
     if folders.is_empty() {
         return unreadable(
             dir,
@@ -143,6 +166,13 @@ pub fn check_tree(dir: &Path) -> Report {
     let mut errors = Vec::new();
     for folder in folders {
         let path = folder.join(PACKAGE_FILE);
+        if !is_package_file(&path) {
+            errors.push(ValidationError {
+                path: path.display().to_string(),
+                message: format!("`{PACKAGE_FILE}` must be a regular file, not a symlink"),
+            });
+            continue;
+        }
         let name = folder
             .file_name()
             .unwrap_or_default()
@@ -248,13 +278,20 @@ pub(crate) fn collisions(packages: &[(Manifest, PathBuf)]) -> Vec<String> {
 
 fn load_dir(dir: &Path) -> Vec<(Manifest, PathBuf)> {
     let mut out = Vec::new();
-    for folder in package_dirs(dir) {
+    for folder in candidate_package_dirs(dir) {
         let path = folder.join(PACKAGE_FILE);
         let name = folder
             .file_name()
             .unwrap_or_default()
             .to_string_lossy()
             .to_string();
+        if !is_package_file(&path) {
+            crate::ui::warn(&format!(
+                "ignoring registry package `{}`: `{PACKAGE_FILE}` is not a regular file",
+                changelog::sanitize(&name)
+            ));
+            continue;
+        }
         match read_package(&path, &name) {
             Ok(manifest) => out.push((manifest, path)),
             // One broken entry must not hide the rest of the registry.
@@ -267,15 +304,18 @@ fn load_dir(dir: &Path) -> Vec<(Manifest, PathBuf)> {
     out
 }
 
-/// Top-level folders that hold a [`PACKAGE_FILE`].
-fn package_dirs(dir: &Path) -> Vec<PathBuf> {
+/// Top-level folders that contain a `ketch.toml`, including a symlink one.
+///
+/// [`check_tree`] must see those links so it can fail closed; [`load_dir`]
+/// warns and skips them.
+fn candidate_package_dirs(dir: &Path) -> Vec<PathBuf> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();
     };
     let mut folders: Vec<PathBuf> = entries
         .flatten()
         .map(|e| e.path())
-        .filter(|p| is_package_file(&p.join(PACKAGE_FILE)))
+        .filter(|p| p.is_dir() && std::fs::symlink_metadata(p.join(PACKAGE_FILE)).is_ok())
         .collect();
     folders.sort();
     folders
@@ -482,7 +522,11 @@ mod tests {
         let report = check_tree(tmp.path());
         assert_eq!(report.errors.len(), 1);
         let error = &report.errors[0];
-        assert!(error.path.ends_with("broken/ketch.toml"), "{}", error.path);
+        assert!(
+            std::path::Path::new(&error.path).ends_with("broken/ketch.toml"),
+            "{}",
+            error.path
+        );
         assert!(
             !error.message.contains(&error.path),
             "the report prints the path in front of the message, so the message must not repeat it: {}",
@@ -589,7 +633,17 @@ mod tests {
 
         let report = check_tree(tmp.path());
         assert_eq!(report.packages, 1);
-        assert!(report.errors.is_empty(), "{:?}", report.errors);
+        assert_eq!(report.errors.len(), 1, "{:?}", report.errors);
+        assert!(
+            report.errors[0].message.contains("not a symlink"),
+            "{}",
+            report.errors[0].message
+        );
+        assert!(
+            std::path::Path::new(&report.errors[0].path).ends_with("sneaky/ketch.toml"),
+            "{}",
+            report.errors[0].path
+        );
     }
 
     #[test]
