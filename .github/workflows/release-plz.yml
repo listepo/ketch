@@ -50,7 +50,7 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # The changelog is built from the whole history, not one commit.
           fetch-depth: 0
