@@ -349,6 +349,14 @@ pre code { background: none; border: 0; padding: 0; color: inherit; font-size: i
   margin: 0 auto;
 }
 
+.hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin: 0 0 1.1rem;
+}
+
 .eyebrow {
   display: inline-flex;
   align-items: center;
@@ -358,8 +366,9 @@ pre code { background: none; border: 0; padding: 0; color: inherit; font-size: i
   font-family: var(--mono);
   font-size: 0.72rem;
   font-weight: 600;
+  line-height: 1;
   color: var(--accent);
-  margin: 0 0 0.85rem;
+  margin: 0;
 }
 .eyebrow::before {
   content: "";
@@ -558,17 +567,16 @@ pre code { background: none; border: 0; padding: 0; color: inherit; font-size: i
 .closing .install { max-width: 720px; margin: 0 auto 1rem; text-align: left; }
 
 /* Release-tag chip accent (decorative) */
-.hero .release-chip {
-  margin: -0.35rem 0 1.1rem;
-}
 .release-chip {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   font-weight: 600;
-  padding: 0.25rem 0.55rem 0.25rem 0.35rem;
+  line-height: 1;
+  margin: 0;
+  padding: 0.2rem 0.55rem 0.2rem 0.4rem;
   border-radius: 999px;
   background: var(--surface-2);
   border: 1px solid var(--hairline);

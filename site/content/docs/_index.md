@@ -25,7 +25,7 @@ along with anything else that needs attention.
 ## Everyday use
 
 ```bash
-ketch install BurntSushi/ripgrep     # any repo that publishes releases
+ketch install listepo/rtok           # any repo that publishes releases
 ketch install rg                     # or a name the registry knows
 ketch install sharkdp/fd@v10.2.0     # or an exact version
 ketch upgrade                        # everything unpinned

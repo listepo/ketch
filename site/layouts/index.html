@@ -1,8 +1,10 @@
 {{ define "main" }}
 <section class="hero">
   <div class="hero-text">
-    <p class="eyebrow">macOS · single binary · no dependencies</p>
-    <p class="release-chip" aria-hidden="true">v15.2.0 · caught</p>
+    <div class="hero-meta">
+      <p class="eyebrow">macOS · single binary · no dependencies</p>
+      <p class="release-chip" aria-hidden="true">v0.1.0 · caught</p>
+    </div>
     <h1>Catch releases straight from GitHub.</h1>
     <p class="lede">
       ketch installs command-line tools and macOS apps directly from GitHub
@@ -23,18 +25,18 @@
 
   <div class="terminal" aria-hidden="true">
     <div class="terminal-bar"><span></span><span></span><span></span></div>
-    <pre><code><span class="p">$</span> ketch install BurntSushi/ripgrep
-<span class="d">  resolving</span> ripgrep (github:BurntSushi/ripgrep)
-<span class="d">downloading</span> ripgrep-15.2.0-aarch64-apple-darwin.tar.gz
+    <pre><code><span class="p">$</span> ketch install listepo/rtok
+<span class="d">  resolving</span> rtok (github:listepo/rtok)
+<span class="d">downloading</span> rtok-aarch64-apple-darwin.tar.xz
 <span class="d">   verified</span> sha256 published by the release
-<span class="d">  installed</span> ripgrep 15.2.0
+<span class="d">  installed</span> rtok 0.1.0
 
-<span class="p">$</span> rg --version
-ripgrep 15.2.0
+<span class="p">$</span> rtok --version
+rtok 0.1.0
 
 <span class="p">$</span> ketch list
 package  version  source
-ripgrep  15.2.0   github:BurntSushi/ripgrep</code></pre>
+rtok     0.1.0    github:listepo/rtok</code></pre>
   </div>
 </section>
 
