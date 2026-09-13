@@ -8,24 +8,36 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
 
+fn pwsh_bin() -> Option<std::path::PathBuf> {
+    // Resolve before tests clear PATH — otherwise `Command::new("pwsh")` cannot
+    // spawn even when PowerShell is installed on the runner.
+    std::env::var_os("PATH").and_then(|path| {
+        std::env::split_paths(&path).find_map(|dir| {
+            let candidate = dir.join(if cfg!(windows) {
+                "pwsh.exe"
+            } else {
+                "pwsh"
+            });
+            candidate.is_file().then_some(candidate)
+        })
+    })
+}
+
 fn pwsh_available() -> bool {
-    // `assert_cmd::Command` panics when the binary is missing; probe with std.
-    std::process::Command::new("pwsh")
-        .args(["-NoProfile", "-Command", "exit 0"])
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    pwsh_bin().is_some()
 }
 
 fn install_ps1() -> Command {
-    let mut cmd = Command::new("pwsh");
+    let pwsh = pwsh_bin().expect("pwsh_available checked");
+    let mut cmd = Command::new(pwsh);
     cmd.args([
         "-NoProfile",
         "-File",
         concat!(env!("CARGO_MANIFEST_DIR"), "/install.ps1"),
     ])
+    // Absolute pwsh survives this; the script's own PATH lookups stay isolated.
     .env("PATH", "/nonexistent")
-    .env("USERPROFILE", "/nonexistent-home");
+    .env("USERPROFILE", "/tmp/ketch-ps1-test-home");
     cmd
 }
 
@@ -86,13 +98,16 @@ fn help_describes_root_and_install_dir_without_naming_the_root() {
     if !pwsh_available() {
         return;
     }
-    Command::new("pwsh")
+    let pwsh = pwsh_bin().expect("pwsh_available checked");
+    Command::new(pwsh)
         .args([
             "-NoProfile",
             "-File",
             concat!(env!("CARGO_MANIFEST_DIR"), "/install.ps1"),
             "--help",
         ])
+        // Linux/mac runners have no USERPROFILE; the script Join-Paths it at load.
+        .env("USERPROFILE", "/tmp/ketch-ps1-help-home")
         .assert()
         .success()
         .stdout(predicate::str::contains("--root"))
