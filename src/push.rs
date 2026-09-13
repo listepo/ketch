@@ -742,7 +742,10 @@ mod tests {
 
     fn proposal() -> Proposal {
         let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("ketch.toml");
+        // Project folder must match `name` — the same rule registry folders use.
+        let project = dir.path().join("tool");
+        std::fs::create_dir(&project).unwrap();
+        let file = project.join("ketch.toml");
         std::fs::write(
             &file,
             "name = \"tool\"\nsource = \"github:acme/tool\"\ndescription = \"A tool\"\n",
@@ -983,7 +986,9 @@ mod tests {
     #[test]
     fn a_name_that_would_escape_the_store_is_refused() {
         let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("ketch.toml");
+        let project = dir.path().join("evil");
+        std::fs::create_dir(&project).unwrap();
+        let file = project.join("ketch.toml");
         std::fs::write(&file, "name = \"../evil\"\nsource = \"github:acme/tool\"\n").unwrap();
         assert!(load(&file).is_err());
     }
@@ -1015,7 +1020,9 @@ mod tests {
     #[test]
     fn an_unknown_key_is_refused_before_anything_is_sent() {
         let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("ketch.toml");
+        let project = dir.path().join("tool");
+        std::fs::create_dir(&project).unwrap();
+        let file = project.join("ketch.toml");
         std::fs::write(
             &file,
             "name = \"tool\"\nsource = \"github:acme/tool\"\nbinary = \"tool\"\n",
