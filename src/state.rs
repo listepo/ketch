@@ -355,6 +355,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_lock_held_by_another_users_process_is_not_stolen() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("lock");

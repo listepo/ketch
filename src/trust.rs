@@ -750,6 +750,7 @@ mod tests {
     const ACTIONS: &str = "https://token.actions.githubusercontent.com";
 
     #[test]
+    #[cfg(unix)]
     fn a_real_sigstore_bundle_verifies_offline_and_names_its_log_entry() {
         // a.txt and its bundle are the public test vector sigstore's own
         // protobuf-specs crate ships: signed against production Sigstore.
