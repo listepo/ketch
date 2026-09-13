@@ -9,7 +9,8 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 
 fn pwsh_available() -> bool {
-    Command::new("pwsh")
+    // `assert_cmd::Command` panics when the binary is missing; probe with std.
+    std::process::Command::new("pwsh")
         .args(["-NoProfile", "-Command", "exit 0"])
         .output()
         .map(|o| o.status.success())
@@ -157,7 +158,9 @@ fn main() {
 
     struct StubRelease {
         dir: TempDir,
-        stub_exe: PathBuf,
+        // Kept so the compiled stub path stays live for the payload write;
+        // readers only need `dir`.
+        _stub_exe: PathBuf,
     }
 
     impl StubRelease {
@@ -185,7 +188,7 @@ fn main() {
 
             StubRelease {
                 dir,
-                stub_exe: stub_exe.path().to_path_buf(),
+                _stub_exe: stub_exe.path().to_path_buf(),
             }
         }
     }
