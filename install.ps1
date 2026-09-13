@@ -255,7 +255,15 @@ try {
     }
 
     Write-Status 'Extracting...'
-    & tar -xzf $TarballPath
+    # Prefer System32 tar.exe: Git Bash's GNU tar treats 'C:' in a Windows
+    # path as a remote host ("Cannot connect to C:"). Fall back to --force-local.
+    $systemTar = Join-Path $env:SystemRoot 'System32\tar.exe'
+    if (Test-Path -LiteralPath $systemTar) {
+        & $systemTar -xzf $TarballPath
+    }
+    else {
+        & tar --force-local -xzf $TarballPath
+    }
     if ($LASTEXITCODE -ne 0) {
         Write-ErrorStatus 'Error: Failed to extract the release archive.'
         exit 1
