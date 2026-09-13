@@ -411,7 +411,9 @@ mod tests {
         let manifest = manifest(&full_answers()).unwrap();
         let body = render(&manifest);
         let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("ketch.toml");
+        let project = dir.path().join(&manifest.name);
+        std::fs::create_dir(&project).unwrap();
+        let file = project.join("ketch.toml");
         std::fs::write(&file, &body).unwrap();
         let proposal = crate::push::load(&file).unwrap();
         // The body is sent to the registry verbatim, so equality here is the
@@ -448,7 +450,9 @@ mod tests {
         };
         let body = render(&manifest(&answers).unwrap());
         let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("ketch.toml");
+        let project = dir.path().join("tool");
+        std::fs::create_dir(&project).unwrap();
+        let file = project.join("ketch.toml");
         std::fs::write(&file, &body).unwrap();
         let back = crate::push::load(&file).unwrap();
         assert_eq!(back.manifest.description.as_deref(), Some(hostile));
