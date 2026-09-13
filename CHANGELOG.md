@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/listepo/ketch/releases/tag/v0.4.0) - 2026-09-13
+
+### Added
+
+- add trust verification, provenance, and resolution tracing
+- [**breaking**] install CLI releases on Linux and Windows
+
+### Fixed
+
+- make install.ps1 tests find pwsh after PATH clear
+- skip install.ps1 tests when pwsh is missing
+- align push/wizard tests with folder=name rule
+- hold lockfiles to their hashes and leave links intact if relink fails
+
+### Other
+
+- use rtok in landing terminal demo ([#52](https://github.com/listepo/ketch/pull/52))
+- *(site)* nerd flat material glass brand + light/dark
+- auto-revert fb2bd0e — main CI failed
+- run only on main/manual; auto-revert failed main pushes
+- run tests on main push and manual dispatch only
+- add dependabot for cargo, npm and github actions ([#35](https://github.com/listepo/ketch/pull/35))
+
 ## [0.3.2](https://github.com/listepo/ketch/releases/tag/v0.3.2) - 2026-09-10
 
 ### Other
