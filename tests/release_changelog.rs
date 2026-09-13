@@ -246,8 +246,14 @@ fn the_changelog_opens_with_the_header_release_plz_is_configured_to_write() {
         .as_str()
         .expect("[changelog] header is a string");
     assert!(header.contains("Do not edit"), "{header}");
+    let changelog = CHANGELOG.replace("
+", "
+");
+    let header = header.replace("
+", "
+");
     assert!(
-        CHANGELOG.starts_with(header),
+        changelog.starts_with(&header),
         "CHANGELOG.md does not open with release-plz.toml's [changelog] header"
     );
 }

@@ -412,14 +412,20 @@ fn natural_cmp(a: &str, b: &str) -> Ordering {
 
 impl Ord for Version {
     fn cmp(&self, other: &Self) -> Ordering {
+        // Leading `v`/`V` is tag noise, not part of the version. Semver already
+        // strips it at parse time; the raw fallback must too, or `0.4.0` and
+        // `v0.4.0` look unequal after an Equal semver cmp and self-update
+        // claims a fake upgrade.
+        let left = self.raw.trim_start_matches(['v', 'V']);
+        let right = other.raw.trim_start_matches(['v', 'V']);
         match (&self.sem, &other.sem) {
             // Relaxing to semver is lossy: `1.2.3.4` and `1.2.3.5` both become
             // `1.2.3`, and semver ignores build metadata outright. Falling back
             // to the raw strings keeps two genuinely different releases from
             // comparing equal, which would leave `max_by` picking whichever it
             // happened to see first — sometimes the older one.
-            (Some(a), Some(b)) => a.cmp(b).then_with(|| natural_cmp(&self.raw, &other.raw)),
-            _ => natural_cmp(&self.raw, &other.raw),
+            (Some(a), Some(b)) => a.cmp(b).then_with(|| natural_cmp(left, right)),
+            _ => natural_cmp(left, right),
         }
     }
 }
@@ -1358,6 +1364,15 @@ mod tests {
     }
 
     #[test]
+    #[test]
+    fn v_prefix_does_not_make_equal_semver_versions_order_apart() {
+        let plain = Version::parse("0.4.0");
+        let tagged = Version::parse("v0.4.0");
+        assert_eq!(plain.cmp(&tagged), Ordering::Equal);
+        assert_eq!(tagged.cmp(&plain), Ordering::Equal);
+        assert!(tagged <= plain && plain <= tagged);
+    }
+
     fn parses_bare_repo_as_github() {
         let r = PackageRef::parse("BurntSushi/ripgrep").unwrap();
         assert_eq!(r.scheme, "github");
