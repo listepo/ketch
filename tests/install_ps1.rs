@@ -5,28 +5,29 @@
 //! host; `pwsh` cases are skipped when PowerShell is not installed. The full
 //! stub-release run is Windows-only.
 
+#[cfg(windows)]
 use assert_cmd::Command;
+#[cfg(windows)]
 use predicates::prelude::*;
 
+#[cfg(windows)]
 fn pwsh_bin() -> Option<std::path::PathBuf> {
     // Resolve before tests clear PATH — otherwise `Command::new("pwsh")` cannot
     // spawn even when PowerShell is installed on the runner.
     std::env::var_os("PATH").and_then(|path| {
         std::env::split_paths(&path).find_map(|dir| {
-            let candidate = dir.join(if cfg!(windows) {
-                "pwsh.exe"
-            } else {
-                "pwsh"
-            });
+            let candidate = dir.join(if cfg!(windows) { "pwsh.exe" } else { "pwsh" });
             candidate.is_file().then_some(candidate)
         })
     })
 }
 
+#[cfg(windows)]
 fn pwsh_available() -> bool {
     pwsh_bin().is_some()
 }
 
+#[cfg(windows)]
 fn install_ps1() -> Command {
     let pwsh = pwsh_bin().expect("pwsh_available checked");
     let mut cmd = Command::new(pwsh);
@@ -55,6 +56,7 @@ fn install_ps1() -> Command {
 }
 
 /// Reaching the release fetch means the flags were accepted.
+#[cfg(windows)]
 fn fails_after_flag_parse() -> impl predicates::Predicate<str> {
     predicate::str::contains("Fetching latest release")
         .or(predicate::str::contains("Installing ketch"))
