@@ -5,28 +5,29 @@
 //! host; `pwsh` cases are skipped when PowerShell is not installed. The full
 //! stub-release run is Windows-only.
 
+#[cfg(windows)]
 use assert_cmd::Command;
+#[cfg(windows)]
 use predicates::prelude::*;
 
+#[cfg(windows)]
 fn pwsh_bin() -> Option<std::path::PathBuf> {
     // Resolve before tests clear PATH — otherwise `Command::new("pwsh")` cannot
     // spawn even when PowerShell is installed on the runner.
     std::env::var_os("PATH").and_then(|path| {
         std::env::split_paths(&path).find_map(|dir| {
-            let candidate = dir.join(if cfg!(windows) {
-                "pwsh.exe"
-            } else {
-                "pwsh"
-            });
+            let candidate = dir.join(if cfg!(windows) { "pwsh.exe" } else { "pwsh" });
             candidate.is_file().then_some(candidate)
         })
     })
 }
 
+#[cfg(windows)]
 fn pwsh_available() -> bool {
     pwsh_bin().is_some()
 }
 
+#[cfg(windows)]
 fn install_ps1() -> Command {
     let pwsh = pwsh_bin().expect("pwsh_available checked");
     let mut cmd = Command::new(pwsh);
@@ -36,12 +37,26 @@ fn install_ps1() -> Command {
         concat!(env!("CARGO_MANIFEST_DIR"), "/install.ps1"),
     ])
     // Absolute pwsh survives this; the script's own PATH lookups stay isolated.
-    .env("PATH", "/nonexistent")
-    .env("USERPROFILE", "/tmp/ketch-ps1-test-home");
+    .env(
+        "PATH",
+        if cfg!(windows) {
+            r"C:\nonexistent-ketch-path"
+        } else {
+            "/nonexistent"
+        },
+    )
+    .env(
+        "USERPROFILE",
+        std::env::temp_dir()
+            .join("ketch-ps1-test-home")
+            .to_string_lossy()
+            .as_ref(),
+    );
     cmd
 }
 
 /// Reaching the release fetch means the flags were accepted.
+#[cfg(windows)]
 fn fails_after_flag_parse() -> impl predicates::Predicate<str> {
     predicate::str::contains("Fetching latest release")
         .or(predicate::str::contains("Installing ketch"))
@@ -69,6 +84,19 @@ fn the_script_defaults_to_userprofile_not_home() {
 }
 
 #[test]
+fn the_script_prefers_system32_tar_over_git_bash_tar() {
+    let src = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/install.ps1"));
+    assert!(
+        src.contains("System32") && src.contains("tar.exe"),
+        "install.ps1 must prefer System32 tar.exe so Git Bash GNU tar does not misparse C: paths"
+    );
+    assert!(
+        src.contains("--force-local"),
+        "install.ps1 must pass --force-local when falling back to a PATH tar"
+    );
+}
+
+#[test]
 fn the_script_writes_path_through_dotnet_not_setx() {
     let src = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/install.ps1"));
     assert!(src.contains("SetEnvironmentVariable('Path'"), "{src}");
@@ -76,6 +104,7 @@ fn the_script_writes_path_through_dotnet_not_setx() {
 }
 
 #[test]
+#[cfg(windows)]
 fn an_install_dir_need_not_sit_under_the_root() {
     if !pwsh_available() {
         return;
@@ -88,12 +117,13 @@ fn an_install_dir_need_not_sit_under_the_root() {
             .args(&args)
             .assert()
             .failure()
-            .stderr(fails_after_flag_parse())
-            .stderr(predicate::str::contains("is not").not());
+            .stdout(fails_after_flag_parse())
+            .stdout(predicate::str::contains("is not").not());
     }
 }
 
 #[test]
+#[cfg(windows)]
 fn help_describes_root_and_install_dir_without_naming_the_root() {
     if !pwsh_available() {
         return;

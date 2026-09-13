@@ -361,8 +361,8 @@ impl Asset {
         // The plugin downloads, so `url` is just the path it copies from.
         format!(
             r#"{{"name":"{}","url":"{}"{}}}"#,
-            self.name,
-            self.path.display(),
+            json_escape(&self.name),
+            json_escape(&self.path.display().to_string()),
             digest
         )
     }
