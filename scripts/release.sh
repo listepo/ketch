@@ -49,6 +49,36 @@ cd "$ROOT"
 die() { echo "error: $*" >&2; exit 1; }
 step() { printf '==> %s\n' "$*"; }
 
+RELEASE_ON_BRANCH=0
+RELEASE_COMMITTED=0
+RELEASE_PUSHED=0
+
+package_version() {
+  cargo pkgid --offline --quiet 2>/dev/null | sed 's/.*#//'
+}
+
+abort_release() {
+  echo "error: $*" >&2
+  if [ "$RELEASE_ON_BRANCH" -eq 1 ]; then
+    if [ "$RELEASE_COMMITTED" -eq 1 ]; then
+      echo "error: local branch $BRANCH still exists with the release bump committed." >&2
+      if [ "$RELEASE_PUSHED" -eq 0 ]; then
+        echo "error: to push it: git push -u origin $BRANCH" >&2
+      fi
+      echo "error: to discard it: git checkout $DEFAULT_BRANCH && git branch -D $BRANCH" >&2
+      if [ "$RELEASE_PUSHED" -eq 1 ]; then
+        echo "error: to remove the remote branch too: git push origin --delete $BRANCH" >&2
+      fi
+    else
+      git reset --hard --quiet HEAD
+      git checkout --quiet "$DEFAULT_BRANCH"
+      git branch -D "$BRANCH" >/dev/null 2>&1 || true
+      echo "error: discarded uncommitted changes and deleted local branch $BRANCH." >&2
+    fi
+  fi
+  exit 1
+}
+
 # ---------------------------------------------------------------------------
 # Checks that are cheaper to fail now than after a branch exists
 # ---------------------------------------------------------------------------
@@ -135,6 +165,7 @@ fi
 
 step "branching $BRANCH"
 git checkout --quiet -b "$BRANCH"
+RELEASE_ON_BRANCH=1
 
 # Rewrite only the version inside [package]. `rust-version` and every
 # dependency's inline `version =` must be left alone.
@@ -152,13 +183,13 @@ awk -v new="$VERSION" '
 # the two disagree — which is exactly what CI and the release workflow use.
 cargo update --workspace --quiet 2>/dev/null \
   || cargo update --workspace --quiet --offline \
-  || die "could not update Cargo.lock; run \`cargo update --workspace\` and retry"
+  || abort_release "could not update Cargo.lock; run \`cargo update --workspace\` and retry"
 
 # Prove the rewrite did what it claimed rather than trusting the awk above.
-WROTE="$(cargo metadata --no-deps --format-version 1 --offline 2>/dev/null \
-  | sed -n 's/.*"name":"ketch","version":"\([^"]*\)".*/\1/p')"
+WROTE="$(package_version)"
+[ -n "$WROTE" ] || abort_release "could not read the package version from cargo"
 [ "$WROTE" = "$VERSION" ] \
-  || die "Cargo.toml now reads \`$WROTE\`, not \`$VERSION\` — nothing was pushed"
+  || abort_release "Cargo.toml now reads \`$WROTE\`, not \`$VERSION\`"
 
 # The commit message and the pull request body are assembled with `printf %s`,
 # never interpolated into a heredoc or a double-quoted string. A commit subject
@@ -175,9 +206,14 @@ trap 'rm -rf "$TMP"' EXIT
 
 git add Cargo.toml Cargo.lock
 git commit --quiet -F "$TMP/message"
+RELEASE_COMMITTED=1
 
 step "pushing $BRANCH"
-git push --quiet -u origin "$BRANCH"
+if git push --quiet -u origin "$BRANCH"; then
+  RELEASE_PUSHED=1
+else
+  abort_release "could not push $BRANCH"
+fi
 
 step "opening the pull request"
 {
@@ -195,10 +231,12 @@ step "opening the pull request"
   printf 'for everyone already installed.\n'
 } > "$TMP/body"
 
-gh pr create \
+if ! gh pr create \
   --base "$DEFAULT_BRANCH" \
   --head "$BRANCH" \
   --title "Release $TAG" \
-  --body-file "$TMP/body"
+  --body-file "$TMP/body"; then
+  abort_release "could not open pull request for $BRANCH"
+fi
 
 step "done — merging it publishes the release and creates $TAG"

@@ -83,20 +83,13 @@ fn has_koly_trailer(path: &Path) -> bool {
     file.read_exact(&mut magic).is_ok() && &magic == b"koly"
 }
 
-fn has_extension(path: &Path, want: &[&str]) -> bool {
-    path.extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e.to_ascii_lowercase())
-        .is_some_and(|e| want.contains(&e.as_str()))
-}
-
 impl Extractor for DmgExtractor {
     fn id(&self) -> &str {
         "dmg"
     }
 
     fn detect(&self, path: &Path, _head: &[u8]) -> bool {
-        has_koly_trailer(path) || has_extension(path, &["dmg"])
+        has_koly_trailer(path)
     }
 
     fn extract(&self, src: &Path, dest: &Path) -> Result<()> {
@@ -159,7 +152,7 @@ fn find_mount_point(listing: &str) -> Option<PathBuf> {
         .map(str::trim)
         .filter(|field| field.starts_with('/'))
         .map(PathBuf::from)
-        .find(|path| path.is_dir())
+        .rfind(|path| path.is_dir())
 }
 
 /// The device node `hdiutil attach` created, from the first line that names one.
@@ -206,8 +199,8 @@ impl Extractor for PkgExtractor {
         "pkg"
     }
 
-    fn detect(&self, path: &Path, head: &[u8]) -> bool {
-        head.starts_with(b"xar!") || has_extension(path, &["pkg", "mpkg"])
+    fn detect(&self, _path: &Path, head: &[u8]) -> bool {
+        head.starts_with(b"xar!")
     }
 
     fn extract(&self, src: &Path, dest: &Path) -> Result<()> {
@@ -275,6 +268,24 @@ mod tests {
     }
 
     #[test]
+    fn prefers_the_last_mount_when_hdiutil_lists_multiple_volumes() {
+        let root = tempfile::tempdir().unwrap();
+        let helper = root.path().join("helper.T0hgqZ");
+        let app = root.path().join("MyApp.T0hgqZ");
+        std::fs::create_dir_all(&helper).unwrap();
+        std::fs::create_dir_all(&app).unwrap();
+
+        let listing = format!(
+            "/dev/disk4          \tGUID_partition_scheme\t\n\
+             /dev/disk4s1        \tEFI                  \t{}\n\
+             /dev/disk4s2        \tApple_HFS            \t{}\n",
+            helper.display(),
+            app.display()
+        );
+        assert_eq!(find_mount_point(&listing), Some(app));
+    }
+
+    #[test]
     fn ignores_partitions_with_no_mount_point() {
         assert_eq!(
             find_mount_point("/dev/disk4\tGUID_partition_scheme\t\n"),
@@ -290,5 +301,44 @@ mod tests {
                        /dev/disk4s1\tApple_HFS\t\n";
         assert_eq!(find_mount_point(listing), None);
         assert_eq!(find_device(listing).unwrap(), "/dev/disk4");
+    }
+
+    #[test]
+    fn a_plain_file_named_dmg_is_not_claimed_without_koly_trailer() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("release.dmg");
+        std::fs::write(&path, b"not a disk image").unwrap();
+
+        assert!(!DmgExtractor.detect(&path, b"not a disk image"));
+    }
+
+    #[test]
+    fn a_plain_file_named_pkg_is_not_claimed_without_xar_magic() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("installer.pkg");
+        std::fs::write(&path, b"not a flat package").unwrap();
+
+        assert!(!PkgExtractor.detect(&path, b"not a flat package"));
+    }
+
+    #[test]
+    fn koly_trailer_is_claimed_without_a_dmg_extension() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("disk-image");
+        let mut bytes = vec![0u8; 512];
+        bytes[..4].copy_from_slice(b"koly");
+        std::fs::write(&path, &bytes).unwrap();
+
+        assert!(DmgExtractor.detect(&path, &bytes[..4]));
+    }
+
+    #[test]
+    fn xar_magic_is_claimed_without_a_pkg_extension() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("flat-package");
+        let head = b"xar!\x1c";
+        std::fs::write(&path, head).unwrap();
+
+        assert!(PkgExtractor.detect(&path, head));
     }
 }

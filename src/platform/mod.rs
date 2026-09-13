@@ -20,8 +20,9 @@ pub mod windows;
 
 use crate::config::Config;
 use crate::error::Result;
-use crate::model::{Arch, BinSpec, LinkRecord, PackageKind, TargetSpec};
-use std::path::Path;
+use crate::extra::ExtraPlacement;
+use crate::model::{Arch, BinSpec, CompletionShell, LinkRecord, PackageKind, TargetSpec};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 /// Why an asset was chosen, and at what cost.
@@ -65,6 +66,8 @@ pub struct Placement<'a> {
     /// Create user-visible links. False still moves the payload into the
     /// store, so `ketch relink` can expose it later without re-downloading.
     pub link: bool,
+    /// Man pages and completions already classified and given destinations.
+    pub extras: &'a [ExtraPlacement],
 }
 
 /// Result of a local trust check on downloaded code.
@@ -199,6 +202,119 @@ pub trait Platform: Send + Sync {
 
     /// Environment checks for `ketch doctor`.
     fn doctor(&self, cfg: &Config) -> Vec<DoctorCheck>;
+
+    /// User-writable man root. Pages go in `manN/` underneath.
+    ///
+    /// Defaults to `$XDG_DATA_HOME/man` or `~/.local/share/man`, not
+    /// `dirs::data_dir()`, which on macOS is Application Support — a place
+    /// `man` never looks.
+    fn user_man_root(&self) -> PathBuf {
+        data_home().join("man")
+    }
+
+    /// Directory this shell searches for user completion scripts.
+    fn completion_dir(&self, shell: CompletionShell) -> PathBuf {
+        completion_dir_for(shell)
+    }
+}
+
+/// `$XDG_DATA_HOME`, falling back to `~/.local/share` on every OS.
+pub fn data_home() -> PathBuf {
+    std::env::var_os("XDG_DATA_HOME")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            dirs::home_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join(".local/share")
+        })
+}
+
+/// `$XDG_CONFIG_HOME`, falling back to `~/.config`.
+pub fn config_home() -> PathBuf {
+    std::env::var_os("XDG_CONFIG_HOME")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            dirs::home_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join(".config")
+        })
+}
+
+/// Unix-style completion directories. Windows overrides PowerShell.
+pub fn completion_dir_for(shell: CompletionShell) -> PathBuf {
+    match shell {
+        CompletionShell::Bash => data_home().join("bash-completion/completions"),
+        CompletionShell::Zsh => data_home().join("zsh/site-functions"),
+        CompletionShell::Fish => config_home().join("fish/completions"),
+        CompletionShell::Elvish => config_home().join("elvish/lib"),
+        CompletionShell::Powershell => config_home().join("powershell/Completions"),
+    }
+}
+
+/// Doctor lines for the destinations `place` will write. Missing directories
+/// are reported as ok: install creates them rather than surprising the user
+/// with a write they were not shown.
+pub fn extra_destination_checks(platform: &dyn Platform) -> Vec<DoctorCheck> {
+    let mut checks = vec![dest_check("man", &platform.user_man_root(), true)];
+    for shell in CompletionShell::ALL {
+        checks.push(dest_check(
+            &format!("completions-{}", shell.as_str()),
+            &platform.completion_dir(shell),
+            false,
+        ));
+    }
+    checks
+}
+
+fn dest_check(name: &str, path: &Path, mention_manpath: bool) -> DoctorCheck {
+    let mut detail = path.display().to_string();
+    if !path.exists() {
+        detail.push_str(" — created on install");
+    }
+    if mention_manpath {
+        detail.push_str("; add this directory to MANPATH so `man` finds pages ketch installs");
+    }
+    if path.exists() && probe_writable(path).is_err() {
+        return DoctorCheck::fail(
+            name,
+            format!("{} is not writable", path.display()),
+            format!("chmod u+w {}", path.display()),
+        );
+    }
+    DoctorCheck::ok(name, detail)
+}
+
+fn probe_writable(dir: &Path) -> std::result::Result<(), String> {
+    tempfile::Builder::new()
+        .prefix(".ketch-probe")
+        .tempfile_in(dir)
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// Link classified extras from `root` (the store prefix) to their dests.
+pub fn expose_extras(
+    extras: &[ExtraPlacement],
+    root: &Path,
+    owned: &Path,
+    recorded: &[LinkRecord],
+) -> Result<Vec<LinkRecord>> {
+    #[cfg(unix)]
+    {
+        unix::link_planned_extras(extras, root, owned, recorded)
+    }
+    #[cfg(windows)]
+    {
+        let _ = owned;
+        windows::link_planned_extras(extras, root, recorded)
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = (extras, root, owned, recorded);
+        Ok(Vec::new())
+    }
 }
 
 /// The platform for the machine we are on.
@@ -260,7 +376,7 @@ pub const NON_BINARY_TOKENS: &[&str] = &[
     "source-code",
     "sources",
     "src.tar",
-    "-src-",
+    "src",
     "vendor",
     "manifest",
     "provenance",
@@ -268,6 +384,12 @@ pub const NON_BINARY_TOKENS: &[&str] = &[
     "changelog",
     "release-notes",
 ];
+
+/// Filename tokens for operating systems ketch does not support.
+///
+/// An asset naming one of these is never installable on macOS, Linux or
+/// Windows — even when it also carries a recognised architecture token.
+pub const FOREIGN_OS_TOKENS: &[&str] = &["freebsd", "netbsd", "openbsd", "plan9", "dragonfly"];
 
 /// Extensions that never contain a runnable macOS/Linux payload.
 pub const REJECTED_EXTENSIONS: &[&str] = &[
@@ -309,6 +431,39 @@ mod tests {
         assert!(is_sidecar("tool.dmg.asc"));
         assert!(is_sidecar("bundle.intoto.jsonl"));
         assert!(!is_sidecar("rg-14.tar.gz"));
+    }
+
+    #[test]
+    fn extra_destination_checks_name_man_and_each_shell() {
+        let host = host().expect("host platform");
+        let checks = extra_destination_checks(host.as_ref());
+        let names: Vec<_> = checks.iter().map(|c| c.name.as_str()).collect();
+        assert!(names.contains(&"man"), "{names:?}");
+        assert!(names.contains(&"completions-bash"), "{names:?}");
+        assert!(names.contains(&"completions-zsh"), "{names:?}");
+        assert!(names.contains(&"completions-fish"), "{names:?}");
+        assert!(
+            checks
+                .iter()
+                .any(|c| c.name == "man" && c.detail.contains("MANPATH")),
+            "{}",
+            checks
+                .iter()
+                .find(|c| c.name == "man")
+                .map(|c| c.detail.as_str())
+                .unwrap_or("")
+        );
+    }
+
+    #[test]
+    fn user_man_root_is_under_xdg_data_home() {
+        assert_eq!(data_home().join("man"), host().unwrap().user_man_root());
+        assert_eq!(
+            data_home().join("bash-completion/completions"),
+            host()
+                .unwrap()
+                .completion_dir(crate::model::CompletionShell::Bash)
+        );
     }
     #[cfg(target_os = "linux")]
     #[test]

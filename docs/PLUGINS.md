@@ -22,7 +22,7 @@ Every discovered plugin is asked for its capabilities on every ketch command, so
 ```text
 capabilities              -> {"protocol":1,"scheme":"gitlab","download":false,"search":true}
 describe <id>             -> a SourceInfo object, or null
-releases <id> [--prerelease] [--limit N]
+releases <id> [--limit N] [--prerelease]
                           -> [ Release, ... ]
 search <query> --limit N  -> [ SourceInfo, ... ]
 download <url> <dest>     -> only when capabilities.download is true
@@ -83,7 +83,9 @@ install by scoring the **name** against the host platform. Report the names the
 project actually publishes.
 
 `digest` is what lets ketch verify the download without extra requests. Supply
-it whenever the source knows it.
+it whenever the source knows it. Only `sha256` is compared directly against the
+download; other `algo` values are ignored and ketch falls back to checksum
+sidecars or aggregate files on the release.
 
 ### `describe` and `search`
 

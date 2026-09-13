@@ -1,0 +1,19 @@
+package      ripgrep
+target       {target}
+manifest     registry  {root}/registry/ripgrep/ketch.toml
+matched      rg
+source       test:ripgrep
+version      latest  v1.0.0 (1.0.0)
+prerelease   excluded
+
+assets
+score  name                                       reason
+98     ripgrep-1.0.0-{arch}-apple-darwin.tar.gz  darwin / {arch} / tar.gz
+
+rejected
+name                                            reason
+ripgrep-1.0.0-{arch}-unknown-linux-gnu.tar.gz  incompatible with {target}
+
+checksum     published-digest
+trust        advisory  strip_quarantine=true  allow_emulation=true
+candidate    ripgrep-1.0.0-{arch}-apple-darwin.tar.gz  darwin / {arch} / tar.gz

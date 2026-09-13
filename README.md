@@ -52,8 +52,10 @@ brew install --cask listepo/tap/ketch
 
 Either way ketch ends up in `~/.ketch`, installed as one of its own packages:
 `ketch list` shows it, and `ketch self update` upgrades it like anything else.
-The installer only runs `ketch self install`; Homebrew keeps nothing but the
-bootstrap binary, and `brew upgrade` hands over to `ketch self update`.
+The curl and PowerShell installers run `ketch self install`, then `ketch path
+install`, and place a bootstrap copy at `--install-dir` when you give one.
+Homebrew keeps nothing but the bootstrap binary, and `brew upgrade` hands over
+to `ketch self update`.
 
 Then make sure `~/.ketch/bin` is on your `PATH`. `ketch doctor` will tell you if
 it is not, along with anything else that needs attention.
@@ -70,6 +72,10 @@ Windows, and the Homebrew
 cask if that is how ketch arrived. It lists what it is about to delete and asks
 first, because none of it can be recovered afterwards. `--keep-packages` removes
 only ketch and leaves the tools it installed alone.
+
+`brew uninstall --cask ketch` removes only the bootstrap binary Homebrew kept;
+everything under `~/.ketch` and every package ketch installed stays until you
+run `ketch self uninstall` (or delete the tree yourself).
 
 ## Why
 
@@ -99,20 +105,28 @@ ketch install --path PATH  # install a local archive, binary, symlink, or .app
 ketch list                 # what is installed
 ketch outdated             # what has a newer release
 ketch upgrade              # bring everything unpinned up to date
+ketch rollback <pkg>      # restore the previous retained version (`--to` for an older one)
+ketch prune [pkg]          # apply the retention policy; upgrade never deletes a prefix
 ketch info <pkg>           # details, including --assets and why each scored
+ketch why <pkg>            # explain a resolution without installing
 ketch search <query>       # the registry and GitHub
 ketch changelog <pkg>      # what changed: the shipped file, or the release notes
 ketch update               # refresh the package registry
 ketch pin / unpin <pkg>    # hold a version, or let go
+ketch link <pkg>...         # re-create links for installed packages
+ketch unlink <pkg>...       # remove links, keep the installed package
 ketch uninstall <pkg>...   # remove it
 ketch lock                 # write ketch.lock from what is installed
 ketch sync                 # install what ketch.lock names, at those versions
 ketch doctor               # check the environment and the install tree
 ketch doctor --fix         # and repair the PATH setup while it is there
+ketch path                 # show PATH setup (same as `path status`)
 ketch path install         # put ~/.ketch/bin on PATH
 ketch config create        # write a ketch.toml by answering questions
 ketch registry push        # offer it to the registry, showing the diff first
 ketch registry validate    # check a registry tree the way registry CI does
+ketch registry status      # age and source of the local copy; no network
+ketch self version         # print version, target, root and binary path
 ketch self update          # upgrade ketch itself
 ketch self uninstall       # remove ketch and everything it installed
 ```
@@ -120,8 +134,19 @@ ketch self uninstall       # remove ketch and everything it installed
 Everything lives under `~/.ketch`: versioned payloads in `store/`, links in
 `bin/`, a `state.json` recording what is installed, and a `stats.db` recording
 what happened. Nothing is written outside that tree except the `.app` bundles
-that belong in `/Applications`, and the shell startup file `ketch path install`
-edits when you ask it to.
+that belong in `/Applications`, the user man and completion directories `ketch
+doctor` reports, the shell startup file `ketch path install` edits when you
+ask it to, `./ketch.lock` and `./ketch.toml` when you ask for them, and the
+running binary itself when `ketch self update` replaces it in place outside the
+store.
+
+An upgrade keeps the previous prefix on disk and records it under `retained`
+in `state.json`, together with a `retention` policy (`keep`, default 1).
+`ketch rollback <pkg>` relinks that prefix — it never re-downloads. `ketch prune`
+is the only command that deletes retained prefixes; it leaves `keep` previous
+versions. `ketch list` and `ketch info` show what is still retained. State files
+written before this field existed still load: missing `retention` means keep 1,
+and missing `retained` means none.
 
 ## Installing from disk
 
@@ -186,8 +211,9 @@ ketch install rg fd --jobs 1    # one at a time
 Downloads run concurrently by default and spend their time waiting, so a batch
 takes about as long as its slowest package rather than the sum of all of them.
 Only the downloading and unpacking overlap: packages are placed into the store
-one at a time, in the order you asked for them, so the install tree sees the
-same sequence of writes it would have seen anyway.
+one at a time, in whatever order each download finishes — not necessarily the
+order you asked for them. Exit status and printed results still follow your
+request order.
 
 `upgrade` and `sync` work the same way. `--jobs N` sets the width for any of
 them; `jobs` in the config file sets the default.
@@ -226,7 +252,8 @@ the lockfile does not name, `--dry-run` shows the plan first. See
 ## Getting on PATH
 
 ```bash
-ketch path              # which shells are set up, and where
+ketch path              # show PATH setup (same as `path status`)
+ketch path status       # which shells are set up, and where
 ketch path install      # edit the ones you use
 ketch path uninstall    # take the block back out
 ```
@@ -277,12 +304,15 @@ release required. See [docs/PLUGINS.md](docs/PLUGINS.md).
 | `require_checksums` | `KETCH_REQUIRE_CHECKSUMS` | `false` |
 | `strip_quarantine` | `KETCH_STRIP_QUARANTINE` | `true` |
 | `registry` | `KETCH_REGISTRY` | `listepo/ketch-registry` |
-| `jobs` | `KETCH_JOBS` | `4` |
+| `self_repo` | `KETCH_SELF_REPO` | `listepo/ketch` |
+| `jobs` | `KETCH_JOBS` | `4` (capped at `16`) |
 | `log_level` | `KETCH_LOG_LEVEL` | `info` |
 | `log_format` | `KETCH_LOG_FORMAT` | `text` |
 
 The root itself is `KETCH_ROOT` or `--root`; it cannot be set from the config
-file, because the file lives inside it.
+file, because the file lives inside it. `KETCH_GITHUB_API` overrides the GitHub
+API base URL (for Enterprise); it cannot be set from the config file either.
+`jobs` and `--jobs` above `16` are clamped to `16`.
 
 A token is not required, but it raises GitHub's rate limit considerably.
 

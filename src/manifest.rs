@@ -217,16 +217,12 @@ fn load_user_manifests(dir: &Path) -> Vec<(Manifest, PathBuf)> {
 }
 
 /// Where `ketch edit`/`ketch pin` should write a manifest for this package.
-// Part of the public surface, with no caller in the tree yet.
-#[allow(dead_code)]
 pub fn user_manifest_path(cfg: &Config, name: &str) -> PathBuf {
     cfg.manifest_dir
         .join(format!("{}.toml", crate::config::sanitize_component(name)))
 }
 
 /// Serialise a manifest for a user manifest file.
-// Part of the public surface, with no caller in the tree yet.
-#[allow(dead_code)]
 pub fn to_toml(manifest: &Manifest) -> Result<String> {
     toml::to_string_pretty(manifest).map_err(|e| Error::parse("manifest", e.to_string()))
 }
@@ -252,6 +248,17 @@ mod tests {
             .expect("`rg` is a declared alias of ripgrep");
         assert_eq!(manifest.name, "ripgrep");
         assert_eq!(origin, ManifestOrigin::Builtin);
+    }
+
+    #[test]
+    fn a_registry_file_with_a_stray_top_level_key_is_refused() {
+        let text = "oops = true\n\n[[package]]\nname = \"thing\"\nsource = \"github:o/thing\"\n";
+        let err = parse_registry(text, "test").unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("unknown field") && msg.contains("oops"),
+            "{msg}"
+        );
     }
 
     #[test]

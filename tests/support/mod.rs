@@ -147,9 +147,17 @@ impl Sandbox {
     }
 
     fn ketch_with_path(&self, args: &[&str], path: std::ffi::OsString) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_ketch"))
-            .args(args)
-            .env("KETCH_ROOT", self.root())
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_ketch"));
+        cmd.args(args);
+        // `Config::load` reads every KETCH_* variable before config.toml. Strip
+        // the whole namespace so a developer shell or CI job cannot leak values
+        // into the sandbox; the two lines below are the only ones we set.
+        for (key, _) in std::env::vars_os() {
+            if key.to_str().is_some_and(|k| k.starts_with("KETCH_")) {
+                cmd.env_remove(key);
+            }
+        }
+        cmd.env("KETCH_ROOT", self.root())
             .env("KETCH_APPS_DIR", self.apps())
             .env("NO_COLOR", "1")
             .env("PATH", path)
@@ -166,7 +174,6 @@ impl Sandbox {
             .env_remove("XDG_CONFIG_HOME")
             // A token in the ambient environment (CI always has one) must not
             // reach a test: nothing here is allowed to touch the network.
-            .env_remove("KETCH_GITHUB_TOKEN")
             .env_remove("GITHUB_TOKEN")
             .env_remove("GH_TOKEN")
             .output()
@@ -229,6 +236,18 @@ impl Sandbox {
         }
     }
 
+    /// Serve a file byte for byte: a checked-in fixture whose exact bytes a
+    /// signature covers, so it cannot be rebuilt the way `asset` builds one.
+    pub fn file_asset(&self, name: &str, source: &Path) -> Asset {
+        let path = self.assets().join(name);
+        std::fs::copy(source, &path).expect("copy fixture asset");
+        Asset {
+            name: name.to_string(),
+            digest: Some(sha256_file(&path)),
+            path,
+        }
+    }
+
     fn write_plugin(&self) {
         #[cfg(windows)]
         {
@@ -277,6 +296,7 @@ pub struct Release {
     version: String,
     assets: Vec<Asset>,
     notes: Option<String>,
+    prerelease: bool,
 }
 
 impl Release {
@@ -285,12 +305,19 @@ impl Release {
             version: version.to_string(),
             assets,
             notes: None,
+            prerelease: false,
         }
     }
 
     /// Notes published alongside the release, the way a forge serves them.
     pub fn with_notes(mut self, notes: &str) -> Release {
         self.notes = Some(notes.to_string());
+        self
+    }
+
+    /// Mark this listing entry as a prerelease.
+    pub fn into_prerelease(mut self) -> Release {
+        self.prerelease = true;
         self
     }
 
@@ -301,8 +328,9 @@ impl Release {
             None => String::new(),
         };
         format!(
-            r#"{{"version":"{v}","tag":"v{v}","prerelease":false,"draft":false{n},"assets":[{a}]}}"#,
+            r#"{{"version":"{v}","tag":"v{v}","prerelease":{pre},"draft":false{n},"assets":[{a}]}}"#,
             v = self.version,
+            pre = if self.prerelease { "true" } else { "false" },
             n = notes,
             a = assets.join(",")
         )

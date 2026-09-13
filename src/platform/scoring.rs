@@ -25,6 +25,11 @@ pub(crate) fn find_token(haystack: &str, tokens: &[&'static str]) -> Option<&'st
     tokens.iter().copied().find(|t| token_at(haystack, t))
 }
 
+/// True when the asset name names an OS ketch does not support.
+pub(crate) fn names_foreign_os(lower: &str) -> bool {
+    find_token(lower, super::FOREIGN_OS_TOKENS).is_some()
+}
+
 /// Bonus and label for the container format, read off the file name.
 ///
 /// The spread is deliberately small: it only breaks ties between assets that
@@ -59,7 +64,7 @@ pub(crate) fn container_bonus(lower: &str) -> (i32, &'static str) {
 /// tokens.
 pub(crate) fn is_rejected(lower: &str, extra_tokens: &[&str]) -> bool {
     super::is_sidecar(lower)
-        || super::NON_BINARY_TOKENS.iter().any(|t| lower.contains(t))
+        || super::NON_BINARY_TOKENS.iter().any(|t| token_at(lower, t))
         || super::REJECTED_EXTENSIONS
             .iter()
             .any(|e| lower.ends_with(e))
@@ -115,7 +120,8 @@ pub(crate) fn score_macos_asset(
     }
 
     // Anything that names a foreign OS is not ours, whatever else it says.
-    if find_token(&lower, Os::Linux.tokens()).is_some()
+    if names_foreign_os(&lower)
+        || find_token(&lower, Os::Linux.tokens()).is_some()
         || find_token(&lower, Os::Windows.tokens()).is_some()
     {
         return None;
@@ -190,7 +196,8 @@ pub(crate) fn score_linux_asset(
     if lower.is_empty() || is_rejected(&lower, &["debuginfo", "dbg"]) || lower.ends_with(".exe") {
         return None;
     }
-    if find_token(&lower, Os::MacOs.tokens()).is_some()
+    if names_foreign_os(&lower)
+        || find_token(&lower, Os::MacOs.tokens()).is_some()
         || find_token(&lower, Os::Windows.tokens()).is_some()
     {
         return None;
@@ -277,7 +284,8 @@ pub(crate) fn score_windows_asset(asset_name: &str, host_arch: Arch) -> Option<A
     if lower.is_empty() || is_rejected(&lower, &[]) {
         return None;
     }
-    if find_token(&lower, Os::MacOs.tokens()).is_some()
+    if names_foreign_os(&lower)
+        || find_token(&lower, Os::MacOs.tokens()).is_some()
         || find_token(&lower, &["linux"]).is_some()
         || find_token(&lower, &["musl"]).is_some()
     {
@@ -349,6 +357,24 @@ mod tests {
     fn is_rejected_with_extra_tokens_rejects_byproducts() {
         let lower = "tool-macos-arm64.dsym.zip".to_ascii_lowercase();
         assert!(is_rejected(&lower, &["dsym"]));
+    }
+
+    #[test]
+    fn is_rejected_matches_non_binary_tokens_as_whole_parts() {
+        let resources = "tool-1.0-macos-arm64-resources.tar.gz".to_ascii_lowercase();
+        assert!(
+            !is_rejected(&resources, &[]),
+            "resources must not match the sources token"
+        );
+
+        let sources = "tool-1.0-sources.tar.gz".to_ascii_lowercase();
+        assert!(
+            is_rejected(&sources, &[]),
+            "sources tarball must be rejected"
+        );
+
+        let src_build = "tool-src-linux-amd64.tar.gz".to_ascii_lowercase();
+        assert!(is_rejected(&src_build, &[]), "src build must be rejected");
     }
 
     #[test]
@@ -534,5 +560,27 @@ mod tests {
     fn windows_prefers_native_architecture() {
         assert!(score_windows_asset("tool-aarch64-pc-windows-msvc.zip", Arch::X86_64).is_none());
         assert!(score_windows_asset("tool-x86_64-pc-windows-msvc.zip", Arch::X86_64).is_some());
+    }
+
+    #[test]
+    fn foreign_operating_systems_are_never_selected() {
+        for name in [
+            "tool-1.0-x86_64-unknown-freebsd.tar.gz",
+            "tool-1.0-amd64-netbsd.tar.gz",
+            "tool-1.0-x86_64-plan9.tar.gz",
+        ] {
+            assert!(
+                score_macos_asset(name, Arch::Aarch64, true).is_none(),
+                "macOS should have rejected {name}"
+            );
+            assert!(
+                score_linux_asset(name, Arch::Aarch64, true, false).is_none(),
+                "Linux should have rejected {name}"
+            );
+            assert!(
+                score_windows_asset(name, Arch::X86_64).is_none(),
+                "Windows should have rejected {name}"
+            );
+        }
     }
 }

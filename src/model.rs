@@ -577,6 +577,118 @@ pub struct BinSpec {
     pub name: Option<String>,
 }
 
+/// What an `extra_paths` entry is for. Required in the table form; inferred
+/// from path rules when the entry is a bare string.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExtraKind {
+    /// A man page, linked into the user man root.
+    Man,
+    /// A shell completion script, linked into that shell's user directory.
+    Completion,
+}
+
+/// Shell whose user completion directory an extra path should land in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CompletionShell {
+    Bash,
+    Zsh,
+    Fish,
+    Elvish,
+    Powershell,
+}
+
+impl CompletionShell {
+    /// Shells ketch will generate and install completions for.
+    pub const ALL: [Self; 5] = [
+        Self::Bash,
+        Self::Zsh,
+        Self::Fish,
+        Self::Elvish,
+        Self::Powershell,
+    ];
+
+    /// The `clap_complete` shell this maps to. Fig is intentionally absent:
+    /// it is not a user directory ketch should write into.
+    pub fn to_clap(self) -> clap_complete::Shell {
+        match self {
+            Self::Bash => clap_complete::Shell::Bash,
+            Self::Zsh => clap_complete::Shell::Zsh,
+            Self::Fish => clap_complete::Shell::Fish,
+            Self::Elvish => clap_complete::Shell::Elvish,
+            Self::Powershell => clap_complete::Shell::PowerShell,
+        }
+    }
+
+    /// Inverse of [`Self::to_clap`]. `None` for shells ketch will not install.
+    pub fn from_clap(shell: clap_complete::Shell) -> Option<Self> {
+        match shell {
+            clap_complete::Shell::Bash => Some(Self::Bash),
+            clap_complete::Shell::Zsh => Some(Self::Zsh),
+            clap_complete::Shell::Fish => Some(Self::Fish),
+            clap_complete::Shell::Elvish => Some(Self::Elvish),
+            clap_complete::Shell::PowerShell => Some(Self::Powershell),
+            _ => None,
+        }
+    }
+
+    /// Stable name used in doctor checks and error text.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Bash => "bash",
+            Self::Zsh => "zsh",
+            Self::Fish => "fish",
+            Self::Elvish => "elvish",
+            Self::Powershell => "powershell",
+        }
+    }
+}
+
+/// Table form of `extra_paths`: an explicit kind, so path rules are not guessed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExtraPathSpec {
+    /// Path inside the extracted payload. Same containment rules as a string entry.
+    pub path: String,
+    pub kind: ExtraKind,
+    /// Required for a completion when the file name does not name a shell.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shell: Option<CompletionShell>,
+    /// Man section (`1`, `8`, `1p`). Inferred from a `*.N` file name when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub section: Option<String>,
+}
+
+/// One `extra_paths` entry: a payload-relative string, or a table with `kind`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ExtraPath {
+    /// Classified by the path rules in `docs/MANIFESTS.md`.
+    Path(String),
+    /// Explicit kind; path rules are not consulted except to fill `shell`/`section`.
+    Spec(ExtraPathSpec),
+}
+
+impl ExtraPath {
+    /// The payload-relative path, whether the entry was a string or a table.
+    pub fn as_rel_path(&self) -> &str {
+        match self {
+            Self::Path(path) => path,
+            Self::Spec(spec) => &spec.path,
+        }
+    }
+}
+
+/// An `extra_paths` entry after classification, before a destination is chosen.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClassifiedExtra {
+    pub rel_path: String,
+    pub kind: ExtraKind,
+    pub shell: Option<CompletionShell>,
+    pub section: Option<String>,
+}
+
 /// How to install one package.
 ///
 /// `deny_unknown_fields` is deliberate: a manifest is hand-written, often by
@@ -609,10 +721,13 @@ pub struct Manifest {
     /// Printed after a successful install.
     #[serde(default)]
     pub notes: Option<String>,
-    /// Files to expose as man pages / completions later; recorded now so
-    /// manifests written today stay valid.
+    /// Man pages and completions to expose from the payload. A string is
+    /// classified by the path rules in `docs/MANIFESTS.md`; a table sets `kind`.
     #[serde(default)]
-    pub extra_paths: Vec<String>,
+    pub extra_paths: Vec<ExtraPath>,
+    /// Whose signature a release must carry. See `crate::trust`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trust: Option<TrustPolicy>,
 }
 
 impl Manifest {
@@ -640,7 +755,8 @@ impl Manifest {
             }
         }
         for path in &self.extra_paths {
-            contained_path("extra path", path)?;
+            contained_path("extra path", path.as_rel_path())?;
+            crate::extra::classify(path)?;
         }
         // Each level costs a directory listing of the payload, and no real
         // archive nests its wrapper directories this deep.
@@ -655,6 +771,25 @@ impl Manifest {
                     "`{alias}` cannot be an alias: it is not something anyone can type"
                 )));
             }
+        }
+        if let Some(trust) = &self.trust {
+            // Both name files downloaded beside the asset. `{file}` is the
+            // only placeholder, and the sidecar cannot be the signed file.
+            if let Some(template) = &trust.signature {
+                let sample = template.replace("{file}", "x");
+                if sample.contains(['{', '}']) || sample == "x" {
+                    return Err(Error::msg(format!(
+                        "`trust.signature` `{}` must name a file beside the signed one, \
+                         with `{{file}}` for that file's name",
+                        template.escape_debug()
+                    )));
+                }
+                usable_file_name("trust.signature", &sample)?;
+            }
+            if let Some(signed) = &trust.signed {
+                usable_file_name("trust.signed", signed)?;
+            }
+            crate::trust::check_policy(trust)?;
         }
         Ok(())
     }
@@ -679,12 +814,121 @@ impl Manifest {
             provides: Vec::new(),
             notes: None,
             extra_paths: Vec::new(),
+            trust: None,
         }
     }
 }
 
 /// How many wrapper directories a manifest may ask to strip.
 const MAX_STRIP_PREFIX: usize = 8;
+
+/// Which kind of publisher signature a `trust` table asks for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Verifier {
+    Sigstore,
+    Minisign,
+    Gpg,
+}
+
+impl Verifier {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Verifier::Sigstore => "sigstore",
+            Verifier::Minisign => "minisign",
+            Verifier::Gpg => "gpg",
+        }
+    }
+
+    /// The sidecar name each tool writes by default.
+    fn default_signature(self) -> &'static str {
+        match self {
+            Verifier::Sigstore => "{file}.sigstore.json",
+            Verifier::Minisign => "{file}.minisig",
+            Verifier::Gpg => "{file}.asc",
+        }
+    }
+}
+
+impl std::fmt::Display for Verifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// What an unverifiable signature does to the install.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TrustMode {
+    /// Refuse it. Fail closed.
+    #[default]
+    Require,
+    /// Install on the checksum alone, and say so.
+    Warn,
+}
+
+/// A manifest's `trust` table: whose signature a release must carry.
+///
+/// Which keys a verifier reads is checked by `crate::trust::check_policy`,
+/// called from [`Manifest::validate`]; `docs/MANIFESTS.md` is the reference.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TrustPolicy {
+    pub verifier: Verifier,
+    #[serde(default)]
+    pub mode: TrustMode,
+    /// The sidecar's name; `{file}` is the signed file's name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
+    /// A glob naming a checksum list the signature covers instead of the asset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signed: Option<String>,
+    /// sigstore: the OIDC issuer of the signing certificate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub issuer: Option<String>,
+    /// sigstore: the certificate's exact identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity: Option<String>,
+    /// sigstore: any GitHub Actions workflow in this `owner/repo`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repository: Option<String>,
+    /// minisign: the key. gpg: the armored key block.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub public_key: Option<String>,
+    /// gpg: the primary key's full fingerprint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fingerprint: Option<String>,
+}
+
+impl TrustPolicy {
+    /// The sidecar that signs `file`.
+    pub fn signature_name(&self, file: &str) -> String {
+        self.signature
+            .as_deref()
+            .unwrap_or(self.verifier.default_signature())
+            .replace("{file}", file)
+    }
+}
+
+/// A publisher signature that verified, as `state.json` records it.
+///
+/// `identity` is what the manifest pinned, never what the signature file says
+/// about itself: that text is the signer's own, and is not printed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Provenance {
+    pub verifier: Verifier,
+    pub identity: String,
+    /// The sidecar release asset and its SHA-256, so the check can be redone.
+    pub signature: String,
+    pub signature_sha256: String,
+    /// The checksum list the signature covered, when it covered that and
+    /// not the asset itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signed: Option<String>,
+    /// sigstore: the Rekor transparency-log index of the entry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub log_index: Option<u64>,
+}
 
 /// Reject a name that could not be used verbatim as one path component.
 ///
@@ -729,6 +973,29 @@ pub enum ManifestOrigin {
     User(PathBuf),
     /// Nobody wrote one; ketch guessed.
     Inferred,
+}
+
+impl ManifestOrigin {
+    /// Precedence name: user, registry, builtin, inferred.
+    pub fn tier(&self) -> &'static str {
+        match self {
+            ManifestOrigin::Builtin => "builtin",
+            ManifestOrigin::Registry(_) => "registry",
+            ManifestOrigin::User(_) => "user",
+            ManifestOrigin::Inferred => "inferred",
+        }
+    }
+
+    /// A path the user can open, or a short label when there is none.
+    pub fn location(&self) -> String {
+        match self {
+            ManifestOrigin::Builtin => "builtin".into(),
+            ManifestOrigin::Registry(path) | ManifestOrigin::User(path) => {
+                path.display().to_string()
+            }
+            ManifestOrigin::Inferred => "inferred".into(),
+        }
+    }
 }
 
 /// How a `local:` package arrived on disk.
@@ -783,6 +1050,28 @@ pub enum LinkKind {
     LinkedApp,
 }
 
+/// What a recorded link is *for*. Mechanism stays in [`LinkKind`]; this is
+/// how `binaries()` and uninstall tell a PATH entry from a man page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum LinkRole {
+    /// A binary on PATH. The default so state written before this field existed
+    /// still reads as binaries.
+    #[default]
+    Binary,
+    /// A man page in the user man root.
+    Man,
+    /// A shell completion script.
+    Completion,
+}
+
+impl LinkRole {
+    /// True for the default role, used to keep old-looking JSON for binaries.
+    pub fn is_binary(&self) -> bool {
+        matches!(self, Self::Binary)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LinkRecord {
     /// The path we created and are responsible for removing.
@@ -790,6 +1079,9 @@ pub struct LinkRecord {
     /// What it points at inside the store.
     pub target: PathBuf,
     pub kind: LinkKind,
+    /// Absent on state written before man/completion links existed.
+    #[serde(default, skip_serializing_if = "LinkRole::is_binary")]
+    pub role: LinkRole,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -825,13 +1117,149 @@ pub struct InstalledPackage {
     /// we want an explicit field for `info --json`. Usually mirrors the id.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub local_path: Option<PathBuf>,
+    /// Signature check recorded when this version was placed. Absent on
+    /// packages installed before trust was persisted.
+    #[serde(default, skip_serializing_if = "TrustResult::is_not_applicable")]
+    pub trust: TrustResult,
+    /// Older prefixes still on disk. Upgrade appends; `ketch prune` removes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub retained: Vec<RetainedVersion>,
+    /// The publisher signature verified when this version was placed, from
+    /// the manifest's `trust` table. Absent when there was none to check,
+    /// and on packages installed before signatures were checked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<Provenance>,
 }
 
 impl InstalledPackage {
+    /// How far the publisher of this download is established: a verified
+    /// signature, a published checksum, or nothing beyond first use.
+    pub fn publisher_trust(&self) -> &'static str {
+        if self.provenance.is_some() {
+            "signed"
+        } else if self.checksum_verified {
+            "checksum"
+        } else {
+            "first use"
+        }
+    }
+
     pub fn binaries(&self) -> impl Iterator<Item = &LinkRecord> {
-        self.links
-            .iter()
-            .filter(|l| matches!(l.kind, LinkKind::Symlink | LinkKind::CopiedFile))
+        self.links.iter().filter(|l| {
+            l.role.is_binary() && matches!(l.kind, LinkKind::Symlink | LinkKind::CopiedFile)
+        })
+    }
+
+    /// Most recently replaced version, if any is still recorded.
+    pub fn previous_retained(&self) -> Option<&RetainedVersion> {
+        self.retained.first()
+    }
+
+    /// Find a retained version by version string or tag.
+    pub fn find_retained(&self, spec: &str) -> Option<(usize, &RetainedVersion)> {
+        self.retained.iter().enumerate().find(|(_, r)| {
+            r.version.matches_request(spec) || r.tag.eq_ignore_ascii_case(spec.trim())
+        })
+    }
+}
+
+/// How many previous prefixes `ketch prune` leaves on disk.
+///
+/// Upgrade never deletes a prefix. This number is applied only by the
+/// explicit prune command, so a keep of 1 still leaves every version until
+/// someone prunes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RetentionPolicy {
+    #[serde(default = "default_retain_keep")]
+    pub keep: u32,
+}
+
+pub fn default_retain_keep() -> u32 {
+    1
+}
+
+impl Default for RetentionPolicy {
+    fn default() -> Self {
+        RetentionPolicy {
+            keep: default_retain_keep(),
+        }
+    }
+}
+
+/// A previously installed version whose prefix is still in the store.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RetainedVersion {
+    pub version: Version,
+    pub prefix: PathBuf,
+    /// SHA-256 of the asset that produced this prefix.
+    pub sha256: String,
+    #[serde(default)]
+    pub checksum_verified: bool,
+    #[serde(default)]
+    pub links: Vec<LinkRecord>,
+    #[serde(default, skip_serializing_if = "TrustResult::is_not_applicable")]
+    pub trust: TrustResult,
+    /// Carried so a rollback restores what was verified for this version.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<Provenance>,
+    pub tag: String,
+    pub asset_name: String,
+    #[serde(default)]
+    pub installed_at: u64,
+    pub target: TargetSpec,
+}
+
+impl RetainedVersion {
+    /// Snapshot the version-specific fields of an installed package.
+    pub fn from_installed(pkg: &InstalledPackage) -> Self {
+        RetainedVersion {
+            version: pkg.version.clone(),
+            prefix: pkg.prefix.clone(),
+            sha256: pkg.sha256.clone(),
+            checksum_verified: pkg.checksum_verified,
+            links: pkg.links.clone(),
+            trust: pkg.trust.clone(),
+            provenance: pkg.provenance.clone(),
+            tag: pkg.tag.clone(),
+            asset_name: pkg.asset_name.clone(),
+            installed_at: pkg.installed_at,
+            target: pkg.target,
+        }
+    }
+}
+
+/// Persisted form of a platform trust check. `NotApplicable` is the default
+/// so state written before this field existed still loads.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TrustResult {
+    Trusted {
+        authority: String,
+    },
+    Weak {
+        detail: String,
+    },
+    Untrusted {
+        detail: String,
+    },
+    #[default]
+    NotApplicable,
+}
+
+impl TrustResult {
+    pub fn is_not_applicable(&self) -> bool {
+        matches!(self, TrustResult::NotApplicable)
+    }
+}
+
+impl fmt::Display for TrustResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TrustResult::Trusted { authority } => write!(f, "trusted ({authority})"),
+            TrustResult::Weak { detail } => write!(f, "weak ({detail})"),
+            TrustResult::Untrusted { detail } => write!(f, "untrusted ({detail})"),
+            TrustResult::NotApplicable => f.write_str("not applicable"),
+        }
     }
 }
 

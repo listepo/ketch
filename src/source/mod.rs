@@ -13,6 +13,7 @@ use crate::error::{Error, Result};
 use crate::http::Http;
 use crate::model::{PackageRef, Release, ReleaseAsset, SourceInfo, VersionSpec};
 use crate::ui::ProgressSink;
+use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
@@ -110,36 +111,123 @@ pub fn opts_for(want: &VersionSpec, opts: &ListOpts) -> ListOpts {
     }
 }
 
+/// A release that version selection refused, and why.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RejectedRelease {
+    pub tag: String,
+    pub version: String,
+    pub reason: String,
+}
+
+/// Result of [`select_release`]: the winner plus every discarded listing entry.
+#[derive(Debug, Clone)]
+pub struct ReleaseSelection {
+    pub selected: Release,
+    /// Filled for callers that explain a listing walk. `pick` discards it.
+    #[allow(dead_code)]
+    pub rejected: Vec<RejectedRelease>,
+}
+
 /// Shared release-selection logic, so every source picks versions the same way.
 pub fn pick(
     id: &str,
-    mut releases: Vec<Release>,
+    releases: Vec<Release>,
     want: &VersionSpec,
     opts: &ListOpts,
 ) -> Result<Release> {
-    releases.retain(|r| !r.draft);
+    Ok(select_release(id, releases, want, opts)?.selected)
+}
+
+/// Same selection as [`pick`], with every discarded release kept.
+pub fn select_release(
+    id: &str,
+    releases: Vec<Release>,
+    want: &VersionSpec,
+    opts: &ListOpts,
+) -> Result<ReleaseSelection> {
+    let mut rejected = Vec::new();
+    let mut considered = Vec::with_capacity(releases.len());
+    for release in releases {
+        if release.draft {
+            rejected.push(RejectedRelease {
+                tag: release.tag,
+                version: release.version.to_string(),
+                reason: "draft".into(),
+            });
+        } else {
+            considered.push(release);
+        }
+    }
+
     match want {
-        VersionSpec::Exact(tag) => releases
-            .into_iter()
-            // No prerelease filter: `opts_for` has already made sure the
-            // listing this ran over includes them.
-            .find(|r| r.tag.eq_ignore_ascii_case(tag) || r.version.matches_request(tag))
-            .ok_or_else(|| Error::NoRelease(format!("{id}@{tag}"))),
-        VersionSpec::Latest => {
-            if !opts.include_prerelease {
-                let stable: Vec<Release> = releases
-                    .iter()
-                    .filter(|r| !r.prerelease && !r.version.is_prerelease())
-                    .cloned()
-                    .collect();
-                if !stable.is_empty() {
-                    releases = stable;
+        VersionSpec::Exact(tag) => {
+            let mut selected = None;
+            let mut rest = Vec::new();
+            for release in considered {
+                if selected.is_none()
+                    && (release.tag.eq_ignore_ascii_case(tag)
+                        || release.version.matches_request(tag))
+                {
+                    selected = Some(release);
+                } else {
+                    rest.push(release);
                 }
             }
-            releases
-                .into_iter()
+            let Some(selected) = selected else {
+                return Err(Error::NoRelease(format!("{id}@{tag}")));
+            };
+            for release in rest {
+                let reason = if release.tag.eq_ignore_ascii_case(tag)
+                    || release.version.matches_request(tag)
+                {
+                    "not the first exact match"
+                } else {
+                    "does not match the requested tag"
+                };
+                rejected.push(RejectedRelease {
+                    tag: release.tag,
+                    version: release.version.to_string(),
+                    reason: reason.into(),
+                });
+            }
+            Ok(ReleaseSelection { selected, rejected })
+        }
+        VersionSpec::Latest => {
+            let has_stable = considered
+                .iter()
+                .any(|r| !r.prerelease && !r.version.is_prerelease());
+            let pool = if !opts.include_prerelease && has_stable {
+                let mut pool = Vec::new();
+                for release in considered {
+                    if release.prerelease || release.version.is_prerelease() {
+                        rejected.push(RejectedRelease {
+                            tag: release.tag,
+                            version: release.version.to_string(),
+                            reason: "prerelease".into(),
+                        });
+                    } else {
+                        pool.push(release);
+                    }
+                }
+                pool
+            } else {
+                considered
+            };
+            let selected = pool
+                .iter()
                 .max_by(|a, b| a.version.cmp(&b.version))
-                .ok_or_else(|| Error::NoRelease(id.to_string()))
+                .cloned()
+                .ok_or_else(|| Error::NoRelease(id.to_string()))?;
+            for release in pool {
+                if release.tag != selected.tag || release.version != selected.version {
+                    rejected.push(RejectedRelease {
+                        tag: release.tag,
+                        version: release.version.to_string(),
+                        reason: "not the highest version".into(),
+                    });
+                }
+            }
+            Ok(ReleaseSelection { selected, rejected })
         }
     }
 }
@@ -283,5 +371,54 @@ mod tests {
         let releases = vec![draft, release("v1.0.0", false)];
         let got = pick("x", releases, &VersionSpec::Latest, &ListOpts::default()).unwrap();
         assert_eq!(got.tag, "v1.0.0");
+    }
+
+    #[test]
+    fn select_release_records_prereleases_and_agrees_with_pick() {
+        let releases = vec![
+            release("v1.2.0", false),
+            release("v2.0.0-rc.1", true),
+            release("v1.10.0", false),
+        ];
+        let got = pick(
+            "x",
+            releases.clone(),
+            &VersionSpec::Latest,
+            &ListOpts::default(),
+        )
+        .unwrap();
+        let traced =
+            select_release("x", releases, &VersionSpec::Latest, &ListOpts::default()).unwrap();
+        assert_eq!(got.tag, traced.selected.tag);
+        assert_eq!(
+            traced.rejected,
+            vec![
+                RejectedRelease {
+                    tag: "v2.0.0-rc.1".into(),
+                    version: "v2.0.0-rc.1".into(),
+                    reason: "prerelease".into(),
+                },
+                RejectedRelease {
+                    tag: "v1.2.0".into(),
+                    version: "v1.2.0".into(),
+                    reason: "not the highest version".into(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn select_release_never_selects_a_draft() {
+        let mut draft = release("v3.0.0", false);
+        draft.draft = true;
+        let traced = select_release(
+            "x",
+            vec![draft, release("v1.0.0", false)],
+            &VersionSpec::Latest,
+            &ListOpts::default(),
+        )
+        .unwrap();
+        assert_eq!(traced.selected.tag, "v1.0.0");
+        assert_eq!(traced.rejected[0].reason, "draft");
     }
 }

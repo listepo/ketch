@@ -73,6 +73,7 @@ impl PluginSource {
                     "speaks protocol {} but this ketch speaks {PROTOCOL_VERSION}",
                     caps.protocol
                 ),
+                stderr: String::new(),
             });
         }
         // The scheme ends up in user input and in recorded state, so it has to
@@ -86,6 +87,7 @@ impl PluginSource {
             return Err(Error::Plugin {
                 name: file_name(path),
                 detail: format!("reports an unusable scheme `{}`", caps.scheme),
+                stderr: String::new(),
             });
         }
         Ok(PluginSource {
@@ -156,6 +158,7 @@ impl Source for PluginSource {
             return Err(Error::Plugin {
                 name: self.name().to_string(),
                 detail: format!("reported success but wrote no file to {}", dest.display()),
+                stderr: String::new(),
             });
         }
         // Hash what actually landed on disk. A plugin does not get to assert
@@ -235,11 +238,16 @@ fn output(path: &Path, args: &[&str]) -> Result<String> {
     run_plugin(path, args, PLUGIN_TIMEOUT)
 }
 
-fn run_plugin(path: &Path, args: &[&str], timeout: Duration) -> Result<String> {
-    let fail = |detail: String| Error::Plugin {
+fn plugin_fail(path: &Path, detail: String, stderr: &[u8]) -> Error {
+    Error::Plugin {
         name: file_name(path),
         detail,
-    };
+        stderr: String::from_utf8_lossy(stderr).to_string(),
+    }
+}
+
+fn run_plugin(path: &Path, args: &[&str], timeout: Duration) -> Result<String> {
+    let fail = |detail: String| plugin_fail(path, detail, &[]);
     let mut command = Command::new(path);
     command
         .args(args)
@@ -277,11 +285,13 @@ fn run_plugin(path: &Path, args: &[&str], timeout: Duration) -> Result<String> {
     )
     .unwrap_or_default();
 
-    let status = status.map_err(fail)?;
+    let status = status.map_err(|detail| plugin_fail(path, detail, &err))?;
     if out.len() as u64 > PLUGIN_MAX_OUTPUT {
-        return Err(fail(format!(
-            "wrote more than {PLUGIN_MAX_OUTPUT} bytes to stdout"
-        )));
+        return Err(plugin_fail(
+            path,
+            format!("wrote more than {PLUGIN_MAX_OUTPUT} bytes to stdout"),
+            &err,
+        ));
     }
     if !status.success() {
         return Err(Error::Command {
@@ -290,7 +300,8 @@ fn run_plugin(path: &Path, args: &[&str], timeout: Duration) -> Result<String> {
             stderr: String::from_utf8_lossy(&err).to_string(),
         });
     }
-    String::from_utf8(out).map_err(|e| fail(format!("wrote output that is not UTF-8: {e}")))
+    String::from_utf8(out)
+        .map_err(|e| plugin_fail(path, format!("wrote output that is not UTF-8: {e}"), &err))
 }
 
 /// Read a pipe to the end, or to the cap — whichever comes first.
@@ -418,6 +429,7 @@ fn parse<T: serde::de::DeserializeOwned>(path: &Path, body: &str) -> Result<T> {
     serde_json::from_str(body).map_err(|e| Error::Plugin {
         name: file_name(path),
         detail: format!("returned JSON ketch cannot read: {e}"),
+        stderr: String::new(),
     })
 }
 
@@ -563,5 +575,65 @@ esac
         let dir = tempfile::tempdir().unwrap();
         let path = fake_plugin(dir.path(), "future", PROTOCOL_VERSION + 1);
         assert!(PluginSource::probe(&path).is_err());
+    }
+
+    fn write_plugin_script(dir: &Path, scheme: &str, body: &str) -> PathBuf {
+        let path = dir.join(format!("{PLUGIN_PREFIX}{scheme}"));
+        std::fs::write(&path, body).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        path
+    }
+
+    #[test]
+    fn stderr_is_included_when_a_plugin_times_out() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_plugin_script(
+            dir.path(),
+            "slow",
+            r#"#!/bin/sh
+case "$1" in
+  capabilities)
+    echo "deadline stderr" >&2
+    sleep 60
+    ;;
+esac
+"#,
+        );
+        let err = run_plugin(&path, &["capabilities"], Duration::from_millis(100)).unwrap_err();
+        assert!(
+            err.details()
+                .iter()
+                .any(|line| line.contains("deadline stderr")),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn plugin_fail_includes_stderr_in_details() {
+        let err = plugin_fail(
+            Path::new("plugins/ketch-source-demo"),
+            "wrote more than 8388608 bytes to stdout".to_string(),
+            b"oversize stderr
+",
+        );
+        assert!(
+            err.details()
+                .iter()
+                .any(|line| line.contains("oversize stderr")),
+            "{err:?}"
+        );
+
+        let err = plugin_fail(
+            Path::new("plugins/ketch-source-demo"),
+            "wrote output that is not UTF-8: invalid utf-8".to_string(),
+            b"utf8 stderr
+",
+        );
+        assert!(
+            err.details()
+                .iter()
+                .any(|line| line.contains("utf8 stderr")),
+            "{err:?}"
+        );
     }
 }

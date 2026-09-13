@@ -91,6 +91,11 @@ jobs:
       - name: Test
         run: cargo test --all-targets --locked
 
+      # The optional TUI feature is not in the default build or release
+      # tarball, but it must still compile and pass its tests.
+      - name: Test (tui)
+        run: cargo test --all-targets --locked --features tui
+
   # Linux compile, unit tests, and tests/install_linux.rs (cfg linux).
   check-linux:
     runs-on: ubuntu-latest
@@ -107,6 +112,9 @@ jobs:
 
       - name: Test
         run: cargo test --all-targets --locked
+
+      - name: Test (tui)
+        run: cargo test --all-targets --locked --features tui
 
   # Windows compile, unit tests, and tests/install_windows.rs (cfg windows).
   check-windows:
@@ -127,6 +135,9 @@ jobs:
 
       - name: Test
         run: cargo test --all-targets --locked
+
+      - name: Test (tui)
+        run: cargo test --all-targets --locked --features tui
 
       - name: PowerShell syntax
         shell: pwsh
@@ -163,6 +174,8 @@ jobs:
           bash -n install.sh
           bash -n scripts/package.sh
           bash -n scripts/release.sh
+          sh tests/release-sh-version.sh
+          sh tests/release-yml-notarize.sh
 
       - name: Package the host target
         run: scripts/package.sh ${{ matrix.target }} dist

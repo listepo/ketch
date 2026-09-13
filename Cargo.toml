@@ -55,14 +55,18 @@ libsqlite3-sys = { version = "0.38.2", features = ["bundled"] }
 # runtime to block on; everything else in ketch stays synchronous.
 octocrab = "0.54"
 tokio = { version = "1", features = ["rt"] }
+# Publisher signatures (the manifest's `trust` table). Verification only:
+# sigstore without its signing, OCI and TUF-fetching halves, rPGP without
+# bzip2 (signatures are never compressed), minisign-verify has no deps.
+sigstore = { version = "0.14", default-features = false, features = ["verify"] }
+minisign-verify = "0.2"
+pgp = { version = "0.20", default-features = false }
 
 [dev-dependencies]
 assert_cmd = "2"
 assert_fs = "1"
-insta = "1.48.0"
 predicates = "3"
 pretty_assertions = "1.4.1"
-rstest = "0.26.1"
 trycmd = "0.15"
 
 # There is no unsafe code in ketch and there is no reason for any to appear.

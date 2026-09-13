@@ -14,7 +14,7 @@
 use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::model::{normalize_name, Manifest};
-use crate::registry::PACKAGE_FILE;
+use crate::registry::{validate_registry_entry, PACKAGE_FILE};
 use octocrab::params::repos::Reference;
 use octocrab::Octocrab;
 use serde::Deserialize;
@@ -51,20 +51,24 @@ pub fn load(path: &Path) -> Result<Proposal> {
             "expected a table of package fields".to_string(),
         )
     })?;
-    let name = match table.get("name").and_then(Value::as_str) {
+    let folder = path
+        .canonicalize()
+        .ok()
+        .and_then(|p| p.parent().map(Path::to_path_buf))
+        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()));
+    let declared_name = table
+        .get("name")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let name = match declared_name.as_deref() {
         Some(declared) => declared.to_string(),
         None => {
-            let folder = path
-                .canonicalize()
-                .ok()
-                .and_then(|p| p.parent().map(Path::to_path_buf))
-                .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
-                .ok_or_else(|| {
-                    Error::msg(format!(
-                        "{what} has no `name` and sits in no folder that could supply one"
-                    ))
-                })?;
-            let name = normalize_name(&folder);
+            let folder = folder.as_ref().ok_or_else(|| {
+                Error::msg(format!(
+                    "{what} has no `name` and sits in no folder that could supply one"
+                ))
+            })?;
+            let name = normalize_name(folder);
             table.insert("name".into(), Value::String(name.clone()));
             name
         }
@@ -74,15 +78,12 @@ pub fn load(path: &Path) -> Result<Proposal> {
     manifest
         .validate()
         .map_err(|e| Error::parse(what.as_str(), e.to_string()))?;
-    // Same rule as `registry::read_package`: a shared entry must name a release
-    // anyone can fetch, not a path on one machine's disk.
-    if manifest.source.scheme == "local" {
-        return Err(Error::parse(
-            what.as_str(),
-            "a registry package cannot install from a local path; use `github:owner/repo`"
-                .to_string(),
-        ));
-    }
+    validate_registry_entry(
+        what.as_str(),
+        folder.as_deref(),
+        declared_name.as_deref(),
+        &manifest,
+    )?;
     Ok(Proposal {
         name,
         body,
@@ -990,10 +991,25 @@ mod tests {
     #[test]
     fn a_local_source_is_refused() {
         let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("ketch.toml");
+        let project = dir.path().join("tool");
+        std::fs::create_dir(&project).unwrap();
+        let file = project.join("ketch.toml");
         std::fs::write(&file, "name = \"tool\"\nsource = \"local:/etc/passwd\"\n").unwrap();
         let error = load(&file).unwrap_err().to_string();
         assert!(error.contains("local path"), "{error}");
+    }
+
+    #[test]
+    fn a_declared_name_must_match_its_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("fzf");
+        std::fs::create_dir(&project).unwrap();
+        let file = project.join("ketch.toml");
+        std::fs::write(&file, "name = \"fzy\"\nsource = \"github:junegunn/fzf\"\n").unwrap();
+        let error = load(&file).unwrap_err().to_string();
+        assert!(error.contains("declares name"), "{error}");
+        assert!(error.contains("fzy"), "{error}");
+        assert!(error.contains("fzf"), "{error}");
     }
 
     #[test]

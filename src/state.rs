@@ -4,10 +4,15 @@
 //! atomically — staged next to the real file and renamed — so an interrupted
 //! write can never leave a half-parsed state file behind, which would look
 //! exactly like "nothing is installed".
+//!
+//! Version 1 stays readable when fields are added with serde defaults. A
+//! file written before retention existed loads as keep-1 with an empty
+//! retained list per package. Upgrade never deletes an old prefix; `ketch
+//! prune` is the only command that does.
 
 use crate::config::Config;
 use crate::error::{Error, Result};
-use crate::model::InstalledPackage;
+use crate::model::{InstalledPackage, RetentionPolicy};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::io::Write;
@@ -19,6 +24,9 @@ pub const STATE_VERSION: u32 = 1;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct State {
     pub version: u32,
+    /// How many previous prefixes `ketch prune` leaves. Upgrade never prunes.
+    #[serde(default)]
+    pub retention: RetentionPolicy,
     /// Keyed by package name, which is unique across sources by construction.
     #[serde(default)]
     pub packages: BTreeMap<String, InstalledPackage>,
@@ -28,6 +36,7 @@ impl Default for State {
     fn default() -> Self {
         State {
             version: STATE_VERSION,
+            retention: RetentionPolicy::default(),
             packages: BTreeMap::new(),
         }
     }
@@ -306,6 +315,9 @@ mod tests {
             manifest: None,
             local_kind: None,
             local_path: None,
+            trust: crate::model::TrustResult::default(),
+            retained: Vec::new(),
+            provenance: None,
         }
     }
 
@@ -387,6 +399,112 @@ mod tests {
         assert!(state.find("o/r").is_some());
         assert!(state.find("github:o/r").is_some());
         assert!(state.find("absent").is_none());
+    }
+
+    #[test]
+    fn a_v1_state_without_retention_fields_still_loads() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        // Shape written before retained versions existed: version 1, one
+        // package, no `retention`, no `trust`, no `retained`.
+        std::fs::write(
+            &path,
+            r#"{
+                "version": 1,
+                "packages": {
+                    "ripgrep": {
+                        "name": "ripgrep",
+                        "version": "14.1.0",
+                        "source": "github:BurntSushi/ripgrep",
+                        "tag": "14.1.0",
+                        "target": {"os": "macos", "arch": "aarch64"},
+                        "asset_name": "a.tar.gz",
+                        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+                        "installed_at": 0,
+                        "prefix": "/tmp/x",
+                        "origin": "inferred"
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let loaded = State::load_path(&path).unwrap();
+        assert_eq!(loaded.version, STATE_VERSION);
+        assert_eq!(loaded.retention.keep, 1);
+        let pkg = loaded.get("ripgrep").expect("package");
+        assert!(pkg.retained.is_empty());
+        assert!(pkg.trust.is_not_applicable());
+        assert!(pkg.provenance.is_none());
+        assert_eq!(pkg.publisher_trust(), "first use");
+        assert_eq!(pkg.version.to_string(), "14.1.0");
+    }
+
+    #[test]
+    fn provenance_round_trips_and_stays_out_of_unsigned_records() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let signed = crate::model::Provenance {
+            verifier: crate::model::Verifier::Minisign,
+            identity: "minisign key RWQ".into(),
+            signature: "a.tar.gz.minisig".into(),
+            signature_sha256: "1".repeat(64),
+            signed: Some("SHA256SUMS".into()),
+            log_index: None,
+        };
+        let mut state = State::default();
+        state.insert(InstalledPackage {
+            provenance: Some(signed.clone()),
+            ..pkg("signed")
+        });
+        state.insert(pkg("plain"));
+        state.save_path(&path).unwrap();
+
+        let written = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(written.matches("\"provenance\"").count(), 1, "{written}");
+        let loaded = State::load_path(&path).unwrap();
+        assert_eq!(loaded.get("signed").unwrap().provenance, Some(signed));
+        assert_eq!(loaded.get("signed").unwrap().publisher_trust(), "signed");
+        assert!(loaded.get("plain").unwrap().provenance.is_none());
+    }
+
+    #[test]
+    fn a_v1_link_without_a_role_still_reads_as_a_binary() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        std::fs::write(
+            &path,
+            r#"{
+                "version": 1,
+                "packages": {
+                    "ripgrep": {
+                        "name": "ripgrep",
+                        "version": "14.1.0",
+                        "source": "github:BurntSushi/ripgrep",
+                        "tag": "14.1.0",
+                        "target": {"os": "macos", "arch": "aarch64"},
+                        "asset_name": "a.tar.gz",
+                        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+                        "installed_at": 0,
+                        "prefix": "/tmp/x",
+                        "origin": "inferred",
+                        "links": [
+                            {
+                                "link": "/tmp/bin/rg",
+                                "target": "/tmp/x/rg",
+                                "kind": "symlink"
+                            }
+                        ]
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+        let loaded = State::load_path(&path).unwrap();
+        let pkg = loaded.get("ripgrep").expect("package");
+        assert_eq!(pkg.links.len(), 1);
+        assert_eq!(pkg.links[0].role, crate::model::LinkRole::Binary);
+        assert_eq!(pkg.binaries().count(), 1);
     }
 
     #[test]

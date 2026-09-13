@@ -6,7 +6,7 @@
 
 use crate::changelog::{self, Entry, Origin};
 use crate::cli::{
-    ChangelogArgs, HistoryArgs, InfoArgs, ListArgs, OutdatedArgs, SearchArgs, StatsArgs,
+    ChangelogArgs, HistoryArgs, InfoArgs, ListArgs, OutdatedArgs, SearchArgs, StatsArgs, WhyArgs,
 };
 use crate::config::Config;
 use crate::error::{Error, Result};
@@ -58,10 +58,15 @@ pub fn list(cfg: &Config, args: ListArgs) -> Result<()> {
     let rows: Vec<Vec<String>> = packages
         .iter()
         .map(|pkg| {
+            let retained = if pkg.retained.is_empty() {
+                String::new()
+            } else {
+                format!(" (+{} retained)", pkg.retained.len())
+            };
             vec![
                 pkg.name.clone(),
                 format!(
-                    "{}{}",
+                    "{}{}{retained}",
                     pkg.version,
                     if pkg.pinned { " (pinned)" } else { "" }
                 ),
@@ -73,6 +78,12 @@ pub fn list(cfg: &Config, args: ListArgs) -> Result<()> {
     Ok(())
 }
 
+/// Reports installed packages that have a newer upstream release.
+///
+/// `--json` writes an object, not a bare array: `status`, `outdated`
+/// (packages with a newer release), `failed` (each source that could not
+/// be checked), and `unreachable` (that count). A failed check still
+/// exits non-zero, matching the text "N could not be checked".
 pub fn outdated(cfg: &Config, args: OutdatedArgs) -> Result<()> {
     let state = State::load(cfg)?;
     let sources = SourceRegistry::load(cfg);
@@ -237,27 +248,38 @@ pub fn info(cfg: &Config, args: InfoArgs) -> Result<()> {
 
     if args.json {
         return print_json(&serde_json::json!({
-            "name": manifest.name,
+            "name": ui::printable(&manifest.name),
             "source": manifest.source.to_string(),
             "url": source.as_ref().and_then(|s| s.web_url(&manifest.source.id)),
-            "description": manifest.description.clone().or_else(|| described.as_ref().and_then(|d| d.description.clone())),
-            "homepage": manifest.homepage.clone().or_else(|| described.as_ref().and_then(|d| d.homepage.clone())),
+            "description": json_prose(manifest.description.clone().or_else(|| described.as_ref().and_then(|d| d.description.clone()))),
+            "homepage": json_prose(manifest.homepage.clone().or_else(|| described.as_ref().and_then(|d| d.homepage.clone()))),
             "stars": described.as_ref().and_then(|d| d.stars),
-            "license": described.as_ref().and_then(|d| d.license.clone()),
+            "license": json_prose(described.as_ref().and_then(|d| d.license.clone())),
             "archived": described.as_ref().map(|d| d.archived).unwrap_or(false),
             "latest": release.as_ref().map(|r| r.version.to_string()),
-            "latest_tag": release.as_ref().map(|r| r.tag.clone()),
+            "latest_tag": release.as_ref().map(|r| ui::printable(&r.tag)),
             "installed": installed.as_ref().map(|p| p.version.to_string()),
             "pinned": installed.as_ref().map(|p| p.pinned).unwrap_or(false),
+            "publisher_trust": installed.as_ref().map(|p| p.publisher_trust()),
+            "provenance": installed.as_ref().and_then(|p| p.provenance.as_ref()),
+            "retained": installed.as_ref().map(|p| {
+                p.retained.iter().map(|r| serde_json::json!({
+                    "version": r.version.to_string(),
+                    "prefix": r.prefix.display().to_string(),
+                    "sha256": r.sha256,
+                    "trust": r.trust,
+                })).collect::<Vec<_>>()
+            }).unwrap_or_default(),
+            "retention": { "keep": state.retention.keep },
             "local_kind": installed.as_ref().and_then(|p| p.local_kind).map(|k| k.to_string())
                 .or_else(|| (manifest.source.scheme == "local").then(|| "local".to_string())),
             "local_path": installed.as_ref().and_then(|p| p.local_path.as_ref()).map(|p| p.display().to_string())
                 .or_else(|| (manifest.source.scheme == "local").then(|| manifest.source.id.clone())),
             "assets": scored.iter().map(|s| serde_json::json!({
-                "name": s.asset.name,
+                "name": ui::printable(&s.asset.name),
                 "size": s.asset.size,
                 "score": s.score.score,
-                "reason": s.score.reason,
+                "reason": ui::printable(&s.score.reason),
                 "emulated": s.score.emulated,
             })).collect::<Vec<_>>(),
         }));
@@ -324,6 +346,17 @@ pub fn info(cfg: &Config, args: InfoArgs) -> Result<()> {
                 ),
             );
             field("prefix", pkg.prefix.display().to_string());
+            field("verified", pkg.publisher_trust().into());
+            if let Some(p) = &pkg.provenance {
+                let log = p
+                    .log_index
+                    .map(|i| format!(", Rekor log index {i}"))
+                    .unwrap_or_default();
+                field(
+                    "signature",
+                    format!("{} {} by {}{log}", p.signature, p.verifier, p.identity),
+                );
+            }
             if let Some(kind) = pkg.local_kind {
                 field("local kind", kind.to_string());
             }
@@ -333,6 +366,25 @@ pub fn info(cfg: &Config, args: InfoArgs) -> Result<()> {
             for link in pkg.binaries() {
                 field("binary", link.link.display().to_string());
             }
+            if pkg.retained.is_empty() {
+                field("retained", "none".into());
+            } else {
+                let versions = pkg
+                    .retained
+                    .iter()
+                    .map(|r| r.version.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                field("retained", versions);
+            }
+            field(
+                "retention",
+                format!(
+                    "keep {} previous version{}",
+                    state.retention.keep,
+                    if state.retention.keep == 1 { "" } else { "s" }
+                ),
+            );
         }
         None => {
             field("installed", "no".into());
@@ -607,6 +659,11 @@ pub fn history(cfg: &Config, args: HistoryArgs) -> Result<()> {
         return print_json(&events);
     }
     if events.is_empty() {
+        // LIMIT 0 is a deliberate "show me nothing". An empty result there does
+        // not mean the database is empty.
+        if args.limit == 0 {
+            return Ok(());
+        }
         // Distinguish "this package has no history" from "nothing does": the
         // first is a typo often enough to be worth saying out loud.
         match &args.package {
@@ -713,6 +770,132 @@ fn installed_for_spec(state: &State, spec: &PackageSpec, raw: &str) -> Option<In
     None
 }
 
+/// Explain how a package would be resolved, without installing it.
+///
+/// Uses the same resolver install does. Prints the trace even when no
+/// candidate exists, then fails so scripts can tell a missing asset from a
+/// successful explanation.
+pub fn why(cfg: &Config, args: WhyArgs) -> Result<()> {
+    let spec = PackageSpec::parse(&args.package);
+    let sources = SourceRegistry::load(cfg);
+    let trace = crate::resolve::explain(cfg, &sources, &spec)?;
+    if args.json {
+        print_json(&trace)?;
+    } else {
+        print_why(&trace);
+    }
+    match (&trace.version.selected, &trace.candidate) {
+        (_, Some(_)) => Ok(()),
+        (None, None) => Err(Error::NoRelease(spec.label())),
+        (Some(release), None) => Err(Error::NoCompatibleAsset {
+            id: trace.manifest.source.clone(),
+            tag: release.tag.clone(),
+            target: trace.target.clone(),
+        }),
+    }
+}
+
+fn print_why(trace: &crate::resolve::ResolutionTrace) {
+    let field = |label: &str, value: &str| {
+        ui::out(&format!("{:<12} {}", ui::dim(label), value));
+    };
+    field("package", &trace.package);
+    field("target", &trace.target);
+    field(
+        "manifest",
+        &format!("{}  {}", trace.manifest.tier, trace.manifest.origin),
+    );
+    if trace.manifest.matched != trace.manifest.name {
+        field("matched", &trace.manifest.matched);
+    }
+    field(
+        "source",
+        &format!("{}:{}", trace.source.scheme, trace.source.id),
+    );
+    let version = match &trace.version.selected {
+        Some(sel) => format!(
+            "{}  {} ({}){}",
+            trace.version.request,
+            sel.tag,
+            sel.version,
+            if sel.prerelease { "  prerelease" } else { "" }
+        ),
+        None => format!("{}  (no release)", trace.version.request),
+    };
+    field("version", &version);
+    field(
+        "prerelease",
+        if trace.version.include_prerelease {
+            "included"
+        } else {
+            "excluded"
+        },
+    );
+
+    if !trace.assets.scored.is_empty() {
+        ui::out("");
+        ui::out(&ui::bold("assets"));
+        let rows: Vec<Vec<String>> = trace
+            .assets
+            .scored
+            .iter()
+            .map(|a| {
+                vec![
+                    a.score.to_string(),
+                    a.name.clone(),
+                    a.reason.clone(),
+                    if a.emulated {
+                        "emulated".into()
+                    } else {
+                        String::new()
+                    },
+                ]
+            })
+            .collect();
+        ui::table(&["score", "name", "reason", ""], &rows);
+    }
+    if !trace.assets.rejected.is_empty() {
+        ui::out("");
+        ui::out(&ui::bold("rejected"));
+        let rows: Vec<Vec<String>> = trace
+            .assets
+            .rejected
+            .iter()
+            .map(|a| vec![a.name.clone(), a.reason.clone()])
+            .collect();
+        ui::table(&["name", "reason"], &rows);
+    }
+
+    ui::out("");
+    field(
+        "checksum",
+        &format!(
+            "{}{}",
+            trace.checksum.policy,
+            if trace.checksum.require {
+                "  require"
+            } else {
+                ""
+            }
+        ),
+    );
+    field(
+        "trust",
+        &format!(
+            "advisory  strip_quarantine={}  allow_emulation={}",
+            trace.trust.strip_quarantine, trace.trust.allow_emulation
+        ),
+    );
+    match &trace.candidate {
+        Some(c) => field("candidate", &format!("{}  {}", c.name, c.reason)),
+        None => field("candidate", "(none)"),
+    }
+}
+
+fn json_prose(value: Option<String>) -> Option<String> {
+    value.map(|text| ui::printable(&text))
+}
+
 /// Serializes a value as pretty-printed JSON and writes it to standard output.
 fn print_json<T: serde::Serialize>(value: &T) -> Result<()> {
     let text = serde_json::to_string_pretty(value)
@@ -731,6 +914,11 @@ fn outdated_status(checked: usize, failed: usize) -> &'static str {
     }
 }
 
+/// JSON object for `outdated --json`.
+///
+/// `outdated` is the packages with a newer release. `failed` lists each
+/// source that could not be checked. `unreachable` is that count, so a
+/// machine reader does not treat an empty package list as "everything current".
 fn outdated_report(
     checked: usize,
     outdated: &[serde_json::Value],
@@ -740,6 +928,7 @@ fn outdated_report(
         "status": outdated_status(checked, failed.len()),
         "outdated": outdated,
         "failed": failed,
+        "unreachable": failed.len(),
     })
 }
 
@@ -762,6 +951,7 @@ mod tests {
         })];
         let report = outdated_report(1, &outdated, &failed);
         assert_eq!(report["status"], "partial");
+        assert_eq!(report["unreachable"], 1);
         assert_eq!(report["outdated"][0]["name"], "ripgrep");
         assert_eq!(report["failed"][0]["name"], "ghost");
         assert_eq!(report["failed"][0]["error"], "no releases");
@@ -777,6 +967,17 @@ mod tests {
                 "error": "offline",
             })],
         );
+        assert_ne!(report, serde_json::json!([]));
+        assert!(report.is_object());
         assert_eq!(report["status"], "fail");
+        assert_eq!(report["unreachable"], 1);
+        assert!(report["outdated"].as_array().expect("outdated").is_empty());
+    }
+    #[test]
+    fn json_prose_strips_bidi_overrides() {
+        assert_eq!(
+            json_prose(Some("safe\u{202e}evil".to_string())),
+            Some("safeevil".to_string())
+        );
     }
 }

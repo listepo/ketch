@@ -68,6 +68,8 @@ pub struct Config {
     pub self_repo: String,
     pub registry: String,
     pub registry_dir: PathBuf,
+    /// Fetch record for the local registry, beside the package folders.
+    pub registry_meta: PathBuf,
     pub target: TargetSpec,
     /// Packages installed at once by a batch install. Never zero.
     pub jobs: usize,
@@ -234,6 +236,7 @@ impl Config {
             // Deliberately not in `ensure_dirs`: the directory existing is how
             // ketch knows the registry has been fetched.
             registry_dir: root.join("registry"),
+            registry_meta: root.join("registry.meta.toml"),
             log_file: root.join("logs").join("ketch.log"),
             log_level,
             log_format,

@@ -57,8 +57,7 @@ Still missing:
 
 ## Smaller things
 
-- **Rollback.** Every version stays in the store, so `ketch rollback <pkg>`
-  should be little more than a relink to an older prefix.
+- **Rollback.** Shipped. An upgrade keeps the previous prefix; `ketch rollback <pkg>` relinks it with no redownload. `ketch prune` drops prefixes beyond the retention policy.
 - **`ketch why <pkg>`.** Explain a resolution end to end: which tier the
   manifest came from, which release matched, which asset scored highest.
 

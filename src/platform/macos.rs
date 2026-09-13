@@ -16,7 +16,7 @@ use crate::error::{Error, Result};
 use crate::extract::archive::is_program_head;
 use crate::extract::macos::copy_tree;
 use crate::extract::Extractor;
-use crate::model::{Arch, LinkKind, LinkRecord, PackageKind, TargetSpec};
+use crate::model::{Arch, LinkKind, LinkRecord, LinkRole, PackageKind, TargetSpec};
 use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::os::unix::fs::PermissionsExt;
@@ -228,6 +228,15 @@ fn preflight_destinations(
         }
         destination_available(&link, owned, plan.replacing)?;
     }
+    super::unix::preflight_extras(plan, owned)?;
+    for extra in plan.extras {
+        if !destinations.insert(extra.dest.clone()) {
+            return Err(Error::msg(format!(
+                "multiple payload entries want to create {}",
+                extra.dest.display()
+            )));
+        }
+    }
     if destinations.is_empty() {
         return Err(Error::EmptyPayload(plan.payload_dir.to_path_buf()));
     }
@@ -252,6 +261,7 @@ fn place_app(
             link,
             target: bundle.to_path_buf(),
             kind: LinkKind::LinkedApp,
+            role: LinkRole::Binary,
         });
     }
     // Copied by default: Launchpad and Spotlight both ignore symlinked apps.
@@ -260,6 +270,7 @@ fn place_app(
         link,
         target: bundle.to_path_buf(),
         kind: LinkKind::CopiedApp,
+        role: LinkRole::Binary,
     })
 }
 
@@ -361,6 +372,13 @@ impl Platform for MacOsPlatform {
                 )?);
             }
         }
+
+        links.extend(super::unix::link_planned_extras(
+            plan.extras,
+            plan.store_dir,
+            package_dir,
+            plan.replacing,
+        )?);
 
         if links.is_empty() {
             return Err(Error::EmptyPayload(plan.store_dir.to_path_buf()));
@@ -575,6 +593,7 @@ mod tests {
             link: link.clone(),
             target: target.clone(),
             kind: LinkKind::Symlink,
+            role: LinkRole::Binary,
         };
         let platform = MacOsPlatform::new();
 
@@ -610,6 +629,7 @@ mod tests {
             link: app_link.clone(),
             target: bundle.clone(),
             kind: LinkKind::CopiedApp,
+            role: LinkRole::Binary,
         };
 
         platform.unplace(std::slice::from_ref(&app_record)).unwrap();
@@ -657,6 +677,80 @@ mod tests {
     }
 
     #[test]
+    fn place_links_classified_extra_paths_and_records_them() {
+        use crate::extra::ExtraPlacement;
+        use crate::model::LinkRole;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let payload = tmp.path().join("payload");
+        std::fs::create_dir_all(payload.join("complete")).unwrap();
+        std::fs::create_dir_all(payload.join("doc")).unwrap();
+        std::fs::write(payload.join("complete/rg.bash"), b"# bash\n").unwrap();
+        std::fs::write(payload.join("doc/rg.1"), b".TH RG 1\n").unwrap();
+        let bin_path = payload.join("rg");
+        std::fs::write(&bin_path, b"#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&bin_path, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let store = tmp.path().join("store/rg/1.0");
+        let bin = tmp.path().join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let man_dest = tmp.path().join("man/man1/rg.1");
+        let comp_dest = tmp.path().join("completions/rg");
+        let extras = [
+            ExtraPlacement {
+                rel_path: "complete/rg.bash".into(),
+                dest: comp_dest.clone(),
+                role: LinkRole::Completion,
+            },
+            ExtraPlacement {
+                rel_path: "doc/rg.1".into(),
+                dest: man_dest.clone(),
+                role: LinkRole::Man,
+            },
+        ];
+        let apps = tmp.path().join("Applications");
+        let plan = Placement {
+            name: "rg",
+            version: "1.0",
+            payload_dir: &payload,
+            store_dir: &store,
+            bin_dir: &bin,
+            apps_dir: &apps,
+            kind: PackageKind::Binary,
+            bin_specs: &[],
+            replacing: &[],
+            link_apps: false,
+            link: true,
+            extras: &extras,
+        };
+        let links = MacOsPlatform::new().place(&plan).unwrap();
+        assert!(
+            links
+                .iter()
+                .any(|l| l.role == LinkRole::Man && l.link == man_dest),
+            "{links:?}"
+        );
+        assert!(
+            links
+                .iter()
+                .any(|l| l.role == LinkRole::Completion && l.link == comp_dest),
+            "{links:?}"
+        );
+        assert_eq!(
+            std::fs::read_link(&man_dest).unwrap(),
+            store.join("doc/rg.1")
+        );
+        assert_eq!(
+            std::fs::read_link(&comp_dest).unwrap(),
+            store.join("complete/rg.bash")
+        );
+
+        MacOsPlatform::new().unplace(&links).unwrap();
+        assert!(std::fs::symlink_metadata(&man_dest).is_err());
+        assert!(std::fs::symlink_metadata(&comp_dest).is_err());
+    }
+
+    #[test]
     fn placement_checks_all_binary_destinations_before_replacing_any() {
         let tmp = tempfile::tempdir().unwrap();
         let payload = tmp.path().join("payload");
@@ -688,6 +782,7 @@ mod tests {
             replacing: &[],
             link_apps: false,
             link: true,
+            extras: &[],
         };
 
         assert!(preflight_destinations(&MacOsPlatform::new(), &plan, package_dir).is_err());
@@ -726,6 +821,7 @@ mod tests {
             replacing: &[],
             link_apps: false,
             link: true,
+            extras: &[],
         };
 
         assert!(
@@ -755,6 +851,7 @@ mod tests {
             link: existing.clone(),
             target: bundle.clone(),
             kind: LinkKind::CopiedApp,
+            role: LinkRole::Binary,
         }];
         place_app(&bundle, &apps, false, &package_dir, &recorded).unwrap();
         assert!(existing.join("Contents/Info.plist").is_file());
@@ -775,6 +872,7 @@ mod tests {
             link: link.clone(),
             target: ours.clone(),
             kind: LinkKind::Symlink,
+            role: LinkRole::Binary,
         };
         let platform = MacOsPlatform::new();
         platform.unplace(std::slice::from_ref(&record)).unwrap();

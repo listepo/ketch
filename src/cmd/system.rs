@@ -1,6 +1,8 @@
 //! Commands about ketch itself and its environment.
 
-use crate::cli::{DoctorArgs, PathArgs, PathCommand, PathInstallArgs, PluginCommand, SelfCommand};
+use crate::cli::{
+    CompletionsArgs, DoctorArgs, PathArgs, PathCommand, PathInstallArgs, PluginCommand, SelfCommand,
+};
 use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::platform::{self, worst_status, CheckStatus, DoctorCheck};
@@ -30,7 +32,10 @@ pub fn doctor(cfg: &Config, args: DoctorArgs) -> Result<()> {
     checks.push(shell::path_check(cfg));
 
     match platform::host() {
-        Ok(host) => checks.extend(host.doctor(cfg)),
+        Ok(host) => {
+            checks.extend(platform::extra_destination_checks(host.as_ref()));
+            checks.extend(host.doctor(cfg));
+        }
         Err(e) => checks.push(DoctorCheck::fail(
             "platform",
             e.to_string(),
@@ -157,6 +162,12 @@ fn fix(cfg: &Config) {
     }
 }
 
+/// Write one shell's completion script into the platform destination and
+/// record it on the installed `ketch` package so uninstall can take it back.
+pub fn install_completions(cfg: &Config, args: CompletionsArgs) -> Result<()> {
+    crate::self_update::install_completion_script(cfg, args.shell)
+}
+
 /// Refresh the local copy of the package registry.
 pub fn update(cfg: &Config) -> Result<()> {
     let count = match registry::update(cfg) {
@@ -201,14 +212,31 @@ fn registry_check(cfg: &Config) -> DoctorCheck {
             "Run `ketch update`.",
         );
     }
-    DoctorCheck::ok(
-        "registry",
-        format!(
-            "{} packages from {}",
-            registry::load(cfg).len(),
-            cfg.registry
+    let count = registry::load(cfg).len();
+    match registry::load_meta(cfg) {
+        Ok(Some(meta)) => {
+            let age = registry::age_phrase(meta.fetched_at);
+            let source = meta
+                .revision
+                .as_deref()
+                .or(meta.etag.as_deref())
+                .unwrap_or("unknown revision");
+            DoctorCheck::ok(
+                "registry",
+                format!("{count} packages from {} · {age} · {source}", cfg.registry),
+            )
+        }
+        Ok(None) => DoctorCheck::warn(
+            "registry",
+            format!("{count} packages from {}; fetch time unknown", cfg.registry),
+            "Run `ketch update`.",
         ),
-    )
+        Err(e) => DoctorCheck::warn(
+            "registry",
+            format!("{count} packages from {}; {e}", cfg.registry),
+            "Run `ketch update`.",
+        ),
+    }
 }
 
 /// Everything ketch itself owns: the store matches the state file, and every
@@ -653,7 +681,7 @@ pub fn zelf(cfg: &Config, command: SelfCommand) -> Result<()> {
                 ui::success("updated", &format!("{} -> {}", out.from, out.to));
             }
             if let Some(notes) = &out.notes {
-                ui::out(notes);
+                ui::out(&ui::printable(notes));
             }
             Ok(())
         }
@@ -730,6 +758,26 @@ mod tests {
         std::fs::write(tmp.path().join("file"), b"x").unwrap();
         let known = ["ripgrep".into()].into_iter().collect();
         assert_eq!(orphan_store_dirs(tmp.path(), &known), vec!["ghost"]);
+    }
+
+    #[test]
+    fn registry_check_reports_age_from_meta_without_a_network() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg = Config::load(Some(tmp.path().to_path_buf())).unwrap();
+        std::fs::create_dir_all(&cfg.registry_dir).unwrap();
+        let pkg = cfg.registry_dir.join("jq");
+        std::fs::create_dir_all(&pkg).unwrap();
+        std::fs::write(pkg.join("ketch.toml"), "source = \"github:jqlang/jq\"\n").unwrap();
+        let fetched_at = crate::model::now_unix().saturating_sub(7200);
+        std::fs::write(
+            &cfg.registry_meta,
+            format!("repo = \"{}\"\nfetched_at = {fetched_at}\n", cfg.registry),
+        )
+        .unwrap();
+        let check = registry_check(&cfg);
+        assert_eq!(check.status, CheckStatus::Ok);
+        assert!(check.detail.contains("1 package"), "{}", check.detail);
+        assert!(check.detail.contains("h ago"), "{}", check.detail);
     }
 
     #[test]

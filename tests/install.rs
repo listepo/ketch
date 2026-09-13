@@ -153,6 +153,102 @@ fn an_upgrade_replaces_the_payload_and_the_link_still_works() {
 }
 
 #[test]
+fn rollback_restores_the_previous_prefix_without_redownloading() {
+    let sandbox = Sandbox::new();
+    publish_tool(&sandbox, "1.0.0");
+    sandbox.ok(&["install", "test:testtool@1.0.0", "--yes"]);
+    let v1 = sandbox.store().join("testtool").join("1.0.0");
+    assert!(v1.is_dir(), "1.0.0 should be in the store");
+
+    publish_tool(&sandbox, "2.0.0");
+    sandbox.ok(&["upgrade", "--yes"]);
+    let link = sandbox.bin().join("testtool");
+    assert_eq!(run(&link), "testtool 2.0.0");
+    assert!(v1.is_dir(), "upgrade must keep the previous prefix");
+
+    // Unpublish 1.0.0 so a redownload would fail.
+    publish_tool(&sandbox, "2.0.0");
+    sandbox.ok(&["rollback", "testtool"]);
+    assert_eq!(run(&link), "testtool 1.0.0");
+
+    let listed = sandbox.ok(&["list"]);
+    assert!(listed.contains("1.0.0"), "{listed}");
+    assert!(listed.contains("retained"), "{listed}");
+    let info = sandbox.ok(&["info", "testtool"]);
+    assert!(info.contains("1.0.0"), "{info}");
+    assert!(info.contains("2.0.0"), "{info}");
+    assert!(info.contains("keep 1"), "{info}");
+    let json = sandbox.ok(&["info", "testtool", "--json"]);
+    assert!(json.contains(r#""installed": "1.0.0""#), "{json}");
+    assert!(json.contains(r#""keep": 1"#), "{json}");
+    assert!(sandbox.store().join("testtool").join("2.0.0").is_dir());
+}
+
+#[test]
+fn rollback_without_a_retained_version_leaves_the_install_alone() {
+    let sandbox = Sandbox::new();
+    publish_tool(&sandbox, "1.0.0");
+    sandbox.ok(&["install", "test:testtool", "--yes"]);
+    let stderr = sandbox.fails(&["rollback", "testtool"]);
+    assert!(stderr.contains("no retained version"), "{stderr}");
+    assert_eq!(run(&sandbox.bin().join("testtool")), "testtool 1.0.0");
+}
+
+#[test]
+fn rollback_refuses_an_occupied_destination_and_keeps_the_current_version() {
+    let sandbox = Sandbox::new();
+    publish_tool(&sandbox, "1.0.0");
+    sandbox.ok(&["install", "test:testtool@1.0.0", "--yes"]);
+    publish_tool(&sandbox, "2.0.0");
+    sandbox.ok(&["upgrade", "--yes"]);
+
+    let link = sandbox.bin().join("testtool");
+    std::fs::remove_file(&link).unwrap();
+    std::fs::write(&link, "#!/bin/sh\necho occupied\n").unwrap();
+
+    let stderr = sandbox.fails(&["rollback", "testtool"]);
+    assert!(
+        stderr.contains("not installed by ketch") || stderr.contains("already exists"),
+        "{stderr}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&link).unwrap(),
+        "#!/bin/sh\necho occupied\n"
+    );
+    let listed = sandbox.ok(&["list", "--json"]);
+    assert!(listed.contains(r#""version": "2.0.0""#), "{listed}");
+}
+
+#[test]
+fn rollback_refuses_a_pinned_package() {
+    let sandbox = Sandbox::new();
+    publish_tool(&sandbox, "1.0.0");
+    sandbox.ok(&["install", "test:testtool@1.0.0", "--yes"]);
+    publish_tool(&sandbox, "2.0.0");
+    sandbox.ok(&["upgrade", "--yes"]);
+    sandbox.ok(&["pin", "testtool"]);
+
+    let stderr = sandbox.fails(&["rollback", "testtool"]);
+    assert!(stderr.to_lowercase().contains("pinned"), "{stderr}");
+    assert_eq!(run(&sandbox.bin().join("testtool")), "testtool 2.0.0");
+}
+
+#[test]
+fn uninstall_after_rollback_removes_every_retained_prefix() {
+    let sandbox = Sandbox::new();
+    publish_tool(&sandbox, "1.0.0");
+    sandbox.ok(&["install", "test:testtool@1.0.0", "--yes"]);
+    publish_tool(&sandbox, "2.0.0");
+    sandbox.ok(&["upgrade", "--yes"]);
+    sandbox.ok(&["rollback", "testtool"]);
+    sandbox.ok(&["uninstall", "testtool", "--yes"]);
+
+    assert!(!sandbox.bin().join("testtool").exists());
+    assert!(!sandbox.store().join("testtool").exists());
+    assert!(sandbox.ok(&["list"]).contains("nothing installed"));
+}
+
+#[test]
 fn a_pinned_package_is_left_where_it_is() {
     let sandbox = Sandbox::new();
     publish_tool(&sandbox, "1.0.0");
@@ -937,6 +1033,27 @@ fn statistics_total_what_the_history_recorded() {
     assert!(s["mean_duration_ms"].as_i64().is_some(), "{json}");
 }
 
+/// `--limit 0` asks for no rows; that must not be read as "nothing was recorded".
+#[test]
+fn history_with_a_zero_limit_does_not_claim_nothing_was_recorded() {
+    let sandbox = Sandbox::new();
+    publish_tool(&sandbox, "1.0.0");
+    sandbox.ok(&["install", "test:testtool@1.0.0", "--yes"]);
+
+    let out = sandbox.ok(&["history", "--limit", "0"]);
+    assert!(
+        !out.contains("no history recorded"),
+        "limit 0 must not look like an empty database:\n{out}"
+    );
+
+    let json = sandbox.ok(&["history", "--limit", "0", "--json"]);
+    let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+    assert_eq!(parsed, serde_json::json!([]), "{json}");
+
+    let table = sandbox.ok(&["history"]);
+    assert!(table.contains("testtool"), "history still exists:\n{table}");
+}
+
 /// Nothing recorded is an ordinary state — a fresh machine, or a root from
 /// before the database existed — and reading it must not manufacture a file.
 #[test]
@@ -957,6 +1074,48 @@ fn zshrc(sandbox: &Sandbox) -> (std::path::PathBuf, &'static str) {
     let original = "# mine\nexport EDITOR=vi\n";
     std::fs::write(&file, original).expect("write zshrc");
     (file, original)
+}
+
+/// `self install --link-dir` records the bootstrap on the package so uninstall
+/// can take it back. Without that record, removing the root leaves
+/// `<link-dir>/ketch` pointing at nothing.
+#[test]
+fn self_uninstall_removes_a_bootstrap_link_outside_the_root() {
+    let sandbox = Sandbox::new();
+    publish_tool(&sandbox, "1.0.0");
+    sandbox.ok(&["install", "test:testtool", "--yes"]);
+
+    let bootstrap = sandbox.fixture("bootstrap");
+    std::fs::create_dir_all(&bootstrap).expect("bootstrap dir");
+    let target = sandbox.bin().join("testtool");
+    let link = bootstrap.join("ketch");
+    std::os::unix::fs::symlink(&target, &link).expect("bootstrap link");
+
+    let state_path = sandbox.root().join("state.json");
+    let mut state: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&state_path).expect("read state"))
+            .expect("parse state");
+    state["packages"]["testtool"]["links"]
+        .as_array_mut()
+        .expect("links")
+        .push(serde_json::json!({
+            "link": link,
+            "target": target,
+            "kind": "symlink",
+        }));
+    std::fs::write(
+        &state_path,
+        serde_json::to_string_pretty(&state).expect("render state"),
+    )
+    .expect("write state");
+
+    sandbox.ok(&["self", "uninstall", "--yes"]);
+
+    assert!(
+        std::fs::symlink_metadata(&link).is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound),
+        "bootstrap link must be gone, not left dangling at {}",
+        link.display()
+    );
 }
 
 #[test]

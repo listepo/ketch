@@ -4,17 +4,13 @@
 //! `Config`, and hand off to a command. Every failure path converges here so a
 //! single place decides how errors are shown and what the process exits with.
 
-#![cfg_attr(
-    not(any(target_os = "macos", target_os = "linux", target_os = "windows")),
-    allow(dead_code)
-)]
-
 mod changelog;
 mod cli;
 mod cmd;
 mod config;
 mod diff;
 mod error;
+mod extra;
 mod extract;
 mod http;
 mod install;
@@ -25,11 +21,13 @@ mod model;
 mod platform;
 mod push;
 mod registry;
+mod resolve;
 mod self_update;
 mod shell;
 mod source;
 mod state;
 mod stats;
+mod trust;
 #[cfg(feature = "tui")]
 mod tui;
 mod ui;
@@ -78,10 +76,12 @@ fn run(cli: Cli) -> Result<()> {
     // Completions must work before any directory exists, so it is handled
     // before the config is built.
     if let Command::Completions(args) = &cli.command {
-        let mut command = Cli::command();
-        let name = command.get_name().to_string();
-        clap_complete::generate(args.shell, &mut command, name, &mut std::io::stdout());
-        return Ok(());
+        if !args.install {
+            let mut command = Cli::command();
+            let name = command.get_name().to_string();
+            clap_complete::generate(args.shell, &mut command, name, &mut std::io::stdout());
+            return Ok(());
+        }
     }
 
     // `config create` writes a project file in the working tree. Creating the
@@ -121,6 +121,8 @@ fn run(cli: Cli) -> Result<()> {
         Command::Install(args) => cmd::pkg::install(&cfg, args),
         Command::Uninstall(args) => cmd::pkg::uninstall(&cfg, args),
         Command::Upgrade(args) => cmd::pkg::upgrade(&cfg, args),
+        Command::Rollback(args) => cmd::pkg::rollback(&cfg, args),
+        Command::Prune(args) => cmd::pkg::prune(&cfg, args),
         Command::Pin(args) => cmd::pkg::pin(&cfg, args, true),
         Command::Unpin(args) => cmd::pkg::pin(&cfg, args, false),
         Command::Link(args) => cmd::pkg::link(&cfg, args, true),
@@ -128,6 +130,7 @@ fn run(cli: Cli) -> Result<()> {
         Command::List(args) => cmd::query::list(&cfg, args),
         Command::Outdated(args) => cmd::query::outdated(&cfg, args),
         Command::Info(args) => cmd::query::info(&cfg, args),
+        Command::Why(args) => cmd::query::why(&cfg, args),
         Command::Changelog(args) => cmd::query::changelog(&cfg, args),
         Command::Search(args) => cmd::query::search(&cfg, args),
         Command::History(args) => cmd::query::history(&cfg, args),
@@ -141,7 +144,7 @@ fn run(cli: Cli) -> Result<()> {
         Command::Path { command } => cmd::system::path(&cfg, command),
         Command::Plugin { command } => cmd::system::plugin(&cfg, command),
         Command::Zelf { command } => cmd::system::zelf(&cfg, command),
-        Command::Completions(_) => unreachable!("handled above"),
+        Command::Completions(args) => cmd::system::install_completions(&cfg, args),
     }
 }
 

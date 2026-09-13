@@ -15,7 +15,7 @@ use crate::error::{Error, Result};
 use crate::extract::{archive::TarGzExtractor, unwrap_single_dir, Extractor};
 use crate::http::Http;
 use crate::model::{normalize_name, Manifest};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -112,6 +112,15 @@ fn swap_in(cfg: &Config, tree: &Path, repo: &str) -> Result<usize> {
     } else {
         std::fs::rename(tree, &cfg.registry_dir).map_err(|e| Error::io(&cfg.registry_dir, e))?;
     }
+    write_meta(
+        cfg,
+        &UpdateMeta {
+            repo: repo.to_string(),
+            revision: git_revision(tree),
+            etag: None,
+            fetched_at: crate::model::now_unix(),
+        },
+    )?;
     Ok(count)
 }
 
@@ -135,12 +144,14 @@ pub struct ValidationError {
 }
 
 /// Outcome of validating a registry tree offline.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct Report {
     /// Packages that parsed and passed [`Manifest::validate`].
     pub packages: usize,
     /// Every parse, validation and collision problem found.
     pub errors: Vec<ValidationError>,
+    /// Entries that parsed, including ones that later collide on a name.
+    pub parsed: Vec<(Manifest, PathBuf)>,
 }
 
 /// Validate every package folder under `dir` the way registry CI should.
@@ -197,6 +208,7 @@ pub fn check_tree(dir: &Path) -> Report {
     Report {
         packages: packages.len(),
         errors,
+        parsed: packages,
     }
 }
 
@@ -208,6 +220,7 @@ fn unreadable(dir: &Path, message: &str) -> Report {
             path: dir.display().to_string(),
             message: message.to_string(),
         }],
+        parsed: Vec::new(),
     }
 }
 
@@ -231,9 +244,10 @@ fn message_without_path(path: &Path, error: &Error) -> String {
 /// Names that two packages both answer to.
 ///
 /// Nothing else can catch this: each folder is valid on its own, the loser is
-/// shadowed silently, and which one loses depends on sort order. Reported as
-/// warnings rather than errors so one careless entry cannot block an update for
-/// everybody.
+/// shadowed silently, and which one loses depends on sort order. Callers
+/// decide the severity: [`load_dir`] and [`update`] warn so an already-published
+/// registry keeps resolving, and [`check_tree`] turns the same messages into
+/// errors so they cannot merge.
 pub(crate) fn collisions(packages: &[(Manifest, PathBuf)]) -> Vec<String> {
     /// What a folder is called, for a message that has to tell two packages
     /// with the same name apart.
@@ -274,6 +288,112 @@ pub(crate) fn collisions(packages: &[(Manifest, PathBuf)]) -> Vec<String> {
         }
     }
     out
+}
+
+/// What `ketch update` recorded about the local registry copy.
+///
+/// Lives under the ketch root as `registry.meta.toml`, not inside the swapped
+/// package tree, so a fetch record cannot be mistaken for a package.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UpdateMeta {
+    /// `owner/repo` the tarball was fetched from.
+    pub repo: String,
+    /// Commit SHA from the GitHub tarball wrapper directory, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision: Option<String>,
+    /// HTTP ETag from the fetch, when the transport exposed one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub etag: Option<String>,
+    /// Unix seconds when the local copy was swapped in.
+    pub fetched_at: u64,
+}
+
+/// How old a fetch is, for `registry status` and doctor. No network.
+pub fn age_phrase(fetched_at: u64) -> String {
+    let now = crate::model::now_unix();
+    let secs = now.saturating_sub(fetched_at);
+    if now < fetched_at || secs < 60 {
+        return "just now".to_string();
+    }
+    let mins = secs / 60;
+    if mins < 60 {
+        return format!("{mins}m ago");
+    }
+    let hours = mins / 60;
+    if hours < 24 {
+        return format!("{hours}h ago");
+    }
+    format!("{}d ago", hours / 24)
+}
+
+/// The last successful `ketch update`, if one was recorded.
+pub fn load_meta(cfg: &Config) -> Result<Option<UpdateMeta>> {
+    match std::fs::read_to_string(&cfg.registry_meta) {
+        Ok(text) => {
+            let meta: UpdateMeta = toml::from_str(&text).map_err(|e| {
+                Error::parse(cfg.registry_meta.display().to_string(), e.to_string())
+            })?;
+            Ok(Some(meta))
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(Error::io(&cfg.registry_meta, e)),
+    }
+}
+
+fn write_meta(cfg: &Config, meta: &UpdateMeta) -> Result<()> {
+    let body = toml::to_string_pretty(meta)
+        .map_err(|e| Error::parse(cfg.registry_meta.display().to_string(), e.to_string()))?;
+    let text = format!("# Written by `ketch update`. Do not edit.\n{body}");
+    std::fs::write(&cfg.registry_meta, text).map_err(|e| Error::io(&cfg.registry_meta, e))
+}
+
+/// Commit SHA GitHub puts on the tarball wrapper, `owner-repo-<40 hex>`.
+fn git_revision(tree: &Path) -> Option<String> {
+    let name = tree.file_name()?.to_string_lossy();
+    let sha = name.rsplit_once('-')?.1;
+    (sha.len() == 40 && sha.bytes().all(|b| b.is_ascii_hexdigit()))
+        .then(|| sha.to_ascii_lowercase())
+}
+
+/// The local asset that stands in for `name` during an offline install.
+///
+/// A file named `name`, or a folder `name/` holding exactly one regular file.
+pub fn fixture_payload(fixture: &Path, name: &str) -> Result<PathBuf> {
+    let entry = fixture.join(name);
+    let meta = match std::fs::symlink_metadata(&entry) {
+        Ok(m) => m,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Err(Error::msg(format!("no fixture for `{name}`")));
+        }
+        Err(e) => return Err(Error::io(&entry, e)),
+    };
+    if meta.file_type().is_file() {
+        return Ok(entry);
+    }
+    if !meta.file_type().is_dir() {
+        return Err(Error::msg(format!(
+            "fixture `{name}` must be a file or a directory of one file"
+        )));
+    }
+    let mut files = Vec::new();
+    for child in std::fs::read_dir(&entry).map_err(|e| Error::io(&entry, e))? {
+        let child = child.map_err(|e| Error::io(&entry, e))?;
+        let path = child.path();
+        let child_meta = std::fs::symlink_metadata(&path).map_err(|e| Error::io(&path, e))?;
+        if child_meta.file_type().is_file() {
+            files.push(path);
+        }
+    }
+    files.sort();
+    match files.as_slice() {
+        [one] => Ok(one.clone()),
+        [] => Err(Error::msg(format!(
+            "fixture `{name}` is an empty directory"
+        ))),
+        _ => Err(Error::msg(format!(
+            "fixture `{name}` has more than one file"
+        ))),
+    }
 }
 
 fn load_dir(dir: &Path) -> Vec<(Manifest, PathBuf)> {
@@ -333,6 +453,39 @@ fn is_package_file(path: &Path) -> bool {
     std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_file())
 }
 
+/// Rules a registry entry must pass beyond [`Manifest::validate`].
+///
+/// Shared by [`read_package`] and [`crate::push::load`] so push refuses the
+/// same manifest CI would reject.
+pub(crate) fn validate_registry_entry(
+    what: &str,
+    folder: Option<&str>,
+    declared_name: Option<&str>,
+    manifest: &Manifest,
+) -> Result<()> {
+    if let (Some(folder), Some(declared)) = (folder, declared_name) {
+        if normalize_name(declared) != normalize_name(folder) {
+            return Err(Error::parse(
+                what,
+                format!("declares name `{declared}` but sits in folder `{folder}`"),
+            ));
+        }
+    }
+    // A registry entry names a release anyone can fetch. `local:` would make a
+    // shared entry install from — or, for a path that is not a plain file,
+    // hang on — the disk of whoever installs it, which is not a promise the
+    // registry can make. User manifests and `ketch install local:…` are
+    // unaffected: they never pass through here.
+    if manifest.source.scheme == "local" {
+        return Err(Error::parse(
+            what,
+            "a registry package cannot install from a local path; use `github:owner/repo`"
+                .to_string(),
+        ));
+    }
+    Ok(())
+}
+
 /// Parse one package folder.
 ///
 /// The folder is the package name, so `name` in the file is optional — and
@@ -350,35 +503,24 @@ pub(crate) fn read_package(path: &Path, folder: &str) -> Result<Manifest> {
         )
     })?;
 
-    match table.get("name").and_then(|v| v.as_str()) {
-        Some(declared) if normalize_name(declared) != normalize_name(folder) => {
-            return Err(Error::parse(
-                what.as_str(),
-                format!("declares name `{declared}` but sits in folder `{folder}`"),
-            ))
-        }
-        Some(_) => {}
-        None => {
-            table.insert("name".into(), toml::Value::String(folder.to_string()));
-        }
+    let declared_name = table
+        .get("name")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    if declared_name.is_none() {
+        table.insert("name".into(), toml::Value::String(folder.to_string()));
     }
     let manifest =
         Manifest::deserialize(value).map_err(|e| Error::parse(what.as_str(), e.to_string()))?;
     manifest
         .validate()
         .map_err(|e| Error::parse(what.as_str(), e.to_string()))?;
-    // A registry entry names a release anyone can fetch. `local:` would make a
-    // shared entry install from — or, for a path that is not a plain file,
-    // hang on — the disk of whoever installs it, which is not a promise the
-    // registry can make. User manifests and `ketch install local:…` are
-    // unaffected: they never pass through here.
-    if manifest.source.scheme == "local" {
-        return Err(Error::parse(
-            what.as_str(),
-            "a registry package cannot install from a local path; use `github:owner/repo`"
-                .to_string(),
-        ));
-    }
+    validate_registry_entry(
+        what.as_str(),
+        Some(folder),
+        declared_name.as_deref(),
+        &manifest,
+    )?;
     Ok(manifest)
 }
 
@@ -536,23 +678,27 @@ mod tests {
 
     #[test]
     fn check_tree_treats_name_collisions_as_errors() {
+        // Name-only collision detection reads two `foo` packages as one package
+        // claiming its own name and stays silent. `check_tree` must turn the
+        // path-keyed collision into a registry-root error instead.
         let tmp = tempfile::tempdir().unwrap();
+        write(tmp.path(), "foo", "source = \"github:a/foo\"\n");
         write(
             tmp.path(),
-            "fd",
-            "source = \"github:sharkdp/fd\"\nprovides = [\"fd\"]\n",
-        );
-        write(
-            tmp.path(),
-            "zfd",
-            "source = \"github:someone/zfd\"\nprovides = [\"fd\"]\n",
+            "foo.git",
+            "name = \"foo\"\nsource = \"github:b/foo\"\n",
         );
         let report = check_tree(tmp.path());
         assert_eq!(report.packages, 2);
-        assert_eq!(report.errors.len(), 1);
+        assert_eq!(report.errors.len(), 1, "{:?}", report.errors);
+        assert_eq!(
+            report.errors[0].path,
+            tmp.path().display().to_string(),
+            "collisions are reported against the registry root"
+        );
         assert!(
-            report.errors[0].message.contains("both `fd` and `zfd`"),
-            "{}",
+            report.errors[0].message.contains("`foo.git`"),
+            "name-only collision detection would stay silent: {}",
             report.errors[0].message
         );
     }
@@ -666,5 +812,63 @@ mod tests {
                 crate::source::github::DEFAULT_API
             )
         );
+    }
+
+    #[test]
+    fn git_revision_reads_the_tarball_wrapper_sha() {
+        let tmp = tempfile::tempdir().unwrap();
+        let sha = "0123456789abcdef0123456789abcdef01234567";
+        let tree = tmp.path().join(format!("listepo-ketch-registry-{sha}"));
+        std::fs::create_dir(&tree).unwrap();
+        assert_eq!(git_revision(&tree).as_deref(), Some(sha));
+        assert!(git_revision(tmp.path().join("fresh").as_path()).is_none());
+    }
+
+    #[test]
+    fn a_successful_swap_records_fetch_metadata_beside_the_tree() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg = Config::load(Some(tmp.path().to_path_buf())).unwrap();
+        let sha = "abcdef0123456789abcdef0123456789abcdef01";
+        let fresh = tmp.path().join(format!("owner-registry-{sha}"));
+        write(&fresh, "jq", "source = \"github:jqlang/jq\"\n");
+        assert_eq!(swap_in(&cfg, &fresh, "someone/registry").unwrap(), 1);
+        let meta = load_meta(&cfg).unwrap().expect("meta written");
+        assert_eq!(meta.repo, "someone/registry");
+        assert_eq!(meta.revision.as_deref(), Some(sha));
+        assert!(meta.fetched_at > 0);
+        assert!(cfg.registry_meta.is_file());
+        let body = std::fs::read_to_string(&cfg.registry_meta).unwrap();
+        assert!(body.starts_with("# Written by `ketch update`. Do not edit."));
+    }
+
+    #[test]
+    fn fixture_payload_takes_a_folder_with_one_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fixture = tmp.path();
+        let pkg = fixture.join("tool");
+        std::fs::create_dir(&pkg).unwrap();
+        let asset = pkg.join("tool.tar.gz");
+        std::fs::write(&asset, b"bytes").unwrap();
+        assert_eq!(fixture_payload(fixture, "tool").unwrap(), asset);
+    }
+
+    #[test]
+    fn fixture_payload_refuses_an_ambiguous_folder() {
+        let tmp = tempfile::tempdir().unwrap();
+        let pkg = tmp.path().join("tool");
+        std::fs::create_dir(&pkg).unwrap();
+        std::fs::write(pkg.join("a.tar.gz"), b"a").unwrap();
+        std::fs::write(pkg.join("b.tar.gz"), b"b").unwrap();
+        let err = fixture_payload(tmp.path(), "tool").unwrap_err().to_string();
+        assert!(err.contains("more than one file"), "{err}");
+    }
+
+    #[test]
+    fn age_phrase_uses_whole_units() {
+        let now = crate::model::now_unix();
+        assert_eq!(age_phrase(now), "just now");
+        assert_eq!(age_phrase(now.saturating_sub(120)), "2m ago");
+        assert_eq!(age_phrase(now.saturating_sub(7200)), "2h ago");
+        assert_eq!(age_phrase(now.saturating_sub(48 * 3600)), "2d ago");
     }
 }

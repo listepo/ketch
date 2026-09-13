@@ -299,7 +299,7 @@ fn is_sha256(text: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Arch, ManifestOrigin, TargetSpec, Version};
+    use crate::model::{Arch, ManifestOrigin, RetainedVersion, TargetSpec, Version};
 
     fn installed(name: &str, repo: &str, tag: &str) -> InstalledPackage {
         InstalledPackage {
@@ -319,7 +319,21 @@ mod tests {
             manifest: None,
             local_kind: None,
             local_path: None,
+            trust: Default::default(),
+            retained: Vec::new(),
+            provenance: None,
         }
+    }
+
+    #[test]
+    fn previous_retained_is_the_first_kept_version() {
+        let mut pkg = installed("rg", "BurntSushi/ripgrep", "v14.0.0");
+        assert!(pkg.previous_retained().is_none());
+        pkg.retained.push(RetainedVersion::from_installed(&pkg));
+        assert_eq!(
+            pkg.previous_retained().map(|r| r.tag.as_str()),
+            Some("v14.0.0")
+        );
     }
 
     fn state_with(packages: Vec<InstalledPackage>) -> State {

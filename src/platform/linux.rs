@@ -107,7 +107,7 @@ impl Platform for LinuxPlatform {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{LinkKind, PackageKind};
+    use crate::model::{LinkKind, LinkRole, PackageKind};
     use crate::platform::TrustVerdict;
     use std::os::unix::fs::PermissionsExt;
     use std::path::PathBuf;
@@ -138,6 +138,7 @@ mod tests {
             replacing: &[],
             link_apps: false,
             link: true,
+            extras: &[],
         }
     }
 
@@ -179,6 +180,7 @@ mod tests {
             link: link.clone(),
             target,
             kind: LinkKind::Symlink,
+            role: LinkRole::Binary,
         };
         let p = LinuxPlatform::new();
         p.unplace(std::slice::from_ref(&record)).unwrap();

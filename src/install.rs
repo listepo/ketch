@@ -10,8 +10,8 @@ use crate::config::{sanitize_component, Config};
 use crate::error::{Error, Result};
 use crate::manifest::Resolver;
 use crate::model::{
-    glob_match, now_unix, AssetSelector, BinSpec, InstalledPackage, LinkRecord, LocalKind,
-    PackageSpec, Release, ReleaseAsset, Version, VersionSpec,
+    now_unix, AssetSelector, BinSpec, InstalledPackage, LinkRecord, LocalKind, PackageSpec,
+    Release, ReleaseAsset, RetainedVersion, TrustResult, Version, VersionSpec,
 };
 use crate::platform::{AssetScore, Placement, Platform, TrustVerdict};
 use crate::source::{ListOpts, SourceRegistry};
@@ -66,11 +66,7 @@ pub struct Installed {
 }
 
 /// An asset and the score that won it the selection.
-#[derive(Debug, Clone)]
-pub struct ScoredAsset {
-    pub asset: ReleaseAsset,
-    pub score: AssetScore,
-}
+pub use crate::resolve::ScoredAsset;
 
 /// Everything an install downloads, checks and unpacks, before it touches the
 /// install tree.
@@ -80,12 +76,19 @@ pub struct ScoredAsset {
 /// side cannot collide: the store, the bin directory and `state.json` are only
 /// reached from `commit`, which stays sequential.
 pub struct Prepared {
+    /// TUI/progress row id. `prepare` stages with `PackageSpec::label()`; `commit`
+    /// must use the same string, not `manifest.name`, or an alias/path install
+    /// leaves a second row spinning on Installing.
+    label: String,
     manifest: crate::model::Manifest,
     origin: crate::model::ManifestOrigin,
     release: Release,
     asset_name: String,
     sha256: String,
     checksum_verified: bool,
+    trust: TrustResult,
+    /// The publisher signature the manifest's `trust` table asked for.
+    provenance: Option<crate::model::Provenance>,
     /// Carried from the request: `commit` is the only place that links.
     link: bool,
     /// Root of the unpacked payload, inside `unpack`.
@@ -212,10 +215,7 @@ pub fn prepare(
 
     let source = sources.for_ref(&manifest.source)?;
 
-    let opts = ListOpts {
-        include_prerelease: req.prerelease || cfg.prerelease || manifest.prerelease,
-        ..Default::default()
-    };
+    let opts = crate::resolve::list_opts(cfg, &manifest, req.prerelease);
     ui::step(
         "resolving",
         &format!("{} ({})", manifest.name, manifest.source),
@@ -257,7 +257,9 @@ pub fn prepare(
 
     // Local `.app` bundles are directories: copy the tree into the unpack root
     // rather than pretending they are a downloadable archive.
-    let (sha256, asset_name, checksum_verified, payload) = if local_kind == Some(LocalKind::App) {
+    let (sha256, asset_name, checksum_verified, provenance, payload) = if local_kind
+        == Some(LocalKind::App)
+    {
         let app_path = local_path.as_ref().ok_or_else(|| {
             Error::msg("internal error: local .app install without a recorded path")
         })?;
@@ -275,8 +277,18 @@ pub fn prepare(
         progress.finish("copied");
         ui::stage(&label, ui::ProgressStage::Verifying);
         check_locked(req, &manifest.name, &dest_name, &sha256)?;
+        // A bundle on disk has no release to carry a signature, so a policy
+        // that requires one cannot be met.
+        let provenance = match &manifest.trust {
+            Some(policy) => crate::trust::refuse(
+                policy,
+                &dest_name,
+                "a local app bundle has no published signature",
+            )?,
+            None => None,
+        };
         let payload = payload_root(unpack.path(), manifest.strip_prefix)?;
-        (sha256, dest_name, false, payload)
+        (sha256, dest_name, false, provenance, payload)
     } else {
         // --- download -------------------------------------------------------
         ui::stage(&label, ui::ProgressStage::Downloading);
@@ -319,31 +331,56 @@ pub fn prepare(
             require,
         )?;
 
+        // --- signature ------------------------------------------------------
+        // Before extraction: the unpacker is the widest attack surface ketch
+        // has, and a file its publisher did not vouch for need not reach it.
+        let provenance = crate::trust::verify(
+            manifest.trust.as_ref(),
+            source.as_ref(),
+            &release,
+            &asset,
+            &download_path,
+            &sha256,
+            staging.path(),
+        )?;
+
         // --- extract --------------------------------------------------------
         ui::stage(&label, ui::ProgressStage::Extracting);
         let format =
             crate::extract::extract_auto(&download_path, unpack.path(), &platform.extractors())?;
         ui::debug(&format!("unpacked {} as {format}", asset.name));
         let payload = payload_root(unpack.path(), manifest.strip_prefix)?;
-        (sha256, asset.name, checksum_verified, payload)
+        (sha256, asset.name, checksum_verified, provenance, payload)
     };
 
     ui::stage(&label, ui::ProgressStage::Trusting);
-    check_trust(platform.as_ref(), cfg, &payload, &manifest.name);
+    let trust = check_trust(platform.as_ref(), cfg, &payload, &manifest.name);
 
     Ok(Prepared {
+        label,
         manifest,
         origin,
         release,
         asset_name,
         sha256,
         checksum_verified,
+        trust,
+        provenance,
         link: req.link,
         payload,
         unpack,
         started,
         local_kind,
         local_path,
+    })
+}
+
+fn extra_placements(
+    platform: &dyn Platform,
+    extra_paths: &[crate::model::ExtraPath],
+) -> Result<Vec<crate::extra::ExtraPlacement>> {
+    crate::extra::plan(extra_paths, &platform.user_man_root(), |shell| {
+        platform.completion_dir(shell)
     })
 }
 
@@ -372,12 +409,15 @@ pub fn prepare(
 /// be placed.
 pub fn commit(cfg: &Config, state: &mut State, prepared: Prepared) -> Result<Installed> {
     let Prepared {
+        label,
         manifest,
         origin,
         release,
         asset_name,
         sha256,
         checksum_verified,
+        trust,
+        provenance,
         link,
         payload,
         unpack,
@@ -386,7 +426,7 @@ pub fn commit(cfg: &Config, state: &mut State, prepared: Prepared) -> Result<Ins
         local_path,
     } = prepared;
     let platform = crate::platform::host()?;
-    ui::stage(&manifest.name, ui::ProgressStage::Installing);
+    ui::stage(&label, ui::ProgressStage::Installing);
 
     // Read again rather than trusting what `prepare` saw: in a batch, another
     // package may have been placed since.
@@ -399,6 +439,7 @@ pub fn commit(cfg: &Config, state: &mut State, prepared: Prepared) -> Result<Ins
     // install already occupies, and failing there must not delete it.
     let in_place = existing.as_ref().is_some_and(|p| p.prefix == store_dir);
     let mut orphan = ScopedDir((!in_place).then(|| store_dir.clone()));
+    let extras = extra_placements(platform.as_ref(), &manifest.extra_paths)?;
     let links = platform.place(&Placement {
         name: &manifest.name,
         version: &version,
@@ -411,10 +452,15 @@ pub fn commit(cfg: &Config, state: &mut State, prepared: Prepared) -> Result<Ins
         replacing: existing.as_ref().map(|p| p.links.as_slice()).unwrap_or(&[]),
         link_apps: cfg.link_apps,
         link,
+        extras: &extras,
     })?;
     drop(unpack);
 
-    // --- retire the version we replaced -------------------------------------
+    // --- retire stale links; keep the old prefix for rollback -----------------
+    let mut retained = existing
+        .as_ref()
+        .map(|p| p.retained.clone())
+        .unwrap_or_default();
     if let Some(old) = &existing {
         let stale: Vec<LinkRecord> = old
             .links
@@ -427,9 +473,7 @@ pub fn commit(cfg: &Config, state: &mut State, prepared: Prepared) -> Result<Ins
         if let Err(e) = platform.unplace(&stale) {
             ui::warn(&format!("could not remove old links for {}: {e}", old.name));
         }
-        if old.prefix != store_dir {
-            remove_store_dir(cfg, &old.prefix);
-        }
+        retain_replaced(cfg, old, &store_dir, &mut retained);
     }
 
     let package = InstalledPackage {
@@ -449,6 +493,9 @@ pub fn commit(cfg: &Config, state: &mut State, prepared: Prepared) -> Result<Ins
         manifest: Some(manifest),
         local_kind,
         local_path,
+        trust,
+        retained,
+        provenance,
     };
     state.insert(package.clone());
     orphan.keep();
@@ -557,6 +604,9 @@ pub fn uninstall(cfg: &Config, state: &mut State, name: &str) -> Result<Installe
     let platform = crate::platform::host()?;
     platform.unplace(&pkg.links)?;
     remove_store_dir(cfg, &pkg.prefix);
+    for previous in &pkg.retained {
+        remove_store_dir(cfg, &previous.prefix);
+    }
     state.remove(&pkg.name);
 
     // Recorded after the removal has happened, for the same reason `commit`
@@ -587,6 +637,13 @@ pub fn relink(cfg: &Config, state: &mut State, name: &str) -> Result<()> {
     // Place first, like `commit`: a failed placement must not take the
     // working links with it. `replacing` lets the new links reclaim the
     // destinations this package already owns.
+    let extras = extra_placements(
+        platform.as_ref(),
+        manifest
+            .as_ref()
+            .map(|m| m.extra_paths.as_slice())
+            .unwrap_or(&[]),
+    )?;
     let links = platform.place(&Placement {
         name: &pkg.name,
         version: &version,
@@ -600,6 +657,7 @@ pub fn relink(cfg: &Config, state: &mut State, name: &str) -> Result<()> {
         replacing: &pkg.links,
         link_apps: cfg.link_apps,
         link: true,
+        extras: &extras,
     })?;
 
     let stale: Vec<LinkRecord> = pkg
@@ -631,6 +689,167 @@ pub fn unlink(_cfg: &Config, state: &mut State, name: &str) -> Result<()> {
     Ok(())
 }
 
+/// Switch an installed package to a retained prefix already on disk.
+///
+/// Never downloads. Preflights every destination (via `place`) before the
+/// current links are retired, so a blocked path leaves the working version
+/// in place.
+pub fn rollback(
+    cfg: &Config,
+    state: &mut State,
+    name: &str,
+    to: Option<&str>,
+) -> Result<Installed> {
+    let pkg = state
+        .find(name)
+        .cloned()
+        .ok_or_else(|| Error::NotInstalled(name.to_string()))?;
+    if pkg.pinned {
+        return Err(Error::Pinned {
+            name: pkg.name,
+            version: pkg.version.to_string(),
+        });
+    }
+    let idx = select_retained(&pkg, to)?;
+    let target = pkg.retained[idx].clone();
+    if !target.prefix.is_dir() {
+        return Err(Error::msg(format!(
+            "retained {} {} is missing from {}",
+            pkg.name,
+            target.version,
+            target.prefix.display()
+        )));
+    }
+
+    let platform = crate::platform::host()?;
+    let version = target.version.to_string();
+    let manifest = pkg.manifest.clone();
+    let linked = !pkg.links.is_empty();
+    let extras = extra_placements(
+        platform.as_ref(),
+        manifest
+            .as_ref()
+            .map(|m| m.extra_paths.as_slice())
+            .unwrap_or(&[]),
+    )?;
+    let links = platform.place(&Placement {
+        name: &pkg.name,
+        version: &version,
+        payload_dir: &target.prefix,
+        store_dir: &target.prefix,
+        bin_dir: &cfg.bin_dir,
+        apps_dir: &cfg.apps_dir,
+        kind: manifest.as_ref().map(|m| m.kind).unwrap_or_default(),
+        bin_specs: manifest.as_ref().map(|m| m.bin.as_slice()).unwrap_or(&[]),
+        replacing: &pkg.links,
+        link_apps: cfg.link_apps,
+        link: linked,
+        extras: &extras,
+    })?;
+
+    let stale: Vec<LinkRecord> = pkg
+        .links
+        .iter()
+        .filter(|l| !links.iter().any(|new| new.link == l.link))
+        .cloned()
+        .collect();
+    if let Err(e) = platform.unplace(&stale) {
+        ui::warn(&format!("could not remove old links for {}: {e}", pkg.name));
+    }
+
+    let replaced = pkg.version.clone();
+    let snapshot = RetainedVersion::from_installed(&pkg);
+    let mut retained = pkg.retained.clone();
+    retained.remove(idx);
+    retained.retain(|r| r.prefix != pkg.prefix && r.version != pkg.version);
+    if pkg.prefix.is_dir() && is_inside_store(&cfg.store_dir, &pkg.prefix) {
+        retained.insert(0, snapshot);
+    }
+
+    let mut package = pkg;
+    package.version = target.version;
+    package.prefix = target.prefix;
+    package.sha256 = target.sha256;
+    package.checksum_verified = target.checksum_verified;
+    package.trust = target.trust;
+    package.provenance = target.provenance;
+    package.links = links;
+    package.tag = target.tag;
+    package.asset_name = target.asset_name;
+    package.installed_at = now_unix();
+    package.retained = retained;
+    state.insert(package.clone());
+
+    let previous = replaced.to_string();
+    let version = package.version.to_string();
+    let source = package.source.to_string();
+    let target_spec = package.target.to_string();
+    crate::stats::record(
+        cfg,
+        &crate::stats::rollback_event(&package, &previous, &version, &source, &target_spec),
+    );
+
+    Ok(Installed {
+        package,
+        replaced: Some(replaced),
+    })
+}
+
+fn select_retained(pkg: &InstalledPackage, to: Option<&str>) -> Result<usize> {
+    if pkg.retained.is_empty() {
+        return Err(Error::NoRetained(pkg.name.clone()));
+    }
+    match to {
+        None => Ok(0),
+        Some(spec) => {
+            if pkg.version.matches_request(spec) || pkg.tag.eq_ignore_ascii_case(spec.trim()) {
+                return Err(Error::AlreadyInstalled {
+                    name: pkg.name.clone(),
+                    version: pkg.version.to_string(),
+                });
+            }
+            pkg.find_retained(spec).map(|(i, _)| i).ok_or_else(|| {
+                let available = pkg
+                    .retained
+                    .iter()
+                    .map(|r| r.version.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                Error::msg(format!(
+                    "`{}` has no retained version {spec} (retained: {available})",
+                    pkg.name
+                ))
+            })
+        }
+    }
+}
+
+/// Drop retained prefixes beyond `keep`, oldest first. The current version
+/// is never removed. Missing prefixes are dropped from state too.
+pub fn prune(cfg: &Config, state: &mut State, name: &str, keep: u32) -> Result<Vec<Version>> {
+    let pkg = state
+        .find(name)
+        .cloned()
+        .ok_or_else(|| Error::NotInstalled(name.to_string()))?;
+    let keep = keep as usize;
+    let mut kept = Vec::new();
+    let mut dropped = Vec::new();
+    for previous in pkg.retained {
+        if previous.prefix.is_dir() && kept.len() < keep {
+            kept.push(previous);
+        } else {
+            if previous.prefix.exists() {
+                remove_store_dir(cfg, &previous.prefix);
+            }
+            dropped.push(previous.version);
+        }
+    }
+    if let Some(entry) = state.get_mut(&pkg.name) {
+        entry.retained = kept;
+    }
+    Ok(dropped)
+}
+
 /// Newest release available for an installed package, for `outdated`/`upgrade`.
 pub fn latest_release(
     sources: &SourceRegistry,
@@ -656,52 +875,7 @@ pub fn score_assets(
     release: &Release,
     selector: &AssetSelector,
 ) -> Vec<ScoredAsset> {
-    let target_pattern = selector.target.get(&cfg.target.to_string());
-    let mut out: Vec<ScoredAsset> = Vec::new();
-
-    for asset in &release.assets {
-        if selector.exclude.iter().any(|p| glob_match(p, &asset.name)) {
-            continue;
-        }
-
-        // A per-target pattern is the user naming the file outright, so it
-        // overrides the platform's opinion rather than filtering it.
-        if let Some(pattern) = target_pattern {
-            if glob_match(pattern, &asset.name) {
-                out.push(ScoredAsset {
-                    asset: asset.clone(),
-                    score: AssetScore {
-                        score: i32::MAX,
-                        arch: cfg.target.arch,
-                        emulated: false,
-                        reason: format!("manifest pins `{pattern}` for {}", cfg.target),
-                    },
-                });
-            }
-            continue;
-        }
-
-        if !selector.include.is_empty()
-            && !selector.include.iter().any(|p| glob_match(p, &asset.name))
-        {
-            continue;
-        }
-        if let Some(score) = platform.score_asset(&asset.name, cfg.allow_emulation) {
-            out.push(ScoredAsset {
-                asset: asset.clone(),
-                score,
-            });
-        }
-    }
-
-    // Name is the tie-break so repeated runs pick the same asset.
-    out.sort_by(|a, b| {
-        b.score
-            .score
-            .cmp(&a.score.score)
-            .then_with(|| a.asset.name.cmp(&b.asset.name))
-    });
-    out
+    crate::resolve::score_assets(cfg, platform, release, selector)
 }
 
 // ---------------------------------------------------------------------------
@@ -737,7 +911,7 @@ fn choose_asset(
         });
     }
 
-    score_assets(cfg, platform, release, &manifest.asset)
+    crate::resolve::score_assets(cfg, platform, release, &manifest.asset)
         .into_iter()
         .next()
         .ok_or_else(|| Error::NoCompatibleAsset {
@@ -825,12 +999,12 @@ fn check_locked(req: &InstallRequest, name: &str, asset: &str, sha256: &str) -> 
 /// Inspect the payload and strip quarantine only when the platform says the
 /// code is genuinely trusted. A failed check never blocks an install the user
 /// explicitly asked for; it is reported instead.
-fn check_trust(platform: &dyn Platform, cfg: &Config, payload: &Path, name: &str) {
+fn check_trust(platform: &dyn Platform, cfg: &Config, payload: &Path, name: &str) -> TrustResult {
     let verdict = match platform.verify_trust(payload) {
         Ok(v) => v,
         Err(e) => {
             ui::debug(&format!("trust check failed for {name}: {e}"));
-            return;
+            return TrustResult::NotApplicable;
         }
     };
     match &verdict {
@@ -844,6 +1018,35 @@ fn check_trust(platform: &dyn Platform, cfg: &Config, payload: &Path, name: &str
             ui::debug(&format!("could not clear quarantine: {e}"));
         }
     }
+    trust_result(verdict)
+}
+
+fn trust_result(verdict: TrustVerdict) -> TrustResult {
+    match verdict {
+        TrustVerdict::Trusted { authority } => TrustResult::Trusted { authority },
+        TrustVerdict::Weak { detail } => TrustResult::Weak { detail },
+        TrustVerdict::Untrusted { detail } => TrustResult::Untrusted { detail },
+        TrustVerdict::NotApplicable => TrustResult::NotApplicable,
+    }
+}
+
+/// Record the replaced prefix instead of deleting it. Missing or out-of-store
+/// prefixes are not eligible: promising a version that is already gone is
+/// worse than keeping nothing.
+fn retain_replaced(
+    cfg: &Config,
+    old: &InstalledPackage,
+    new_prefix: &Path,
+    retained: &mut Vec<RetainedVersion>,
+) {
+    retained.retain(|r| r.prefix != old.prefix && r.version != old.version);
+    if old.prefix == new_prefix {
+        return;
+    }
+    if !old.prefix.is_dir() || !is_inside_store(&cfg.store_dir, &old.prefix) {
+        return;
+    }
+    retained.insert(0, RetainedVersion::from_installed(old));
 }
 
 /// Delete a store directory, and its now-empty package parent.
@@ -1136,5 +1339,71 @@ mod tests {
             !prefix.exists(),
             "a `..` that came from the root must not stop the payload being removed"
         );
+    }
+
+    fn installed(name: &str, version: &str, prefix: PathBuf) -> InstalledPackage {
+        InstalledPackage {
+            name: name.into(),
+            version: Version::parse(version),
+            source: crate::model::PackageRef::github("o/r"),
+            tag: format!("v{version}"),
+            target: TargetSpec::host(),
+            asset_name: "a.tar.gz".into(),
+            sha256: "0".repeat(64),
+            checksum_verified: true,
+            installed_at: 0,
+            prefix,
+            links: Vec::new(),
+            pinned: false,
+            origin: crate::model::ManifestOrigin::Inferred,
+            manifest: None,
+            local_kind: None,
+            local_path: None,
+            trust: TrustResult::default(),
+            retained: Vec::new(),
+            provenance: None,
+        }
+    }
+
+    #[test]
+    fn retain_replaced_keeps_an_eligible_prefix_and_skips_the_same_one() {
+        let root = tempfile::tempdir().unwrap();
+        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        cfg.ensure_dirs().unwrap();
+        let old_prefix = cfg.package_dir("tool", "1.0.0");
+        std::fs::create_dir_all(&old_prefix).unwrap();
+        let new_prefix = cfg.package_dir("tool", "2.0.0");
+        let old = installed("tool", "1.0.0", old_prefix.clone());
+
+        let mut retained = Vec::new();
+        retain_replaced(&cfg, &old, &new_prefix, &mut retained);
+        assert_eq!(retained.len(), 1);
+        assert_eq!(retained[0].version.to_string(), "1.0.0");
+        assert_eq!(retained[0].prefix, old_prefix);
+        assert!(old_prefix.is_dir(), "retention must not delete the prefix");
+
+        retain_replaced(&cfg, &old, &old_prefix, &mut retained);
+        assert!(
+            retained.is_empty(),
+            "an in-place reinstall must not retain itself"
+        );
+    }
+
+    #[test]
+    fn select_retained_defaults_to_the_previous_and_names_a_miss() {
+        let mut pkg = installed("tool", "2.0.0", PathBuf::from("/store/tool/2.0.0"));
+        assert!(matches!(
+            select_retained(&pkg, None),
+            Err(Error::NoRetained(_))
+        ));
+        pkg.retained
+            .push(RetainedVersion::from_installed(&installed(
+                "tool",
+                "1.0.0",
+                PathBuf::from("/store/tool/1.0.0"),
+            )));
+        assert_eq!(select_retained(&pkg, None).unwrap(), 0);
+        assert_eq!(select_retained(&pkg, Some("1.0.0")).unwrap(), 0);
+        assert!(select_retained(&pkg, Some("0.9.0")).is_err());
     }
 }

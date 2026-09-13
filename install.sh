@@ -33,8 +33,8 @@ Install ketch, a Rust CLI for managing GitHub-released apps.
 OPTIONS:
   --version <TAG>      Install specific version (default: latest)
   --root <DIR>         Ketch store root (default: $DEFAULT_ROOT)
-  --install-dir <DIR>  Bootstrap location: where this script places a ketch
-                       binary on your PATH (default: <root>/bin)
+  --install-dir <DIR>  Bootstrap location: ketch places a link here to the
+                       installed binary (default: <root>/bin)
   --no-modify-path     Don't put the bin dir on PATH
   --help               Show this help message
 EOF
@@ -189,6 +189,12 @@ if [ -z "${VERSION}" ]; then
     exit 1
   fi
 fi
+
+# Release tags are always v-prefixed; accept either form on --version.
+case "${VERSION}" in
+  v*) ;;
+  *) VERSION="v${VERSION}" ;;
+esac
 
 echo "Installing ketch version ${VERSION}..."
 

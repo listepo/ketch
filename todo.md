@@ -1,0 +1,3 @@
+- F1. Notarisation
+- F2. Registry CI in ketch-registry
+- M3. Provenance and signatures

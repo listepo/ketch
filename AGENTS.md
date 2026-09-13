@@ -11,6 +11,8 @@ it too — nothing here is agent-specific except the framing and the rule below.
   `no-agent-attribution` in `commitlint.config.mjs` rejects such a trailer or
   line in every commit a pull request brings, and in the commit-msg hook. A
   pull request description is not checked — that part is on the agent.
+- If a directory above this repository contains an `AGENTS.md` or
+  `CLAUDE.md`, follow it too. If it conflicts with this file, ask the creator.
 
 ## What ketch is
 
@@ -56,7 +58,11 @@ cargo build                      # debug binary at target/debug/ketch
 ```
 
 The Justfile wraps the same commands with `--locked`: `just fmt`, `just clippy`
-(or `just lint`), `just test`, and `just check` runs the whole CI gate.
+(or `just lint`), `just test`, and `just check` runs what CI runs on this
+host — format, clippy, `cargo test --all-targets`, commitlint fixtures, shell
+syntax on `install.sh` and the packaging scripts, `scripts/package.sh` for the
+host target, and on macOS `brew style` on the generated cask. Cross-target
+builds and the Linux/Windows jobs are CI-only.
 
 Commitlint checks commit messages against the conventional-commit format:
 
@@ -165,6 +171,7 @@ conditional, multi-stage Rust automation.
 | `src/cli.rs` | the clap surface, kept separate so `cmd/` takes its args directly |
 | `src/cmd/` | thin command bodies: arguments, output, confirmations |
 | `src/install.rs` | the install/uninstall/relink pipeline every command shares |
+| `src/resolve.rs` | side-effect-free resolution trace shared by install and `ketch why` |
 | `src/source/` | where releases come from: GitHub built in, plugins external |
 | `src/extract/` | archive formats, selected by sniffing content not file names |
 | `src/platform/` | OS-specific placement, linking, trust checks (`macos.rs`, `linux.rs`, `windows.rs`) |
@@ -196,11 +203,16 @@ The rule that keeps `cmd/` thin: anything touching the install tree belongs in
 every command. If you are about to write install logic inside a command, you
 are in the wrong file.
 
-`src/shell.rs` is the one module that writes outside the ketch root, and it
-does so only when asked: `ketch path install`, `ketch doctor --fix` and
-`ketch self uninstall`, which takes the block back out of every startup file
-that has one rather than only the shell running now, and on Windows takes the
-bin dir out of the user PATH. It edits a shell startup file between two
+Several things write outside the ketch root. `ketch self install`, the bootstrap
+installers and the Homebrew cask each place a bootstrap binary outside it.
+`src/platform/` links `.app` bundles into `/Applications` (or
+`KETCH_APPS_DIR`), and man pages and completions into the user directories
+`ketch doctor` reports; those destinations are recorded in state so uninstall
+can take them back. `src/shell.rs` edits shell startup files and the user PATH
+only when asked: `ketch path install`, `ketch doctor --fix` and `ketch self
+uninstall`, which takes the block back out of every startup file that has one
+rather than only the shell running now, and on Windows takes the bin dir out of
+the user PATH. It edits a shell startup file between two
 markers, so the block can be found again, rewritten when the root moves, and
 removed without guessing which line was ketch's. It follows a symlinked
 startup file to its target before writing, because that file is very often a
@@ -348,9 +360,16 @@ throwaway keychain, hands the identity to `scripts/package.sh` as
 `KETCH_SIGN_IDENTITY`, and deletes the keychain afterwards. CI runs the same
 script without an identity and packs the binary unsigned, so a pull request
 never needs the certificate. A release with either secret missing fails rather
-than ships unsigned. The signature is not notarised: a tarball fetched with
-`curl` carries no quarantine flag, so Gatekeeper never asks, and notarisation
-would need an App Store Connect key that does not exist yet.
+than ships unsigned. The signature is not notarised yet: a tarball fetched with
+`curl` carries no quarantine flag, so Gatekeeper never asks. The `Notarise`
+step in `release.yml` is ready but off until the App Store Connect key exists.
+To turn it on, add three secrets: `APPSTORE_CONNECT_KEY` (the `.p8` as base64),
+`APPSTORE_CONNECT_KEY_ID` and `APPSTORE_CONNECT_ISSUER_ID`. Then set the
+repository variable `KETCH_NOTARIZE` to `true`. From then on, both macOS
+binaries go through `xcrun notarytool submit --wait`, and the smoke test
+requires `spctl` to report `source=Notarized Developer ID`. A missing secret
+fails the release. A bare binary cannot be stapled, so Gatekeeper looks its
+ticket up online.
 
 After the release is published, the `tap` job regenerates the Homebrew cask
 with `scripts/cask.sh` — version and both checksums — and pushes it to

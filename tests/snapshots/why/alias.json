@@ -1,0 +1,57 @@
+{
+  "assets": {
+    "rejected": [
+      {
+        "name": "whypkg-1.0.0-{arch}-unknown-linux-gnu.tar.gz",
+        "reason": "incompatible with {target}"
+      }
+    ],
+    "scored": [
+      {
+        "emulated": false,
+        "name": "whypkg-1.0.0-{arch}-apple-darwin.tar.gz",
+        "reason": "darwin / {arch} / tar.gz",
+        "score": 98
+      }
+    ]
+  },
+  "candidate": {
+    "emulated": false,
+    "name": "whypkg-1.0.0-{arch}-apple-darwin.tar.gz",
+    "reason": "darwin / {arch} / tar.gz",
+    "score": 98
+  },
+  "checksum": {
+    "asset_digest": "sha256",
+    "policy": "published-digest",
+    "require": false
+  },
+  "manifest": {
+    "matched": "whyalias",
+    "name": "whypkg",
+    "origin": "{root}/manifests/whypkg.toml",
+    "source": "test:whypkg",
+    "tier": "user"
+  },
+  "package": "whypkg",
+  "source": {
+    "id": "whypkg",
+    "scheme": "test"
+  },
+  "target": "{target}",
+  "trust": {
+    "allow_emulation": true,
+    "blocks_install": false,
+    "strip_quarantine": true
+  },
+  "version": {
+    "include_prerelease": false,
+    "rejected": [],
+    "request": "latest",
+    "selected": {
+      "prerelease": false,
+      "tag": "v1.0.0",
+      "version": "1.0.0"
+    }
+  }
+}

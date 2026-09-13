@@ -136,8 +136,9 @@ exit 0
         done\n\
         case \"${url}\" in\n\
         \x20 */releases/latest) printf '{\"tag_name\": \"v9.9.9\"}\\n' ;;\n\
-        \x20 */SHA256SUMS) cp \"${FAKE_RELEASE_DIR}/SHA256SUMS\" \"${out}\" ;;\n\
-        \x20 *) cp \"${FAKE_RELEASE_DIR}/payload.tar.gz\" \"${out}\" ;;\n\
+        \x20 */releases/download/v9.9.9/SHA256SUMS) cp \"${FAKE_RELEASE_DIR}/SHA256SUMS\" \"${out}\" ;;\n\
+        \x20 */releases/download/v9.9.9/*) cp \"${FAKE_RELEASE_DIR}/payload.tar.gz\" \"${out}\" ;;\n\
+        \x20 *) echo \"unexpected url: ${url}\" >&2; exit 1 ;;\n\
         esac\n";
 
     /// A release tree on disk: one tarball, the checksums that name it under
@@ -252,6 +253,29 @@ exit 0
             installed.path(),
             "the link must point at the binary ketch updates"
         );
+    }
+
+    /// GitHub release tags are v-prefixed; `--version` must accept either form.
+    #[test]
+    fn version_flags_accept_bare_and_v_prefixed_tags() {
+        let release = StubRelease::new();
+        let work = TempDir::new().unwrap();
+        let root = work.child("root");
+
+        for version in ["9.9.9", "v9.9.9"] {
+            run(
+                &release,
+                &work,
+                &[
+                    Path::new("--root"),
+                    root.path(),
+                    Path::new("--version"),
+                    Path::new(version),
+                ],
+            )
+            .success();
+            root.child("bin/ketch").assert(predicate::path::is_file());
+        }
     }
 
     /// `--root` is where ketch lives for good, so a relative one belongs to the

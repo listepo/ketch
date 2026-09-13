@@ -122,6 +122,7 @@ release*, never *where it lands*.
 | any other source with an empty id | there is nothing to resolve |
 | a `sha256` that is not 64 hex characters | it is compared against a real digest |
 | an empty `tag` | there is nothing to resolve |
+| a `target` ketch does not recognise | it silently turns the entry into a cross-target one, so the recorded asset and hash stop applying and a hash that drifted under the tag reads as clean |
 | an unknown key | a misspelt key that is silently ignored locks something other than what you wrote |
 | a `version` newer than this ketch understands | upgrade with `ketch self update` |
 

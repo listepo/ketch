@@ -3,7 +3,7 @@
 //! Each one takes the lock for the whole batch and writes `state.json` once at
 //! the end, so an interrupted run leaves the file either fully old or fully new.
 
-use crate::cli::{InstallArgs, NameArgs, UninstallArgs, UpgradeArgs};
+use crate::cli::{InstallArgs, NameArgs, PruneArgs, RollbackArgs, UninstallArgs, UpgradeArgs};
 use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::install::{self, InstallRequest, Installed};
@@ -81,23 +81,24 @@ pub fn install(cfg: &Config, args: InstallArgs) -> Result<()> {
     let mut failed: Vec<String> = Vec::new();
 
     let outcomes = install::batch(cfg, &sources, &mut state, &reqs, jobs(cfg, args.jobs));
-    for (raw, outcome) in wanted.iter().zip(outcomes) {
+    for (req, outcome) in reqs.iter().zip(outcomes) {
+        let key = req.spec.label();
         match outcome {
             Ok(out) => {
                 done += 1;
-                ui::completed(raw, true);
+                ui::completed(&key, true);
                 report(&out);
             }
             Err(e) if single => {
-                ui::completed(raw, false);
+                ui::completed(&key, false);
                 return Err(e);
             }
             // One bad package must not discard the ones that already
             // succeeded, so the failure is held until the state file is saved.
             Err(e) => {
-                ui::completed(raw, false);
+                ui::completed(&key, false);
                 ui::error(&e);
-                failed.push((*raw).clone());
+                failed.push(req.spec.raw.clone());
             }
         }
     }
@@ -301,6 +302,62 @@ pub fn upgrade(cfg: &Config, args: UpgradeArgs) -> Result<()> {
     Ok(())
 }
 
+pub fn rollback(cfg: &Config, args: RollbackArgs) -> Result<()> {
+    let _lock = Lock::acquire(cfg)?;
+    let mut state = State::load(cfg)?;
+    let out = install::rollback(cfg, &mut state, &args.package, args.to.as_deref())?;
+    state.save(cfg)?;
+    let pkg = &out.package;
+    let detail = match &out.replaced {
+        Some(old) => format!("{} {} (was {old})", pkg.name, pkg.version),
+        None => format!("{} {}", pkg.name, pkg.version),
+    };
+    ui::success("rolled back", &detail);
+    path_hint(cfg, &state);
+    Ok(())
+}
+
+pub fn prune(cfg: &Config, args: PruneArgs) -> Result<()> {
+    let _lock = Lock::acquire(cfg)?;
+    let mut state = State::load(cfg)?;
+    if let Some(keep) = args.keep {
+        state.retention.keep = keep;
+    }
+    let keep = state.retention.keep;
+    let names = select(&state, &args.names)?;
+    if names.is_empty() {
+        ui::out("nothing installed");
+        return Ok(());
+    }
+    let mut dropped = 0usize;
+    for name in &names {
+        let versions = install::prune(cfg, &mut state, name, keep)?;
+        if versions.is_empty() {
+            continue;
+        }
+        dropped += versions.len();
+        ui::success(
+            "pruned",
+            &format!(
+                "{name} ({})",
+                versions
+                    .iter()
+                    .map(|v| v.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        );
+    }
+    state.save(cfg)?;
+    if dropped == 0 {
+        ui::out(&format!(
+            "nothing to prune (keeping {keep} previous version{})",
+            if keep == 1 { "" } else { "s" }
+        ));
+    }
+    Ok(())
+}
+
 /// `pin` and `unpin` — `pinned` selects which.
 pub fn pin(cfg: &Config, args: NameArgs, pinned: bool) -> Result<()> {
     let _lock = Lock::acquire(cfg)?;
@@ -374,7 +431,12 @@ fn report(out: &Installed) {
     for link in pkg.binaries() {
         ui::debug(&format!("linked {}", link.link.display()));
     }
-    if !pkg.checksum_verified {
+    if let Some(prev) = pkg.previous_retained() {
+        ui::debug(&format!("retained {}", prev.version));
+    }
+    // A verified signature establishes the download on its own; the line
+    // saying so was printed when it verified.
+    if !pkg.checksum_verified && pkg.provenance.is_none() {
         ui::warn(&format!(
             "{} published no checksum; trusting {} on first use",
             pkg.name,

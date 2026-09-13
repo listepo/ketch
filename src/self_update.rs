@@ -14,7 +14,10 @@
 use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::install::{InstallRequest, Installed};
-use crate::model::{AssetSelector, LinkKind, LinkRecord, PackageSpec, Version, VersionSpec};
+use crate::model::{
+    AssetSelector, CompletionShell, LinkKind, LinkRecord, LinkRole, PackageSpec, Version,
+    VersionSpec,
+};
 use crate::source::{ListOpts, SourceRegistry};
 use crate::state::{Lock, State};
 use crate::{install, ui};
@@ -75,13 +78,28 @@ pub fn install_self(cfg: &Config, force: bool, link_dir: Option<&Path>) -> Resul
     if let Some(aside) = &aside {
         std::fs::rename(&flat, aside).map_err(|e| Error::io(&flat, e))?;
     }
-    let result = install::install(cfg, &sources, &mut state, &req).and_then(|out| {
-        if let Some(dir) = link_dir {
-            record_bootstrap_link(cfg, &mut state, dir)?;
+    let result = match install::install(cfg, &sources, &mut state, &req) {
+        Ok(out) => (|| {
+            if let Some(dir) = link_dir {
+                record_bootstrap_link(cfg, &mut state, dir)?;
+            }
+            expose_self_docs(cfg, &mut state)?;
+            state.save(cfg)?;
+            Ok(out)
+        })(),
+        Err(Error::AlreadyInstalled { name, version }) => {
+            if let Some(dir) = link_dir {
+                record_bootstrap_link(cfg, &mut state, dir)?;
+            }
+            if let Err(e) = expose_self_docs(cfg, &mut state) {
+                ui::warn(&format!("could not install man page and completions: {e}"));
+            } else if let Err(e) = state.save(cfg) {
+                ui::warn(&format!("could not record man page and completions: {e}"));
+            }
+            Err(Error::AlreadyInstalled { name, version })
         }
-        state.save(cfg)?;
-        Ok(out)
-    });
+        Err(e) => Err(e),
+    };
     if let Some(aside) = aside {
         if result.is_ok() {
             let _ = std::fs::remove_file(&aside);
@@ -240,7 +258,73 @@ fn create_bootstrap_link(link: &Path, target: &Path) -> Result<LinkRecord> {
                 LinkKind::CopiedFile
             }
         },
+        role: LinkRole::Binary,
     })
+}
+
+/// Generate ketch's man page and completions into the store prefix and link
+/// them into the user directories `doctor` reports.
+fn expose_self_docs(_cfg: &Config, state: &mut State) -> Result<()> {
+    let Some(pkg) = state.get(SELF_NAME).cloned() else {
+        return Ok(());
+    };
+    let platform = crate::platform::host()?;
+    let extras = crate::extra::write_ketch_docs(&pkg.prefix)?;
+    let planned = crate::extra::plan(&extras, &platform.user_man_root(), |shell| {
+        platform.completion_dir(shell)
+    })?;
+    let owned = pkg.prefix.parent().unwrap_or(&pkg.prefix);
+    let extra_links = crate::platform::expose_extras(&planned, &pkg.prefix, owned, &pkg.links)?;
+    let stale: Vec<LinkRecord> = pkg
+        .links
+        .iter()
+        .filter(|record| {
+            !record.role.is_binary() && !extra_links.iter().any(|fresh| fresh.link == record.link)
+        })
+        .cloned()
+        .collect();
+    if !stale.is_empty() {
+        platform.unplace(&stale)?;
+    }
+    if let Some(entry) = state.get_mut(SELF_NAME) {
+        entry.links.retain(|record| {
+            record.role.is_binary() || extra_links.iter().any(|fresh| fresh.link == record.link)
+        });
+        for link in extra_links {
+            if !entry
+                .links
+                .iter()
+                .any(|existing| existing.link == link.link)
+            {
+                entry.links.push(link);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Install one shell's completion script the same way `self install` does.
+pub fn install_completion_script(cfg: &Config, shell: clap_complete::Shell) -> Result<()> {
+    let Some(want) = CompletionShell::from_clap(shell) else {
+        return Err(Error::msg(format!(
+            "{shell} completions cannot be installed into a user directory"
+        )));
+    };
+    let mut state = State::load(cfg)?;
+    if state.get(SELF_NAME).is_none() {
+        return Err(Error::msg(
+            "ketch is not installed as a package; run `ketch self install` first",
+        ));
+    }
+    expose_self_docs(cfg, &mut state)?;
+    state.save(cfg)?;
+    let platform = crate::platform::host()?;
+    let dest = platform.completion_dir(want);
+    crate::ui::success(
+        "installed",
+        &format!("{} completions in {}", want.as_str(), dest.display()),
+    );
+    Ok(())
 }
 
 /// Where the running binary lives, with symlinks resolved so we replace the
@@ -295,6 +379,7 @@ pub fn update(cfg: &Config, force: bool, dry_run: bool) -> Result<SelfUpdate> {
         req.force = force;
         req.require_checksum = true;
         install::install(cfg, &sources, &mut state, &req)?;
+        expose_self_docs(cfg, &mut state)?;
         state.save(cfg)?;
         return Ok(SelfUpdate {
             from,
@@ -559,6 +644,7 @@ fn remove_root_at(cfg: &Config, root: &Path, home: Option<&Path>) -> Vec<PathBuf
         &cfg.stats_db,
         &cfg.config_file,
         &cfg.lock_file,
+        &cfg.registry_meta,
     ];
     for dir in dirs {
         remove_owned_dir(dir, wipe, &mut removed);
@@ -775,6 +861,9 @@ mod tests {
             manifest: None,
             local_kind: None,
             local_path: None,
+            trust: Default::default(),
+            retained: Vec::new(),
+            provenance: None,
         }
     }
 

@@ -54,35 +54,86 @@ stranger's disk, so it is checked before it is trusted:
 | a `provides` entry with whitespace | nobody can type it |
 | a `strip_prefix` above 8 | each level is a directory listing of the payload, and no real archive nests wrappers that deep |
 
-A folder that fails is reported and skipped, so one bad entry never takes the
-rest of the registry down with it. `ketch update` also warns when two packages
-claim the same name — each folder is valid alone, but only one of them would
-ever resolve.
+A folder that fails is reported and skipped on a machine that already has the
+registry, so one bad entry never takes the rest of the copy down with it.
+`ketch update` also warns when two packages claim the same name — each folder
+is valid alone, but only one of them would ever resolve. Clients stay
+best-effort about an already-published registry: they warn and skip, they do
+not refuse the whole tree.
 
-The same checks apply to `~/.ketch/manifests/*.toml`, so a manifest that works
-locally is one that can be contributed as-is.
+Before merge, the same problems are fatal. `ketch registry validate` turns
+parse errors, validation errors, and name or alias collisions into a failing
+run so they cannot land.
+
+[`Manifest::validate`](MANIFESTS.md) also applies to `~/.ketch/manifests/*.toml`.
+Registry entries must additionally pass the `local:` and folder-name rules in
+the table above — rules user manifests never see — so a manifest that installs
+locally is not necessarily one that can be contributed as-is.
 
 ## Using it
 
 ```bash
-ketch update          # fetch the registry into ~/.ketch/registry
-ketch search fd       # search it, alongside GitHub
-ketch install fd      # install by name
-ketch doctor          # shows which registry is in use and how many packages
+ketch update             # fetch the registry into ~/.ketch/registry
+ketch registry status    # age and source of the local copy; no network
+ketch search fd          # search it, alongside GitHub
+ketch install fd         # install by name
+ketch doctor             # registry line includes package count, age, and revision
 ```
 
 Nothing fetches the registry implicitly: a name that resolves today keeps
 resolving offline tomorrow, and `ketch install owner/repo` never needs it at
-all. Run `ketch update` when a package is missing or out of date.
+all. `ketch update` is the only refresh. `ketch registry status` and `ketch
+doctor` read the local copy and `registry.meta.toml` (source revision and
+fetch time, stored under the ketch root beside the manifests) and never
+open a network connection.
+
+## Author and maintainer workflow
+
+The exact validation command, run from the registry repository root (or any
+tree laid out the same way):
+
+```bash
+ketch registry validate .
+```
+
+That is what must pass before merge: every `ketch.toml` parsed, checked
+against its folder name, refused when `source` is `local:`, passed through
+[`Manifest::validate`](MANIFESTS.md), with name and alias collisions failing
+the run.
+
+To also offline-install the entries a pull request changes, put one local
+asset per package in a fixture directory — a file named after the package,
+or a folder of that name holding exactly one file — and name the packages:
+
+```bash
+ketch registry validate . --fixture ./ci/fixtures --changed ripgrep --changed fd
+```
+
+Without `--changed`, every package that has a fixture is installed. `--changed`
+without `--fixture` is an error. The install runs in a throwaway ketch root
+from the fixture file, so a `github:` source in the entry never reaches the
+network. A missing binary, a bad `bin.path`, or an archive that will not
+unpack fails the same way as a collision.
+
+### Compatibility
+
+- **Registry CI / `ketch registry validate`** is fail-closed. Invalid or
+  colliding entries do not merge.
+- **Clients** (`ketch update`, lookup, install by name) stay best-effort
+  about an already-published bad registry: they warn, skip the broken folder,
+  and keep resolving the rest. They never fetch as a side effect of status
+  or doctor.
+- A fixture install is extra proof for changed entries. It does not replace
+  the tree-wide collision scan.
+
+The `ketch-registry` repository still needs a workflow that runs this command
+on every pull request.
+
+`registry push` runs those same per-package checks on the file it is about to
+send. It does not scan the rest of the registry for name collisions — only CI
+and `registry validate` do that. It does not offline-install against a fixture.
 
 ## Contributing a package
-
-Registry CI and `ketch registry validate <dir>` run the same checks over every
-package folder: each `ketch.toml` is parsed, checked against its folder name,
-refused when `source` is `local:`, passed through
-[`Manifest::validate`](../MANIFESTS.md), and name collisions fail the run.
-A broken entry on someone's machine only warns and is skipped; in the registry
-repository those problems must be fixed before merge.
 
 A `ketch.toml` at the root of a project is the same file its registry folder
 would hold, so contributing it is one command, run from that root:
@@ -95,7 +146,7 @@ ketch registry push --file path/to/ketch.toml         # a file somewhere else
 ketch registry push --registry someone/their-registry # a registry other than the default
 ```
 
-Before sending anything, `registry push` fetches the registry's current copy
+After the file passes, `registry push` fetches the registry's current copy
 of `<name>/ketch.toml` from the registry's default branch, and what happens
 next depends on what that holds:
 
@@ -105,8 +156,7 @@ next depends on what that holds:
 | is byte for byte the same | reports `unchanged` and opens nothing |
 | differs | prints a unified diff — its copy as the old side, the local file as the new — and opens the update pull request only after yes/no |
 
-`registry push` validates the file exactly as the registry will, then puts it
-at `<name>/ketch.toml` on a branch called `ketch/<name>` and opens a pull
+It then puts the file at `<name>/ketch.toml` on a branch called `ketch/<name>` and opens a pull
 request against the registry's default branch. With push access to the
 registry the branch is made there; without it, on a fork of the registry
 under your account, created if needed. Pushing again updates the same branch,

@@ -21,7 +21,7 @@ lint:
 alias clippy := lint
 
 test:
-    cargo test --locked
+    cargo test --all-targets --locked
 
 test-install:
     cargo test --locked --test install
@@ -66,7 +66,49 @@ lint-commits:
         exit 1
     fi
 
-check: fmt-check lint test lint-commits
+lint-shell:
+    bash -n install.sh
+    bash -n scripts/package.sh
+    bash -n scripts/release.sh
+    sh tests/release-yml-notarize.sh
+
+package:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    target=$(rustc -vV | sed -n 's/^host: //p')
+    scripts/package.sh "$target" dist
+    cd dist
+    if command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 *.tar.gz > SHA256SUMS
+        shasum -a 256 -c SHA256SUMS
+        hash() { shasum -a 256 "$1" | awk '{print $1}'; }
+    else
+        sha256sum *.tar.gz > SHA256SUMS
+        sha256sum -c SHA256SUMS
+        hash() { sha256sum "$1" | awk '{print $1}'; }
+    fi
+    tarball="ketch-${target}.tar.gz"
+    expected=$(grep "$tarball" SHA256SUMS | awk '{print $1}')
+    actual=$(hash "$tarball")
+    [ "$expected" = "$actual" ] || { echo "checksum line unusable" >&2; exit 1; }
+    mkdir -p unpacked && tar -xzf "$tarball" -C unpacked
+    binary=$(find unpacked \( -name ketch -o -name ketch.exe \) -type f | head -1)
+    [ -n "$binary" ] || { echo "no ketch binary in the tarball" >&2; exit 1; }
+    "$binary" --version
+
+lint-cask:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ "$(uname -s)" != "Darwin" ]; then
+        echo "lint-cask: skipped (macOS only, like CI's package job)"
+        exit 0
+    fi
+    mkdir -p cask/Casks
+    scripts/cask.sh 0.0.0 "$(printf '%064d' 0)" "$(printf '%064d' 1)" \
+        > cask/Casks/ketch.rb
+    brew style cask/Casks/ketch.rb
+
+check: fmt-check lint test lint-commits lint-shell package lint-cask
 
 # $CARGO_HOME sizes (no deletes) and the build output, wherever cargo puts it
 cache:

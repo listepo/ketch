@@ -1,0 +1,14 @@
+package      whypkg
+target       {target}
+manifest     user  {root}/manifests/whypkg.toml
+source       test:whypkg
+version      latest  v2.0.0-rc.1 (2.0.0-rc.1)  prerelease
+prerelease   included
+
+assets
+score  name                                           reason
+98     whypkg-2.0.0-rc.1-{arch}-apple-darwin.tar.gz  darwin / {arch} / tar.gz
+
+checksum     published-digest
+trust        advisory  strip_quarantine=true  allow_emulation=true
+candidate    whypkg-2.0.0-rc.1-{arch}-apple-darwin.tar.gz  darwin / {arch} / tar.gz

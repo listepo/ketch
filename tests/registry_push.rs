@@ -9,9 +9,14 @@
 //! environment. Every case strips the three token variables so a developer's
 //! real credentials can never send it to the network.
 
+#[cfg(unix)]
+mod support;
+
 use assert_cmd::Command;
 use assert_fs::prelude::*;
 use predicates::prelude::*;
+#[cfg(unix)]
+use support::{Archive, Entry};
 
 #[test]
 fn registry_help_lists_push_and_validate() {
@@ -20,7 +25,11 @@ fn registry_help_lists_push_and_validate() {
         .args(["registry", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("push").and(predicate::str::contains("validate")));
+        .stdout(
+            predicate::str::contains("push")
+                .and(predicate::str::contains("validate"))
+                .and(predicate::str::contains("status")),
+        );
 }
 
 fn write_package(dir: &assert_fs::fixture::ChildPath, folder: &str, body: &str) {
@@ -75,7 +84,10 @@ fn registry_validate_rejects_a_bin_name_that_would_escape() {
         .env("NO_COLOR", "1")
         .assert()
         .failure()
-        .stdout(predicate::str::contains(".zshrc").or(predicate::str::contains("file name")));
+        .stdout(
+            predicate::str::contains("binary name")
+                .and(predicate::str::contains("not usable as a file name")),
+        );
 }
 
 #[test]
@@ -320,6 +332,36 @@ fn registry_push_refuses_a_local_source() {
 }
 
 #[test]
+fn registry_push_refuses_a_name_that_does_not_match_its_folder() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let root = temp.child("ketch-root");
+    let project = temp.child("fzf");
+    project.create_dir_all().unwrap();
+    project
+        .child("ketch.toml")
+        .write_str("name = \"fzy\"\nsource = \"github:junegunn/fzf\"\n")
+        .unwrap();
+
+    Command::cargo_bin("ketch")
+        .unwrap()
+        .current_dir(project.path())
+        .args([
+            "--root",
+            root.path().to_str().unwrap(),
+            "registry",
+            "push",
+            "--dry-run",
+        ])
+        .env("NO_COLOR", "1")
+        .env_remove("KETCH_GITHUB_TOKEN")
+        .env_remove("GITHUB_TOKEN")
+        .env_remove("GH_TOKEN")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("declares name"));
+}
+
+#[test]
 fn registry_push_refuses_a_package_file_with_an_unknown_key() {
     let temp = assert_fs::TempDir::new().unwrap();
     let root = temp.child("ketch-root");
@@ -494,4 +536,170 @@ fn the_retired_push_spelling_is_recognized_no_more() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("unrecognized subcommand"));
+}
+
+fn strip_tokens(cmd: &mut Command) -> &mut Command {
+    cmd.env("NO_COLOR", "1")
+        .env("KETCH_GITHUB_API", "http://127.0.0.1:1")
+        .env_remove("KETCH_GITHUB_TOKEN")
+        .env_remove("GITHUB_TOKEN")
+        .env_remove("GH_TOKEN")
+}
+
+fn write_meta(root: &assert_fs::fixture::ChildPath, fetched_at: u64) {
+    root.child("registry.meta.toml")
+        .write_str(&format!(
+            "repo = \"listepo/ketch-registry\"\nrevision = \"abc123\"\nfetched_at = {fetched_at}\n"
+        ))
+        .unwrap();
+}
+
+#[test]
+fn registry_status_reports_age_and_source_without_a_network() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let root = temp.child("ketch-root");
+    root.create_dir_all().unwrap();
+    let registry = root.child("registry");
+    write_package(&registry, "tool", "source = \"github:a/b\"\n");
+    write_meta(&root, 1);
+
+    let mut cmd = Command::cargo_bin("ketch").unwrap();
+    strip_tokens(&mut cmd)
+        .args([
+            "--root",
+            root.path().to_str().unwrap(),
+            "registry",
+            "status",
+        ])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("revision")
+                .and(predicate::str::contains("abc123"))
+                .and(predicate::str::contains("fetched"))
+                .and(predicate::str::contains("1")),
+        );
+}
+
+#[test]
+fn registry_status_json_is_offline_when_the_copy_is_missing() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let root = temp.child("ketch-root");
+    root.create_dir_all().unwrap();
+
+    let mut cmd = Command::cargo_bin("ketch").unwrap();
+    let assert = strip_tokens(&mut cmd)
+        .args([
+            "--root",
+            root.path().to_str().unwrap(),
+            "registry",
+            "status",
+            "--json",
+        ])
+        .assert()
+        .success();
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    let value: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(value["status"], "missing");
+    assert!(value["packages"].is_null());
+}
+
+#[test]
+fn registry_validate_changed_without_a_fixture_fails() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let root = temp.child("ketch-root");
+    let registry = temp.child("registry");
+    write_package(&registry, "tool", "source = \"github:a/b\"\n");
+
+    let mut cmd = Command::cargo_bin("ketch").unwrap();
+    strip_tokens(&mut cmd)
+        .args([
+            "--root",
+            root.path().to_str().unwrap(),
+            "registry",
+            "validate",
+            "--changed",
+            "tool",
+            registry.path().to_str().unwrap(),
+        ])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("--fixture"));
+}
+
+#[cfg(unix)]
+#[test]
+fn registry_validate_offline_installs_a_changed_entry_from_a_fixture() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let root = temp.child("ketch-root");
+    let registry = temp.child("registry");
+    write_package(
+        &registry,
+        "tool",
+        "source = \"github:a/b\"\nbin = [{ name = \"tool\" }]\n",
+    );
+    let fixture = temp.child("fixtures");
+    fixture.create_dir_all().unwrap();
+    let pkg = fixture.child("tool");
+    pkg.create_dir_all().unwrap();
+    Archive::TarGz(vec![Entry::program("tool", "ok")]).write_to(pkg.child("tool.tar.gz").path());
+
+    let mut cmd = Command::cargo_bin("ketch").unwrap();
+    strip_tokens(&mut cmd)
+        .args([
+            "--root",
+            root.path().to_str().unwrap(),
+            "registry",
+            "validate",
+            "--fixture",
+            fixture.path().to_str().unwrap(),
+            "--changed",
+            "tool",
+            registry.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("1 package"));
+    // `ensure_dirs` creates store/ under --root; the probe must not put a package there.
+    let store = root.child("store");
+    assert!(
+        !store.path().exists() || std::fs::read_dir(store.path()).unwrap().next().is_none(),
+        "offline-install must not write packages into the caller's root"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn registry_validate_fixture_install_fails_when_the_binary_is_missing() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let root = temp.child("ketch-root");
+    let registry = temp.child("registry");
+    write_package(
+        &registry,
+        "tool",
+        "source = \"github:a/b\"\nbin = [{ name = \"tool\", path = \"bin/tool\" }]\n",
+    );
+    let fixture = temp.child("fixtures");
+    fixture.create_dir_all().unwrap();
+    let pkg = fixture.child("tool");
+    pkg.create_dir_all().unwrap();
+    Archive::TarGz(vec![Entry::file("README.md", "no binary here")])
+        .write_to(pkg.child("tool.tar.gz").path());
+
+    let mut cmd = Command::cargo_bin("ketch").unwrap();
+    strip_tokens(&mut cmd)
+        .args([
+            "--root",
+            root.path().to_str().unwrap(),
+            "registry",
+            "validate",
+            "--fixture",
+            fixture.path().to_str().unwrap(),
+            "--changed",
+            "tool",
+            registry.path().to_str().unwrap(),
+        ])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("offline-install failed"));
 }

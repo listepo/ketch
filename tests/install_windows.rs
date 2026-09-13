@@ -83,6 +83,55 @@ fn an_upgrade_replaces_the_payload_and_the_copy_still_works() {
     publish_tool(&sandbox, "2.0.0");
     sandbox.ok(&["upgrade", "--yes"]);
     assert_eq!(run(&dest), "testtool 2.0.0");
+    assert!(
+        sandbox.store().join("testtool").join("1.0.0").is_dir(),
+        "upgrade must keep the previous prefix"
+    );
+}
+
+#[test]
+fn rollback_restores_the_previous_prefix_without_redownloading() {
+    let sandbox = Sandbox::new();
+    publish_tool(&sandbox, "1.0.0");
+    sandbox.ok(&["install", "test:testtool@1.0.0", "--yes"]);
+    publish_tool(&sandbox, "2.0.0");
+    sandbox.ok(&["upgrade", "--yes"]);
+    publish_tool(&sandbox, "2.0.0");
+    sandbox.ok(&["rollback", "testtool"]);
+    assert_eq!(run(&installed_bin(&sandbox)), "testtool 1.0.0");
+}
+
+#[test]
+fn rollback_without_a_retained_version_leaves_the_install_alone() {
+    let sandbox = Sandbox::new();
+    publish_tool(&sandbox, "1.0.0");
+    sandbox.ok(&["install", "test:testtool", "--yes"]);
+    let stderr = sandbox.fails(&["rollback", "testtool"]);
+    assert!(stderr.contains("no retained version"), "{stderr}");
+}
+
+#[test]
+fn rollback_refuses_a_pinned_package() {
+    let sandbox = Sandbox::new();
+    publish_tool(&sandbox, "1.0.0");
+    sandbox.ok(&["install", "test:testtool@1.0.0", "--yes"]);
+    publish_tool(&sandbox, "2.0.0");
+    sandbox.ok(&["upgrade", "--yes"]);
+    sandbox.ok(&["pin", "testtool"]);
+    let stderr = sandbox.fails(&["rollback", "testtool"]);
+    assert!(stderr.to_lowercase().contains("pinned"), "{stderr}");
+}
+
+#[test]
+fn uninstall_after_rollback_removes_every_retained_prefix() {
+    let sandbox = Sandbox::new();
+    publish_tool(&sandbox, "1.0.0");
+    sandbox.ok(&["install", "test:testtool@1.0.0", "--yes"]);
+    publish_tool(&sandbox, "2.0.0");
+    sandbox.ok(&["upgrade", "--yes"]);
+    sandbox.ok(&["rollback", "testtool"]);
+    sandbox.ok(&["uninstall", "testtool", "--yes"]);
+    assert!(!sandbox.store().join("testtool").exists());
 }
 
 #[test]

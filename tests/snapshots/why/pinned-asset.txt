@@ -1,0 +1,18 @@
+package      whypkg
+target       {target}
+manifest     user  {root}/manifests/whypkg.toml
+source       test:whypkg
+version      latest  v1.0.0 (1.0.0)
+prerelease   excluded
+
+assets
+score       name                  reason
+2147483647  whypkg-pinned.tar.gz  manifest pins `*-pinned.tar.gz` for {target}
+
+rejected
+name                                      reason
+whypkg-1.0.0-{arch}-apple-darwin.tar.gz  does not match the pinned pattern `*-pinned.tar.gz` for {target}
+
+checksum     published-digest
+trust        advisory  strip_quarantine=true  allow_emulation=true
+candidate    whypkg-pinned.tar.gz  manifest pins `*-pinned.tar.gz` for {target}

@@ -69,6 +69,9 @@ pub enum Command {
     #[command(visible_alias = "show")]
     Info(InfoArgs),
 
+    /// Explain how a package would be resolved, without installing it
+    Why(WhyArgs),
+
     /// Show what changed: the package's own changelog, or its release notes
     Changelog(ChangelogArgs),
 
@@ -86,6 +89,12 @@ pub enum Command {
 
     /// Upgrade installed packages to their latest release
     Upgrade(UpgradeArgs),
+
+    /// Switch a package back to a version still on disk
+    Rollback(RollbackArgs),
+
+    /// Remove retained prefixes according to the retention policy
+    Prune(PruneArgs),
 
     /// Hold a package at its current version
     Pin(NameArgs),
@@ -139,7 +148,7 @@ pub enum Command {
         command: SelfCommand,
     },
 
-    /// Print a shell completion script
+    /// Print a shell completion script, or install it with `--install`
     Completions(CompletionsArgs),
 }
 
@@ -153,7 +162,7 @@ pub struct InstallArgs {
     #[arg(long, value_name = "PATH")]
     pub path: Option<PathBuf>,
 
-    /// Package name when installing with `--path` (defaults to the file basename)
+    /// Installed name for a single package (with `--path`, defaults to the file basename)
     #[arg(long, value_name = "NAME")]
     pub name: Option<String>,
 
@@ -209,7 +218,7 @@ pub struct ListArgs {
 
 #[derive(Args, Debug, Clone)]
 pub struct OutdatedArgs {
-    /// Emit JSON instead of a table
+    /// Emit a JSON object (`status`, `outdated`, `failed`, `unreachable`) instead of a table
     #[arg(long)]
     pub json: bool,
 
@@ -257,6 +266,17 @@ pub struct InfoArgs {
     /// List the release's assets and how each one scored
     #[arg(long)]
     pub assets: bool,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct WhyArgs {
+    /// An installed name, an alias, or `owner/repo` — may carry `@version`
+    #[arg(value_name = "PKG")]
+    pub package: String,
+
+    /// Emit JSON instead of formatted text
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -313,6 +333,28 @@ pub struct UpgradeArgs {
     /// Answer yes to every prompt
     #[arg(long, short = 'y')]
     pub yes: bool,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct RollbackArgs {
+    /// An installed name, a binary it provides, or `owner/repo`
+    #[arg(value_name = "PKG")]
+    pub package: String,
+
+    /// Version to restore. Default: the previous retained version.
+    #[arg(long, value_name = "VERSION")]
+    pub to: Option<String>,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct PruneArgs {
+    /// Packages to prune. Empty means every installed package.
+    #[arg(value_name = "NAME")]
+    pub names: Vec<String>,
+
+    /// Previous versions to keep per package (updates the stored policy)
+    #[arg(long, value_name = "N")]
+    pub keep: Option<u32>,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -392,6 +434,23 @@ pub enum RegistryCommand {
         #[arg(value_name = "DIR")]
         dir: Option<PathBuf>,
 
+        /// Local assets for offline-install of changed entries (one file, or
+        /// a folder of one file, per package name)
+        #[arg(long, value_name = "DIR")]
+        fixture: Option<PathBuf>,
+
+        /// Package names to offline-install against `--fixture` (repeatable).
+        /// Without this, every package that has a fixture is installed.
+        #[arg(long = "changed", value_name = "NAME")]
+        changed: Vec<String>,
+
+        /// Emit JSON instead of text
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Show the local registry copy's age and source, without fetching
+    Status {
         /// Emit JSON instead of text
         #[arg(long)]
         json: bool,
@@ -509,4 +568,7 @@ pub enum SelfCommand {
 pub struct CompletionsArgs {
     #[arg(value_enum)]
     pub shell: clap_complete::Shell,
+    /// Write the script into this shell's user completion directory
+    #[arg(long)]
+    pub install: bool,
 }

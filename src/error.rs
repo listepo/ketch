@@ -47,6 +47,9 @@ pub enum Error {
     #[error("`{0}` is not installed")]
     NotInstalled(String),
 
+    #[error("`{0}` has no retained version to roll back to")]
+    NoRetained(String),
+
     #[error("`{name}` {version} is already installed")]
     AlreadyInstalled { name: String, version: String },
 
@@ -87,7 +90,11 @@ pub enum Error {
     },
 
     #[error("plugin `{name}`: {detail}")]
-    Plugin { name: String, detail: String },
+    Plugin {
+        name: String,
+        detail: String,
+        stderr: String,
+    },
 
     #[error("{0}")]
     Config(String),
@@ -120,7 +127,9 @@ impl Error {
     pub fn details(&self) -> Vec<String> {
         match self {
             Error::Http { detail, .. } => detail.iter().cloned().collect(),
-            Error::Command { stderr, .. } if !stderr.trim().is_empty() => {
+            Error::Command { stderr, .. } | Error::Plugin { stderr, .. }
+                if !stderr.trim().is_empty() =>
+            {
                 stderr.trim().lines().map(|l| l.to_string()).collect()
             }
             Error::ChecksumMismatch {
@@ -149,6 +158,9 @@ impl Error {
             }
             Error::AlreadyInstalled { .. } => Some("Use --force to reinstall.".to_string()),
             Error::Pinned { .. } => Some("Run `ketch unpin <pkg>` first.".to_string()),
+            Error::NoRetained(_) => Some(
+                "Upgrade keeps the previous prefix until `ketch prune`.".to_string(),
+            ),
             Error::UnknownScheme(s) => Some(format!(
                 "Install a source plugin named `ketch-source-{s}` on PATH or in the plugins dir."
             )),
@@ -159,7 +171,7 @@ impl Error {
     /// Process exit code. Distinct codes let scripts branch on failure class.
     pub fn exit_code(&self) -> i32 {
         match self {
-            Error::NotInstalled(_) | Error::NoRelease(_) => 4,
+            Error::NotInstalled(_) | Error::NoRelease(_) | Error::NoRetained(_) => 4,
             Error::AlreadyInstalled { .. } | Error::Pinned { .. } => 5,
             Error::ChecksumMismatch { .. } | Error::ChecksumMissing(_) => 6,
             Error::Http { .. } | Error::Network { .. } => 7,

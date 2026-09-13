@@ -6,7 +6,7 @@
 //! data, so the rules run in tests with no terminal attached.
 
 use crate::error::{Error, Result};
-use crate::model::{normalize_name, BinSpec, Manifest, PackageKind, PackageRef};
+use crate::model::{normalize_name, BinSpec, ExtraPath, Manifest, PackageKind, PackageRef};
 use std::collections::BTreeMap;
 
 /// The answers the questionnaire collected, before they become a manifest.
@@ -84,7 +84,13 @@ pub fn manifest(answers: &Answers) -> Result<Manifest> {
         prerelease: answers.prerelease,
         provides: answers.provides.clone(),
         notes: text(answers.notes.as_deref()),
-        extra_paths: answers.extra_paths.clone(),
+        extra_paths: answers
+            .extra_paths
+            .iter()
+            .cloned()
+            .map(ExtraPath::Path)
+            .collect(),
+        trust: None,
     };
     manifest.validate()?;
     Ok(manifest)
@@ -146,7 +152,10 @@ pub fn render(manifest: &Manifest) -> String {
         out.push_str(&format!("bin = [{}]\n", entries.join(", ")));
     }
     if !manifest.extra_paths.is_empty() {
-        out.push_str(&format!("extra_paths = {}\n", list(&manifest.extra_paths)));
+        out.push_str(&format!(
+            "extra_paths = {}\n",
+            extra_paths_toml(&manifest.extra_paths)
+        ));
     }
     if !manifest.asset.include.is_empty() || !manifest.asset.exclude.is_empty() {
         out.push_str("\n[asset]\n");
@@ -221,6 +230,35 @@ fn list(items: &[String]) -> String {
             .collect(),
     )
     .to_string()
+}
+
+fn extra_paths_toml(items: &[ExtraPath]) -> String {
+    let atoms: Vec<String> = items
+        .iter()
+        .map(|entry| match entry {
+            ExtraPath::Path(path) => string(path),
+            ExtraPath::Spec(spec) => {
+                let mut parts = vec![
+                    format!("path = {}", string(&spec.path)),
+                    format!(
+                        "kind = {}",
+                        string(match spec.kind {
+                            crate::model::ExtraKind::Man => "man",
+                            crate::model::ExtraKind::Completion => "completion",
+                        })
+                    ),
+                ];
+                if let Some(shell) = spec.shell {
+                    parts.push(format!("shell = {}", string(shell.as_str())));
+                }
+                if let Some(section) = &spec.section {
+                    parts.push(format!("section = {}", string(section)));
+                }
+                format!("{{ {} }}", parts.join(", "))
+            }
+        })
+        .collect();
+    format!("[{}]", atoms.join(", "))
 }
 
 /// One `bin` entry as an inline table, `path` first to match the documented
@@ -332,7 +370,10 @@ mod tests {
         );
         assert_eq!(
             manifest.extra_paths,
-            vec!["complete/rg.bash".to_string(), "doc/rg.1".to_string()]
+            vec![
+                ExtraPath::Path("complete/rg.bash".to_string()),
+                ExtraPath::Path("doc/rg.1".to_string()),
+            ]
         );
     }
 

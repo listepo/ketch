@@ -89,14 +89,21 @@ fn pause_tui_for_input() -> Option<Box<dyn FnOnce() + Send>> {
     }
 }
 
+/// Restores the TUI after a line prompt, including if the prompt panics.
+struct ResumeTui(Option<Box<dyn FnOnce() + Send>>);
+
+impl Drop for ResumeTui {
+    fn drop(&mut self) {
+        if let Some(resume) = self.0.take() {
+            resume();
+        }
+    }
+}
+
 /// Run one line-oriented prompt while an optional TUI session is suspended.
 fn with_tui_input_paused<R>(f: impl FnOnce() -> R) -> R {
-    let resume = pause_tui_for_input();
-    let result = f();
-    if let Some(resume) = resume {
-        resume();
-    }
-    result
+    let _resume = ResumeTui(pause_tui_for_input());
+    f()
 }
 
 #[cfg(feature = "tui")]
@@ -138,8 +145,13 @@ fn held() -> std::sync::MutexGuard<'static, Option<MultiProgress>> {
 /// error message cannot each forget it.
 ///
 /// Only the text is filtered, never the colours: painting happens after.
-fn printable(text: &str) -> String {
+pub(crate) fn printable(text: &str) -> String {
     crate::changelog::sanitize(text)
+}
+
+/// Fold whitespace onto one line so a table row cannot break its columns.
+fn fold_line(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 pub fn init(color: Option<bool>, quiet: bool, verbose: bool) {
@@ -203,6 +215,57 @@ pub fn cyan(t: &str) -> String {
     paint("36", t)
 }
 
+fn step_line(verb: &str, detail: &str) -> String {
+    format!("{} {}", blue(&format!("{verb:>10}")), printable(detail))
+}
+
+fn success_line(verb: &str, detail: &str) -> String {
+    format!("{} {}", green(&format!("{verb:>10}")), printable(detail))
+}
+
+fn warn_line(detail: &str) -> String {
+    format!(
+        "{} {}",
+        yellow(&format!("{:>10}", "warning")),
+        printable(detail)
+    )
+}
+
+fn note_line(detail: &str) -> String {
+    format!(
+        "{} {}",
+        dim(&format!("{:>10}", "note")),
+        dim(&printable(detail))
+    )
+}
+
+fn debug_line(detail: &str) -> String {
+    format!(
+        "{} {}",
+        dim(&format!("{:>10}", "debug")),
+        dim(&printable(detail))
+    )
+}
+
+fn error_lines(headline: &str, details: &[String], hint: Option<&str>) -> Vec<String> {
+    let mut lines = vec![format!(
+        "{} {}",
+        red(&format!("{:>10}", "error")),
+        printable(headline)
+    )];
+    for line in details {
+        lines.push(format!("{} {}", " ".repeat(10), dim(&printable(line))));
+    }
+    if let Some(hint) = hint {
+        lines.push(format!(
+            "{} {}",
+            cyan(&format!("{:>10}", "hint")),
+            printable(hint)
+        ));
+    }
+    lines
+}
+
 /// Status line for a step that is happening now.
 pub fn step(verb: &str, detail: &str) {
     // Logged before the level check: `--quiet` is about this terminal, and the
@@ -211,11 +274,7 @@ pub fn step(verb: &str, detail: &str) {
     if is_quiet() {
         return;
     }
-    emit(&format!(
-        "{} {}",
-        blue(&format!("{verb:>10}")),
-        printable(detail)
-    ));
+    emit(&step_line(verb, detail));
 }
 
 /// Something finished well.
@@ -224,11 +283,7 @@ pub fn success(verb: &str, detail: &str) {
     if is_quiet() {
         return;
     }
-    emit(&format!(
-        "{} {}",
-        green(&format!("{verb:>10}")),
-        printable(detail)
-    ));
+    emit(&success_line(verb, detail));
 }
 
 /// Something the user should know but that does not stop the run.
@@ -237,11 +292,7 @@ pub fn warn(detail: &str) {
     if is_quiet() {
         return;
     }
-    emit(&format!(
-        "{} {}",
-        yellow(&format!("{:>10}", "warning")),
-        printable(detail)
-    ));
+    emit(&warn_line(detail));
 }
 
 /// An aside: true, worth saying once, and not a problem.
@@ -250,22 +301,14 @@ pub fn note(detail: &str) {
     if is_quiet() {
         return;
     }
-    emit(&format!(
-        "{} {}",
-        dim(&format!("{:>10}", "note")),
-        dim(&printable(detail))
-    ));
+    emit(&note_line(detail));
 }
 
 /// Only shown with `--verbose`, but always written to the log.
 pub fn debug(detail: &str) {
     log::record(log::Level::Debug, detail);
     if is_verbose() {
-        emit(&format!(
-            "{} {}",
-            dim(&format!("{:>10}", "debug")),
-            dim(&printable(detail))
-        ));
+        emit(&debug_line(detail));
     }
 }
 
@@ -286,20 +329,9 @@ pub fn error(err: &crate::error::Error) {
     }
     log::record(log::Level::Error, &logged);
 
-    emit(&format!(
-        "{} {}",
-        red(&format!("{:>10}", "error")),
-        printable(&err.to_string())
-    ));
-    for line in &details {
-        emit(&format!("{} {}", " ".repeat(10), dim(&printable(line))));
-    }
-    if let Some(hint) = &hint {
-        emit(&format!(
-            "{} {}",
-            cyan(&format!("{:>10}", "hint")),
-            printable(hint)
-        ));
+    let headline = err.to_string();
+    for line in error_lines(&headline, &details, hint.as_deref()) {
+        emit(&line);
     }
 }
 
@@ -697,7 +729,7 @@ fn table_lines(headers: &[&str], rows: &[Vec<String>]) -> Vec<String> {
         .map(|row| {
             row.iter()
                 .take(cols)
-                .map(|cell| printable(cell))
+                .map(|cell| fold_line(&printable(cell)))
                 .collect::<Vec<String>>()
         })
         .collect();
@@ -735,6 +767,92 @@ mod tests {
         assert_eq!(bytes(5 * 1024 * 1024), "5.0 MiB");
     }
 
+    const HOSTILE: &str = "evil\u{1b}[2K\u{1b}[1;31mFAKE\u{1b}[0m";
+    const FILTERED: &str = "evil[2K[1;31mFAKE[0m";
+
+    fn assert_client_text_is_filtered(line: &str) {
+        assert!(!line.contains('\u{1b}'), "{line:?}");
+        assert!(line.contains(FILTERED), "{line:?}");
+    }
+
+    #[test]
+    fn step_detail_cannot_redraw_the_terminal() {
+        init(Some(false), false, false);
+        assert_client_text_is_filtered(&step_line("fetch", HOSTILE));
+    }
+
+    #[test]
+    fn success_detail_cannot_redraw_the_terminal() {
+        init(Some(false), false, false);
+        assert_client_text_is_filtered(&success_line("done", HOSTILE));
+    }
+
+    #[test]
+    fn a_warning_cannot_redraw_the_terminal() {
+        init(Some(false), false, false);
+        assert_client_text_is_filtered(&warn_line(HOSTILE));
+    }
+
+    #[test]
+    fn a_note_cannot_redraw_the_terminal() {
+        init(Some(false), false, false);
+        assert_client_text_is_filtered(&note_line(HOSTILE));
+    }
+
+    #[test]
+    fn debug_output_cannot_redraw_the_terminal() {
+        init(Some(false), false, true);
+        assert_client_text_is_filtered(&debug_line(HOSTILE));
+    }
+
+    #[test]
+    fn an_error_headline_cannot_redraw_the_terminal() {
+        init(Some(false), false, false);
+        let err = crate::error::Error::msg(HOSTILE);
+        let lines = error_lines(&err.to_string(), &[], None);
+        assert_client_text_is_filtered(&lines[0]);
+    }
+
+    #[test]
+    fn error_details_cannot_redraw_the_terminal() {
+        init(Some(false), false, false);
+        let err = crate::error::Error::Command {
+            cmd: "test".into(),
+            status: "1".into(),
+            stderr: HOSTILE.into(),
+        };
+        let lines = error_lines(&err.to_string(), &err.details(), None);
+        assert_eq!(lines.len(), 2);
+        assert_client_text_is_filtered(&lines[1]);
+    }
+
+    #[test]
+    fn an_error_hint_cannot_redraw_the_terminal() {
+        init(Some(false), false, false);
+        let err = crate::error::Error::UnknownScheme(HOSTILE.into());
+        let hint = err.hint().expect("UnknownScheme carries a hint");
+        let lines = error_lines(&err.to_string(), &[], Some(&hint));
+        assert_eq!(lines.len(), 2);
+        assert_client_text_is_filtered(&lines[1]);
+    }
+
+    #[test]
+    fn a_table_row_stays_on_one_line_when_a_cell_has_newlines_or_tabs() {
+        let rows = vec![vec!["pkg".to_string(), "first\nsecond\ttabbed".to_string()]];
+        let lines = table_lines(&["package", "description"], &rows);
+        assert_eq!(lines.len(), 2);
+        assert!(!lines[1].contains('\n'), "{:?}", lines[1]);
+        assert!(!lines[1].contains('\t'), "{:?}", lines[1]);
+        assert!(lines[1].contains("first second tabbed"), "{:?}", lines[1]);
+        let package_width = "package".chars().count();
+        assert_eq!(
+            lines[1].find("first second tabbed"),
+            Some(package_width + 2),
+            "{:?}",
+            lines[1]
+        );
+    }
+
     #[test]
     fn a_table_cell_cannot_redraw_the_terminal_or_shift_its_columns() {
         let rows = vec![vec![
@@ -768,7 +886,7 @@ mod tests {
 
     #[cfg(feature = "tui")]
     #[test]
-    fn interactive_prompts_pause_an_active_tui_session() {
+    fn confirm_pauses_an_active_tui_session_before_reading() {
         use std::sync::atomic::{AtomicBool, Ordering};
         use std::sync::Arc;
 
@@ -782,8 +900,18 @@ mod tests {
             Some(Box::new(move || resume_flag.store(true, Ordering::SeqCst)))
         }));
 
-        let value = with_tui_input_paused(|| 7);
-        assert_eq!(value, 7);
+        // `confirm` is the hang path (`ketch upgrade --tui`). When stdin is a
+        // terminal this would block on a real answer, so only then fall back
+        // to the pause helper itself.
+        if std::io::stdin().is_terminal() {
+            let value = with_tui_input_paused(|| 7);
+            assert_eq!(value, 7);
+        } else {
+            assert!(
+                confirm("upgrade packages?", true),
+                "non-tty stdin must take the default without hanging"
+            );
+        }
         assert!(paused.load(Ordering::SeqCst));
         assert!(resumed.load(Ordering::SeqCst));
         clear_tui_input_pause();

@@ -210,7 +210,8 @@ fn unpack_tar<R: Read>(reader: R, dest: &Path) -> Result<()> {
 
         match kind {
             EntryType::Directory => {
-                walk_inside(dest, &out, true)?;
+                ensure_parent(dest, &out)?;
+                entry.unpack(&out).map_err(|e| Error::io(&out, e))?;
             }
             EntryType::Symlink => {
                 let target = entry
@@ -668,21 +669,79 @@ mod tests {
         assert_eq!(mode, 0o644);
     }
 
+    #[cfg(unix)]
+    fn tar_gz_with_dir(name: &str, mode: u32) -> Vec<u8> {
+        let mut builder = tar::Builder::new(Vec::new());
+        let mut header = tar::Header::new_gnu();
+        header.set_entry_type(tar::EntryType::Directory);
+        header.set_size(0);
+        header.set_mode(mode);
+        header.set_cksum();
+        builder
+            .append_data(&mut header, name, &[] as &[u8])
+            .unwrap();
+        let plain = builder.into_inner().unwrap();
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+        encoder.write_all(&plain).unwrap();
+        encoder.finish().unwrap()
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn tar_directory_members_keep_mode() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("t.tar.gz");
+        std::fs::write(&src, tar_gz_with_dir("private/", 0o700)).unwrap();
+        let dest = dir.path().join("out");
+        std::fs::create_dir_all(&dest).unwrap();
+
+        TarGzExtractor.extract(&src, &dest).unwrap();
+        let private = dest.join("private");
+        assert!(private.is_dir());
+        let mode = std::fs::metadata(&private).unwrap().permissions().mode() & 0o7777;
+        assert_eq!(mode, 0o700);
+    }
+
+    fn macho_match_32bit_only(head: &[u8]) -> bool {
+        head.len() >= 4
+            && matches!(
+                u32::from_be_bytes([head[0], head[1], head[2], head[3]]),
+                0xfeed_face | 0xcefa_edfe
+            )
+    }
+
     #[test]
     fn recognises_program_headers() {
         assert!(is_program_head(b"#!/bin/sh"));
         assert!(is_program_head(b"MZ\x90\x00"));
-        // The four magic numbers as they appear in a file: the byte order in
-        // the name is the one the file itself is written in, not the one the
-        // constant is spelled in.
-        assert!(is_program_head(&[0xfe, 0xed, 0xfa, 0xcf, 0, 0])); // Mach-O 64 BE
-        assert!(is_program_head(&[0xcf, 0xfa, 0xed, 0xfe, 0, 0])); // Mach-O 64 LE
-        assert!(is_program_head(&[0xfe, 0xed, 0xfa, 0xce, 0, 0])); // Mach-O 32 BE
-        assert!(is_program_head(&[0xce, 0xfa, 0xed, 0xfe, 0, 0])); // Mach-O 32 LE
-        assert!(is_program_head(&[0xca, 0xfe, 0xba, 0xbe, 0, 0])); // universal
+        // On-disk Mach-O prefixes: the byte order in each label is the order
+        // written in the file, not the spelling of the u32 constant.
+        const MACHO_ON_DISK: &[(&str, [u8; 4])] = &[
+            ("Mach-O 64 BE", [0xfe, 0xed, 0xfa, 0xcf]),
+            ("Mach-O 64 LE", [0xcf, 0xfa, 0xed, 0xfe]),
+            ("Mach-O 32 BE", [0xfe, 0xed, 0xfa, 0xce]),
+            ("Mach-O 32 LE", [0xce, 0xfa, 0xed, 0xfe]),
+        ];
+        for (label, prefix) in MACHO_ON_DISK {
+            let mut head = prefix.to_vec();
+            head.extend([0, 0]);
+            assert!(is_program_head(&head), "{label}");
+            if label.contains("64") {
+                assert!(
+                    !macho_match_32bit_only(&head),
+                    "{label} must not be covered by 32-bit Mach-O detection alone"
+                );
+            }
+        }
+        // Universal/fat headers use their own on-disk prefixes too.
+        assert!(is_program_head(&[0xca, 0xfe, 0xba, 0xbe, 0, 0]));
+        assert!(is_program_head(&[0xbe, 0xba, 0xfe, 0xca, 0, 0]));
+        assert!(!macho_match_32bit_only(&[0xca, 0xfe, 0xba, 0xbe, 0, 0]));
         assert!(is_program_head(b"\x7fELF\x02"));
         assert!(!is_program_head(b"# Readme\n"));
         assert!(!is_program_head(b"plain text, not a program\n"));
         assert!(!is_program_head(b""));
+        // A near-miss must not be treated as Mach-O just because it shares a prefix.
+        assert!(!is_program_head(&[0xfe, 0xed, 0xfa, 0xcd, 0, 0]));
     }
 }

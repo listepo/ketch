@@ -61,6 +61,7 @@ pub enum Action {
     Install,
     Upgrade,
     Uninstall,
+    Rollback,
 }
 
 impl Action {
@@ -80,6 +81,7 @@ impl Action {
             Action::Install => "install",
             Action::Upgrade => "upgrade",
             Action::Uninstall => "uninstall",
+            Action::Rollback => "rollback",
         }
     }
 }
@@ -330,6 +332,31 @@ pub fn uninstall_event<'a>(
     }
 }
 
+/// Builds a rollback event: the version now current, and the one just left.
+pub fn rollback_event<'a>(
+    pkg: &'a crate::model::InstalledPackage,
+    previous: &'a str,
+    version: &'a str,
+    source: &'a str,
+    target: &'a str,
+) -> NewEvent<'a> {
+    NewEvent {
+        package: &pkg.name,
+        action: Action::Rollback.as_str(),
+        version,
+        previous_version: Some(previous),
+        tag: &pkg.tag,
+        source,
+        target,
+        asset_name: &pkg.asset_name,
+        sha256: &pkg.sha256,
+        checksum_verified: pkg.checksum_verified,
+        duration_ms: None,
+        at: now_unix() as i64,
+        ketch_version: env!("CARGO_PKG_VERSION"),
+    }
+}
+
 /// Reads package installation history, ordered from newest to oldest.
 ///
 /// # Parameters
@@ -534,6 +561,9 @@ mod tests {
             manifest: None,
             local_kind: None,
             local_path: None,
+            trust: Default::default(),
+            retained: Vec::new(),
+            provenance: None,
         }
     }
 

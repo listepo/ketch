@@ -8,9 +8,12 @@ use super::scoring::looks_like_build_artifact;
 use super::{AssetScore, DoctorCheck, Placement, Platform};
 use crate::config::Config;
 use crate::error::{Error, Result};
+use crate::extra::ExtraPlacement;
 use crate::extract::archive::is_program_head;
 use crate::extract::Extractor;
-use crate::model::{glob_match, BinSpec, LinkKind, LinkRecord, PackageKind, TargetSpec};
+use crate::model::{
+    glob_match, BinSpec, CompletionShell, LinkKind, LinkRecord, LinkRole, PackageKind, TargetSpec,
+};
 use crate::source::local::copy_tree;
 use std::collections::HashSet;
 use std::io::Read;
@@ -337,7 +340,31 @@ fn copy_binary(
         link,
         target: target.to_path_buf(),
         kind: LinkKind::CopiedFile,
+        role: LinkRole::Binary,
     })
+}
+
+pub(crate) fn link_planned_extras(
+    extras: &[ExtraPlacement],
+    root: &Path,
+    recorded: &[LinkRecord],
+) -> Result<Vec<LinkRecord>> {
+    let mut links = Vec::new();
+    for extra in extras {
+        let target = crate::extra::resolve_under(root, &extra.rel_path)?;
+        if let Some(parent) = extra.dest.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
+        }
+        clear_destination(&extra.dest, recorded)?;
+        std::fs::copy(&target, &extra.dest).map_err(|e| Error::io(&extra.dest, e))?;
+        links.push(LinkRecord {
+            link: extra.dest.clone(),
+            target,
+            kind: LinkKind::CopiedFile,
+            role: extra.role,
+        });
+    }
+    Ok(links)
 }
 
 impl Platform for WindowsPlatform {
@@ -380,6 +407,16 @@ impl Platform for WindowsPlatform {
                 }
                 destination_available(&link, plan.replacing)?;
             }
+            for extra in plan.extras {
+                crate::extra::resolve_under(plan.payload_dir, &extra.rel_path)?;
+                if !destinations.insert(dest_key(&extra.dest)) {
+                    return Err(Error::msg(format!(
+                        "multiple payload entries want to create {}",
+                        extra.dest.display()
+                    )));
+                }
+                destination_available(&extra.dest, plan.replacing)?;
+            }
             if destinations.is_empty() {
                 return Err(Error::EmptyPayload(plan.payload_dir.to_path_buf()));
             }
@@ -392,10 +429,25 @@ impl Platform for WindowsPlatform {
         for (target, name) in cli_targets(self, plan.store_dir, plan)? {
             links.push(copy_binary(&target, plan.bin_dir, &name, plan.replacing)?);
         }
+        links.extend(link_planned_extras(
+            plan.extras,
+            plan.store_dir,
+            plan.replacing,
+        )?);
         if links.is_empty() {
             return Err(Error::EmptyPayload(plan.store_dir.to_path_buf()));
         }
         Ok(links)
+    }
+
+    fn completion_dir(&self, shell: CompletionShell) -> PathBuf {
+        match shell {
+            CompletionShell::Powershell => dirs::document_dir()
+                .unwrap_or_else(super::data_home)
+                .join("PowerShell")
+                .join("Completions"),
+            other => super::completion_dir_for(other),
+        }
     }
 
     fn unplace(&self, links: &[LinkRecord]) -> Result<()> {
@@ -484,6 +536,7 @@ mod tests {
             replacing: &[],
             link_apps: false,
             link: true,
+            extras: &[],
         }
     }
 
@@ -551,6 +604,7 @@ mod tests {
             link: link.clone(),
             target,
             kind: LinkKind::CopiedFile,
+            role: LinkRole::Binary,
         };
         let p = WindowsPlatform::new();
         p.unplace(std::slice::from_ref(&record)).unwrap();
@@ -578,6 +632,7 @@ mod tests {
             link: link.clone(),
             target: bundle,
             kind: LinkKind::CopiedApp,
+            role: LinkRole::Binary,
         };
         let p = WindowsPlatform::new();
         p.unplace(std::slice::from_ref(&record)).unwrap();

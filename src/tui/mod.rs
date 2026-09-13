@@ -221,6 +221,8 @@ pub struct Controller {
     state: Mutex<State>,
     terminal: Mutex<Option<Terminal<CrosstermBackend<io::Stderr>>>>,
     active: AtomicBool,
+    /// Set while a line prompt owns stdin, so event polling cannot steal Enter.
+    paused: AtomicBool,
 }
 
 impl Controller {
@@ -229,6 +231,7 @@ impl Controller {
             state: Mutex::new(state),
             terminal: Mutex::new(Some(terminal)),
             active: AtomicBool::new(true),
+            paused: AtomicBool::new(false),
         }
     }
 
@@ -237,12 +240,22 @@ impl Controller {
         if !self.active.load(Ordering::Acquire) {
             return;
         }
+        let paused = self.paused.load(Ordering::Acquire);
         let (leave, interrupted) = {
             let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
             state.apply(event);
-            let interrupted = self.handle_input(&mut state);
+            // Raw-mode Enter is a carriage return. While a prompt is reading a
+            // line, polling here would steal that key and `read_line` would hang.
+            let interrupted = if paused {
+                false
+            } else {
+                self.handle_input(&mut state)
+            };
             (state.leave_requested, interrupted)
         };
+        if paused {
+            return;
+        }
         if leave {
             self.shutdown();
         }
@@ -295,6 +308,7 @@ impl Controller {
         if !self.active.load(Ordering::Acquire) {
             return None;
         }
+        self.paused.store(true, Ordering::Release);
         crate::ui::disable_tui();
         {
             let mut terminal = self.terminal.lock().unwrap_or_else(|e| e.into_inner());
@@ -307,9 +321,11 @@ impl Controller {
         let controller = Arc::clone(self);
         Some(Box::new(move || {
             if !controller.active.load(Ordering::Acquire) {
+                controller.paused.store(false, Ordering::Release);
                 return;
             }
             if enable_raw_mode().is_err() {
+                controller.paused.store(false, Ordering::Release);
                 return;
             }
             let alt_screen_ok = {
@@ -325,8 +341,10 @@ impl Controller {
             };
             if !alt_screen_ok {
                 let _ = disable_raw_mode();
+                controller.paused.store(false, Ordering::Release);
                 return;
             }
+            controller.paused.store(false, Ordering::Release);
             crate::ui::enable_tui(Arc::clone(&controller));
             controller.draw();
         }))
@@ -337,6 +355,7 @@ impl Controller {
         if !self.active.swap(false, Ordering::AcqRel) {
             return;
         }
+        self.paused.store(false, Ordering::Release);
         // `q` and `Esc` leave the session alive so the command can keep
         // running. Disconnect first, otherwise later status lines disappear
         // into an inactive renderer instead of returning to the line UI.
@@ -649,12 +668,73 @@ mod tests {
     }
 
     #[test]
+    fn alias_or_path_install_does_not_stick_on_installing() {
+        // prepare keys rows by PackageSpec::label(); commit used to emit
+        // manifest.name and leave a second row spinning on Installing.
+        let cases = [
+            crate::model::PackageSpec::parse("rg").label(),
+            crate::model::PackageSpec::parse("local:/tmp/ketch-fixture/tool").label(),
+        ];
+        assert_eq!(cases[0], "rg");
+        assert_eq!(cases[1], "tool");
+        for key in cases {
+            let mut state = State::new("install", [key.clone()]);
+            state.apply(Event::Stage {
+                package: key.clone(),
+                stage: ProgressStage::Resolving,
+            });
+            state.apply(Event::Stage {
+                package: key.clone(),
+                stage: ProgressStage::Installing,
+            });
+            state.apply(Event::Completed {
+                package: key.clone(),
+                success: true,
+            });
+            assert_eq!(state.packages.len(), 1, "{key}");
+            assert_eq!(state.packages[0].name, key);
+            assert_eq!(state.packages[0].status, PackageStatus::Succeeded);
+            assert_eq!(state.packages[0].stage, None);
+            assert!(
+                state
+                    .packages
+                    .iter()
+                    .all(|item| item.stage != Some(ProgressStage::Installing)),
+                "{key} stuck on Installing"
+            );
+        }
+    }
+
+    #[test]
     fn pause_for_input_is_not_offered_after_shutdown() {
         let backend = CrosstermBackend::new(io::stderr());
         let terminal = Terminal::new(backend).unwrap();
         let controller = Arc::new(Controller::new(State::new("upgrade", []), terminal));
         controller.shutdown();
         assert!(controller.pause_for_input().is_none());
+    }
+
+    #[test]
+    fn send_does_not_poll_input_while_paused_for_a_prompt() {
+        let backend = CrosstermBackend::new(io::stderr());
+        let terminal = Terminal::new(backend).unwrap();
+        let controller = Arc::new(Controller::new(State::new("upgrade", []), terminal));
+        controller
+            .paused
+            .store(true, std::sync::atomic::Ordering::Release);
+        controller.send(Event::Message("still recorded".into()));
+        {
+            let state = controller.state.lock().unwrap_or_else(|e| e.into_inner());
+            assert!(
+                state
+                    .activity
+                    .iter()
+                    .any(|line| line.contains("still recorded")),
+                "{:?}",
+                state.activity
+            );
+        }
+        controller.shutdown();
     }
 
     #[test]

@@ -4,7 +4,8 @@
 
 use super::Platform;
 use crate::error::{Error, Result};
-use crate::model::{glob_match, BinSpec, LinkKind, LinkRecord};
+use crate::extra::ExtraPlacement;
+use crate::model::{glob_match, BinSpec, LinkKind, LinkRecord, LinkRole};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
@@ -324,6 +325,7 @@ pub(crate) fn link_binary(
         link,
         target: target.to_path_buf(),
         kind: LinkKind::Symlink,
+        role: LinkRole::Binary,
     })
 }
 
@@ -389,6 +391,7 @@ pub(crate) fn place_cli(platform: &dyn Platform, plan: &Placement<'_>) -> Result
     let package_dir = plan.store_dir.parent().unwrap_or(plan.store_dir);
     if plan.link {
         preflight_cli(platform, plan, package_dir)?;
+        preflight_extras(plan, package_dir)?;
     }
     move_into_store(plan.payload_dir, plan.store_dir)?;
     if !plan.link {
@@ -404,6 +407,12 @@ pub(crate) fn place_cli(platform: &dyn Platform, plan: &Placement<'_>) -> Result
             plan.replacing,
         )?);
     }
+    links.extend(link_planned_extras(
+        plan.extras,
+        plan.store_dir,
+        package_dir,
+        plan.replacing,
+    )?);
     if links.is_empty() {
         return Err(Error::EmptyPayload(plan.store_dir.to_path_buf()));
     }
@@ -428,10 +437,51 @@ pub(crate) fn unplace(links: &[LinkRecord]) -> Result<()> {
     Ok(())
 }
 
+/// Confirm extra destinations are ours to take, and that the payload files exist.
+pub(crate) fn preflight_extras(plan: &super::Placement<'_>, owned: &Path) -> Result<()> {
+    let mut dests = std::collections::HashSet::new();
+    for extra in plan.extras {
+        crate::extra::resolve_under(plan.payload_dir, &extra.rel_path)?;
+        if !dests.insert(extra.dest.clone()) {
+            return Err(Error::msg(format!(
+                "multiple extra_paths want to create {}",
+                extra.dest.display()
+            )));
+        }
+        destination_available(&extra.dest, owned, plan.replacing)?;
+    }
+    Ok(())
+}
+
+/// Symlink classified extras from `root` into their user destinations.
+pub(crate) fn link_planned_extras(
+    extras: &[ExtraPlacement],
+    root: &Path,
+    owned: &Path,
+    recorded: &[LinkRecord],
+) -> Result<Vec<LinkRecord>> {
+    let mut links = Vec::new();
+    for extra in extras {
+        let target = crate::extra::resolve_under(root, &extra.rel_path)?;
+        if let Some(parent) = extra.dest.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
+        }
+        clear_destination(&extra.dest, owned, recorded)?;
+        symlink(&target, &extra.dest)?;
+        links.push(LinkRecord {
+            link: extra.dest.clone(),
+            target,
+            kind: LinkKind::Symlink,
+            role: extra.role,
+        });
+    }
+    Ok(links)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{LinkKind, LinkRecord};
+    use crate::model::{LinkKind, LinkRecord, LinkRole};
     use std::path::PathBuf;
 
     #[test]
@@ -565,6 +615,7 @@ mod tests {
             link: link.clone(),
             target,
             kind: LinkKind::Symlink,
+            role: LinkRole::Binary,
         }];
         assert!(is_ours(&link, &owned, &recorded));
         assert!(destination_available(&link, &owned, &recorded).is_ok());
@@ -579,6 +630,7 @@ mod tests {
             link: link.clone(),
             target: target.clone(),
             kind: LinkKind::CopiedApp,
+            role: LinkRole::Binary,
         }];
         assert!(is_ours(&link, &owned, &recorded));
         assert!(destination_available(&link, &owned, &recorded).is_ok());
@@ -600,6 +652,7 @@ mod tests {
             link: link.clone(),
             target: owned.join("1.0/tool"),
             kind: LinkKind::Symlink,
+            role: LinkRole::Binary,
         }];
 
         assert!(!is_ours(&link, &owned, &recorded));
@@ -622,6 +675,7 @@ mod tests {
             link: link.clone(),
             target: owned.join("1.0/tool"),
             kind: LinkKind::Symlink,
+            role: LinkRole::Binary,
         }];
 
         assert!(!is_ours(&link, &owned, &recorded));

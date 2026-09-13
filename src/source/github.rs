@@ -23,6 +23,12 @@ pub const DEFAULT_API: &str = "https://api.github.com";
 /// before the first byte of the download.
 const MAX_CHECKSUM_FETCHES: usize = 12;
 
+/// Upper bound on listing pages walked when an exact tag missed the tag
+/// endpoint. GitHub's list is newest-first and 100 items per page at most;
+/// a tag older than this is treated as missing rather than looping forever
+/// if the API keeps returning full pages.
+const MAX_RELEASE_PAGES: u32 = 100;
+
 pub struct GitHubSource {
     http: Arc<Http>,
     api: String,
@@ -50,6 +56,38 @@ impl GitHubSource {
     fn repo_url(&self, id: &str, suffix: &str) -> Result<String> {
         let repo = validate_repo("GitHub repository", id.to_string())?;
         Ok(format!("{}/repos/{}{}", self.api, repo, suffix))
+    }
+
+    fn fetch_releases_page(&self, id: &str, opts: &ListOpts, page: u32) -> Result<Vec<GhRelease>> {
+        let per_page = opts.limit.clamp(1, 100);
+        let url = self.repo_url(id, &format!("/releases?per_page={per_page}&page={page}"))?;
+        self.http.get_json(&url, true)
+    }
+
+    /// Walk listed releases until `want` matches or the list is exhausted.
+    ///
+    /// The tag endpoint is exact; a different spelling only shows up here, and
+    /// a busy repository's first page is just the newest releases.
+    fn resolve_from_listing(
+        &self,
+        id: &str,
+        want: &VersionSpec,
+        opts: &ListOpts,
+    ) -> Result<Release> {
+        let per_page = opts.limit.clamp(1, 100);
+        for page in 1..=MAX_RELEASE_PAGES {
+            let raw = self.fetch_releases_page(id, opts, page)?;
+            let last = raw.len() < per_page;
+            match super::pick(id, published_releases(raw, opts), want, opts) {
+                Ok(release) => return Ok(release),
+                Err(err) if last => return Err(err),
+                Err(_) => {}
+            }
+        }
+        match want {
+            VersionSpec::Exact(tag) => Err(Error::NoRelease(format!("{id}@{tag}"))),
+            VersionSpec::Latest => Err(Error::NoRelease(id.to_string())),
+        }
     }
 }
 
@@ -170,6 +208,23 @@ impl From<GhRepo> for SourceInfo {
     }
 }
 
+/// Drafts never appear; prereleases stay only when asked, or when they are
+/// all the repository has published.
+fn published_releases(raw: Vec<GhRelease>, opts: &ListOpts) -> Vec<Release> {
+    let mut releases: Vec<Release> = raw
+        .into_iter()
+        .filter(|r| !r.draft)
+        .map(Release::from)
+        .collect();
+    // Prereleases are dropped only when there is something stable to drop
+    // them in favour of; plenty of projects have never cut a stable tag,
+    // and `pick` handles that fallback if the list still holds them.
+    if !opts.include_prerelease && releases.iter().any(|r| !r.prerelease) {
+        releases.retain(|r| !r.prerelease);
+    }
+    releases
+}
+
 fn parse_digest(raw: &str) -> Option<String> {
     let hex = raw.strip_prefix("sha256:")?.trim();
     is_sha256(hex).then(|| hex.to_ascii_lowercase())
@@ -233,7 +288,7 @@ fn sidecar_target(name: &str) -> Option<&str> {
 ///
 /// Names may carry a leading `./` or a directory prefix, so only the file name
 /// is kept — that is what the asset list is keyed by.
-fn parse_checksum_file(body: &str) -> BTreeMap<String, String> {
+pub(crate) fn parse_checksum_file(body: &str) -> BTreeMap<String, String> {
     let mut out = BTreeMap::new();
     for line in body.lines() {
         let line = line.trim();
@@ -267,23 +322,8 @@ impl Source for GitHubSource {
     }
 
     fn list_releases(&self, id: &str, opts: &ListOpts) -> Result<Vec<Release>> {
-        let per_page = opts.limit.clamp(1, 100);
-        let url = self.repo_url(id, &format!("/releases?per_page={per_page}"))?;
-        let raw: Vec<GhRelease> = self.http.get_json(&url, true)?;
-
-        let mut releases: Vec<Release> = raw
-            .into_iter()
-            .filter(|r| !r.draft)
-            .map(Release::from)
-            .collect();
-
-        // Prereleases are dropped only when there is something stable to drop
-        // them in favour of; plenty of projects have never cut a stable tag,
-        // and `pick` handles that fallback if the list still holds them.
-        if !opts.include_prerelease && releases.iter().any(|r| !r.prerelease) {
-            releases.retain(|r| !r.prerelease);
-        }
-        Ok(releases)
+        let raw = self.fetch_releases_page(id, opts, 1)?;
+        Ok(published_releases(raw, opts))
     }
 
     fn resolve(&self, id: &str, want: &VersionSpec, opts: &ListOpts) -> Result<Release> {
@@ -304,9 +344,7 @@ impl Source for GitHubSource {
             }
         }
         // `@1.2.3` for a repository that tags `v1.2.3` is the common spelling of
-        // the same request. Without this the tag endpoint misses and the
-        // fallback only ever looks at the newest page, so an older release is
-        // reported as not existing at all.
+        // the same request. Other spellings still have to be found in the list.
         if let VersionSpec::Exact(tag) = want {
             if let Some(prefixed) = v_prefixed(tag) {
                 let suffix = format!("/releases/tags/{}", urlencode_path_segment(&prefixed));
@@ -318,6 +356,9 @@ impl Source for GitHubSource {
             }
         }
         let opts = &super::opts_for(want, opts);
+        if matches!(want, VersionSpec::Exact(_)) {
+            return self.resolve_from_listing(id, want, opts);
+        }
         let releases = self.list_releases(id, opts)?;
         super::pick(id, releases, want, opts)
     }
@@ -477,6 +518,11 @@ fn urlencode_path_segment(raw: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Read, Write};
+    use std::net::{TcpListener, TcpStream};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::thread::{self, JoinHandle};
+    use std::time::Duration;
 
     #[test]
     fn parses_sha256sum_files_in_their_usual_shapes() {
@@ -604,5 +650,143 @@ not-a-hash                                                          junk.txt
             urlencode_path_segment("release/v1 beta?"),
             "release%2Fv1%20beta%3F"
         );
+    }
+
+    #[test]
+    fn an_exact_tag_not_on_the_first_list_page_is_still_resolved() {
+        let mock = ReleaseListMock::spawn();
+        let source = GitHubSource {
+            http: Arc::new(Http::anonymous()),
+            api: mock.api.clone(),
+        };
+        let got = source
+            .resolve(
+                "acme/busy",
+                &VersionSpec::Exact("old-0.1.0".into()),
+                &ListOpts::default(),
+            )
+            .unwrap();
+        assert_eq!(got.tag, "old-0.1.0");
+    }
+
+    struct ReleaseListMock {
+        api: String,
+        stop: Arc<AtomicBool>,
+        handle: Option<JoinHandle<()>>,
+    }
+
+    impl ReleaseListMock {
+        fn spawn() -> Self {
+            let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock github");
+            let api = format!(
+                "http://127.0.0.1:{}",
+                listener.local_addr().expect("addr").port()
+            );
+            listener
+                .set_nonblocking(true)
+                .expect("nonblocking mock github");
+            let stop = Arc::new(AtomicBool::new(false));
+            let flag = Arc::clone(&stop);
+            let handle = thread::spawn(move || loop {
+                if flag.load(Ordering::Relaxed) {
+                    break;
+                }
+                match listener.accept() {
+                    Ok((mut stream, _)) => serve_release_list(&mut stream),
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(e) => panic!("mock github accept: {e}"),
+                }
+            });
+            ReleaseListMock {
+                api,
+                stop,
+                handle: Some(handle),
+            }
+        }
+    }
+
+    impl Drop for ReleaseListMock {
+        fn drop(&mut self) {
+            self.stop.store(true, Ordering::Relaxed);
+            if let Some(handle) = self.handle.take() {
+                let _ = handle.join();
+            }
+        }
+    }
+
+    fn serve_release_list(stream: &mut TcpStream) {
+        stream
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .expect("read timeout");
+        let mut buf = Vec::new();
+        let mut tmp = [0u8; 1024];
+        loop {
+            match stream.read(&mut tmp) {
+                Ok(0) => break,
+                Ok(n) => {
+                    buf.extend_from_slice(&tmp[..n]);
+                    if buf.windows(4).any(|w| w == b"\r\n\r\n") {
+                        break;
+                    }
+                }
+                Err(e)
+                    if e.kind() == std::io::ErrorKind::WouldBlock
+                        || e.kind() == std::io::ErrorKind::TimedOut =>
+                {
+                    break;
+                }
+                Err(_) => break,
+            }
+            if buf.len() > 64 * 1024 {
+                break;
+            }
+        }
+        let req = String::from_utf8_lossy(&buf);
+        let path = req
+            .lines()
+            .next()
+            .and_then(|line| line.split_whitespace().nth(1))
+            .unwrap_or("");
+        let (path_only, query) = path.split_once('?').unwrap_or((path, ""));
+        let (status, body) = if path_only.contains("/releases/tags/") {
+            ("404 Not Found", r#"{"message":"Not Found"}"#.to_string())
+        } else if path_only.ends_with("/releases") {
+            let page = query
+                .split('&')
+                .find_map(|pair| pair.strip_prefix("page="))
+                .unwrap_or("1");
+            let per_page: usize = query
+                .split('&')
+                .find_map(|pair| pair.strip_prefix("per_page="))
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(30);
+            let body = match page {
+                "1" => {
+                    // A full first page, so a one-shot list would miss page 2.
+                    let items: Vec<String> = (0..per_page)
+                        .map(|i| {
+                            format!(
+                                r#"{{"tag_name":"v9.9.{i}","prerelease":false,"draft":false,"assets":[]}}"#
+                            )
+                        })
+                        .collect();
+                    format!("[{}]", items.join(","))
+                }
+                "2" => r#"[{"tag_name":"old-0.1.0","prerelease":false,"draft":false,"assets":[]}]"#
+                    .to_string(),
+                _ => "[]".to_string(),
+            };
+            ("200 OK", body)
+        } else {
+            ("404 Not Found", r#"{"message":"Not Found"}"#.to_string())
+        };
+        let resp = format!(
+            "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        let _ = stream.write_all(resp.as_bytes());
+        let _ = stream.flush();
     }
 }
