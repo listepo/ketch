@@ -670,16 +670,17 @@ pub fn zelf(cfg: &Config, command: SelfCommand) -> Result<()> {
         }
         SelfCommand::Update { dry_run, force } => {
             let out = self_update::update(cfg, force, dry_run)?;
-            if !out.replaced {
-                let verb = if dry_run {
-                    "would update"
-                } else {
-                    "already current"
-                };
-                ui::success(verb, &format!("{} -> {}", out.from, out.to));
+            // `replaced` is false both when already current and on dry-run, so
+            // the verb has to look at whether an update is actually needed.
+            let needs_update = out.to > out.from || force;
+            let verb = if out.replaced {
+                "updated"
+            } else if dry_run && needs_update {
+                "would update"
             } else {
-                ui::success("updated", &format!("{} -> {}", out.from, out.to));
-            }
+                "already current"
+            };
+            ui::success(verb, &format!("{} -> {}", out.from, out.to));
             if let Some(notes) = &out.notes {
                 ui::out(&ui::printable(notes));
             }

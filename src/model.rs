@@ -1364,7 +1364,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn v_prefix_does_not_make_equal_semver_versions_order_apart() {
         let plain = Version::parse("0.4.0");
         let tagged = Version::parse("v0.4.0");
@@ -1373,6 +1372,7 @@ mod tests {
         assert!(tagged <= plain && plain <= tagged);
     }
 
+    #[test]
     fn parses_bare_repo_as_github() {
         let r = PackageRef::parse("BurntSushi/ripgrep").unwrap();
         assert_eq!(r.scheme, "github");
