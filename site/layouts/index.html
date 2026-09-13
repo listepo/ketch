@@ -2,6 +2,7 @@
 <section class="hero">
   <div class="hero-text">
     <p class="eyebrow">macOS · single binary · no dependencies</p>
+    <p class="release-chip" aria-hidden="true">v15.2.0 · caught</p>
     <h1>Catch releases straight from GitHub.</h1>
     <p class="lede">
       ketch installs command-line tools and macOS apps directly from GitHub
@@ -40,7 +41,7 @@ ripgrep  15.2.0   github:BurntSushi/ripgrep</code></pre>
 <section class="features">
   <h2>What it does differently</h2>
   <div class="grid">
-    <article>
+    <article class="glass-card">
       <h3>Any repo that ships releases</h3>
       <p>
         No formula to write and no maintainer to wait for. Point ketch at
@@ -48,7 +49,7 @@ ripgrep  15.2.0   github:BurntSushi/ripgrep</code></pre>
         architecture, the binaries inside, what to call them.
       </p>
     </article>
-    <article>
+    <article class="glass-card">
       <h3>Verified, not just downloaded</h3>
       <p>
         Published SHA-256 checksums are checked against what actually landed on
@@ -56,7 +57,7 @@ ripgrep  15.2.0   github:BurntSushi/ripgrep</code></pre>
         none, and ketch's own updates never accept trust-on-first-use.
       </p>
     </article>
-    <article>
+    <article class="glass-card">
       <h3>Apps as well as binaries</h3>
       <p>
         A release that ships an <code>.app</code> bundle gets placed in
@@ -64,7 +65,7 @@ ripgrep  15.2.0   github:BurntSushi/ripgrep</code></pre>
         out — and removed cleanly when you uninstall it.
       </p>
     </article>
-    <article>
+    <article class="glass-card">
       <h3>Everything in one tree</h3>
       <p>
         Versioned payloads in <code>~/.ketch/store</code>, links in
@@ -72,7 +73,7 @@ ripgrep  15.2.0   github:BurntSushi/ripgrep</code></pre>
         written anywhere else. Uninstalling leaves nothing behind.
       </p>
     </article>
-    <article>
+    <article class="glass-card">
       <h3>Sources beyond GitHub</h3>
       <p>
         GitLab, Gitea, an internal artifact server: a plugin is one executable
@@ -80,7 +81,7 @@ ripgrep  15.2.0   github:BurntSushi/ripgrep</code></pre>
         <a href="{{ "docs/plugins/" | relURL }}">The protocol is one page.</a>
       </p>
     </article>
-    <article>
+    <article class="glass-card">
       <h3>A registry you can read</h3>
       <p>
         One folder per package, one <code>ketch.toml</code> inside. No index to

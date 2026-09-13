@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="ketch">
+  <!-- Dark teal tile — mark stays legible in light and dark themes -->
+  <rect width="64" height="64" rx="14" fill="#0A3D36"/>
+  <!-- Soft inner shadow edge -->
+  <rect x="1.5" y="1.5" width="61" height="61" rx="12.5" fill="none" stroke="#0F6F5C" stroke-opacity=".35" stroke-width="1"/>
+  <!-- Hook shaft + curve (mint) — catches the release tag -->
+  <g fill="none" stroke="#3DDCB0" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <!-- vertical shaft -->
+    <path d="M22 14v28"/>
+    <!-- hook bend -->
+    <path d="M22 42c0 8 6.5 12.5 14 12.5 7 0 12.5-4 12.5-10.5"/>
+    <!-- hook tip barb -->
+    <path d="M48.5 44v-6.5"/>
+  </g>
+  <!-- Eye of the hook -->
+  <circle cx="22" cy="14" r="4.5" fill="none" stroke="#3DDCB0" stroke-width="3.5"/>
+  <!-- Release tag / chip (coral body + mint hole) — caught on the hook -->
+  <g transform="translate(34 22) rotate(-18)">
+    <rect x="0" y="0" width="22" height="14" rx="3.5" fill="#FF6B5B"/>
+    <rect x="0.75" y="0.75" width="20.5" height="12.5" rx="3" fill="none" stroke="#FF8F82" stroke-opacity=".5" stroke-width="1"/>
+    <!-- tag hole -->
+    <circle cx="5.5" cy="7" r="2.2" fill="#0A3D36"/>
+    <circle cx="5.5" cy="7" r="1.1" fill="#3DDCB0"/>
+    <!-- version notch lines -->
+    <path d="M11 4.5h7M11 7h5.5M11 9.5h6" stroke="#0A3D36" stroke-opacity=".35" stroke-width="1.2" stroke-linecap="round"/>
+  </g>
+</svg>

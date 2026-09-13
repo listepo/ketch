@@ -1,15 +1,32 @@
 <!DOCTYPE html>
-<html lang="{{ site.Language.Locale | default "en" }}">
+<html lang="{{ site.Language.Locale | default "en" }}" data-theme="system">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
   {{ partial "seo.html" . }}
+  {{/* Apply stored theme before first paint to avoid FOUC */}}
+  <script>
+    (function () {
+      try {
+        var KEY = "ketch-theme";
+        var pref = localStorage.getItem(KEY) || "system";
+        if (pref !== "light" && pref !== "dark" && pref !== "system") pref = "system";
+        var dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        var resolved = pref === "system" ? (dark ? "dark" : "light") : pref;
+        document.documentElement.setAttribute("data-theme", pref);
+        document.documentElement.setAttribute("data-theme-resolved", resolved);
+        document.documentElement.style.colorScheme = resolved;
+      } catch (e) { /* private mode / blocked storage */ }
+    })();
+  </script>
   <link rel="stylesheet" href="{{ "css/main.css" | relURL }}">
   <link rel="icon" href="{{ "img/favicon.svg" | relURL }}" type="image/svg+xml">
+  <script defer src="{{ "js/theme.js" | relURL }}"></script>
 </head>
 <body class="{{ if .IsHome }}home{{ else }}doc{{ end }}">
   {{ partial "header.html" . }}
-  <main>{{ block "main" . }}{{ end }}</main>
+  <main id="main">{{ block "main" . }}{{ end }}</main>
   {{ partial "footer.html" . }}
 </body>
 </html>
