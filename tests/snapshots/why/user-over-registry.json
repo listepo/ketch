@@ -2,24 +2,24 @@
   "assets": {
     "rejected": [
       {
-        "name": "whypkg-1.0.0-{arch}-unknown-linux-gnu.tar.gz",
+        "name": "{whypkg-foreign-1.0.0}",
         "reason": "incompatible with {target}"
       }
     ],
     "scored": [
       {
         "emulated": false,
-        "name": "whypkg-1.0.0-{arch}-apple-darwin.tar.gz",
-        "reason": "darwin / {arch} / tar.gz",
-        "score": 98
+        "name": "{whypkg-native-1.0.0}",
+        "reason": "{native-reason}",
+        "score": "{score}"
       }
     ]
   },
   "candidate": {
     "emulated": false,
-    "name": "whypkg-1.0.0-{arch}-apple-darwin.tar.gz",
-    "reason": "darwin / {arch} / tar.gz",
-    "score": 98
+    "name": "{whypkg-native-1.0.0}",
+    "reason": "{native-reason}",
+    "score": "{score}"
   },
   "checksum": {
     "asset_digest": "sha256",
