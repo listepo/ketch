@@ -246,8 +246,13 @@ fn the_changelog_opens_with_the_header_release_plz_is_configured_to_write() {
         .as_str()
         .expect("[changelog] header is a string");
     assert!(header.contains("Do not edit"), "{header}");
+    // Windows checks out text files with CRLF while the TOML string holds LF,
+    // so compare after normalising: without this the guard fails on Windows
+    // even though the two texts say the same thing.
+    let changelog = CHANGELOG.replace("\r\n", "\n");
+    let header = header.replace("\r\n", "\n");
     assert!(
-        CHANGELOG.starts_with(header),
+        changelog.starts_with(&header),
         "CHANGELOG.md does not open with release-plz.toml's [changelog] header"
     );
 }
