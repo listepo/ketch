@@ -398,8 +398,10 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: 1
         run: |
           set -euo pipefail
-          # `./` so Homebrew treats this as a local cask file, not a tap named tap.
-          brew install --cask --verbose ./tap/Casks/ketch.rb
+          # Homebrew 4.6+ rejects bare cask paths; install via a local tap of the
+          # clone we are about to push (listepo/homebrew-tap → listepo/tap).
+          brew tap listepo/tap "$PWD/tap"
+          brew install --cask --verbose listepo/tap/ketch
           brew uninstall --cask ketch
 
       - name: Push the cask
