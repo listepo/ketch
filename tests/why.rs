@@ -315,8 +315,11 @@ fn assert_snapshot(name: &str, body: &str) {
         .join("tests/snapshots/why")
         .join(name);
     let update = std::env::var_os("UPDATE_SNAPSHOTS").is_some();
+    // Windows runners with autocrlf check these out as CRLF; generated bodies
+    // always use LF. Compare on LF so the suite is host-independent.
+    let body = body.replace("\r\n", "\n");
     match std::fs::read_to_string(&path) {
-        Ok(expected) if expected == body => {}
+        Ok(expected) if expected.replace("\r\n", "\n") == body => {}
         Ok(_) if update => {
             std::fs::write(&path, body).expect("update snapshot");
         }
