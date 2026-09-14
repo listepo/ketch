@@ -147,7 +147,7 @@ fn normalize_root_relative_separators(text: &str) -> String {
         let end = rest
             .find(|c: char| c.is_whitespace() || c == '"')
             .unwrap_or(rest.len());
-        out.push_str(&rest[..end].replace('\', "/"));
+        out.push_str(&rest[..end].replace("\\", "/"));
         rest = &rest[end..];
     }
     out.push_str(rest);
