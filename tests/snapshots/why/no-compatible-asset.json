@@ -2,7 +2,7 @@
   "assets": {
     "rejected": [
       {
-        "name": "whypkg-1.0.0-{arch}-unknown-linux-gnu.tar.gz",
+        "name": "{whypkg-foreign-1.0.0}",
         "reason": "incompatible with {target}"
       }
     ],

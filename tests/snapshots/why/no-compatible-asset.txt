@@ -6,8 +6,8 @@ version      latest  v1.0.0 (1.0.0)
 prerelease   excluded
 
 rejected
-name                                           reason
-whypkg-1.0.0-{arch}-unknown-linux-gnu.tar.gz  incompatible with {target}
+name  reason
+{whypkg-foreign-1.0.0}  incompatible with {target}
 
 checksum     not-applicable
 trust        advisory  strip_quarantine=true  allow_emulation=true

@@ -6,13 +6,13 @@ version      latest  v1.0.0 (1.0.0)
 prerelease   excluded
 
 assets
-score  name                                      reason
-98     whypkg-1.0.0-{arch}-apple-darwin.tar.gz  darwin / {arch} / tar.gz
+score  name  reason
+{score}  {whypkg-native-1.0.0}  {native-reason}
 
 rejected
-name                                           reason
-whypkg-1.0.0-{arch}-unknown-linux-gnu.tar.gz  incompatible with {target}
+name  reason
+{whypkg-foreign-1.0.0}  incompatible with {target}
 
 checksum     published-digest
 trust        advisory  strip_quarantine=true  allow_emulation=true
-candidate    whypkg-1.0.0-{arch}-apple-darwin.tar.gz  darwin / {arch} / tar.gz
+candidate    {whypkg-native-1.0.0}  {native-reason}
