@@ -2,7 +2,7 @@
 https://github.com/listepo/ketch
 Catch releases straight from GitHub — a package manager for GitHub-released binaries and apps.
 
-| # | Статус | Приоритет | Сложность | Готовность | Агент |
+| # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
 | F1 | in progress | P2 | 3 | 95% | Cursor / grok 4.6 |
 | F2 | in progress | P2 | 3 | 70% | Cursor / grok 4.6 |
