@@ -130,12 +130,9 @@ fn redact_root_paths(text: &str, sandbox: &Sandbox) -> String {
     // known relative suffixes under the sandbox root.
     out = scrub_through_root_suffix(&out, "/manifests/", "/manifests/");
     out = scrub_through_root_suffix(&out, "\\manifests\\", "/manifests/");
-    out = scrub_through_root_suffix(&out, "\\\\manifests\\\\", "/manifests/");
     out = scrub_through_root_suffix(&out, "/registry/", "/registry/");
     out = scrub_through_root_suffix(&out, "\\registry\\", "/registry/");
-    out = scrub_through_root_suffix(&out, "\\\\registry\\\\", "/registry/");
     out = out.replace("{root}\\", "{root}/");
-    out = out.replace("{root}\\\\", "{root}/");
     out
 }
 
@@ -282,10 +279,31 @@ fn canonical_manifest_origin(origin: &str) -> String {
 }
 
 fn snapshot_json(name: &str, json: &str, sandbox: &Sandbox) {
-    let mut value = parse_json(&redact(json, sandbox));
+    // Parse before redacting so Windows backslashes are real path characters.
+    // Scrubbing raw JSON escape sequences left a dangling slash (e.g. `\ripgrep`)
+    // and broke serde with `invalid escape`.
+    let mut value = parse_json(json);
+    redact_json_strings(&mut value, sandbox);
     normalize_why_json(&mut value);
     let pretty = serde_json::to_string_pretty(&value).expect("pretty json") + "\n";
     assert_snapshot(&format!("{name}.json"), &pretty);
+}
+
+fn redact_json_strings(value: &mut Value, sandbox: &Sandbox) {
+    match value {
+        Value::String(s) => *s = redact(s, sandbox),
+        Value::Array(items) => {
+            for item in items {
+                redact_json_strings(item, sandbox);
+            }
+        }
+        Value::Object(map) => {
+            for item in map.values_mut() {
+                redact_json_strings(item, sandbox);
+            }
+        }
+        _ => {}
+    }
 }
 
 fn snapshot_text(name: &str, text: &str, sandbox: &Sandbox) {
