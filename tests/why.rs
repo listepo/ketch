@@ -133,6 +133,24 @@ fn redact_root_paths(text: &str, sandbox: &Sandbox) -> String {
     out = scrub_through_root_suffix(&out, "/registry/", "/registry/");
     out = scrub_through_root_suffix(&out, "\\registry\\", "/registry/");
     out = out.replace("{root}\\", "{root}/");
+    // Nested Windows paths keep `\\` after the scrubbed prefix
+    // (`{root}/registry/ripgrep\\ketch.toml`); fold those to `/`.
+    normalize_root_relative_separators(&out)
+}
+
+fn normalize_root_relative_separators(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(idx) = rest.find("{root}") {
+        out.push_str(&rest[..idx]);
+        rest = &rest[idx..];
+        let end = rest
+            .find(|c: char| c.is_whitespace() || c == '"')
+            .unwrap_or(rest.len());
+        out.push_str(&rest[..end].replace('\', "/"));
+        rest = &rest[end..];
+    }
+    out.push_str(rest);
     out
 }
 
