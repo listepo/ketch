@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1](https://github.com/listepo/ketch/releases/tag/v0.4.1) - 2026-09-14
+
+### Fixed
+
+- use string replace for Windows path separator fold
+- fold leftover Windows separators under {root}
+- compare why snapshots on LF endings
+- redact why JSON after parse on Windows paths
+- make install.ps1 outside-root flag probe offline
+- make why snapshots OS-agnostic and headless TUI tests
+- smoke-test cask via local brew tap
+
 ## [0.4.0](https://github.com/listepo/ketch/releases/tag/v0.4.0) - 2026-09-13
 
 ### Added
