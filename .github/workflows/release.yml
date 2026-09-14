@@ -239,22 +239,26 @@ jobs:
 
       # The arm64 runner can build the x86_64 slice but cannot run it, so only
       # the native one is smoke-tested here.
+      # Extract into a workspace-relative dir. Git Bash on windows-latest mangles
+      # `$RUNNER_TEMP` (e.g. `D:\a\_temp` → `D\:\a\\_temp`) so GNU tar cannot
+      # open it; a relative path works the same on every runner OS.
       - name: Smoke test
         if: matrix.target != 'x86_64-apple-darwin'
         run: |
-          tar -xzf dist/ketch-${{ matrix.target }}.tar.gz -C "$RUNNER_TEMP"
-          bin="$RUNNER_TEMP/ketch"
-          if [ -f "$RUNNER_TEMP/ketch.exe" ]; then
-            bin="$RUNNER_TEMP/ketch.exe"
+          mkdir -p smoke
+          tar -xzf dist/ketch-${{ matrix.target }}.tar.gz -C smoke
+          bin="smoke/ketch"
+          if [ -f smoke/ketch.exe ]; then
+            bin="smoke/ketch.exe"
           fi
           "$bin" --version
           if [ "${{ matrix.sign }}" = "true" ]; then
-            codesign --verify --strict "$RUNNER_TEMP/ketch"
-            codesign --display --verbose=2 "$RUNNER_TEMP/ketch" 2>&1 \
+            codesign --verify --strict smoke/ketch
+            codesign --display --verbose=2 smoke/ketch 2>&1 \
               | grep -q 'Authority=Developer ID Application'
           fi
           if [ "${{ matrix.sign }}" = "true" ] && [ "${{ vars.KETCH_NOTARIZE }}" = "true" ]; then
-            spctl --assess --type install -vv "$RUNNER_TEMP/ketch" 2>&1 \
+            spctl --assess --type install -vv smoke/ketch 2>&1 \
               | tee /dev/stderr | grep -q 'source=Notarized Developer ID'
           fi
 
