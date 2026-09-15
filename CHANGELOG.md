@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0](https://github.com/listepo/ketch/releases/tag/v0.5.0) - 2026-09-15
+
+### Added
+
+- *(site)* build Mini UI feature cards with Tailwind
+- *(site)* add Mini UI vignettes to landing feature cards
+- mark version as preview (site + CLI) with tests ([#71](https://github.com/listepo/ketch/pull/71))
+
+### Fixed
+
+- *(release)* resolve lightweight tags on force republish
+- commit the cask before brew path-tap smoke
+- authenticate cask smoke and force the local tap
+- warn when PATH shadows the store ketch binary ([#63](https://github.com/listepo/ketch/pull/63))
+
+### Other
+
+- *(site)* add Mini UI landing screenshots for PR review
+- *(site)* retrigger Pages build after Tailwind CSS
+
 ## [0.4.1](https://github.com/listepo/ketch/releases/tag/v0.4.1) - 2026-09-14
 
 ### Fixed
