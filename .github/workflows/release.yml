@@ -417,11 +417,24 @@ jobs:
           # postflight runs `ketch self install|update`, which hits the GitHub
           # API; unauthenticated runners hit rate limits (HTTP 403).
           GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+          KETCH_GITHUB_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
           # Homebrew 4.6+ rejects bare cask paths; install via a local tap of the
           # clone we are about to push (listepo/homebrew-tap → listepo/tap).
+          # Drop a prior tap first so brew cannot keep a remote clone and smoke
+          # the published cask instead of the one Generate just wrote.
+          brew untap listepo/tap >/dev/null 2>&1 || true
           brew tap listepo/tap "$PWD/tap"
+          cask_version="$(brew info --cask --json=v2 listepo/tap/ketch | python3 -c 'import json,sys; print(json.load(sys.stdin)["casks"][0]["version"])')"
+          if [ "$cask_version" != "$VERSION" ]; then
+            echo "smoke would install cask $cask_version, expected $VERSION" >&2
+            echo "---- tap/Casks/ketch.rb ----" >&2
+            cat tap/Casks/ketch.rb >&2
+            exit 1
+          fi
           brew install --cask --verbose listepo/tap/ketch
           brew uninstall --cask ketch
 
