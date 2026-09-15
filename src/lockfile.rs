@@ -544,4 +544,89 @@ mod tests {
         assert!(lock.packages[0].matches_target("macos-aarch64"));
         assert!(!lock.packages[0].matches_target("macos-x86_64"));
     }
+
+    /// Fixed inputs, so the rendering is identical on every host: a reviewed
+    /// snapshot of the file `ketch lock` writes.
+    #[test]
+    fn a_two_package_lockfile_renders_a_stable_file() {
+        let lock = Lockfile {
+            version: LOCK_VERSION,
+            packages: vec![
+                LockedPackage {
+                    name: "fd".to_string(),
+                    source: PackageRef::github("sharkdp/fd"),
+                    version: "10.2.0".to_string(),
+                    tag: "v10.2.0".to_string(),
+                    target: "macos-aarch64".to_string(),
+                    asset: "fd.tar.gz".to_string(),
+                    sha256: "a".repeat(64),
+                    pinned: false,
+                },
+                LockedPackage {
+                    name: "ripgrep".to_string(),
+                    source: PackageRef::github("BurntSushi/ripgrep"),
+                    version: "14.1.1".to_string(),
+                    tag: "14.1.1".to_string(),
+                    target: "macos-aarch64".to_string(),
+                    asset: "ripgrep.tar.gz".to_string(),
+                    sha256: "b".repeat(64),
+                    pinned: true,
+                },
+            ],
+        };
+        let text = lock.to_toml().expect("render");
+        insta::assert_snapshot!(text);
+    }
+
+    // Whatever the entries are, rendering and re-reading must agree.
+    proptest::proptest! {
+        #[test]
+        fn a_rendered_lockfile_reads_back_what_was_written(
+            entries in proptest::collection::vec(
+                (
+                    "[a-z]{1,8}",
+                    proptest::sample::select(vec![
+                        "BurntSushi/ripgrep",
+                        "sharkdp/fd",
+                        "jqlang/jq",
+                    ]),
+                    (0u32..50, 0u32..50, 0u32..50),
+                    proptest::sample::select(vec![
+                        "macos-aarch64",
+                        "linux-x86_64",
+                        "windows-x86_64",
+                    ]),
+                    "[0-9a-f]{64}",
+                    proptest::bool::ANY,
+                ),
+                0..4,
+            )
+        ) {
+            // Names compare case-insensitively at validation, so the first
+            // spelling wins and the file holds each package once.
+            let mut by_name = std::collections::BTreeMap::new();
+            for (name, repo, (major, minor, patch), target, sha256, pinned) in entries {
+                by_name.entry(name.clone()).or_insert_with(|| LockedPackage {
+                    name,
+                    source: PackageRef::github(repo),
+                    version: format!("{major}.{minor}.{patch}"),
+                    tag: format!("v{major}.{minor}.{patch}"),
+                    target: target.to_string(),
+                    asset: "tool.tar.gz".to_string(),
+                    sha256,
+                    pinned,
+                });
+            }
+            let mut packages: Vec<LockedPackage> = by_name.into_values().collect();
+            packages.sort_by(|a, b| a.name.cmp(&b.name));
+            let lock = Lockfile {
+                version: LOCK_VERSION,
+                packages,
+            };
+            let text = lock.to_toml().expect("render");
+            let parsed: Lockfile = toml::from_str(&text).expect("parse");
+            proptest::prop_assert!(parsed.validate(Path::new("proptest")).is_ok());
+            proptest::prop_assert_eq!(parsed.packages, lock.packages);
+        }
+    }
 }

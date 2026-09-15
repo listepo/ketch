@@ -11,6 +11,9 @@ it too — nothing here is agent-specific except the framing and the rule below.
   `no-agent-attribution` in `commitlint.config.mjs` rejects such a trailer or
   line in every commit a pull request brings, and in the commit-msg hook. A
   pull request description is not checked — that part is on the agent.
+- **English for repository files.** Commits, pull request titles and bodies,
+  comments, docs, and user-facing strings in this repository are written in
+  English. Do not leave non-English prose in tracked files.
 - If a directory above this repository contains an `AGENTS.md` or
   `CLAUDE.md`, follow it too. If it conflicts with this file, ask the creator.
 
@@ -114,7 +117,19 @@ manually. Every bug fix should add the narrowest regression test that would
 fail without the fix.
 
 CI runs `fmt --check`, `clippy -D warnings` and `test` on macOS, and clippy
-plus `test` on Linux and Windows. All of those must pass before a change is done.
+plus `test` on Linux and Windows. All of those must pass before a change is
+done. The workflow triggers only on pushes to `main` and on
+`workflow_dispatch` — it does not run automatically on pull request events.
+Before merging a branch, dispatch CI on that ref and wait for green:
+
+```bash
+gh workflow run ci.yml --ref <branch>
+gh run watch   # or: gh run list --workflow=ci.yml --branch <branch> -L 1
+```
+
+Merge to `main` only when that run succeeded. A failed push to `main` is
+reverted by the auto-revert path described in the changelog / recent fixes;
+do not rely on that — verify on the branch first.
 
 ## Installing tools
 
@@ -329,10 +344,13 @@ One rule follows from that derivation: a commit that changes or removes
 existing CLI behavior is marked breaking — `feat!:`/`fix!:` or a
 `BREAKING CHANGE:` footer — so the bump lands on the minor, not the patch.
 Below 1.0 that marker is all that keeps a removed command from shipping as a
-patch release. commitlint rejects a malformed subject outright — CI runs the
-same check over a pull request's commits — and the commit-msg hook prints a
-reminder, not a rejection, when the staged diff touches `src/cli.rs` or
-`src/cmd/` and the message carries no breaking marker.
+patch release. commitlint rejects a malformed subject outright via the
+opt-in commit-msg hook (`just hooks`); prefer that locally. The CI job still
+contains a pull-request commitlint step, but the workflow no longer triggers
+on `pull_request` events — so branch verification is a dispatched `ci.yml`
+run, not an automatic PR check. The commit-msg hook also prints a reminder,
+not a rejection, when the staged diff touches `src/cli.rs` or `src/cmd/` and
+the message carries no breaking marker.
 
 `release.yml` runs on every merge to `main` and asks one question first: does
 `v<version from Cargo.toml>` already exist as a tag? If it does, that version
@@ -414,9 +432,10 @@ Six things about that handoff are easy to break:
   secrets with the renewed `.p12` and re-run with `force`.
 - **The cask is generated.** Editing `Casks/ketch.rb` in the tap by hand lasts
   until the next release overwrites it; change `scripts/cask.sh` instead. CI
-  runs `brew style` on its output on every pull request, because the `tap` job
-  runs the same check *after* the release has published — where a rejected
-  cask leaves the tap a version behind and takes another release to correct.
+  runs `brew style` on its output on every gate run (main or dispatched
+  branch), because the `tap` job runs the same check *after* the release has
+  published — where a rejected cask leaves the tap a version behind and takes
+  another release to correct.
 
 release-plz does not publish to crates.io (`publish = false`), does not create
 the GitHub release (`git_release_enable = false`), and does not tag: only its
@@ -437,8 +456,9 @@ bump publishes a release.
 
 Asset names are load-bearing: `install.sh` and `ketch self update` both look for
 `ketch-<target>.tar.gz` and `SHA256SUMS`. Renaming either strips the upgrade
-path from every copy already out there. CI runs the same `scripts/package.sh` on
-every pull request so packaging breaks there, not halfway through a release.
+path from every copy already out there. CI runs the same `scripts/package.sh`
+on every green gate (main push or a dispatched run on a branch) so packaging
+breaks there, not halfway through a release.
 
 ## Before you call it done
 

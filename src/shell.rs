@@ -643,59 +643,80 @@ fn write(file: &Path, text: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     const BIN: &str = "/home/u/.ketch/bin";
 
-    #[test]
-    fn a_backup_path_that_starts_with_the_bin_dir_is_not_a_path_entry() {
-        assert!(!mentions(
-            "export PATH=\"/home/u/.ketch/bin.bak:$PATH\"",
-            BIN
-        ));
-        assert!(mentions("export PATH=\"/home/u/.ketch/bin:$PATH\"", BIN));
-        assert!(mentions("set -gx PATH /home/u/.ketch/bin $PATH", BIN));
-        assert!(mentions("export PATH=/home/u/.ketch/bin", BIN));
-        // A longer path is a different directory that merely starts the same.
-        assert!(!mentions(
-            "export PATH=\"/home/u/.ketch/bin/tools:$PATH\"",
-            BIN
-        ));
+    /// One real PATH entry per shell counts; a backup, a longer path, a
+    /// comment or nothing at all does not.
+    #[rstest]
+    #[case("export PATH=\"/home/u/.ketch/bin:$PATH\"", true)]
+    #[case("set -gx PATH /home/u/.ketch/bin $PATH", true)]
+    #[case("export PATH=/home/u/.ketch/bin", true)]
+    #[case("export PATH=\"/home/u/.ketch/bin:$PATH\"\n", true)]
+    #[case("export PATH=\"/home/u/.ketch/bin.bak:$PATH\"", false)]
+    #[case("export PATH=\"/home/u/.ketch/bin/tools:$PATH\"", false)]
+    #[case("  # export PATH=\"/home/u/.ketch/bin:$PATH\"\n", false)]
+    #[case("", false)]
+    fn only_a_real_path_entry_counts_as_configured(#[case] line: &str, #[case] expected: bool) {
+        assert_eq!(mentions(line, BIN), expected);
     }
 
     fn zsh_block() -> String {
         Shell::Zsh.block(BIN)
     }
 
-    #[test]
-    fn a_login_shell_argv_name_still_identifies_the_shell() {
-        assert_eq!(Shell::from_program("-zsh"), Some(Shell::Zsh));
-        assert_eq!(Shell::from_program("/bin/bash"), Some(Shell::Bash));
-        assert_eq!(
-            Shell::from_program("/opt/homebrew/bin/fish"),
-            Some(Shell::Fish)
-        );
-        assert_eq!(Shell::from_program("/usr/bin/tcsh"), None);
-        assert_eq!(Shell::from_program(""), None);
+    #[rstest]
+    #[case("-zsh", Some(Shell::Zsh))]
+    #[case("/bin/bash", Some(Shell::Bash))]
+    #[case("/opt/homebrew/bin/fish", Some(Shell::Fish))]
+    #[case("/usr/bin/tcsh", None)]
+    #[case("", None)]
+    fn a_program_path_identifies_the_shell(#[case] program: &str, #[case] expected: Option<Shell>) {
+        assert_eq!(Shell::from_program(program), expected);
     }
 
-    #[test]
-    fn a_quote_in_the_path_cannot_end_the_quoting() {
-        let line = Shell::Zsh.export("/home/o'brien/.ketch/bin");
-        assert_eq!(line, "export PATH='/home/o'\\''brien/.ketch/bin':\"$PATH\"");
+    /// A quote or `$` in the path must not end the quoting or expand.
+    #[rstest]
+    #[case(
+        Shell::Bash,
+        "/home/o'brien/.ketch/bin",
+        "export PATH='/home/o'\\''brien/.ketch/bin':\"$PATH\""
+    )]
+    #[case(
+        Shell::Zsh,
+        "/home/o'brien/.ketch/bin",
+        "export PATH='/home/o'\\''brien/.ketch/bin':\"$PATH\""
+    )]
+    #[case(
+        Shell::Bash,
+        "/home/$USER/bin",
+        "export PATH='/home/$USER/bin':\"$PATH\""
+    )]
+    #[case(
+        Shell::Zsh,
+        "/home/$USER/bin",
+        "export PATH='/home/$USER/bin':\"$PATH\""
+    )]
+    fn a_hostile_path_cannot_break_posix_quoting(
+        #[case] shell: Shell,
+        #[case] dir: &str,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(shell.export(dir), expected);
     }
 
-    #[test]
-    fn fish_escapes_the_backslash_that_posix_leaves_alone() {
-        assert_eq!(quote_posix("a\\b"), "'a\\b'");
-        assert_eq!(quote_fish("a\\b"), "'a\\\\b'");
-        assert_eq!(quote_fish("o'brien"), "'o\\'brien'");
-    }
-
-    #[test]
-    fn a_dollar_in_the_path_is_not_expanded() {
-        assert!(Shell::Bash
-            .export("/home/$USER/bin")
-            .contains("'/home/$USER/bin'"));
+    /// The two quoters agree on what they share and differ where the shells do.
+    #[rstest]
+    #[case("a\\b", "'a\\b'", "'a\\\\b'")]
+    #[case("o'brien", "'o'\\''brien'", "'o\\'brien'")]
+    fn quoting_keeps_a_backslash_or_quote_literal(
+        #[case] dir: &str,
+        #[case] posix: &str,
+        #[case] fish: &str,
+    ) {
+        assert_eq!(quote_posix(dir), posix);
+        assert_eq!(quote_fish(dir), fish);
     }
 
     #[test]
@@ -778,14 +799,16 @@ mod tests {
         assert!(text.starts_with(BEGIN));
     }
 
-    #[test]
-    fn each_shell_gets_the_syntax_it_can_actually_run() {
-        assert!(Shell::Bash.export(BIN).starts_with("export PATH="));
-        assert!(Shell::Zsh.export(BIN).starts_with("export PATH="));
-        assert_eq!(
-            Shell::Fish.export(BIN),
-            "set -gx PATH '/home/u/.ketch/bin' $PATH"
-        );
+    /// Every shell gets a line it can actually run, quoted for its own grammar.
+    #[rstest]
+    #[case(Shell::Bash, "export PATH='/home/u/.ketch/bin':\"$PATH\"")]
+    #[case(Shell::Zsh, "export PATH='/home/u/.ketch/bin':\"$PATH\"")]
+    #[case(Shell::Fish, "set -gx PATH '/home/u/.ketch/bin' $PATH")]
+    fn each_shell_gets_the_syntax_it_can_actually_run(
+        #[case] shell: Shell,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(shell.export(BIN), expected);
     }
 
     #[test]
@@ -811,14 +834,17 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn windows_path_remove_drops_only_the_named_entry() {
+    #[rstest]
+    #[case(
+        r"C:\Windows\System32;C:\Users\u\.ketch\bin;C:\Windows",
+        Some(r"C:\Windows\System32;C:\Windows")
+    )]
+    #[case(r"C:\Windows\System32", None)]
+    fn windows_path_remove_drops_only_the_named_entry(
+        #[case] path: &str,
+        #[case] expected: Option<&str>,
+    ) {
         let dir = Path::new(r"C:\Users\u\.ketch\bin");
-        let path = r"C:\Windows\System32;C:\Users\u\.ketch\bin;C:\Windows";
-        assert_eq!(
-            windows_path_remove(path, dir).as_deref(),
-            Some(r"C:\Windows\System32;C:\Windows")
-        );
-        assert!(windows_path_remove(r"C:\Windows\System32", dir).is_none());
+        assert_eq!(windows_path_remove(path, dir).as_deref(), expected);
     }
 }

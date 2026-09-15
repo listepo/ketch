@@ -65,8 +65,11 @@ pgp = { version = "0.20", default-features = false }
 [dev-dependencies]
 assert_cmd = "2"
 assert_fs = "1"
+insta = "1.48"
 predicates = "3"
 pretty_assertions = "1.4.1"
+proptest = "1.11"
+rstest = "0.26"
 trycmd = "0.15"
 
 # There is no unsafe code in ketch and there is no reason for any to appear.
