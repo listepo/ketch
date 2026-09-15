@@ -6,6 +6,7 @@
 
 use assert_cmd::Command;
 use assert_fs::prelude::*;
+use assert_fs::TempDir;
 use predicates::prelude::*;
 
 #[test]
@@ -49,6 +50,68 @@ fn self_version_marks_preview() {
         .next()
         .expect("self version prints a first line");
     assert_eq!(first, format!("ketch {expected}"));
+}
+
+#[test]
+fn short_version_flag_marks_preview() {
+    let expected = format!("{} · preview", env!("CARGO_PKG_VERSION"));
+    let output = Command::cargo_bin("ketch")
+        .unwrap()
+        .arg("-V")
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .get_output()
+        .stdout
+        .clone();
+    let output = String::from_utf8(output).expect("version output is UTF-8");
+    assert_eq!(output, format!("ketch {expected}\n"));
+}
+
+#[test]
+fn doctor_version_line_marks_preview() {
+    let expected = format!("{} · preview", env!("CARGO_PKG_VERSION"));
+    let root = TempDir::new().unwrap();
+    let output = Command::cargo_bin("ketch")
+        .unwrap()
+        .args(["--root", root.path().to_str().unwrap(), "doctor"])
+        .output()
+        .expect("doctor runs");
+    let stdout = String::from_utf8(output.stdout).expect("doctor stdout is UTF-8");
+    let version_line = stdout
+        .lines()
+        .find(|line| line.contains("version"))
+        .unwrap_or_else(|| panic!("doctor prints a version check, got:\n{stdout}"));
+    assert!(
+        version_line.contains(&format!("ketch {expected}")),
+        "doctor version must mark preview: {version_line}"
+    );
+}
+
+#[test]
+fn doctor_json_version_marks_preview() {
+    let expected = format!("{} · preview", env!("CARGO_PKG_VERSION"));
+    let root = TempDir::new().unwrap();
+    let output = Command::cargo_bin("ketch")
+        .unwrap()
+        .args(["--root", root.path().to_str().unwrap(), "doctor", "--json"])
+        .output()
+        .expect("doctor --json runs");
+    let stdout = String::from_utf8(output.stdout).expect("doctor json is UTF-8");
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).unwrap_or_else(|e| panic!("doctor --json: {e}: {stdout}"));
+    let checks = json["checks"].as_array().expect("doctor json has checks");
+    let version = checks
+        .iter()
+        .find(|c| c.get("name").and_then(|n| n.as_str()) == Some("version"))
+        .expect("doctor json has a version check");
+    let detail = version["detail"]
+        .as_str()
+        .expect("version check has detail");
+    assert!(
+        detail.starts_with(&format!("ketch {expected}")),
+        "doctor json version must mark preview: {detail}"
+    );
 }
 
 #[test]

@@ -56,6 +56,7 @@ class SiteVersionTest(unittest.TestCase):
             homepage,
         )
         self.assertIsNone(re.search(r'class="release-chip"[^>]*>v?0\.1\.0', homepage))
+        self.assertNotIn('· caught', homepage)
         self.assertIn('"softwareVersion" site.Params.version', seo)
         self.assertIsNone(re.search(r'"softwareVersion"\s+"?0\.1\.0', seo))
 
