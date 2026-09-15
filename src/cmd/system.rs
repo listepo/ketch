@@ -22,7 +22,7 @@ pub fn doctor(cfg: &Config, args: DoctorArgs) -> Result<()> {
         "version",
         format!(
             "ketch {} for {}",
-            self_update::current_version(),
+            self_update::display_version(),
             cfg.target
         ),
     )];
@@ -663,7 +663,7 @@ pub fn zelf(cfg: &Config, command: SelfCommand) -> Result<()> {
             Ok(())
         }
         SelfCommand::Version => {
-            ui::out(&format!("ketch {}", self_update::current_version()));
+            ui::out(&format!("ketch {}", self_update::display_version()));
             ui::out(&format!("target {}", cfg.target));
             ui::out(&format!("root   {}", cfg.root.display()));
             if let Ok(exe) = self_update::current_exe() {

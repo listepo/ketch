@@ -8,7 +8,11 @@ const SYNC: &str = include_str!("../site/sync-docs.py");
 fn homepage_chip_and_seo_use_site_params_version() {
     assert!(
         INDEX.contains("v{{ site.Params.version }} · preview"),
-        "homepage chip must render site.Params.version"
+        "homepage chip must render site.Params.version marked preview"
+    );
+    assert!(
+        !INDEX.contains("· caught"),
+        "homepage chip must not use the old caught label"
     );
     assert!(
         !INDEX.contains("v0.1.0 · preview"),

@@ -38,6 +38,14 @@ pub struct SelfUpdate {
 pub const SELF_NAME: &str = "ketch";
 
 /// The version this binary was built as.
+/// Channel label shown next to the package version in user-facing output.
+pub const VERSION_CHANNEL: &str = "preview";
+
+/// Package version as clap / `--version` / `self version` print it.
+pub fn display_version() -> String {
+    format!("{} · {}", env!("CARGO_PKG_VERSION"), VERSION_CHANNEL)
+}
+
 pub fn current_version() -> Version {
     Version::parse(env!("CARGO_PKG_VERSION"))
 }
@@ -760,6 +768,16 @@ fn remove_cask(cask: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn display_version_marks_preview_channel() {
+        let shown = display_version();
+        assert_eq!(
+            shown,
+            format!("{} · {}", env!("CARGO_PKG_VERSION"), VERSION_CHANNEL)
+        );
+        assert_eq!(VERSION_CHANNEL, "preview");
+    }
+
     use super::*;
 
     #[test]
