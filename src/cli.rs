@@ -9,7 +9,7 @@ use std::path::PathBuf;
 #[derive(Parser, Debug)]
 #[command(
     name = "ketch",
-    version,
+    version = concat!(env!("CARGO_PKG_VERSION"), " · preview"),
     about = "Catch releases straight from GitHub.",
     long_about = "ketch installs command-line tools and apps from GitHub releases on macOS, Linux, and Windows.\n\
                   No taps, no formulae, no build step — it downloads what the project already ships.",
@@ -571,4 +571,27 @@ pub struct CompletionsArgs {
     /// Write the script into this shell's user completion directory
     #[arg(long)]
     pub install: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    #[test]
+    fn clap_version_is_the_cargo_package_version_marked_preview() {
+        let expected = crate::self_update::display_version();
+        let version = Cli::command()
+            .get_version()
+            .expect("clap should advertise a version")
+            .to_string();
+        assert_eq!(version, expected);
+        assert!(
+            version.ends_with(&format!(" · {}", crate::self_update::VERSION_CHANNEL)),
+            "clap version must mark the channel: {version}"
+        );
+        if env!("CARGO_PKG_VERSION") != "0.1.0" {
+            assert_ne!(version, "0.1.0", "clap version must not be hard-coded");
+        }
+    }
 }
