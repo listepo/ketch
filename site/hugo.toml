@@ -14,13 +14,14 @@ enableRobotsTXT = true
 disableKinds = ["taxonomy", "term"]
 
 [params]
-  description = "Install command-line tools and macOS apps straight from GitHub releases. No taps, no formulae, no build step — just what the project already ships, verified."
+  version = "0.4.0"
+  description = "Install command-line tools and apps from GitHub releases on macOS, Linux, and Windows. No taps, no formulae, no build step — just what the project already ships, verified."
   tagline = "Catch releases straight from GitHub."
   author = "Ivan Tugay"
   repo = "https://github.com/listepo/ketch"
   registryRepo = "https://github.com/listepo/ketch-registry"
   ogImage = "img/og.png"
-  keywords = ["package manager", "macOS", "GitHub releases", "CLI", "Rust", "homebrew alternative", "install binaries"]
+  keywords = ["package manager", "macOS", "Linux", "Windows", "GitHub releases", "CLI", "Rust", "homebrew alternative", "install binaries"]
 
 [menu]
   [[menu.main]]

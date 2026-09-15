@@ -6,7 +6,7 @@
 
 **Catch releases straight from GitHub.**
 
-Install command-line tools and macOS apps directly from GitHub releases.
+Install command-line tools and apps from GitHub releases on macOS, Linux, and Windows.
 No taps, no formulae, no build step — ketch downloads what a project already
 ships, verifies it, and puts it on your `PATH`.
 

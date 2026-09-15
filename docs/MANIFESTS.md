@@ -69,6 +69,10 @@ exclude = ["*-musl-*"]
 [asset.target]
 "macos-aarch64" = "*-aarch64-apple-darwin.tar.gz"
 "macos-x86_64" = "*-x86_64-apple-darwin.tar.gz"
+"linux-x86_64" = "*-x86_64-unknown-linux-gnu.tar.gz"
+"linux-aarch64" = "*-aarch64-unknown-linux-gnu.tar.gz"
+"windows-x86_64" = "*-x86_64-pc-windows-msvc.zip"
+"windows-aarch64" = "*-aarch64-pc-windows-msvc.zip"
 ```
 
 ## Fields
@@ -172,9 +176,10 @@ Precedence, in the order it is applied:
    it wins over both `include` and the platform's own scoring.
 3. Otherwise `include` filters, and the platform scores what is left.
 
-Target keys are `<os>-<arch>` for the machine ketch is running on:
-`macos-aarch64` or `macos-x86_64`. There is no `universal` key — universal is a
-property of an asset, not of a host.
+Target keys are `<os>-<arch>` for the machine ketch is running on, for example
+`macos-aarch64`, `macos-x86_64`, `linux-x86_64`, `linux-aarch64`,
+`windows-x86_64`, or `windows-aarch64`. There is no `universal` key — universal
+is a property of an asset, not of a host.
 
 Reach for this only when the platform's own scoring picks wrong. Run
 `ketch info <pkg> --assets` first — it lists every asset with the score it got

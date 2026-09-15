@@ -16,8 +16,8 @@ it too — nothing here is agent-specific except the framing and the rule below.
 
 ## What ketch is
 
-A single-binary CLI package manager that installs command-line tools and macOS
-apps straight from GitHub releases. No taps, no formulae, no build step: it
+A single-binary CLI package manager that installs command-line tools and apps
+on macOS, Linux, and Windows straight from GitHub releases. No taps, no formulae, no build step: it
 downloads what a project already ships, verifies it, unpacks it into a store,
 and links it onto `PATH`.
 

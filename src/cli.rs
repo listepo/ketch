@@ -11,7 +11,7 @@ use std::path::PathBuf;
     name = "ketch",
     version,
     about = "Catch releases straight from GitHub.",
-    long_about = "ketch installs command-line tools and macOS apps directly from GitHub releases.\n\
+    long_about = "ketch installs command-line tools and apps from GitHub releases on macOS, Linux, and Windows.\n\
                   No taps, no formulae, no build step — it downloads what the project already ships.",
     propagate_version = true,
     disable_help_subcommand = true

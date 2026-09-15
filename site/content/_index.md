@@ -1,4 +1,4 @@
 ---
-title: "ketch — install macOS tools and apps from GitHub releases"
-description: "Install command-line tools and macOS apps straight from GitHub releases. No taps, no formulae, no build step — just what the project already ships, verified."
+title: "ketch — tools and apps from GitHub releases on macOS, Linux, and Windows"
+description: "CLI package manager for macOS, Linux, and Windows: install tools and apps from GitHub releases. No taps, no formulae — verified binaries on your PATH."
 ---
