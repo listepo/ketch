@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2](https://github.com/listepo/ketch/releases/tag/v0.4.2) - 2026-09-15
+
+### Fixed
+
+- commit the cask before brew path-tap smoke
+- authenticate cask smoke and force the local tap
+- warn when PATH shadows the store ketch binary ([#63](https://github.com/listepo/ketch/pull/63))
+
 ## [0.4.1](https://github.com/listepo/ketch/releases/tag/v0.4.1) - 2026-09-14
 
 ### Fixed
