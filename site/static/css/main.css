@@ -1,6 +1,7 @@
 /* ketch — nerd + flat + material + glass
    Dual theme: explicit [data-theme] toggle + system via prefers-color-scheme.
-   No build step, no framework. */
+   Site chrome lives here. Landing Mini UI utilities are Tailwind
+   (`npm run css` → css/mini-ui.css). */
 
 /* ---------- semantic tokens ---------- */
 
@@ -35,6 +36,8 @@
   --focus-ring: 0 0 0 3px rgba(15, 111, 92, 0.35);
   --tag-coral: #FF6B5B;
   --mark-tile: #0A3D36;
+  --mint: #3DDCB0;
+  --stage: #E8F2EE;
 }
 
 [data-theme="dark"] {
@@ -67,6 +70,8 @@
   --focus-ring: 0 0 0 3px rgba(61, 220, 176, 0.4);
   --tag-coral: #FF6B5B;
   --mark-tile: #0A3D36;
+  --mint: #3DDCB0;
+  --stage: #0C1614;
 }
 
 /* System: follow OS when data-theme="system" or unset (boot may leave unset briefly) */
@@ -100,6 +105,8 @@
     --term-hairline: #1E3330;
 
     --focus-ring: 0 0 0 3px rgba(61, 220, 176, 0.4);
+    --mint: #3DDCB0;
+    --stage: #0C1614;
   }
 }
 
@@ -133,6 +140,8 @@
     --term-hairline: #1E3330;
 
     --focus-ring: 0 0 0 3px rgba(15, 111, 92, 0.35);
+    --mint: #3DDCB0;
+    --stage: #E8F2EE;
   }
 }
 
@@ -581,6 +590,7 @@ pre code { background: none; border: 0; padding: 0; color: inherit; font-size: i
   backdrop-filter: blur(12px) saturate(1.15);
   -webkit-backdrop-filter: blur(12px) saturate(1.15);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  min-width: 0;
 }
 .grid article:hover {
   border-color: var(--accent);
@@ -592,7 +602,7 @@ pre code { background: none; border: 0; padding: 0; color: inherit; font-size: i
   letter-spacing: -0.01em;
   font-weight: 650;
 }
-.grid p {
+.grid h3 + p {
   margin: 0;
   color: var(--ink-muted);
   font-size: 0.95rem;

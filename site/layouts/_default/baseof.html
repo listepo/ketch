@@ -21,6 +21,9 @@
     })();
   </script>
   <link rel="stylesheet" href="{{ "css/main.css" | relURL }}">
+  {{ if .IsHome }}
+  <link rel="stylesheet" href="{{ "css/mini-ui.css" | relURL }}">
+  {{ end }}
   <link rel="icon" href="{{ "img/favicon.svg" | relURL }}" type="image/svg+xml">
   <script defer src="{{ "js/theme.js" | relURL }}"></script>
 </head>
