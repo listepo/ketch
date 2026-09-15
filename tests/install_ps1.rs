@@ -103,6 +103,12 @@ fn the_script_writes_path_through_dotnet_not_setx() {
     assert!(!src.contains("setx"), "{src}");
 }
 
+/// `--install-dir` is a bootstrap location, not a second way to name the root:
+/// it may sit outside `--root`, need not be called `bin`, and needs no `--root`
+/// beside it. Only the retired coupling check refused these before anything ran.
+///
+/// A probe `--version` forces failure after flag parse so the assertion does not
+/// depend on GitHub being unreachable (CI can otherwise install for real).
 #[test]
 #[cfg(windows)]
 fn an_install_dir_need_not_sit_under_the_root() {
@@ -110,8 +116,20 @@ fn an_install_dir_need_not_sit_under_the_root() {
         return;
     }
     for args in [
-        vec!["--root", "/tmp/a", "--install-dir", "/tmp/b/bin"],
-        vec!["--install-dir", "/tmp/myapp/tools"],
+        vec![
+            "--root",
+            "/tmp/a",
+            "--install-dir",
+            "/tmp/b/bin",
+            "--version",
+            "v0.0.0-ketch-flag-probe",
+        ],
+        vec![
+            "--install-dir",
+            "/tmp/myapp/tools",
+            "--version",
+            "v0.0.0-ketch-flag-probe",
+        ],
     ] {
         install_ps1()
             .args(&args)

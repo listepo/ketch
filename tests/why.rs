@@ -74,20 +74,254 @@ fn write_registry_package(sandbox: &Sandbox, name: &str, body: &str) {
 }
 
 fn redact(text: &str, sandbox: &Sandbox) -> String {
-    text.replace(&sandbox.root().display().to_string(), "{root}")
-        .replace(&host_target(), "{target}")
-        .replace(host_arch(), "{arch}")
+    let mut out = redact_root_paths(text, sandbox);
+    out = out.replace(&host_target(), "{target}");
+
+    // Asset names embed arch + OS triple; replace before `{arch}` so one
+    // snapshot set works on macOS, Linux, and Windows.
+    for (pkg, label) in [("whypkg", "whypkg"), ("ripgrep", "ripgrep")] {
+        for version in ["2.0.0-rc.1", "1.0.0"] {
+            out = out.replace(
+                &native_name(pkg, version),
+                &format!("{{{label}-native-{version}}}"),
+            );
+            out = out.replace(
+                &foreign_name(pkg, version),
+                &format!("{{{label}-foreign-{version}}}"),
+            );
+        }
+    }
+
+    out = out.replace(host_arch(), "{arch}");
+
+    for reason in [
+        "darwin / {arch} / tar.gz",
+        "linux / gnu / {arch} / tar.gz",
+        "windows / {arch} / zip",
+    ] {
+        out = out.replace(reason, "{native-reason}");
+    }
+
+    normalize_why_text(&out)
+}
+
+/// Wipe absolute sandbox roots, including Windows short-path / JSON-escaped forms.
+fn redact_root_paths(text: &str, sandbox: &Sandbox) -> String {
+    let root = sandbox.root();
+    let mut out = text.to_string();
+    let mut forms = vec![root.display().to_string()];
+    if let Ok(canonical) = root.canonicalize() {
+        forms.push(canonical.display().to_string());
+    }
+    if let Some(parent) = root.parent() {
+        forms.push(parent.join("root").display().to_string());
+    }
+    for form in forms {
+        for candidate in [
+            form.clone(),
+            form.replace('\\', "/"),
+            form.replace('\\', "\\\\"),
+        ] {
+            out = out.replace(&candidate, "{root}");
+        }
+    }
+    // When display()/canonicalize() disagree with the path ketch printed
+    // (Windows 8.3 short names, mixed separators, JSON escapes), scrub by
+    // known relative suffixes under the sandbox root.
+    out = scrub_through_root_suffix(&out, "/manifests/", "/manifests/");
+    out = scrub_through_root_suffix(&out, "\\manifests\\", "/manifests/");
+    out = scrub_through_root_suffix(&out, "/registry/", "/registry/");
+    out = scrub_through_root_suffix(&out, "\\registry\\", "/registry/");
+    out = out.replace("{root}\\", "{root}/");
+    // Nested Windows paths keep `\\` after the scrubbed prefix
+    // (`{root}/registry/ripgrep\\ketch.toml`); fold those to `/`.
+    normalize_root_relative_separators(&out)
+}
+
+fn normalize_root_relative_separators(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(idx) = rest.find("{root}") {
+        out.push_str(&rest[..idx]);
+        rest = &rest[idx..];
+        let end = rest
+            .find(|c: char| c.is_whitespace() || c == '"')
+            .unwrap_or(rest.len());
+        out.push_str(&rest[..end].replace("\\", "/"));
+        rest = &rest[end..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Replace `…<anything>root<needle>rest` with `{root}<canonical_needle>rest`.
+fn scrub_through_root_suffix(text: &str, needle: &str, canonical_needle: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(idx) = rest.find(needle) {
+        let before = &rest[..idx];
+        // Walk left to the start of the absolute path token.
+        let start = before
+            .char_indices()
+            .rev()
+            .find(|(_, c)| *c == '"' || c.is_whitespace() || *c == '=')
+            .map(|(i, c)| i + c.len_utf8())
+            .unwrap_or(0);
+        out.push_str(&before[..start]);
+        out.push_str("{root}");
+        out.push_str(canonical_needle);
+        rest = &rest[idx + needle.len()..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Make text snapshots OS-agnostic: scores (except pin), and table padding that
+/// still reflects the pre-redaction asset-name widths, are normalized here.
+fn normalize_why_text(text: &str) -> String {
+    let mut in_table = false;
+    let mut out_lines: Vec<String> = Vec::new();
+    for line in text.lines() {
+        let trimmed = line.trim_end();
+        if trimmed == "assets" || trimmed == "rejected" {
+            in_table = true;
+            out_lines.push(trimmed.to_string());
+            continue;
+        }
+        if trimmed.is_empty() {
+            in_table = false;
+            out_lines.push(String::new());
+            continue;
+        }
+        if trimmed.starts_with("checksum")
+            || trimmed.starts_with("trust")
+            || trimmed.starts_with("candidate")
+        {
+            in_table = false;
+        }
+
+        let mut row = trimmed.to_string();
+        if in_table {
+            let mut cells = split_table_cols(&row);
+            if cells.first().is_some_and(|c| {
+                c.chars().all(|ch| ch.is_ascii_digit()) && c.as_str() != "2147483647"
+            }) && cells.len() >= 2
+            {
+                cells[0] = "{score}".into();
+            }
+            row = cells.join("  ");
+        }
+        out_lines.push(row);
+    }
+    let mut body = out_lines.join("\n");
+    if text.ends_with('\n') {
+        body.push('\n');
+    }
+    body
+}
+
+/// Split a `ui::table` row on the two-space column gap without breaking
+/// single spaces inside a cell (for example `incompatible with {target}`).
+fn split_table_cols(row: &str) -> Vec<String> {
+    let bytes = row.as_bytes();
+    let mut cols = Vec::new();
+    let mut start = 0usize;
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if i + 1 < bytes.len() && bytes[i] == b' ' && bytes[i + 1] == b' ' {
+            let col = row[start..i].trim_end();
+            if !col.is_empty() || !cols.is_empty() {
+                cols.push(col.to_string());
+            }
+            while i < bytes.len() && bytes[i] == b' ' {
+                i += 1;
+            }
+            start = i;
+            continue;
+        }
+        i += 1;
+    }
+    let col = row[start..].trim_end();
+    if !col.is_empty() {
+        cols.push(col.to_string());
+    }
+    cols
 }
 
 fn parse_json(stdout: &str) -> Value {
     serde_json::from_str(stdout.trim()).expect("why --json is JSON")
 }
 
+fn normalize_why_json(value: &mut Value) {
+    if let Some(origin) = value.pointer_mut("/manifest/origin") {
+        if let Some(raw) = origin.as_str() {
+            *origin = Value::String(canonical_manifest_origin(raw));
+        }
+    }
+    let pin = 2147483647_i64;
+    if let Some(arr) = value
+        .pointer_mut("/assets/scored")
+        .and_then(|v| v.as_array_mut())
+    {
+        for item in arr {
+            if let Some(score) = item.get_mut("score") {
+                if score.as_i64() != Some(pin) {
+                    *score = Value::String("{score}".into());
+                }
+            }
+        }
+    }
+    if let Some(score) = value.pointer_mut("/candidate/score") {
+        if score.as_i64() != Some(pin) {
+            *score = Value::String("{score}".into());
+        }
+    }
+}
+
+fn canonical_manifest_origin(origin: &str) -> String {
+    for (needle, canon) in [
+        ("/manifests/", "/manifests/"),
+        ("\\manifests\\", "/manifests/"),
+        ("/registry/", "/registry/"),
+        ("\\registry\\", "/registry/"),
+    ] {
+        if let Some(idx) = origin.find(needle) {
+            let rest = origin[idx + needle.len()..].replace('\\', "/");
+            return format!("{{root}}{canon}{rest}");
+        }
+    }
+    if origin.starts_with("{root}") {
+        return origin.replace('\\', "/");
+    }
+    origin.to_string()
+}
+
 fn snapshot_json(name: &str, json: &str, sandbox: &Sandbox) {
-    let pretty = serde_json::to_string_pretty(&parse_json(&redact(json, sandbox)))
-        .expect("pretty json")
-        + "\n";
+    // Parse before redacting so Windows backslashes are real path characters.
+    // Scrubbing raw JSON escape sequences left a dangling slash (e.g. `\ripgrep`)
+    // and broke serde with `invalid escape`.
+    let mut value = parse_json(json);
+    redact_json_strings(&mut value, sandbox);
+    normalize_why_json(&mut value);
+    let pretty = serde_json::to_string_pretty(&value).expect("pretty json") + "\n";
     assert_snapshot(&format!("{name}.json"), &pretty);
+}
+
+fn redact_json_strings(value: &mut Value, sandbox: &Sandbox) {
+    match value {
+        Value::String(s) => *s = redact(s, sandbox),
+        Value::Array(items) => {
+            for item in items {
+                redact_json_strings(item, sandbox);
+            }
+        }
+        Value::Object(map) => {
+            for item in map.values_mut() {
+                redact_json_strings(item, sandbox);
+            }
+        }
+        _ => {}
+    }
 }
 
 fn snapshot_text(name: &str, text: &str, sandbox: &Sandbox) {
@@ -99,8 +333,11 @@ fn assert_snapshot(name: &str, body: &str) {
         .join("tests/snapshots/why")
         .join(name);
     let update = std::env::var_os("UPDATE_SNAPSHOTS").is_some();
+    // Windows runners with autocrlf check these out as CRLF; generated bodies
+    // always use LF. Compare on LF so the suite is host-independent.
+    let body = body.replace("\r\n", "\n");
     match std::fs::read_to_string(&path) {
-        Ok(expected) if expected == body => {}
+        Ok(expected) if expected.replace("\r\n", "\n") == body => {}
         Ok(_) if update => {
             std::fs::write(&path, body).expect("update snapshot");
         }

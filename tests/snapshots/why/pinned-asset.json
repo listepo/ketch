@@ -2,7 +2,7 @@
   "assets": {
     "rejected": [
       {
-        "name": "whypkg-1.0.0-{arch}-apple-darwin.tar.gz",
+        "name": "{whypkg-native-1.0.0}",
         "reason": "does not match the pinned pattern `*-pinned.tar.gz` for {target}"
       }
     ],

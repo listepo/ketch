@@ -235,6 +235,19 @@ impl Controller {
         }
     }
 
+    /// Test helper that skips a real crossterm backend. CI runners often give a
+    /// non-blocking stderr whose size ioctl returns `WouldBlock`, which made
+    /// `Terminal::new(stderr)` flake under parallel tests.
+    #[cfg(test)]
+    fn headless(state: State) -> Self {
+        Controller {
+            state: Mutex::new(state),
+            terminal: Mutex::new(None),
+            active: AtomicBool::new(true),
+            paused: AtomicBool::new(false),
+        }
+    }
+
     /// Apply an event and redraw. Rendering failures never break an install.
     pub fn send(&self, event: Event) {
         if !self.active.load(Ordering::Acquire) {
@@ -707,18 +720,14 @@ mod tests {
 
     #[test]
     fn pause_for_input_is_not_offered_after_shutdown() {
-        let backend = CrosstermBackend::new(io::stderr());
-        let terminal = Terminal::new(backend).unwrap();
-        let controller = Arc::new(Controller::new(State::new("upgrade", []), terminal));
+        let controller = Arc::new(Controller::headless(State::new("upgrade", [])));
         controller.shutdown();
         assert!(controller.pause_for_input().is_none());
     }
 
     #[test]
     fn send_does_not_poll_input_while_paused_for_a_prompt() {
-        let backend = CrosstermBackend::new(io::stderr());
-        let terminal = Terminal::new(backend).unwrap();
-        let controller = Arc::new(Controller::new(State::new("upgrade", []), terminal));
+        let controller = Arc::new(Controller::headless(State::new("upgrade", [])));
         controller
             .paused
             .store(true, std::sync::atomic::Ordering::Release);

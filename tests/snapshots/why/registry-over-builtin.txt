@@ -7,13 +7,13 @@ version      latest  v1.0.0 (1.0.0)
 prerelease   excluded
 
 assets
-score  name                                       reason
-98     ripgrep-1.0.0-{arch}-apple-darwin.tar.gz  darwin / {arch} / tar.gz
+score  name  reason
+{score}  {ripgrep-native-1.0.0}  {native-reason}
 
 rejected
-name                                            reason
-ripgrep-1.0.0-{arch}-unknown-linux-gnu.tar.gz  incompatible with {target}
+name  reason
+{ripgrep-foreign-1.0.0}  incompatible with {target}
 
 checksum     published-digest
 trust        advisory  strip_quarantine=true  allow_emulation=true
-candidate    ripgrep-1.0.0-{arch}-apple-darwin.tar.gz  darwin / {arch} / tar.gz
+candidate    {ripgrep-native-1.0.0}  {native-reason}

@@ -4,17 +4,17 @@
     "scored": [
       {
         "emulated": false,
-        "name": "whypkg-2.0.0-rc.1-{arch}-apple-darwin.tar.gz",
-        "reason": "darwin / {arch} / tar.gz",
-        "score": 98
+        "name": "{whypkg-native-2.0.0-rc.1}",
+        "reason": "{native-reason}",
+        "score": "{score}"
       }
     ]
   },
   "candidate": {
     "emulated": false,
-    "name": "whypkg-2.0.0-rc.1-{arch}-apple-darwin.tar.gz",
-    "reason": "darwin / {arch} / tar.gz",
-    "score": 98
+    "name": "{whypkg-native-2.0.0-rc.1}",
+    "reason": "{native-reason}",
+    "score": "{score}"
   },
   "checksum": {
     "asset_digest": "sha256",
