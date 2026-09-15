@@ -20,7 +20,7 @@ disableKinds = ["taxonomy", "term"]
   repo = "https://github.com/listepo/ketch"
   registryRepo = "https://github.com/listepo/ketch-registry"
   ogImage = "img/og.png"
-  keywords = ["package manager", "macOS", "GitHub releases", "CLI", "Rust", "homebrew alternative", "install binaries"]
+  keywords = ["package manager", "macOS", "Linux", "Windows", "GitHub releases", "CLI", "Rust", "homebrew alternative", "install binaries"]
 
 [menu]
   [[menu.main]]
