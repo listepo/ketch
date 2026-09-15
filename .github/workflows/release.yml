@@ -389,6 +389,24 @@ jobs:
       - name: Lint the cask
         run: brew style tap/Casks/ketch.rb
 
+      # Commit before smoking: `brew tap … $PWD/tap` uses the git HEAD of a
+      # path tap, so an uncommitted Casks/ketch.rb would still install the
+      # previous release and leave the new checksums untested.
+      - name: Commit the cask
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          cd tap
+          git rev-parse --verify HEAD >/dev/null 2>&1 || git checkout -q -B main
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/ketch.rb
+          if git diff --cached --quiet; then
+            echo "cask already at $VERSION"
+          else
+            git commit -m "ketch $VERSION"
+          fi
+
       # brew style only checks syntax; install and uninstall postflights run
       # for real only under `brew install --cask`. Smoke the file about to be
       # pushed so a broken bootstrap (e.g. recursive brew uninstall) never
@@ -428,14 +446,12 @@ jobs:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           cd tap
-          # The tap starts life empty; the first release makes its main branch.
-          git rev-parse --verify HEAD >/dev/null 2>&1 || git checkout -q -B main
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Casks/ketch.rb
-          if git diff --cached --quiet; then
-            echo "cask already at $VERSION"
-            exit 0
+          # Commit happened before smoke; push whatever HEAD is (may already
+          # match the remote if this tag was re-run).
+          if git rev-parse --verify @{u} >/dev/null 2>&1; then
+            if [ "$(git rev-parse HEAD)" = "$(git rev-parse @{u})" ]; then
+              echo "cask already at $VERSION on the remote"
+              exit 0
+            fi
           fi
-          git commit -m "ketch $VERSION"
           git push origin HEAD
