@@ -47,6 +47,9 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: actions/configure-pages@v5
 
+      - name: Test site version sync
+        run: python3 site/test_sync_docs.py
+
       # docs/*.md is the documentation; the site's copies are generated from it
       # so the two can never drift.
       - name: Mirror the Markdown into the site

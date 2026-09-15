@@ -3,7 +3,7 @@
   <div class="hero-text">
     <div class="hero-meta">
       <p class="eyebrow">macOS · Linux · Windows · single binary</p>
-      <p class="release-chip" aria-hidden="true">v{{ site.Params.version }} · caught</p>
+      <p class="release-chip" aria-hidden="true">v{{ site.Params.version }} · preview</p>
     </div>
     <h1>Catch releases straight from GitHub.</h1>
     <p class="lede">
@@ -37,6 +37,20 @@ rtok 0.1.0
 <span class="p">$</span> ketch list
 package  version  source
 rtok     0.1.0    github:listepo/rtok</code></pre>
+  </div>
+</section>
+
+<section class="demo">
+  <h2>Demo</h2>
+  <div class="demo-grid">
+    <figure>
+      <img src="{{ "img/demo/ketch-install.png" | relURL }}" width="1200" height="720" alt="ketch install listepo/rtok verifying the published SHA-256, then rtok --version">
+      <figcaption>Install &amp; verify</figcaption>
+    </figure>
+    <figure>
+      <img src="{{ "img/demo/ketch-manage.png" | relURL }}" width="1200" height="720" alt="ketch list, outdated, and upgrade for rtok">
+      <figcaption>Manage</figcaption>
+    </figure>
   </div>
 </section>
 

@@ -32,6 +32,18 @@ ketch install --path ./mytool        # a local binary, archive, symlink, or .app
 ketch install local:/abs/or/rel      # same thing, as a package ref
 ```
 
+## Demo
+
+**Install & verify.** `ketch install listepo/rtok` downloads the release, checks
+the published SHA-256, and leaves the binary on your `PATH`.
+
+![ketch install listepo/rtok, checksum verified, then rtok --version](site/static/img/demo/ketch-install.png)
+
+**Manage.** `ketch list`, `ketch outdated`, and `ketch upgrade` keep installed
+tools current — each upgrade is verified the same way.
+
+![ketch list, outdated, and upgrade for rtok](site/static/img/demo/ketch-manage.png)
+
 ## Install
 
 ```bash
