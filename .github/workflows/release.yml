@@ -396,11 +396,30 @@ jobs:
       - name: Smoke test the cask
         env:
           HOMEBREW_NO_AUTO_UPDATE: 1
+          # postflight runs `ketch self install`, which hits the GitHub API for
+          # the just-published tag. Without a token, shared runner IPs are
+          # rate-limited (HTTP 403) and the smoke fails after the release is
+          # already public — leaving the tap a version behind.
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+          KETCH_GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           # Homebrew 4.6+ rejects bare cask paths; install via a local tap of the
           # clone we are about to push (listepo/homebrew-tap → listepo/tap).
+          # Drop a prior tap first: otherwise `brew tap name path` can leave the
+          # remote clone in place and smoke the published 0.x.y cask instead of
+          # the one Generate just wrote for this tag.
+          brew untap listepo/tap >/dev/null 2>&1 || true
           brew tap listepo/tap "$PWD/tap"
+          # Guard: the cask under this tap must advertise the version we published.
+          cask_version="$(brew info --cask --json=v2 listepo/tap/ketch | python3 -c 'import json,sys; print(json.load(sys.stdin)["casks"][0]["version"])')"
+          if [ "$cask_version" != "${{ needs.version.outputs.version }}" ]; then
+            echo "smoke would install cask $cask_version, expected ${{ needs.version.outputs.version }}" >&2
+            echo "---- tap/Casks/ketch.rb ----" >&2
+            cat tap/Casks/ketch.rb >&2
+            exit 1
+          fi
           brew install --cask --verbose listepo/tap/ketch
           brew uninstall --cask ketch
 
