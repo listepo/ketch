@@ -321,8 +321,13 @@ A token is not required, but it raises GitHub's rate limit considerably.
 macOS, Linux and Windows. Each OS has a `Platform` backend that picks a release
 asset, unpacks it and places binaries; everything above that trait is shared.
 `cargo test` runs the suite for the host OS; CI does that on macOS, Linux and
-Windows. `ketch path install` on Windows writes the user PATH. Releases publish
-a tarball per target; `install.sh` and `install.ps1` fetch the one for the machine they run on.
+Windows. Install paths: `curl | bash` via `install.sh` on macOS and Linux,
+`irm | iex` via `install.ps1` on Windows, or `brew install --cask listepo/tap/ketch`
+on macOS. `ketch path install` puts `~/.ketch/bin` on PATH (shell startup files
+on Unix; the user PATH on Windows). Releases publish a tarball per target;
+`install.sh` and `install.ps1` fetch the one for the machine they run on. The
+Homebrew tap is [`listepo/homebrew-tap`](https://github.com/listepo/homebrew-tap);
+the package registry is [`listepo/ketch-registry`](https://github.com/listepo/ketch-registry).
 
 ## Documentation
 
@@ -360,14 +365,23 @@ KETCH_ROOT=/tmp/ketch-scratch cargo run -- doctor
 Nothing is typed. [release-plz](https://release-plz.dev) keeps one pull request
 up to date on every merge to `main`, holding the next version and the
 `CHANGELOG.md` entry for it, both read off the conventional commits since the
-last tag. Merging that pull request is the release: the whole gate runs again,
-both macOS architectures are built and signed with a Developer ID certificate,
-the tarballs are published — and the tag is created last, once all of that has
-succeeded. So `v0.2.0` existing means v0.2.0 shipped, and a build that fails
-leaves nothing to clean up but a draft.
+last tag. Merging that pull request is the release: `release.yml` sees that
+`v<version>` from `Cargo.toml` has no tag yet, rebuilds and signs both macOS
+architectures (Linux and Windows unsigned), publishes draft assets, then
+creates the tag when the draft is published, and the `tap` job bumps
+`listepo/homebrew-tap`'s cask. So `v0.4.1` existing means v0.4.1 shipped, and a
+build that fails leaves nothing to clean up but a draft.
+
+CI (`ci.yml`) runs only on pushes to `main` and on manual
+`workflow_dispatch`. It does not run on pull request events. Before merging a
+branch, dispatch the gate on that ref and merge only when it is green:
 
 ```bash
-scripts/release.sh 0.2.0        # the same thing by hand, for a specific version
+gh workflow run ci.yml --ref <branch>
+```
+
+```bash
+scripts/release.sh 0.4.1        # the same thing by hand, for a specific version
 ```
 
 ketch is not on crates.io — it ships as a tarball on a GitHub release, so
@@ -377,9 +391,11 @@ a crate.
 ## Contributing
 
 [AGENTS.md](AGENTS.md) documents the layout, the conventions, and the trust
-boundaries — read it before changing anything. `cargo test`, `cargo clippy
---all-targets` and `cargo fmt --check` all have to be clean, and CI enforces all
-three on macOS.
+boundaries — read it before changing anything. Repository prose (commits, PRs,
+docs, comments) is English. `cargo test`, `cargo clippy --all-targets` and
+`cargo fmt --check` all have to be clean; CI enforces those on macOS, Linux and
+Windows, but only on `main` pushes and `workflow_dispatch` — dispatch
+`ci.yml` on your branch and wait for green before merging.
 
 With [just](https://github.com/casey/just) installed, `just deps` sets up the
 pinned tools and commitlint once, and `just hooks` opts in to the
