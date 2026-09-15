@@ -572,3 +572,22 @@ pub struct CompletionsArgs {
     #[arg(long)]
     pub install: bool,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    #[test]
+    fn clap_version_is_the_cargo_package_version() {
+        let expected = env!("CARGO_PKG_VERSION");
+        let version = Cli::command()
+            .get_version()
+            .expect("clap should advertise a version")
+            .to_string();
+        assert_eq!(version, expected);
+        if expected != "0.1.0" {
+            assert_ne!(version, "0.1.0", "clap version must not be hard-coded");
+        }
+    }
+}

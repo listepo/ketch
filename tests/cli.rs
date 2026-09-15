@@ -9,6 +9,26 @@ use assert_fs::prelude::*;
 use predicates::prelude::*;
 
 #[test]
+fn version_matches_the_cargo_package_version() {
+    let expected = env!("CARGO_PKG_VERSION");
+    let output = Command::cargo_bin("ketch")
+        .unwrap()
+        .arg("--version")
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .get_output()
+        .stdout
+        .clone();
+    let output = String::from_utf8(output).expect("version output is UTF-8");
+
+    assert_eq!(output, format!("ketch {expected}\n"));
+    if expected != "0.1.0" {
+        assert_ne!(output, "ketch 0.1.0\n", "version must not be hard-coded");
+    }
+}
+
+#[test]
 fn help_describes_the_product_and_install_command() {
     Command::cargo_bin("ketch")
         .unwrap()
