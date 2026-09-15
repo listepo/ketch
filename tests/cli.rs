@@ -32,6 +32,23 @@ fn version_matches_the_cargo_package_version_marked_preview() {
     }
 }
 
+
+#[test]
+fn self_version_marks_preview() {
+    let expected = format!("{} · preview", env!("CARGO_PKG_VERSION"));
+    let output = Command::cargo_bin("ketch")
+        .unwrap()
+        .args(["self", "version"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let output = String::from_utf8(output).expect("version output is UTF-8");
+    let first = output.lines().next().expect("self version prints a first line");
+    assert_eq!(first, format!("ketch {expected}"));
+}
+
 #[test]
 fn help_describes_the_product_and_install_command() {
     Command::cargo_bin("ketch")
