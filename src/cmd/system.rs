@@ -30,6 +30,9 @@ pub fn doctor(cfg: &Config, args: DoctorArgs) -> Result<()> {
     // Not a platform check: every shell reads the same startup files wherever
     // it runs, so a second platform would only duplicate this.
     checks.push(shell::path_check(cfg));
+    if let Some(check) = path_binary_check(cfg) {
+        checks.push(check);
+    }
 
     match platform::host() {
         Ok(host) => {
@@ -666,6 +669,12 @@ pub fn zelf(cfg: &Config, command: SelfCommand) -> Result<()> {
             if let Ok(exe) = self_update::current_exe() {
                 ui::out(&format!("binary {}", exe.display()));
             }
+            if let Some(on_path) = first_ketch_on_path() {
+                let linked = store_ketch_link(cfg);
+                if !same_binary(&on_path, &linked) {
+                    ui::out(&format!("PATH   {}", on_path.display()));
+                }
+            }
             Ok(())
         }
         SelfCommand::Update { dry_run, force } => {
@@ -721,6 +730,65 @@ pub fn zelf(cfg: &Config, command: SelfCommand) -> Result<()> {
             Ok(())
         }
     }
+}
+
+/// The `ketch` (or `ketch.exe`) the store is supposed to expose on PATH.
+fn store_ketch_link(cfg: &Config) -> std::path::PathBuf {
+    cfg.bin_dir
+        .join(if cfg!(windows) { "ketch.exe" } else { "ketch" })
+}
+
+fn same_binary(a: &std::path::Path, b: &std::path::Path) -> bool {
+    let left = std::fs::canonicalize(a).unwrap_or_else(|_| a.to_path_buf());
+    let right = std::fs::canonicalize(b).unwrap_or_else(|_| b.to_path_buf());
+    left == right
+}
+
+/// First `ketch`/`ketch.exe` on PATH, canonicalised when the file exists.
+fn first_ketch_on_path() -> Option<std::path::PathBuf> {
+    first_ketch_on_path_from(std::env::var_os("PATH")?)
+}
+
+fn first_ketch_on_path_from(path: impl AsRef<std::ffi::OsStr>) -> Option<std::path::PathBuf> {
+    let name = if cfg!(windows) { "ketch.exe" } else { "ketch" };
+    for dir in std::env::split_paths(path.as_ref()) {
+        let candidate = dir.join(name);
+        if candidate.is_file() {
+            return Some(std::fs::canonicalize(&candidate).unwrap_or(candidate));
+        }
+    }
+    None
+}
+
+/// Warn when PATH finds a ketch that is not the store link.
+///
+/// `cargo install ketch` (or a leftover bootstrap) often lands in
+/// `~/.cargo/bin` *ahead* of `~/.ketch/bin`. Then `ketch --version` prints
+/// that old binary's crate version — historically `0.1.0` — even though
+/// Cargo.toml and the store copy are 0.4.x. The PATH check only asks whether
+/// the bin dir is present, not whether it wins.
+fn path_binary_check(cfg: &Config) -> Option<DoctorCheck> {
+    path_binary_check_from(cfg, std::env::var_os("PATH")?)
+}
+
+fn path_binary_check_from(cfg: &Config, path: impl AsRef<std::ffi::OsStr>) -> Option<DoctorCheck> {
+    let linked = store_ketch_link(cfg);
+    if !linked.exists() {
+        return None;
+    }
+    let on_path = first_ketch_on_path_from(path.as_ref())?;
+    if same_binary(&on_path, &linked) {
+        return None;
+    }
+    Some(DoctorCheck::warn(
+        "binary",
+        format!(
+            "PATH runs {} before {}",
+            on_path.display(),
+            linked.display()
+        ),
+        "Remove or rename the earlier copy (often ~/.cargo/bin/ketch from `cargo install`), or put ~/.ketch/bin first on PATH.",
+    ))
 }
 
 #[cfg(test)]
@@ -779,6 +847,39 @@ mod tests {
         assert_eq!(check.status, CheckStatus::Ok);
         assert!(check.detail.contains("1 package"), "{}", check.detail);
         assert!(check.detail.contains("h ago"), "{}", check.detail);
+    }
+
+    #[test]
+    fn path_binary_check_is_silent_when_the_store_link_wins() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg = Config::load(Some(tmp.path().to_path_buf())).unwrap();
+        std::fs::create_dir_all(&cfg.bin_dir).unwrap();
+        let linked = store_ketch_link(&cfg);
+        std::fs::write(&linked, b"store").unwrap();
+        let path = std::env::join_paths([&cfg.bin_dir]).unwrap();
+        assert!(path_binary_check_from(&cfg, &path).is_none());
+    }
+
+    #[test]
+    fn path_binary_check_warns_when_an_earlier_ketch_shadows_the_store() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg = Config::load(Some(tmp.path().to_path_buf())).unwrap();
+        std::fs::create_dir_all(&cfg.bin_dir).unwrap();
+        let linked = store_ketch_link(&cfg);
+        std::fs::write(&linked, b"store").unwrap();
+        let shadow_dir = tmp.path().join("cargo-bin");
+        std::fs::create_dir_all(&shadow_dir).unwrap();
+        let shadow = shadow_dir.join(if cfg!(windows) { "ketch.exe" } else { "ketch" });
+        std::fs::write(&shadow, b"stale").unwrap();
+        let path = std::env::join_paths([&shadow_dir, &cfg.bin_dir]).unwrap();
+        let check = path_binary_check_from(&cfg, &path).expect("shadowed");
+        assert_eq!(check.status, CheckStatus::Warn);
+        assert!(check.detail.contains("PATH runs"), "{}", check.detail);
+        assert!(
+            check.fix.as_deref().unwrap_or("").contains("cargo/bin"),
+            "{:?}",
+            check.fix
+        );
     }
 
     #[test]
