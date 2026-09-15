@@ -58,6 +58,23 @@ rtok     0.1.0    github:listepo/rtok</code></pre>
   <h2>What it does differently</h2>
   <div class="grid">
     <article class="glass-card">
+      <div class="feature-stage" aria-hidden="true">
+        <div class="mini-ui">
+          <div class="mini-ui-bar">
+            <span class="mini-ui-mark"></span>
+            <span class="mini-ui-title">resolve</span>
+          </div>
+          <div class="mini-ui-body vu-resolve">
+            <div class="vu-pkg">acme/cli</div>
+            <div class="vu-meta">release v1.4.2</div>
+            <div class="vu-file">
+              <span class="vu-file-name">cli-darwin-arm64.tar.gz</span>
+              <span class="vu-chip">arm64</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="feature-kicker">01 / RESOLVE</p>
       <h3>Any repo that ships releases</h3>
       <p>
         No formula to write and no maintainer to wait for. Point ketch at
@@ -66,6 +83,24 @@ rtok     0.1.0    github:listepo/rtok</code></pre>
       </p>
     </article>
     <article class="glass-card">
+      <div class="feature-stage" aria-hidden="true">
+        <div class="mini-ui">
+          <div class="mini-ui-bar">
+            <span class="mini-ui-mark"></span>
+            <span class="mini-ui-title">checksum</span>
+          </div>
+          <div class="mini-ui-body vu-verify">
+            <div class="vu-row">
+              <span class="vu-pkg">SHA-256</span>
+              <span class="vu-ok">OK</span>
+            </div>
+            <div class="vu-hash">a3f2-9c1e</div>
+            <div class="vu-track"><span></span></div>
+            <div class="vu-meta">digest matched</div>
+          </div>
+        </div>
+      </div>
+      <p class="feature-kicker">02 / VERIFY</p>
       <h3>Verified, not just downloaded</h3>
       <p>
         Published SHA-256 checksums are checked against what actually landed on
@@ -74,6 +109,30 @@ rtok     0.1.0    github:listepo/rtok</code></pre>
       </p>
     </article>
     <article class="glass-card">
+      <div class="feature-stage" aria-hidden="true">
+        <div class="mini-ui">
+          <div class="mini-ui-bar">
+            <span class="mini-ui-mark"></span>
+            <span class="mini-ui-title">/Applications</span>
+          </div>
+          <div class="mini-ui-body vu-place">
+            <div class="vu-row">
+              <span class="vu-icon on"></span>
+              <span class="vu-item">Widget.app</span>
+              <span class="vu-chip">new</span>
+            </div>
+            <div class="vu-row">
+              <span class="vu-icon"></span>
+              <span class="vu-item">Other.app</span>
+            </div>
+            <div class="vu-row">
+              <span class="vu-icon"></span>
+              <span class="vu-item">binaries</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="feature-kicker">03 / INSTALL</p>
       <h3>Apps as well as binaries</h3>
       <p>
         A release that ships an <code>.app</code> bundle gets placed in
@@ -82,6 +141,30 @@ rtok     0.1.0    github:listepo/rtok</code></pre>
       </p>
     </article>
     <article class="glass-card">
+      <div class="feature-stage" aria-hidden="true">
+        <div class="mini-ui">
+          <div class="mini-ui-bar">
+            <span class="mini-ui-mark"></span>
+            <span class="mini-ui-title">~/.ketch</span>
+          </div>
+          <div class="mini-ui-body vu-organize">
+            <div class="vu-row">
+              <span class="vu-dot mint"></span>
+              <span class="vu-item">store/</span>
+            </div>
+            <div class="vu-row">
+              <span class="vu-dot teal"></span>
+              <span class="vu-item">bin/</span>
+              <span class="vu-chip quiet">linked</span>
+            </div>
+            <div class="vu-row">
+              <span class="vu-dot coral"></span>
+              <span class="vu-item">state.json</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="feature-kicker">04 / STORE</p>
       <h3>Everything in one tree</h3>
       <p>
         Versioned payloads in <code>~/.ketch/store</code>, links in
@@ -90,6 +173,21 @@ rtok     0.1.0    github:listepo/rtok</code></pre>
       </p>
     </article>
     <article class="glass-card">
+      <div class="feature-stage" aria-hidden="true">
+        <div class="mini-ui">
+          <div class="mini-ui-bar">
+            <span class="mini-ui-mark"></span>
+            <span class="mini-ui-title">plugin.json</span>
+          </div>
+          <div class="mini-ui-body vu-extend">
+            <pre class="vu-code">{
+  <span class="vu-k">"source"</span>: <span class="vu-s">"gitlab"</span>,
+  <span class="vu-k">"assets"</span>: <span class="vu-p">[…]</span>
+}</pre>
+          </div>
+        </div>
+      </div>
+      <p class="feature-kicker">05 / EXTEND</p>
       <h3>Sources beyond GitHub</h3>
       <p>
         GitLab, Gitea, an internal artifact server: a plugin is one executable
@@ -98,6 +196,20 @@ rtok     0.1.0    github:listepo/rtok</code></pre>
       </p>
     </article>
     <article class="glass-card">
+      <div class="feature-stage" aria-hidden="true">
+        <div class="mini-ui">
+          <div class="mini-ui-bar">
+            <span class="mini-ui-mark"></span>
+            <span class="mini-ui-title">ketch.toml</span>
+          </div>
+          <div class="mini-ui-body vu-contribute">
+            <div class="vu-sec">[package]</div>
+            <div class="vu-toml"><span class="vu-k">name</span> = <span class="vu-s">"cli"</span></div>
+            <div class="vu-cta">Open PR <span>→</span></div>
+          </div>
+        </div>
+      </div>
+      <p class="feature-kicker">06 / CONTRIBUTE</p>
       <h3>A registry you can read</h3>
       <p>
         One folder per package, one <code>ketch.toml</code> inside. No index to
