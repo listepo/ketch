@@ -76,7 +76,12 @@ jobs:
               echo "$tag does not exist; force only rebuilds a published release" >&2
               exit 1
             fi
+            # Annotated tags peel via ^{commit}; lightweight tags only have the plain
+            # refs/tags/<tag> line (v0.4.1 was lightweight and broke force repairs).
             ref="$(git ls-remote origin "refs/tags/${tag}^{commit}" | awk '{print $1; exit}')"
+            if [ -z "$ref" ]; then
+              ref="$(git ls-remote origin "refs/tags/${tag}" | awk '{print $1; exit}')"
+            fi
             if [ -z "$ref" ]; then
               echo "could not resolve $tag to a commit" >&2
               exit 1
