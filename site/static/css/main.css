@@ -1,6 +1,7 @@
 /* ketch — nerd + flat + material + glass
    Dual theme: explicit [data-theme] toggle + system via prefers-color-scheme.
-   No build step, no framework. */
+   Site chrome lives here. Landing Mini UI utilities are Tailwind
+   (`npm run css` → css/mini-ui.css). */
 
 /* ---------- semantic tokens ---------- */
 
@@ -575,16 +576,8 @@ pre code { background: none; border: 0; padding: 0; color: inherit; font-size: i
 
 .grid {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
   gap: 1.25rem;
-}
-
-@media (min-width: 640px) {
-  .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-
-@media (min-width: 1024px) {
-  .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 .grid article,
@@ -599,22 +592,9 @@ pre code { background: none; border: 0; padding: 0; color: inherit; font-size: i
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
   min-width: 0;
 }
-.features .glass-card {
-  display: flex;
-  flex-direction: column;
-}
 .grid article:hover {
   border-color: var(--accent);
   box-shadow: var(--elev-2);
-}
-.grid .feature-kicker {
-  margin: 0 0 0.35rem;
-  font-family: var(--mono);
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
 }
 .grid h3 {
   margin: 0 0 0.6rem;
@@ -622,240 +602,11 @@ pre code { background: none; border: 0; padding: 0; color: inherit; font-size: i
   letter-spacing: -0.01em;
   font-weight: 650;
 }
-.grid p {
+.grid h3 + p {
   margin: 0;
   color: var(--ink-muted);
   font-size: 0.95rem;
 }
-
-/* Locked Mini UI chrome: 128px window, 28px titlebar, 12px pad, 10px radius.
-   Mint hairline + mark instead of traffic lights. */
-.feature-stage {
-  flex: none;
-  margin: 0 0 1rem;
-  padding: 12px;
-  border-radius: var(--radius);
-  background: var(--stage);
-}
-.mini-ui {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  height: 128px;
-  border: 1px solid var(--hairline);
-  border-radius: 10px;
-  background: var(--surface-1);
-  box-shadow: var(--elev-1);
-  overflow: hidden;
-}
-.mini-ui::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  right: 0;
-  left: 0;
-  height: 2px;
-  background: var(--mint);
-}
-.mini-ui-bar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex: none;
-  height: 28px;
-  padding: 0 10px;
-  border-bottom: 1px solid var(--hairline);
-}
-.mini-ui-mark {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--mint);
-}
-.mini-ui-title {
-  font-family: var(--mono);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  color: var(--ink-muted);
-}
-.mini-ui-body {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-  padding: 12px;
-  overflow: hidden;
-}
-.vu-pkg {
-  font-family: var(--mono);
-  font-size: 12px;
-  font-weight: 650;
-  color: var(--ink);
-  line-height: 1.2;
-}
-.vu-meta {
-  font-family: var(--mono);
-  font-size: 10px;
-  color: var(--ink-muted);
-  line-height: 1.3;
-}
-.vu-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-.vu-item {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 550;
-  color: var(--ink);
-}
-.vu-chip {
-  flex: none;
-  padding: 3px 6px;
-  border-radius: 999px;
-  background: var(--tag-coral);
-  color: #fff;
-  font-family: var(--mono);
-  font-size: 9px;
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: 0.02em;
-}
-.vu-chip.quiet {
-  background: var(--surface-2);
-  color: var(--ink-muted);
-}
-.vu-file {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  margin-top: auto;
-  padding: 4px 5px 4px 10px;
-  border-radius: 999px;
-  background: var(--surface-2);
-}
-.vu-file-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--mono);
-  font-size: 9px;
-  color: var(--ink-muted);
-}
-.vu-ok {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  margin-left: auto;
-  min-width: 22px;
-  height: 16px;
-  padding: 0 5px;
-  border-radius: 999px;
-  background: var(--tag-coral);
-  color: #fff;
-  font-family: var(--mono);
-  font-size: 8px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-}
-.vu-hash {
-  margin: 4px 0 6px;
-  font-family: var(--mono);
-  font-size: 13px;
-  font-weight: 650;
-  letter-spacing: 0.04em;
-  color: var(--ink);
-}
-.vu-track {
-  height: 4px;
-  margin-bottom: 8px;
-  border-radius: 999px;
-  background: var(--surface-2);
-  overflow: hidden;
-}
-.vu-track span {
-  display: block;
-  width: 72%;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--mint);
-}
-.vu-icon {
-  flex: none;
-  width: 14px;
-  height: 14px;
-  border: 1px solid var(--hairline);
-  border-radius: 50%;
-  background: var(--surface-2);
-}
-.vu-icon.on {
-  border-color: var(--mint);
-  background: var(--mint);
-}
-.vu-place,
-.vu-organize {
-  justify-content: space-between;
-  padding-top: 10px;
-  padding-bottom: 10px;
-}
-.vu-dot {
-  flex: none;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-}
-.vu-dot.mint { background: var(--mint); }
-.vu-dot.teal { background: var(--mark-tile); }
-.vu-dot.coral { background: var(--tag-coral); }
-.vu-code,
-.vu-toml,
-.vu-sec {
-  margin: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: none;
-  box-shadow: none;
-  overflow: hidden;
-  font-family: var(--mono);
-  font-size: 10px;
-  line-height: 1.45;
-  color: var(--ink-muted);
-  white-space: pre;
-}
-.vu-k { color: var(--ink); font-weight: 550; }
-.vu-s { color: var(--accent); }
-.vu-p { color: var(--ink-faint); }
-.vu-sec { color: var(--ink-faint); margin-bottom: 2px; }
-.vu-cta {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  margin-top: auto;
-  height: 22px;
-  border-radius: 999px;
-  background: var(--mint);
-  color: var(--mark-tile);
-  font-family: var(--mono);
-  font-size: 10px;
-  font-weight: 700;
-}
-.vu-resolve .vu-meta { margin: 4px 0 0; }
-.vu-verify .vu-row { margin-bottom: 2px; }
-.vu-contribute .vu-toml { margin-bottom: 4px; color: var(--ink); }
 
 .usage .note {
   margin-top: 1.5rem;

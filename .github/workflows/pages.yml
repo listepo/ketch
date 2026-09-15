@@ -5,9 +5,9 @@ name: site
 on:
   push:
     branches: [main]
-    paths: ["site/**", "docs/**", "*.md", ".github/workflows/pages.yml"]
+    paths: ["site/**", "docs/**", "*.md", "package.json", "package-lock.json", ".github/workflows/pages.yml"]
   pull_request:
-    paths: ["site/**", "docs/**", "*.md", ".github/workflows/pages.yml"]
+    paths: ["site/**", "docs/**", "*.md", "package.json", "package-lock.json", ".github/workflows/pages.yml"]
   workflow_dispatch:
 
 permissions:
@@ -50,6 +50,25 @@ jobs:
       - name: Test site version sync
         run: python3 site/test_sync_docs.py
 
+      # Landing Mini UI utilities are Tailwind; the pin lives in mise.toml
+      # the same way commitlint's Node does, so the two cannot drift.
+      - name: Read the Node pin from mise.toml
+        id: node_pin
+        run: |
+          version=$(grep '^node = ' mise.toml | cut -d '"' -f2)
+          [ -n "$version" ] || { echo "no node pin found in mise.toml" >&2; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ steps.node_pin.outputs.version }}
+          cache: npm
+
+      - name: Build Mini UI CSS
+        run: |
+          npm ci
+          npm run css
+
       # docs/*.md is the documentation; the site's copies are generated from it
       # so the two can never drift.
       - name: Mirror the Markdown into the site
@@ -70,7 +89,7 @@ jobs:
                           docs/manifests/index.html docs/registry/index.html \
                           docs/plugins/index.html docs/roadmap/index.html \
                           docs/plan/index.html \
-                          css/main.css img/og.png; do
+                          css/main.css css/mini-ui.css img/og.png; do
             [ -s "$required" ] || { echo "missing or empty: $required" >&2; exit 1; }
           done
           # The SEO tags are the point of the landing page; a template that

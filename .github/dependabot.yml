@@ -36,6 +36,8 @@ updates:
       # the same exact version, so they move together, majors included.
       commitlint:
         patterns: ["@commitlint/*"]
+      tailwind:
+        patterns: ["tailwindcss", "@tailwindcss/*"]
 
   - package-ecosystem: github-actions
     directory: /
