@@ -17,6 +17,35 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 OUT = ROOT / "site" / "content" / "docs"
 
+HUGO_TOML = ROOT / "site" / "hugo.toml"
+
+
+def sync_version() -> None:
+    """Keep site.Params.version equal to Cargo.toml so the homepage chip and SEO stay current."""
+    cargo = (ROOT / "Cargo.toml").read_text(encoding="utf-8")
+    m = re.search(r'^version\s*=\s*"([^"]+)"', cargo, re.M)
+    if not m:
+        raise SystemExit("Cargo.toml: missing package version")
+    version = m.group(1)
+    toml = HUGO_TOML.read_text(encoding="utf-8")
+    if re.search(r'(?m)^\s*version\s*=', toml):
+        toml = re.sub(
+            r'(?m)^(\s*version\s*=\s*")[^"]*(")',
+            rf"\g<1>{version}\2",
+            toml,
+            count=1,
+        )
+    else:
+        toml = re.sub(
+            r'(?m)^(\[params\]\n)',
+            rf'\1  version = "{version}"\n',
+            toml,
+            count=1,
+        )
+    HUGO_TOML.write_text(toml, encoding="utf-8")
+    print(f"site version -> {version}", file=sys.stderr)
+
+
 # source path -> (slug, title, sidebar weight, description)
 PAGES = [
     (
@@ -125,6 +154,7 @@ def strip_leading_h1(body: str) -> str:
 
 
 def main() -> int:
+    sync_version()
     OUT.mkdir(parents=True, exist_ok=True)
     written = []
     for source, slug, title, weight, description in PAGES:
