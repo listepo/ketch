@@ -52,7 +52,7 @@ class SiteVersionTest(unittest.TestCase):
         seo = (ROOT / "site/layouts/partials/seo.html").read_text(encoding="utf-8")
 
         self.assertIn(
-            'class="release-chip" aria-hidden="true">v{{ site.Params.version }} · caught',
+            'class="release-chip" aria-hidden="true">v{{ site.Params.version }} · preview',
             homepage,
         )
         self.assertIsNone(re.search(r'class="release-chip"[^>]*>v?0\.1\.0', homepage))

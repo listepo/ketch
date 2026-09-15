@@ -7,11 +7,11 @@ const SYNC: &str = include_str!("../site/sync-docs.py");
 #[test]
 fn homepage_chip_and_seo_use_site_params_version() {
     assert!(
-        INDEX.contains("v{{ site.Params.version }} · caught"),
+        INDEX.contains("v{{ site.Params.version }} · preview"),
         "homepage chip must render site.Params.version"
     );
     assert!(
-        !INDEX.contains("v0.1.0 · caught"),
+        !INDEX.contains("v0.1.0 · preview"),
         "homepage chip must not hard-code ketch 0.1.0"
     );
     assert!(
