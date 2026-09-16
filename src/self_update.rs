@@ -549,7 +549,10 @@ pub fn uninstall_plan(cfg: &Config, keep_packages: bool, no_brew: bool) -> Resul
         cask: (!no_brew).then(cask_dir).flatten(),
         exe: current_exe().ok().filter(|exe| {
             let root = dunce::canonicalize(&cfg.root).unwrap_or_else(|_| cfg.root.clone());
-            exe.starts_with(&root)
+            let exe = dunce::canonicalize(exe).unwrap_or_else(|_| exe.clone());
+            // Windows Path::starts_with is case-sensitive; a root typed with
+            // different ASCII case than the running image must still count.
+            crate::platform::path_is_within(&exe, &root)
         }),
     })
 }

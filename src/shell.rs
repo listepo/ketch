@@ -48,14 +48,25 @@ impl Shell {
     /// up.
     ///
     /// Both the directory and the leading `-` that marks a login shell are
-    /// ignored, because `$SHELL` and `argv[0]` disagree about both.
+    /// ignored, because `$SHELL` and `argv[0]` disagree about both. A Windows
+    /// `bash.exe` (and a `C:\…\bash.exe` path) must still resolve: Git for
+    /// Windows puts `.exe` on `$SHELL` / `argv[0]`, and `Path` on Unix would
+    /// treat a backslash path as one component.
     pub fn from_program(program: &str) -> Option<Shell> {
-        let base = program.rsplit('/').next().unwrap_or(program);
-        match base.trim_start_matches('-') {
-            "bash" => Some(Shell::Bash),
-            "zsh" => Some(Shell::Zsh),
-            "fish" => Some(Shell::Fish),
-            _ => None,
+        let base = program.rsplit(['/', '\\']).next().unwrap_or(program);
+        let stem = base.trim_start_matches('-');
+        let stem = stem
+            .strip_suffix(".exe")
+            .or_else(|| stem.strip_suffix(".EXE"))
+            .unwrap_or(stem);
+        if stem.eq_ignore_ascii_case("bash") {
+            Some(Shell::Bash)
+        } else if stem.eq_ignore_ascii_case("zsh") {
+            Some(Shell::Zsh)
+        } else if stem.eq_ignore_ascii_case("fish") {
+            Some(Shell::Fish)
+        } else {
+            None
         }
     }
 
@@ -705,6 +716,10 @@ mod tests {
     #[case("/opt/homebrew/bin/fish", Some(Shell::Fish))]
     #[case("/usr/bin/tcsh", None)]
     #[case("", None)]
+    #[case("bash.exe", Some(Shell::Bash))]
+    #[case(r"C:\Program Files\Git\bin\bash.exe", Some(Shell::Bash))]
+    #[case(r"C:/Program Files/Git/usr/bin/zsh.exe", Some(Shell::Zsh))]
+    #[case("FISH.EXE", Some(Shell::Fish))]
     fn a_program_path_identifies_the_shell(#[case] program: &str, #[case] expected: Option<Shell>) {
         assert_eq!(Shell::from_program(program), expected);
     }
