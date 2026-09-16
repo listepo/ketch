@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.3](https://github.com/listepo/ketch/releases/tag/v0.4.3) - 2026-09-16
+
+### Other
+
+- *(deps)* bump toml from 0.8.23 to 0.9.12+spec-1.1.0 ([#84](https://github.com/listepo/ketch/pull/84))
+- *(deps)* bump crossterm from 0.28.1 to 0.29.0 ([#83](https://github.com/listepo/ketch/pull/83))
+- *(deps)* bump actions/deploy-pages from 4 to 5 ([#79](https://github.com/listepo/ketch/pull/79))
+- *(deps)* bump sha2 from 0.10.9 to 0.11.0 ([#82](https://github.com/listepo/ketch/pull/82))
+- *(deps)* bump indicatif from 0.17.11 to 0.18.6 ([#81](https://github.com/listepo/ketch/pull/81))
+- *(deps)* bump trycmd from 0.15.11 to 1.2.1 ([#80](https://github.com/listepo/ketch/pull/80))
+- *(deps)* bump actions/configure-pages from 5 to 6 ([#78](https://github.com/listepo/ketch/pull/78))
+- *(deps)* bump release-plz/action in the actions group ([#77](https://github.com/listepo/ketch/pull/77))
+
 ## [0.4.2](https://github.com/listepo/ketch/releases/tag/v0.4.2) - 2026-09-15
 
 ### Added
