@@ -219,12 +219,19 @@ fn ensure_parent(dest: &Path, out: &Path) -> Result<()> {
 ///
 /// Written out rather than using `Archive::unpack` so the traversal guard is
 /// ours and applies identically to files, directories and links.
+///
+/// Symlinks and hard links are deferred until every regular member is on disk:
+/// Windows materialisation copies the target file, and tar/zip often list the
+/// link before the file it points at.
 fn unpack_tar<R: Read>(reader: R, dest: &Path) -> Result<()> {
     use tar::EntryType;
 
     let mut archive = tar::Archive::new(reader);
     archive.set_preserve_permissions(true);
     archive.set_overwrite(true);
+
+    let mut deferred_symlinks: Vec<(PathBuf, PathBuf)> = Vec::new();
+    let mut deferred_hardlinks: Vec<(PathBuf, PathBuf)> = Vec::new();
 
     for entry in archive.entries().map_err(|e| Error::io(dest, e))? {
         let mut entry = entry.map_err(|e| Error::io(dest, e))?;
@@ -256,7 +263,7 @@ fn unpack_tar<R: Read>(reader: R, dest: &Path) -> Result<()> {
                     .into_owned();
                 check_link_target(&safe, &target)?;
                 ensure_parent(dest, &out)?;
-                write_symlink(&target, &out)?;
+                deferred_symlinks.push((out, target));
             }
             EntryType::Link => {
                 // A tar hard link names its target from the archive root.
@@ -268,13 +275,10 @@ fn unpack_tar<R: Read>(reader: R, dest: &Path) -> Result<()> {
                     })?
                     .into_owned();
                 let safe_target = safe_member_path(&target)?;
-                // The kernel resolves the source too, so a hard link to
-                // `planted-link/.ssh/id_rsa` would pull a file from outside the
-                // payload into it.
-                let source = dest.join(&safe_target);
-                walk_inside(dest, &source, false)?;
+                // Hard-link targets are rooted at the archive prefix; the actual
+                // link waits until that member has been unpacked.
                 ensure_parent(dest, &out)?;
-                std::fs::hard_link(&source, &out).map_err(|e| Error::io(&out, e))?;
+                deferred_hardlinks.push((out, safe_target));
             }
             EntryType::Regular | EntryType::Continuous | EntryType::GNUSparse => {
                 ensure_parent(dest, &out)?;
@@ -283,6 +287,26 @@ fn unpack_tar<R: Read>(reader: R, dest: &Path) -> Result<()> {
             // Character/block devices and fifos have no place in a release.
             _ => continue,
         }
+    }
+    finish_deferred_links(dest, deferred_hardlinks, deferred_symlinks)
+}
+
+/// Create hard links then symlinks after the rest of the archive is on disk.
+fn finish_deferred_links(
+    dest: &Path,
+    hardlinks: Vec<(PathBuf, PathBuf)>,
+    symlinks: Vec<(PathBuf, PathBuf)>,
+) -> Result<()> {
+    for (out, safe_target) in hardlinks {
+        // The kernel resolves the source too, so a hard link to
+        // `planted-link/.ssh/id_rsa` would pull a file from outside the
+        // payload into it.
+        let source = dest.join(&safe_target);
+        walk_inside(dest, &source, false)?;
+        std::fs::hard_link(&source, &out).map_err(|e| Error::io(&out, e))?;
+    }
+    for (out, target) in symlinks {
+        write_symlink(&target, &out)?;
     }
     Ok(())
 }
@@ -357,6 +381,8 @@ impl Extractor for ZipExtractor {
         let mut zip = zip::ZipArchive::new(BufReader::new(file))
             .map_err(|e| Error::parse(src.display().to_string(), e.to_string()))?;
 
+        let mut deferred_symlinks: Vec<(PathBuf, PathBuf)> = Vec::new();
+
         for index in 0..zip.len() {
             let mut entry = zip
                 .by_index(index)
@@ -384,7 +410,7 @@ impl Extractor for ZipExtractor {
                     .map_err(|e| Error::io(&out, e))?;
                 let target = PathBuf::from(target.trim());
                 check_link_target(&safe, &target)?;
-                write_symlink(&target, &out)?;
+                deferred_symlinks.push((out, target));
                 continue;
             }
 
@@ -405,7 +431,7 @@ impl Extractor for ZipExtractor {
                 crate::platform::unix::ensure_executable(&out)?;
             }
         }
-        Ok(())
+        finish_deferred_links(dest, Vec::new(), deferred_symlinks)
     }
 }
 
@@ -556,6 +582,44 @@ mod tests {
         let err = materialize_symlink_as_copy(Path::new("missing"), &link).unwrap_err();
         assert!(err.to_string().contains("cannot materialise"), "{err}");
         assert!(std::fs::symlink_metadata(&link).is_err());
+    }
+
+    /// Archives often list `bin/tool -> tool` before the real file. Deferring
+    /// the link until unpack finishes is what makes Windows copy-materialisation
+    /// (and late hard links) succeed.
+    #[cfg(unix)]
+    #[test]
+    fn symlink_listed_before_its_target_still_materialises() {
+        let mut builder = tar::Builder::new(Vec::new());
+        symlink_entry(&mut builder, "bin/tool-alias", "tool");
+        let mut header = tar::Header::new_gnu();
+        header.set_entry_type(tar::EntryType::Regular);
+        header.set_size(2);
+        header.set_mode(0o755);
+        builder
+            .append_data(&mut header, "bin/tool", &b"hi"[..])
+            .unwrap();
+        let archive = builder.into_inner().unwrap();
+
+        let dest = tempfile::tempdir().unwrap();
+        unpack_tar(&archive[..], dest.path()).unwrap();
+        let alias = dest.path().join("bin/tool-alias");
+        assert!(alias.symlink_metadata().unwrap().file_type().is_symlink());
+        assert_eq!(std::fs::read(&alias).unwrap(), b"hi");
+    }
+
+    #[test]
+    fn finish_deferred_links_materialises_after_target_exists() {
+        let dest = tempfile::tempdir().unwrap();
+        let link = dest.path().join("tool-alias");
+        std::fs::write(dest.path().join("tool.exe"), b"MZ").unwrap();
+        finish_deferred_links(
+            dest.path(),
+            Vec::new(),
+            vec![(link.clone(), PathBuf::from("tool.exe"))],
+        )
+        .unwrap();
+        assert_eq!(std::fs::read(&link).unwrap(), b"MZ");
     }
 
     #[cfg(unix)]

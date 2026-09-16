@@ -168,6 +168,24 @@ mod tests {
     }
 
     #[test]
+    fn place_prefers_capital_bin_over_noisy_siblings() {
+        let tmp = tempfile::tempdir().unwrap();
+        let payload = tmp.path().join("payload");
+        program(&payload.join("Bin"), "rg", b"#!/bin/sh\necho rg\n");
+        program(&payload, "noise", b"#!/bin/sh\necho noise\n");
+        let store = tmp.path().join("store/rg/1.0");
+        let bin = tmp.path().join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+
+        let links = LinuxPlatform::new()
+            .place(&placement(&payload, &store, &bin, tmp.path()))
+            .unwrap();
+        assert_eq!(links.len(), 1, "{links:?}");
+        assert_eq!(links[0].link, bin.join("rg"));
+        assert!(!bin.join("noise").exists());
+    }
+
+    #[test]
     fn unplace_leaves_a_file_the_user_put_where_a_link_was() {
         let tmp = tempfile::tempdir().unwrap();
         let store = tmp.path().join("store/pkg/1.0");
