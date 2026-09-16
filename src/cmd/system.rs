@@ -741,7 +741,11 @@ fn store_ketch_link(cfg: &Config) -> std::path::PathBuf {
 fn same_binary(a: &std::path::Path, b: &std::path::Path) -> bool {
     let left = dunce::canonicalize(a).unwrap_or_else(|_| a.to_path_buf());
     let right = dunce::canonicalize(b).unwrap_or_else(|_| b.to_path_buf());
-    left == right
+    if cfg!(windows) {
+        crate::shell::windows_path_key(&left) == crate::shell::windows_path_key(&right)
+    } else {
+        left == right
+    }
 }
 
 /// First `ketch`/`ketch.exe` on PATH, canonicalised when the file exists.
@@ -858,6 +862,29 @@ mod tests {
         std::fs::write(&linked, b"store").unwrap();
         let path = std::env::join_paths([&cfg.bin_dir]).unwrap();
         assert!(path_binary_check_from(&cfg, &path).is_none());
+    }
+
+    #[test]
+    fn same_binary_folds_windows_drive_letter_case() {
+        let tmp = tempfile::tempdir().unwrap();
+        let file = tmp.path().join("ketch.bin");
+        std::fs::write(&file, b"x").unwrap();
+        let canon = dunce::canonicalize(&file).unwrap();
+        let mut chars: Vec<char> = canon.to_string_lossy().chars().collect();
+        if let Some(c) = chars.first_mut() {
+            if c.is_ascii_uppercase() {
+                *c = c.to_ascii_lowercase();
+            } else if c.is_ascii_lowercase() {
+                *c = c.to_ascii_uppercase();
+            }
+        }
+        let flipped = std::path::PathBuf::from(chars.into_iter().collect::<String>());
+        assert!(
+            same_binary(&canon, &flipped),
+            "case-only difference must still be the same binary: {} vs {}",
+            canon.display(),
+            flipped.display()
+        );
     }
 
     #[test]
