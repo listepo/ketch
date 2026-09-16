@@ -63,7 +63,8 @@ impl GithubLatestMock {
         });
         ready_rx.recv().expect("mock thread started");
         // One probe so the first real caller never races a cold listener.
-        if let Ok(mut probe) = TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(1)) {
+        if let Ok(mut probe) = TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(1))
+        {
             let _ = probe.write_all(b"GET / HTTP/1.0\r\n\r\n");
             let mut buf = [0u8; 64];
             let _ = probe.read(&mut buf);
@@ -88,7 +89,10 @@ impl Drop for GithubLatestMock {
     }
 }
 
-fn ketch_self_update_dry_run(mock: &GithubLatestMock, root: &std::path::Path) -> assert_cmd::assert::Assert {
+fn ketch_self_update_dry_run(
+    mock: &GithubLatestMock,
+    root: &std::path::Path,
+) -> assert_cmd::assert::Assert {
     Command::cargo_bin("ketch")
         .unwrap()
         .args([
