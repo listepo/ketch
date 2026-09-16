@@ -305,13 +305,24 @@ fn expand_tilde(path: &Path) -> PathBuf {
         return dirs::home_dir().unwrap_or_else(|| path.to_path_buf());
     }
     // PowerShell and Windows config often write `~\.ketch`; Unix always uses `~/`.
+    // Join by components so `~\.ketch\bin` is two segments on every host —
+    // `home.join(".ketch\bin")` would be one literal name on Unix.
     let rest = text.strip_prefix("~/").or_else(|| text.strip_prefix("~\\"));
     if let Some(rest) = rest {
         if let Some(home) = dirs::home_dir() {
-            return home.join(rest);
+            return join_tilde_rest(&home, rest);
         }
     }
     path.to_path_buf()
+}
+
+/// Join a tilde-relative remainder that may use `/` or `\` separators.
+fn join_tilde_rest(base: &Path, rest: &str) -> PathBuf {
+    let mut out = base.to_path_buf();
+    for part in rest.split(['/', '\\']).filter(|s| !s.is_empty()) {
+        out.push(part);
+    }
+    out
 }
 
 /// Fold a PATH entry for comparison: separators and a trailing slash everywhere;
@@ -495,8 +506,16 @@ mod tests {
         assert_eq!(expand_tilde(Path::new("~/scratch")), home.join("scratch"));
         assert_eq!(expand_tilde(Path::new("~\\.ketch")), home.join(".ketch"));
         assert_eq!(expand_tilde(Path::new("/abs")), PathBuf::from("/abs"));
+        // Multi-component PowerShell paths must not collapse into one segment.
+        assert_eq!(
+            expand_tilde(Path::new("~\\.ketch\\bin")),
+            home.join(".ketch").join("bin")
+        );
+        assert_eq!(
+            expand_tilde(Path::new("~/scratch\\nested")),
+            home.join("scratch").join("nested")
+        );
     }
-
     #[test]
     fn path_lookup_key_folds_case_separators_and_trailing_slash() {
         assert_eq!(

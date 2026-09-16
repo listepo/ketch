@@ -303,12 +303,28 @@ fn finish_deferred_links(
         // payload into it.
         let source = dest.join(&safe_target);
         walk_inside(dest, &source, false)?;
-        std::fs::hard_link(&source, &out).map_err(|e| Error::io(&out, e))?;
+        write_hardlink(&source, &out)?;
     }
     for (out, target) in symlinks {
         write_symlink(&target, &out)?;
     }
     Ok(())
+}
+
+/// Prefer a real hard link; fall back to a same-tree copy when the filesystem
+/// refuses (cross-volume extracts, some Windows setups) — the same policy as
+/// [`materialize_symlink_as_copy`] for symlinks.
+fn write_hardlink(source: &Path, out: &Path) -> Result<()> {
+    match std::fs::hard_link(source, out) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            if source.is_file() {
+                std::fs::copy(source, out).map_err(|e| Error::io(out, e))?;
+                return Ok(());
+            }
+            Err(Error::io(out, e))
+        }
+    }
 }
 
 impl Extractor for TarGzExtractor {
@@ -620,6 +636,19 @@ mod tests {
         )
         .unwrap();
         assert_eq!(std::fs::read(&link).unwrap(), b"MZ");
+    }
+
+    #[test]
+    fn write_hardlink_falls_back_to_copy_when_link_fails() {
+        let dest = tempfile::tempdir().unwrap();
+        let source = dest.path().join("tool.exe");
+        std::fs::write(&source, b"MZ").unwrap();
+        // An existing destination makes hard_link fail on every host; copy must
+        // still replace the stale bytes (Windows extracts that refuse hard links).
+        let out = dest.path().join("tool-alias");
+        std::fs::write(&out, b"stale").unwrap();
+        write_hardlink(&source, &out).unwrap();
+        assert_eq!(std::fs::read(&out).unwrap(), b"MZ");
     }
 
     #[cfg(unix)]
