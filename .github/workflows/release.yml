@@ -112,6 +112,8 @@ jobs:
       - run: rustup component add rustfmt clippy
       - uses: Swatinem/rust-cache@v2
 
+      - uses: taiki-e/install-action@nextest
+
       - name: Format
         run: cargo fmt --all -- --check
 
@@ -119,7 +121,7 @@ jobs:
         run: cargo clippy --all-targets --locked -- -D warnings
 
       - name: Test
-        run: cargo test --all-targets --locked
+        run: cargo nextest run --all-targets --locked
 
   build:
     needs: [version, verify]
@@ -152,8 +154,7 @@ jobs:
           ref: ${{ needs.version.outputs.ref }}
 
       - uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ matrix.target }}
+
 
       # The certificate goes into a keychain of its own, created for this job
       # and deleted at the end of it, so nothing is left on the runner and the

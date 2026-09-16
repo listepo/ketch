@@ -51,8 +51,7 @@ pub fn load(path: &Path) -> Result<Proposal> {
             "expected a table of package fields".to_string(),
         )
     })?;
-    let folder = path
-        .canonicalize()
+    let folder = dunce::canonicalize(path)
         .ok()
         .and_then(|p| p.parent().map(Path::to_path_buf))
         .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()));

@@ -69,12 +69,30 @@ pub fn read_head(path: &Path) -> Result<Vec<u8>> {
 /// Absolute paths and `..` components are refused outright; the result is
 /// always a relative path safe to join onto the destination.
 pub fn safe_member_path(raw: &Path) -> Result<PathBuf> {
+    let text = raw.to_string_lossy();
     // Check the raw string before `components()`: on Windows a backslash is a
-    // separator, so `a\\b` would otherwise become the ordinary relative path
+    // separator, so `a\b` would otherwise become the ordinary relative path
     // `a/b` and slip through. Archive member names must never carry one.
-    if raw.to_string_lossy().contains('\\') {
+    if text.contains('\\') {
         return Err(Error::msg(format!(
             "refusing archive entry with unsafe name: {}",
+            raw.display()
+        )));
+    }
+    // `std::path` on Unix treats `C:/Windows` as relative normals; typed-path
+    // still sees a Windows prefix/root so a foreign absolute cannot slip in.
+    let win = typed_path::Utf8WindowsPath::new(text.as_ref());
+    if win.has_root()
+        || win.components().any(|c| {
+            matches!(
+                c,
+                typed_path::Utf8WindowsComponent::ParentDir
+                    | typed_path::Utf8WindowsComponent::Prefix(_)
+            )
+        })
+    {
+        return Err(Error::msg(format!(
+            "refusing archive entry that escapes the target directory: {}",
             raw.display()
         )));
     }
@@ -82,10 +100,9 @@ pub fn safe_member_path(raw: &Path) -> Result<PathBuf> {
     for component in raw.components() {
         match component {
             Component::Normal(part) => {
-                let text = part.to_string_lossy();
-                // Windows drive-relative and NTFS stream syntax are rejected
-                // too, so archives built on Windows cannot smuggle a path.
-                if text.contains(':') || text.contains('\\') {
+                let part_text = part.to_string_lossy();
+                // NTFS stream / drive-relative crumbs that are not a full root.
+                if part_text.contains(':') || part_text.contains('\\') {
                     return Err(Error::msg(format!(
                         "refusing archive entry with unsafe name: {}",
                         raw.display()

@@ -1096,7 +1096,7 @@ fn is_inside_store(store: &Path, prefix: &Path) -> bool {
     }
     // When both exist, resolve symlinks so a decoy link inside the store
     // cannot point `remove_dir_all` at an outside victim.
-    if let (Ok(store), Ok(resolved)) = (store.canonicalize(), prefix.canonicalize()) {
+    if let (Ok(store), Ok(resolved)) = (dunce::canonicalize(store), dunce::canonicalize(prefix)) {
         return resolved.starts_with(&store) && resolved != store;
     }
     // Missing path (idempotent uninstall): lexical containment only, after
