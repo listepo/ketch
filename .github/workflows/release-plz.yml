@@ -78,7 +78,7 @@ jobs:
 
       - name: Open or update the release pull request
         if: steps.pending.outputs.pending == 'false'
-        uses: release-plz/action@v0.5.133
+        uses: release-plz/action@v0.5.136
         with:
           command: release-pr
         env:
