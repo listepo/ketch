@@ -398,9 +398,38 @@ pub(crate) fn windows_path_remove(path: &str, dir: &Path) -> Option<String> {
     Some(kept.join(";"))
 }
 
+/// Split a Windows PATH on `;`, keeping `;` inside quotes as part of one entry.
+///
+/// Registry PATH values are sometimes quoted. A folder name may contain `;`
+/// (`C:\weird;name`), so a naive `split(';')` would shatter `"C:\weird;name"`
+/// into two entries and miss the bin dir on doctor/install.
 #[cfg_attr(not(windows), allow(dead_code))]
 fn windows_path_entries(path: &str) -> impl Iterator<Item = &str> {
-    path.split(';').filter(|s| !s.is_empty())
+    windows_path_entry_list(path).into_iter()
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+fn windows_path_entry_list(path: &str) -> Vec<&str> {
+    let mut entries = Vec::new();
+    let mut start = 0;
+    let mut in_quotes = false;
+    for (i, c) in path.char_indices() {
+        match c {
+            '"' => in_quotes = !in_quotes,
+            ';' if !in_quotes => {
+                let entry = &path[start..i];
+                if !entry.is_empty() {
+                    entries.push(entry);
+                }
+                start = i + c.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    if start < path.len() && !path[start..].is_empty() {
+        entries.push(&path[start..]);
+    }
+    entries
 }
 
 #[cfg_attr(not(windows), allow(dead_code))]
@@ -847,6 +876,24 @@ mod tests {
         assert_eq!(
             windows_path_remove(path, dir).as_deref(),
             Some(r"C:\Windows\System32;C:\Windows")
+        );
+    }
+
+    /// A folder name may contain `;`. Quotes keep it one PATH entry; splitting on
+    /// every `;` used to shatter it and miss the match (and corrupt remove).
+    #[test]
+    fn windows_path_keeps_semicolon_inside_quotes() {
+        let dir = Path::new(r"C:\weird;name");
+        let path = r#"C:\Windows;"C:\weird;name";C:\Other"#;
+        assert_eq!(
+            windows_path_entry_list(path),
+            vec![r"C:\Windows", r#""C:\weird;name""#, r"C:\Other"]
+        );
+        assert!(windows_path_has(path, dir));
+        assert!(windows_path_prepend(path, dir).is_none());
+        assert_eq!(
+            windows_path_remove(path, dir).as_deref(),
+            Some(r"C:\Windows;C:\Other")
         );
     }
 
