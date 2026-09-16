@@ -316,6 +316,44 @@ fn ensure_is_regular_file(path: &Path, meta: &fs::Metadata) -> Result<()> {
     )))
 }
 
+/// Copy a symlink's target into `link` when the host cannot recreate links.
+///
+/// Used on Windows (and other non-Unix hosts) so `place` can stage a payload
+/// that still contains real symlinks after archive extract. Mirrors
+/// `extract::archive`'s materialise-as-copy policy.
+#[cfg_attr(unix, allow(dead_code))] // Windows place path; unit-tested on Unix CI
+fn materialize_local_symlink(symlink: &Path, link: &Path) -> Result<()> {
+    let target = fs::read_link(symlink).map_err(|e| Error::io(symlink, e))?;
+    let resolved = symlink
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(&target);
+    if resolved.is_file() {
+        if let Some(parent) = link.parent() {
+            fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
+        }
+        fs::copy(&resolved, link).map_err(|e| Error::io(link, e))?;
+        return Ok(());
+    }
+    if resolved.is_dir() {
+        copy_tree(&resolved, link)?;
+        return Ok(());
+    }
+    // Last resort: `fs::copy` follows the link for file content.
+    if symlink.is_file() {
+        if let Some(parent) = link.parent() {
+            fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
+        }
+        fs::copy(symlink, link).map_err(|e| Error::io(link, e))?;
+        return Ok(());
+    }
+    Err(Error::msg(format!(
+        "cannot materialise local symlink {} → {} (target missing)",
+        symlink.display(),
+        target.display()
+    )))
+}
+
 /// Copy a directory tree into `dest`, preserving relative structure. Used for
 /// local `.app` bundles so they reach `place` without a fake archive round-trip.
 pub fn copy_tree(src: &Path, dest: &Path) -> Result<()> {
@@ -349,9 +387,11 @@ pub fn copy_tree(src: &Path, dest: &Path) -> Result<()> {
             }
             #[cfg(not(unix))]
             {
-                return Err(Error::msg(
-                    "symlinks in a local tree are not supported on this OS",
-                ));
+                // Archive extract may have created real Windows symlinks (Developer
+                // Mode). `place` then stages the payload with this copy_tree — refusing
+                // links here aborted installs that extract had already accepted.
+                // Materialise as a file/dir copy, same policy as extract/archive.rs.
+                materialize_local_symlink(entry.path(), &target)?;
             }
         } else {
             if let Some(parent) = target.parent() {
@@ -429,6 +469,34 @@ mod tests {
         let link = dir.path().join("link");
         std::os::unix::fs::symlink(&bin, &link).unwrap();
         assert_eq!(classify(&link).unwrap(), LocalKind::Symlink);
+    }
+
+    /// Windows place stages via copy_tree after extract may have created real
+    /// symlinks; materialise must write the target bytes, not error out.
+    #[cfg(unix)]
+    #[test]
+    fn materialize_local_symlink_writes_the_target_file() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("tool.exe"), b"MZ").unwrap();
+        let link = dir.path().join("tool");
+        std::os::unix::fs::symlink(Path::new("tool.exe"), &link).unwrap();
+        let out = dir.path().join("tool.materialised");
+        materialize_local_symlink(&link, &out).unwrap();
+        assert_eq!(fs::read(&out).unwrap(), b"MZ");
+        assert!(!fs::symlink_metadata(&out).unwrap().file_type().is_symlink());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn materialize_local_symlink_errors_when_target_is_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let link = dir.path().join("dangling");
+        std::os::unix::fs::symlink(Path::new("missing.bin"), &link).unwrap();
+        let err = materialize_local_symlink(&link, &dir.path().join("out")).unwrap_err();
+        assert!(
+            err.to_string().contains("cannot materialise local symlink"),
+            "{err}"
+        );
     }
 
     #[test]

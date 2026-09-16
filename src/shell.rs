@@ -55,10 +55,13 @@ impl Shell {
     pub fn from_program(program: &str) -> Option<Shell> {
         let base = program.rsplit(['/', '\\']).next().unwrap_or(program);
         let stem = base.trim_start_matches('-');
-        let stem = stem
-            .strip_suffix(".exe")
-            .or_else(|| stem.strip_suffix(".EXE"))
-            .unwrap_or(stem);
+        // Windows preserves arbitrary `.Exe` / `.eXe` casing from PATH / argv[0];
+        // only stripping `.exe`/`.EXE` left Git Bash etc. undetected.
+        let stem = if stem.len() >= 4 && stem[stem.len() - 4..].eq_ignore_ascii_case(".exe") {
+            &stem[..stem.len() - 4]
+        } else {
+            stem
+        };
         if stem.eq_ignore_ascii_case("bash") {
             Some(Shell::Bash)
         } else if stem.eq_ignore_ascii_case("zsh") {
@@ -720,6 +723,8 @@ mod tests {
     #[case(r"C:\Program Files\Git\bin\bash.exe", Some(Shell::Bash))]
     #[case(r"C:/Program Files/Git/usr/bin/zsh.exe", Some(Shell::Zsh))]
     #[case("FISH.EXE", Some(Shell::Fish))]
+    #[case("bash.Exe", Some(Shell::Bash))]
+    #[case(r"C:\Git\usr\bin\zsh.eXe", Some(Shell::Zsh))]
     fn a_program_path_identifies_the_shell(#[case] program: &str, #[case] expected: Option<Shell>) {
         assert_eq!(Shell::from_program(program), expected);
     }
