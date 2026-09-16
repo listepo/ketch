@@ -322,16 +322,18 @@ pub fn copy_tree(src: &Path, dest: &Path) -> Result<()> {
     fs::create_dir_all(dest).map_err(|e| Error::io(dest, e))?;
     for entry in walkdir::WalkDir::new(src) {
         let entry = entry.map_err(|e| Error::msg(format!("walking {}: {e}", src.display())))?;
-        let rel = pathdiff::diff_paths(entry.path(), src).filter(|r| {
-            !r.components()
-                .any(|c| matches!(c, std::path::Component::ParentDir))
-        }).ok_or_else(|| {
-            Error::msg(format!(
-                "path {} escaped {}",
-                entry.path().display(),
-                src.display()
-            ))
-        })?;
+        let rel = pathdiff::diff_paths(entry.path(), src)
+            .filter(|r| {
+                !r.components()
+                    .any(|c| matches!(c, std::path::Component::ParentDir))
+            })
+            .ok_or_else(|| {
+                Error::msg(format!(
+                    "path {} escaped {}",
+                    entry.path().display(),
+                    src.display()
+                ))
+            })?;
         if rel.as_os_str().is_empty() {
             continue;
         }
