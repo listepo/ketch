@@ -229,6 +229,17 @@ fn payload_executable_entry(entry: &walkdir::DirEntry, root: &Path) -> Option<Pa
         .map(|_| path.to_path_buf())
 }
 
+/// True when the immediate parent directory is named `bin` (any ASCII case).
+///
+/// Windows archives and some toolchain layouts ship `Bin/`; treating only the
+/// lowercase spelling as special left those packages falling back to noisy
+/// top-level discovery.
+pub(crate) fn parent_dir_is_bin(path: &Path) -> bool {
+    path.parent()
+        .and_then(|d| d.file_name())
+        .is_some_and(|n| n.eq_ignore_ascii_case("bin"))
+}
+
 /// Every executable file in the payload that is a plausible entry point.
 pub(crate) fn discover_executables(platform: &dyn Platform, root: &Path) -> Vec<PathBuf> {
     let mut found: Vec<PathBuf> = walkdir::WalkDir::new(root)
@@ -249,11 +260,7 @@ pub(crate) fn discover_executables(platform: &dyn Platform, root: &Path) -> Vec<
 
     let in_bin: Vec<PathBuf> = found
         .iter()
-        .filter(|p| {
-            p.parent()
-                .and_then(|d| d.file_name())
-                .is_some_and(|n| n == "bin")
-        })
+        .filter(|p| parent_dir_is_bin(p))
         .cloned()
         .collect();
     if !in_bin.is_empty() {
@@ -483,6 +490,15 @@ mod tests {
     use super::*;
     use crate::model::{LinkKind, LinkRecord, LinkRole};
     use std::path::PathBuf;
+
+    #[test]
+    fn parent_dir_is_bin_ignores_ascii_case() {
+        assert!(parent_dir_is_bin(Path::new("/store/pkg/bin/tool")));
+        assert!(parent_dir_is_bin(Path::new("/store/pkg/Bin/tool")));
+        assert!(parent_dir_is_bin(Path::new("/store/pkg/BIN/tool")));
+        assert!(!parent_dir_is_bin(Path::new("/store/pkg/lib/tool")));
+        assert!(!parent_dir_is_bin(Path::new("/store/pkg/tool")));
+    }
 
     #[test]
     fn making_a_binary_executable_leaves_every_other_bit_alone() {

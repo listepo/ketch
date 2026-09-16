@@ -227,7 +227,7 @@ fn discover_executables(platform: &WindowsPlatform, root: &Path) -> Vec<PathBuf>
         .filter(|p| {
             p.parent()
                 .and_then(|d| d.file_name())
-                .is_some_and(|n| n == "bin")
+                .is_some_and(|n| n.eq_ignore_ascii_case("bin"))
         })
         .cloned()
         .collect();
@@ -565,6 +565,25 @@ mod tests {
         assert_eq!(links[0].link, bin.join("tool.cmd"));
         assert!(bin.join("tool.cmd").is_file());
         assert!(!bin.join("tool.cmd").is_symlink());
+    }
+
+    #[test]
+    fn discover_prefers_capital_bin_over_noisy_siblings() {
+        let tmp = tempfile::tempdir().unwrap();
+        let payload = tmp.path().join("payload");
+        std::fs::create_dir_all(payload.join("Bin")).unwrap();
+        std::fs::write(payload.join("Bin/tool.cmd"), cmd_body("keep")).unwrap();
+        std::fs::write(payload.join("noise.cmd"), cmd_body("noise")).unwrap();
+        let store = tmp.path().join("store/tool/1.0");
+        let bin = tmp.path().join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+
+        let links = WindowsPlatform::new()
+            .place(&placement(&payload, &store, &bin, tmp.path()))
+            .unwrap();
+        assert_eq!(links.len(), 1, "{links:?}");
+        assert_eq!(links[0].link, bin.join("tool.cmd"));
+        assert!(!bin.join("noise.cmd").exists());
     }
 
     #[test]

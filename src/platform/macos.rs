@@ -677,6 +677,22 @@ mod tests {
     }
 
     #[test]
+    fn discover_prefers_capital_bin_over_noisy_siblings() {
+        let tmp = tempfile::tempdir().unwrap();
+        let payload = tmp.path().join("payload");
+        std::fs::create_dir_all(payload.join("Bin")).unwrap();
+        let keep = payload.join("Bin/rg");
+        std::fs::write(&keep, b"#!/bin/sh\necho rg\n").unwrap();
+        std::fs::set_permissions(&keep, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let noise = payload.join("noise");
+        std::fs::write(&noise, b"#!/bin/sh\necho noise\n").unwrap();
+        std::fs::set_permissions(&noise, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let found = discover_executables(&MacOsPlatform::new(), &payload);
+        assert_eq!(found, vec![keep], "{found:?}");
+    }
+
+    #[test]
     fn place_links_classified_extra_paths_and_records_them() {
         use crate::extra::ExtraPlacement;
         use crate::model::LinkRole;
