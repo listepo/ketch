@@ -1078,31 +1078,35 @@ fn remove_store_dir(cfg: &Config, prefix: &Path) {
 /// symlinks and rejecting `..` escapes a corrupted state file could invent.
 fn is_inside_store(store: &Path, prefix: &Path) -> bool {
     use std::path::Component;
-    // Only the part below the store is the state file's to choose: a root
+    // When both exist, resolve symlinks so a decoy link inside the store
+    // cannot point `remove_dir_all` at an outside victim. Prefer this before
+    // the lexical walk: canonicalize also folds Windows short/long names.
+    if let (Ok(store), Ok(resolved)) = (dunce::canonicalize(store), dunce::canonicalize(prefix)) {
+        return crate::platform::path_is_strict_within(&resolved, &store);
+    }
+    // Lexical fallback for a missing payload (idempotent uninstall). A root
     // written with a `..` in it (`KETCH_ROOT=../ketch`) carries that component
     // in both paths, and refusing it there would quietly disable every cleanup
     // — uninstall would drop the state entry and leave the payload forever.
-    let Ok(below) = prefix.strip_prefix(store) else {
-        return false;
-    };
-    if below == Path::new("") {
+    // Only the part *below* the store is checked for `..`.
+    if !crate::platform::path_is_strict_within(prefix, store) {
         return false;
     }
-    if below
-        .components()
+    let below_comps: Vec<_> = {
+        let store_len = store.components().count();
+        prefix.components().skip(store_len).collect()
+    };
+    // Case-insensitive within() may match a differently-cased store prefix
+    // whose component count still equals `store_len`.
+    if below_comps.is_empty() {
+        return false;
+    }
+    if below_comps
+        .iter()
         .any(|c| matches!(c, Component::ParentDir))
     {
         return false;
     }
-    // When both exist, resolve symlinks so a decoy link inside the store
-    // cannot point `remove_dir_all` at an outside victim.
-    if let (Ok(store), Ok(resolved)) = (dunce::canonicalize(store), dunce::canonicalize(prefix)) {
-        return resolved.starts_with(&store) && resolved != store;
-    }
-    // Missing path (idempotent uninstall): lexical containment only, after
-    // rejecting `..` above. Compare against the caller's store path as given
-    // so a not-yet-canonical root still matches the prefixes `package_dir`
-    // wrote into state.
     true
 }
 
@@ -1267,6 +1271,50 @@ mod tests {
         remove_store_dir(&cfg, &outside);
         assert!(outside.is_dir(), "a path outside the store must survive");
         std::fs::remove_dir_all(&outside).ok();
+    }
+
+    #[test]
+    fn inside_store_accepts_ascii_case_folded_prefix() {
+        let root = tempfile::tempdir().unwrap();
+        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        cfg.ensure_dirs().unwrap();
+        let payload = cfg.store_dir.join("rg").join("1.0.0");
+        std::fs::create_dir_all(&payload).unwrap();
+        assert!(
+            is_inside_store(&cfg.store_dir, &payload),
+            "same-case payload must be inside"
+        );
+        // Build a prefix that differs only in ASCII case of one component.
+        // On Windows this is a real uninstall/GC failure mode; on Unix the
+        // helper's case arm is cfg'd out so we only assert the positive path
+        // plus the shared strict-within helper.
+        #[cfg(windows)]
+        {
+            let store = cfg.store_dir.clone();
+            let alt = PathBuf::from(
+                store
+                    .to_string_lossy()
+                    .chars()
+                    .map(|c| {
+                        if c.is_ascii_lowercase() {
+                            c.to_ascii_uppercase()
+                        } else if c.is_ascii_uppercase() {
+                            c.to_ascii_lowercase()
+                        } else {
+                            c
+                        }
+                    })
+                    .collect::<String>(),
+            )
+            .join("rg")
+            .join("1.0.0");
+            assert!(
+                is_inside_store(&cfg.store_dir, &alt),
+                "Windows must treat differently-cased store prefixes as inside: {} vs {}",
+                cfg.store_dir.display(),
+                alt.display()
+            );
+        }
     }
 
     #[test]

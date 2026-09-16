@@ -242,6 +242,65 @@ pub fn config_home() -> PathBuf {
         })
 }
 
+/// True when `path` is `root` or a descendant of it.
+///
+/// On Windows the filesystem is case-insensitive but `Path::starts_with` is
+/// not: a store root typed `C:\Users\IVAN\…` and a payload recorded as
+/// `C:\Users\ivan\…` must still count as inside, or uninstall/GC refuses to
+/// delete the files and leaves orphans forever.
+pub fn path_is_within(path: &Path, root: &Path) -> bool {
+    if root.as_os_str().is_empty() {
+        return false;
+    }
+    if path.starts_with(root) {
+        return true;
+    }
+    cfg!(windows) && path_is_within_ascii_case_insensitive(path, root)
+}
+
+/// Like [`path_is_within`], but false when `path` and `root` are the same.
+pub fn path_is_strict_within(path: &Path, root: &Path) -> bool {
+    path_is_within(path, root) && path != root && !paths_eq_ascii_case(path, root)
+}
+
+fn paths_eq_ascii_case(a: &Path, b: &Path) -> bool {
+    if a == b {
+        return true;
+    }
+    if !cfg!(windows) {
+        return false;
+    }
+    let a: Vec<_> = a.components().collect();
+    let b: Vec<_> = b.components().collect();
+    a.len() == b.len()
+        && a.iter()
+            .zip(b.iter())
+            .all(|(x, y)| components_eq_ascii_case(x, y))
+}
+
+fn path_is_within_ascii_case_insensitive(path: &Path, root: &Path) -> bool {
+    let path_c: Vec<_> = path.components().collect();
+    let root_c: Vec<_> = root.components().collect();
+    if root_c.is_empty() || root_c.len() > path_c.len() {
+        return false;
+    }
+    path_c
+        .iter()
+        .zip(root_c.iter())
+        .all(|(p, r)| components_eq_ascii_case(p, r))
+}
+
+fn components_eq_ascii_case(a: &std::path::Component<'_>, b: &std::path::Component<'_>) -> bool {
+    use std::path::Component;
+    match (a, b) {
+        (Component::Normal(x), Component::Normal(y)) => x.eq_ignore_ascii_case(y),
+        (Component::Prefix(x), Component::Prefix(y)) => {
+            x.as_os_str().eq_ignore_ascii_case(y.as_os_str())
+        }
+        (x, y) => x == y,
+    }
+}
+
 /// Unix-style completion directories. Windows overrides PowerShell.
 pub fn completion_dir_for(shell: CompletionShell) -> PathBuf {
     match shell {
@@ -482,5 +541,29 @@ mod tests {
     fn host_errs_on_an_os_with_no_backend() {
         let err = host().unwrap_err();
         assert!(err.to_string().contains("no backend"));
+    }
+
+    #[test]
+    fn path_is_within_accepts_a_descendant() {
+        let root = Path::new("/Users/ivan/.ketch/store");
+        assert!(path_is_within(
+            Path::new("/Users/ivan/.ketch/store/rg/1.0"),
+            root
+        ));
+        assert!(!path_is_strict_within(root, root));
+        assert!(!path_is_within(Path::new("/Users/ivan/.ketch/other"), root));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn path_is_within_folds_ascii_case_on_windows() {
+        let root = Path::new(r"C:\Users\ivan\.ketch\store");
+        let folded = Path::new(r"C:\Users\IVAN\.ketch\store\rg\1.0");
+        assert!(path_is_within(folded, root));
+        assert!(path_is_strict_within(folded, root));
+        assert!(!path_is_strict_within(
+            Path::new(r"C:\Users\IVAN\.ketch\store"),
+            root
+        ));
     }
 }
