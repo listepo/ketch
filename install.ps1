@@ -48,7 +48,39 @@ function Get-CanonicalPath {
 
 function Normalize-PathKey {
     param([string]$Path)
-    return ($Path -replace '/', '\').TrimEnd('\').ToLowerInvariant()
+    # Registry PATH values are sometimes quoted (`"C:\Program Files\…"`).
+    # Strip quotes before folding so a quoted bin dir matches the unquoted one
+    # we are about to install and we do not prepend a duplicate.
+    $s = ($Path -replace '/', '\').Trim().Trim('"').Trim("'")
+    return $s.TrimEnd('\').ToLowerInvariant()
+}
+
+# Split a Windows PATH on `;`, keeping `;` inside quotes as part of one entry.
+# A naive `-split ';'` shatters `"C:\weird;name"` and misses the bin dir.
+function Get-UserPathEntries {
+    param([string]$PathString)
+    $entries = New-Object System.Collections.Generic.List[string]
+    if ([string]::IsNullOrEmpty($PathString)) {
+        return $entries
+    }
+    $start = 0
+    $inQuotes = $false
+    for ($i = 0; $i -lt $PathString.Length; $i++) {
+        $c = $PathString[$i]
+        if ($c -eq [char]'"') {
+            $inQuotes = -not $inQuotes
+        }
+        elseif ($c -eq [char]';' -and -not $inQuotes) {
+            if ($i -gt $start) {
+                [void]$entries.Add($PathString.Substring($start, $i - $start))
+            }
+            $start = $i + 1
+        }
+    }
+    if ($start -lt $PathString.Length) {
+        [void]$entries.Add($PathString.Substring($start))
+    }
+    return $entries
 }
 
 function Test-UserPathHas {
@@ -57,7 +89,10 @@ function Test-UserPathHas {
         [string]$Dir
     )
     $dirKey = Normalize-PathKey $Dir
-    foreach ($entry in ($PathString -split ';' | Where-Object { $_ })) {
+    foreach ($entry in (Get-UserPathEntries $PathString)) {
+        if (-not $entry) {
+            continue
+        }
         if ((Normalize-PathKey $entry) -eq $dirKey) {
             return $true
         }

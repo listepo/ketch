@@ -103,6 +103,64 @@ fn the_script_writes_path_through_dotnet_not_setx() {
     assert!(!src.contains("setx"), "{src}");
 }
 
+/// Quoted registry PATH entries must match the unquoted bin dir (same rule as
+/// `shell::windows_path_key`), and `;` inside quotes must stay one entry.
+#[test]
+fn the_script_parses_quoted_path_entries_like_ketch_shell() {
+    let src = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/install.ps1"));
+    assert!(
+        src.contains("Get-UserPathEntries"),
+        "install.ps1 must split PATH with quote awareness: {src}"
+    );
+    assert!(
+        src.contains("Trim('\"')") || src.contains("Trim(\"\"\")"),
+        "Normalize-PathKey must strip surrounding quotes: {src}"
+    );
+    assert!(
+        !src.contains("$PathString -split ';'"),
+        "naive -split on ';' would shatter quoted entries with a semicolon: {src}"
+    );
+}
+
+/// Exercise the PATH helpers from `install.ps1` under pwsh: a quoted bin dir
+/// and a folder name containing `;` must both count as already on PATH.
+#[test]
+#[cfg(windows)]
+fn path_helpers_match_quoted_and_semicolon_entries() {
+    if !pwsh_available() {
+        return;
+    }
+    let src = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/install.ps1"));
+    let start = src
+        .find("function Normalize-PathKey")
+        .expect("Normalize-PathKey");
+    let end = src.find("function Write-Status").expect("Write-Status");
+    let helpers = &src[start..end];
+    let script = format!(
+        r#"
+{helpers}
+if (-not (Test-UserPathHas 'C:\Windows;"C:\Users\u\.ketch\bin";C:\Other' 'C:\Users\u\.ketch\bin')) {{
+    Write-Error 'quoted bin dir should match'
+    exit 1
+}}
+if (-not (Test-UserPathHas 'C:\Windows;"C:\weird;name";C:\Other' 'C:\weird;name')) {{
+    Write-Error 'semicolon inside quotes should stay one entry'
+    exit 1
+}}
+if (Test-UserPathHas 'C:\Windows;C:\Other' 'C:\Users\u\.ketch\bin') {{
+    Write-Error 'missing bin dir must not match'
+    exit 1
+}}
+exit 0
+"#
+    );
+    let pwsh = pwsh_bin().expect("pwsh_available checked");
+    Command::new(pwsh)
+        .args(["-NoProfile", "-Command", &script])
+        .assert()
+        .success();
+}
+
 /// `--install-dir` is a bootstrap location, not a second way to name the root:
 /// it may sit outside `--root`, need not be called `bin`, and needs no `--root`
 /// beside it. Only the retired coupling check refused these before anything ran.
