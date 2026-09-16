@@ -270,11 +270,17 @@ impl Config {
     }
 
     /// True when the bin dir is on the caller's PATH.
+    ///
+    /// On Windows the comparison folds case, `/` vs `\\`, and a trailing
+    /// separator — the same rules `shell` uses when editing the user PATH —
+    /// so a PATH entry written as `C:\\Users\\…\\.ketch\\bin` still
+    /// matches a bin dir resolved as `c:/users/…/.ketch/bin`.
     pub fn bin_dir_on_path(&self) -> bool {
         let Some(path) = std::env::var_os("PATH") else {
             return false;
         };
-        std::env::split_paths(&path).any(|p| p == self.bin_dir)
+        let want = path_lookup_key(&self.bin_dir);
+        std::env::split_paths(&path).any(|p| path_lookup_key(&p) == want)
     }
 }
 
@@ -295,12 +301,29 @@ fn absolute_path(path: &Path) -> Result<PathBuf> {
 
 fn expand_tilde(path: &Path) -> PathBuf {
     let text = path.to_string_lossy();
-    if let Some(rest) = text.strip_prefix("~/") {
+    if text == "~" {
+        return dirs::home_dir().unwrap_or_else(|| path.to_path_buf());
+    }
+    // PowerShell and Windows config often write `~\.ketch`; Unix always uses `~/`.
+    let rest = text.strip_prefix("~/").or_else(|| text.strip_prefix("~\\"));
+    if let Some(rest) = rest {
         if let Some(home) = dirs::home_dir() {
             return home.join(rest);
         }
     }
     path.to_path_buf()
+}
+
+/// Fold a PATH entry for comparison: separators and a trailing slash everywhere;
+/// case only on Windows, where the filesystem does not distinguish it.
+fn path_lookup_key(p: &Path) -> String {
+    let s = p.to_string_lossy().replace('\\', "/");
+    let s = s.trim_end_matches('/');
+    if cfg!(windows) {
+        s.to_ascii_lowercase()
+    } else {
+        s.to_string()
+    }
 }
 
 /// A setting that has to be parsed, from the environment or the config file.
@@ -463,5 +486,45 @@ mod tests {
         std::env::set_var(KEY, "");
         assert_eq!(env_bool(KEY).unwrap(), None);
         std::env::remove_var(KEY);
+    }
+
+    #[test]
+    fn expand_tilde_accepts_slash_backslash_and_bare_home() {
+        let home = dirs::home_dir().expect("home");
+        assert_eq!(expand_tilde(Path::new("~")), home);
+        assert_eq!(expand_tilde(Path::new("~/scratch")), home.join("scratch"));
+        assert_eq!(expand_tilde(Path::new("~\\.ketch")), home.join(".ketch"));
+        assert_eq!(expand_tilde(Path::new("/abs")), PathBuf::from("/abs"));
+    }
+
+    #[test]
+    fn path_lookup_key_folds_case_separators_and_trailing_slash() {
+        assert_eq!(
+            path_lookup_key(Path::new(r"C:\Users\u\.ketch\bin")),
+            path_lookup_key(Path::new("C:/Users/u/.ketch/bin/"))
+        );
+        if cfg!(windows) {
+            assert_eq!(
+                path_lookup_key(Path::new(r"C:\Users\U\.ketch\bin")),
+                path_lookup_key(Path::new(r"c:\users\u\.ketch\bin"))
+            );
+        }
+    }
+
+    #[test]
+    fn bin_dir_on_path_matches_folded_windows_entries() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg = Config::load(Some(tmp.path().to_path_buf())).unwrap();
+        let mixed = cfg.bin_dir.to_string_lossy().replace('\\', "/");
+        let with_slash = format!("{mixed}/");
+        let path = std::env::join_paths([Path::new("/elsewhere"), Path::new(&with_slash)]).unwrap();
+        let previous = std::env::var_os("PATH");
+        std::env::set_var("PATH", &path);
+        let on = cfg.bin_dir_on_path();
+        match previous {
+            Some(v) => std::env::set_var("PATH", v),
+            None => std::env::remove_var("PATH"),
+        }
+        assert!(on, "folded PATH entry must count as on PATH");
     }
 }

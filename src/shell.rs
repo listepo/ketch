@@ -409,7 +409,7 @@ fn windows_path_eq(entry: &str, dir: &Path) -> bool {
 }
 
 #[cfg_attr(not(windows), allow(dead_code))]
-fn windows_path_key(p: &Path) -> String {
+pub(crate) fn windows_path_key(p: &Path) -> String {
     let s = p.to_string_lossy().replace('/', "\\");
     s.trim_end_matches('\\').to_ascii_lowercase()
 }
