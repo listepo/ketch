@@ -723,11 +723,26 @@ fn cask_dir_in(prefixes: &[PathBuf]) -> Option<PathBuf> {
 
 /// Where Homebrew might live: its own answer first, then the two standard
 /// prefixes for Apple Silicon and Intel.
+///
+/// `HOMEBREW_PREFIX` alone is not enough: a leftover Intel cask under
+/// `/usr/local` must still be found when the active brew is Apple Silicon
+/// (and the reverse). Skipping the standards left `self uninstall` and
+/// `doctor`'s leftover-cask check blind to the other prefix.
 fn brew_prefixes() -> Vec<PathBuf> {
-    match std::env::var_os("HOMEBREW_PREFIX") {
-        Some(prefix) => vec![PathBuf::from(prefix)],
-        None => vec![PathBuf::from("/opt/homebrew"), PathBuf::from("/usr/local")],
+    let mut prefixes = Vec::new();
+    if let Some(prefix) = std::env::var_os("HOMEBREW_PREFIX") {
+        let prefix = PathBuf::from(prefix);
+        if !prefix.as_os_str().is_empty() {
+            prefixes.push(prefix);
+        }
     }
+    for candidate in ["/opt/homebrew", "/usr/local"] {
+        let candidate = PathBuf::from(candidate);
+        if !prefixes.contains(&candidate) {
+            prefixes.push(candidate);
+        }
+    }
+    prefixes
 }
 
 /// The `brew` that owns `cask`: the one in the prefix the cask was found under,
@@ -808,6 +823,21 @@ mod tests {
             let found = cask_dir_in(std::slice::from_ref(&prefix));
             assert_eq!(found, cask.is_dir().then_some(cask));
         }
+    }
+
+    #[test]
+    fn homebrew_prefix_does_not_hide_a_cask_under_another_prefix() {
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let active = tmp.path().join("opt-homebrew");
+        let other = tmp.path().join("usr-local");
+        std::fs::create_dir_all(active.join("bin")).expect("active brew");
+        let cask = other.join("Caskroom").join(SELF_NAME);
+        std::fs::create_dir_all(&cask).expect("other cask");
+
+        // Active brew answered, but the cask lives under the other tree —
+        // the same shape as Apple Silicon HOMEBREW_PREFIX + leftover Intel cask.
+        let found = cask_dir_in(&[active, other.clone()]);
+        assert_eq!(found, Some(cask));
     }
 
     #[test]
