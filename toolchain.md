@@ -8,6 +8,7 @@ Project programs and direct packages from manifests.
 | --- | --- | --- | --- |
 | mise | brew / curl, then `mise install` | Pinned tool versions | https://github.com/jdx/mise |
 | cargo-cache | mise | `just cache` / `just cache-autoclean`; the shared cargo home fills up | https://github.com/matthiaskrgr/cargo-cache |
+| cargo-nextest | global (cargo install) | Parallel test runner | https://github.com/nextest-rs/nextest |
 | node | mise | commitlint for `just lint-commits` and the commit-msg hook; node-based checks live in Just and CI only | https://github.com/nodejs/node |
 | rustc | rustup / system | Rust compiler | https://github.com/rust-lang/rust |
 | cargo | with rustc | Rust build and dependencies | https://github.com/rust-lang/cargo |
@@ -26,6 +27,7 @@ Project programs and direct packages from manifests.
 | diesel | local | https://crates.io/crates/diesel | SQLite ORM |
 | diesel_migrations | local | https://crates.io/crates/diesel_migrations | SQLite migrations |
 | dirs | local | https://crates.io/crates/dirs | Rust dependency |
+| dunce | local | https://crates.io/crates/dunce | Canonicalize without Windows UNC prefixes |
 | flate2 | local | https://crates.io/crates/flate2 | Rust dependency |
 | hex | local | https://crates.io/crates/hex | Rust dependency |
 | indicatif | local | https://crates.io/crates/indicatif | Rust dependency |
@@ -33,6 +35,7 @@ Project programs and direct packages from manifests.
 | libsqlite3-sys | local | https://crates.io/crates/libsqlite3-sys | `bundled` compiles SQLite into the binary. Linking the system one would make ketch's single-binary promise depend on what the host happens to ship, and the release builds both macOS architectures where that answer differs. |
 | lzma-rs | local | https://crates.io/crates/lzma-rs | Rust dependency |
 | octocrab | local | https://crates.io/crates/octocrab | `ketch registry push` talks to GitHub through octocrab rather than the ureq client the sources use: it needs forks, refs, contents and pull requests, which octocrab already types and paginates. It is async, hence tokio for a runtime to block on; everything else in ketch stays synchronous. |
+| pathdiff | local | https://crates.io/crates/pathdiff | Relative path between two paths |
 | predicates | local | https://crates.io/crates/predicates | Rust dependency |
 | pretty_assertions | local | https://crates.io/crates/pretty_assertions | Rust dependency |
 | proptest | local | https://crates.io/crates/proptest | Property tests |
@@ -48,6 +51,7 @@ Project programs and direct packages from manifests.
 | tokio | local | https://crates.io/crates/tokio | Async runtime |
 | toml | local | https://crates.io/crates/toml | Config |
 | trycmd | local | https://crates.io/crates/trycmd | Rust dependency |
+| typed-path | local | https://crates.io/crates/typed-path | Cross-platform path types for archive members |
 | ureq | local | https://crates.io/crates/ureq | Rust dependency |
 | walkdir | local | https://crates.io/crates/walkdir | Rust dependency |
 | zip | local | https://crates.io/crates/zip | Rust dependency |

@@ -2548,6 +2548,7 @@ dependencies = [
  "diesel",
  "diesel_migrations",
  "dirs",
+ "dunce",
  "flate2",
  "hex",
  "indicatif",
@@ -2556,6 +2557,7 @@ dependencies = [
  "lzma-rs",
  "minisign-verify",
  "octocrab",
+ "pathdiff",
  "pgp",
  "predicates",
  "pretty_assertions",
@@ -2573,6 +2575,7 @@ dependencies = [
  "tokio",
  "toml",
  "trycmd",
+ "typed-path",
  "ureq",
  "walkdir",
  "zip",
@@ -3187,6 +3190,12 @@ name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
+
+[[package]]
+name = "pathdiff"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df94ce210e5bc13cb6651479fa48d14f601d9858cfe0467f43ae157023b938d3"
 
 [[package]]
 name = "pbkdf2"
@@ -5231,6 +5240,12 @@ checksum = "a78e83a30223c757c3947cd144a31014ff04298d8719ae10d03c31c0448c8013"
 dependencies = [
  "cipher 0.4.4",
 ]
+
+[[package]]
+name = "typed-path"
+version = "0.12.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8e28f89b80c87b8fb0cf04ab448d5dd0dd0ade2f8891bae878de66a75a28600e"
 
 [[package]]
 name = "typenum"

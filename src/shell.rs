@@ -614,7 +614,7 @@ fn write(file: &Path, text: &str) -> Result<()> {
     // A startup file is very often a symlink into a dotfiles repository.
     // Renaming over the link would replace it with a regular file and quietly
     // detach the user from their own dotfiles, so the write follows it first.
-    let target = file.canonicalize().unwrap_or_else(|_| file.to_path_buf());
+    let target = dunce::canonicalize(file).unwrap_or_else(|_| file.to_path_buf());
     let Some(parent) = target.parent() else {
         return Err(Error::msg(format!(
             "{} has no parent directory",

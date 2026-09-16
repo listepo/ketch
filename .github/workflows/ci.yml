@@ -80,6 +80,8 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - uses: taiki-e/install-action@nextest
+
       - name: Format
         run: cargo fmt --all -- --check
 
@@ -89,12 +91,12 @@ jobs:
       # Unit tests and the end-to-end suite in tests/, which drives the real
       # binary against a throwaway root. Both are offline.
       - name: Test
-        run: cargo test --all-targets --locked
+        run: cargo nextest run --all-targets --locked
 
       # The optional TUI feature is not in the default build or release
       # tarball, but it must still compile and pass its tests.
       - name: Test (tui)
-        run: cargo test --all-targets --locked --features tui
+        run: cargo nextest run --all-targets --locked --features tui
 
   # Linux compile, unit tests, and tests/install_linux.rs (cfg linux).
   check-linux:
@@ -107,14 +109,16 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - uses: taiki-e/install-action@nextest
+
       - name: Lint
         run: cargo clippy --all-targets --locked -- -D warnings
 
       - name: Test
-        run: cargo test --all-targets --locked
+        run: cargo nextest run --all-targets --locked
 
       - name: Test (tui)
-        run: cargo test --all-targets --locked --features tui
+        run: cargo nextest run --all-targets --locked --features tui
 
   # Windows compile, unit tests, and tests/install_windows.rs (cfg windows).
   check-windows:
@@ -130,14 +134,16 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - uses: taiki-e/install-action@nextest
+
       - name: Lint
         run: cargo clippy --all-targets --locked -- -D warnings
 
       - name: Test
-        run: cargo test --all-targets --locked
+        run: cargo nextest run --all-targets --locked
 
       - name: Test (tui)
-        run: cargo test --all-targets --locked --features tui
+        run: cargo nextest run --all-targets --locked --features tui
 
       - name: PowerShell syntax
         shell: pwsh

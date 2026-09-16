@@ -739,8 +739,8 @@ fn store_ketch_link(cfg: &Config) -> std::path::PathBuf {
 }
 
 fn same_binary(a: &std::path::Path, b: &std::path::Path) -> bool {
-    let left = std::fs::canonicalize(a).unwrap_or_else(|_| a.to_path_buf());
-    let right = std::fs::canonicalize(b).unwrap_or_else(|_| b.to_path_buf());
+    let left = dunce::canonicalize(a).unwrap_or_else(|_| a.to_path_buf());
+    let right = dunce::canonicalize(b).unwrap_or_else(|_| b.to_path_buf());
     left == right
 }
 
@@ -754,7 +754,7 @@ fn first_ketch_on_path_from(path: impl AsRef<std::ffi::OsStr>) -> Option<std::pa
     for dir in std::env::split_paths(path.as_ref()) {
         let candidate = dir.join(name);
         if candidate.is_file() {
-            return Some(std::fs::canonicalize(&candidate).unwrap_or(candidate));
+            return Some(dunce::canonicalize(&candidate).unwrap_or(candidate));
         }
     }
     None

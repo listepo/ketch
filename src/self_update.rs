@@ -155,7 +155,7 @@ fn canonical_dir(path: &Path) -> Result<PathBuf> {
         }
         std::fs::create_dir_all(path).map_err(|e| Error::io(path, e))?;
     }
-    std::fs::canonicalize(path).map_err(|e| Error::io(path, e))
+    dunce::canonicalize(path).map_err(|e| Error::io(path, e))
 }
 
 fn remove_any(path: &Path) -> std::io::Result<()> {
@@ -339,7 +339,7 @@ pub fn install_completion_script(cfg: &Config, shell: clap_complete::Shell) -> R
 /// real file rather than the link pointing at it.
 pub fn current_exe() -> Result<PathBuf> {
     let exe = std::env::current_exe()?;
-    Ok(std::fs::canonicalize(&exe).unwrap_or(exe))
+    Ok(dunce::canonicalize(&exe).unwrap_or(exe))
 }
 
 /// Fetch the latest ketch release and install it: as an upgrade of the `ketch`
@@ -547,7 +547,10 @@ pub fn uninstall_plan(cfg: &Config, keep_packages: bool, no_brew: bool) -> Resul
         },
         user_path: !keep_packages && crate::shell::user_path_configured(cfg),
         cask: (!no_brew).then(cask_dir).flatten(),
-        exe: current_exe().ok().filter(|exe| exe.starts_with(&cfg.root)),
+        exe: current_exe().ok().filter(|exe| {
+            let root = dunce::canonicalize(&cfg.root).unwrap_or_else(|_| cfg.root.clone());
+            exe.starts_with(&root)
+        }),
     })
 }
 
@@ -898,7 +901,7 @@ mod tests {
         let bootstrap = tmp.path().join("bootstrap");
         record_bootstrap_link(&cfg, &mut state, &bootstrap).unwrap();
 
-        let link = std::fs::canonicalize(&bootstrap)
+        let link = dunce::canonicalize(&bootstrap)
             .unwrap()
             .join(bootstrap_binary_name());
         #[cfg(unix)]
@@ -908,8 +911,8 @@ mod tests {
                 "the bootstrap path must follow the bin-dir binary"
             );
             assert_eq!(
-                std::fs::canonicalize(std::fs::read_link(&link).unwrap()).unwrap(),
-                std::fs::canonicalize(&bin).unwrap()
+                dunce::canonicalize(std::fs::read_link(&link).unwrap()).unwrap(),
+                dunce::canonicalize(&bin).unwrap()
             );
         }
         #[cfg(windows)]
@@ -921,8 +924,8 @@ mod tests {
         assert_eq!(pkg.links.len(), 1);
         assert_eq!(pkg.links[0].link, link);
         assert_eq!(
-            std::fs::canonicalize(&pkg.links[0].target).unwrap(),
-            std::fs::canonicalize(&bin).unwrap()
+            dunce::canonicalize(&pkg.links[0].target).unwrap(),
+            dunce::canonicalize(&bin).unwrap()
         );
     }
 

@@ -21,13 +21,13 @@ lint:
 alias clippy := lint
 
 test:
-    cargo test --all-targets --locked
+    cargo nextest run --all-targets --locked
 
 test-install:
-    cargo test --locked --test install
+    cargo nextest run --locked --all-targets -E 'binary(install)'
 
 test-tui:
-    cargo test --locked --features tui
+    cargo nextest run --locked --all-targets --features tui
 
 # one-time setup: the pinned node from mise.toml, then commitlint onto it
 deps:

@@ -53,8 +53,8 @@ Linux and Windows.
 ## Commands
 
 ```bash
-cargo test                       # unit tests and the end-to-end suite; no network
-cargo test --test install        # just the end-to-end suite
+cargo nextest run                # unit tests and the end-to-end suite; no network
+cargo nextest run -E 'binary(install)'  # just the end-to-end suite
 cargo clippy --all-targets       # must be clean
 cargo fmt                        # must be clean
 cargo build                      # debug binary at target/debug/ketch
@@ -62,7 +62,7 @@ cargo build                      # debug binary at target/debug/ketch
 
 The Justfile wraps the same commands with `--locked`: `just fmt`, `just clippy`
 (or `just lint`), `just test`, and `just check` runs what CI runs on this
-host — format, clippy, `cargo test --all-targets`, commitlint fixtures, shell
+host — format, clippy, `cargo nextest run --all-targets`, commitlint fixtures, shell
 syntax on `install.sh` and the packaging scripts, `scripts/package.sh` for the
 host target, and on macOS `brew style` on the generated cask. Cross-target
 builds and the Linux/Windows jobs are CI-only.
@@ -462,7 +462,7 @@ breaks there, not halfway through a release.
 
 ## Before you call it done
 
-1. `cargo test`, `cargo clippy --all-targets`, `cargo fmt --check` all clean.
+1. `cargo nextest run`, `cargo clippy --all-targets`, `cargo fmt --check` all clean.
 2. Non-trivial logic left a test behind that fails if the logic breaks.
 3. You ran the actual binary against a `KETCH_ROOT` scratch tree if the change
    touches installation, linking, or the registry.
