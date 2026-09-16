@@ -29,11 +29,44 @@ fn write_symlink(target: &Path, link: &Path) -> Result<()> {
     {
         crate::platform::unix::symlink(target, link)
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
     {
-        let _ = (target, link);
-        Ok(())
+        // Prefer a real symlink when the process may create one (Developer Mode
+        // or SeCreateSymbolicLink). Fall back to a same-tree copy so a release
+        // that ships `bin/tool -> tool.exe` still places a runnable file.
+        let resolved = link.parent().unwrap_or_else(|| Path::new(".")).join(target);
+        if resolved.is_dir() {
+            if std::os::windows::fs::symlink_dir(target, link).is_ok() {
+                return Ok(());
+            }
+        } else if std::os::windows::fs::symlink_file(target, link).is_ok() {
+            return Ok(());
+        }
+        materialize_symlink_as_copy(target, link)
     }
+    #[cfg(not(any(unix, windows)))]
+    {
+        materialize_symlink_as_copy(target, link)
+    }
+}
+
+/// Copy the symlink target into `link` when it already exists under the payload.
+///
+/// Used on Windows (and other non-Unix hosts) when creating a real symlink is
+/// refused: silently returning Ok without writing left packages missing their
+/// linked binaries.
+#[cfg_attr(unix, allow(dead_code))] // called from write_symlink on Windows; tests on Unix
+fn materialize_symlink_as_copy(target: &Path, link: &Path) -> Result<()> {
+    let resolved = link.parent().unwrap_or_else(|| Path::new(".")).join(target);
+    if resolved.is_file() {
+        std::fs::copy(&resolved, link).map_err(|e| Error::io(link, e))?;
+        return Ok(());
+    }
+    Err(Error::msg(format!(
+        "cannot materialise archive symlink {} → {} (target missing or not a file; on Windows enable Developer Mode or ship a real file)",
+        link.display(),
+        target.display()
+    )))
 }
 
 /// `.tar.gz` / `.tgz`
@@ -503,6 +536,26 @@ mod tests {
         );
         // Member 2 would have been created here had the link been followed.
         assert!(!dest.join("e").exists(), "the symlink was resolved anyway");
+    }
+
+    #[test]
+    fn materialize_symlink_as_copy_writes_the_target_file() {
+        let dest = tempfile::tempdir().unwrap();
+        let target = dest.path().join("tool.exe");
+        std::fs::write(&target, b"MZ").unwrap();
+        let link = dest.path().join("tool-alias");
+        materialize_symlink_as_copy(Path::new("tool.exe"), &link).unwrap();
+        assert_eq!(std::fs::read(&link).unwrap(), b"MZ");
+        assert!(!link.is_symlink());
+    }
+
+    #[test]
+    fn materialize_symlink_as_copy_errors_when_target_is_missing() {
+        let dest = tempfile::tempdir().unwrap();
+        let link = dest.path().join("tool-alias");
+        let err = materialize_symlink_as_copy(Path::new("missing"), &link).unwrap_err();
+        assert!(err.to_string().contains("cannot materialise"), "{err}");
+        assert!(std::fs::symlink_metadata(&link).is_err());
     }
 
     #[cfg(unix)]
