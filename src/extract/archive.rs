@@ -54,7 +54,8 @@ fn write_symlink(target: &Path, link: &Path) -> Result<()> {
 ///
 /// Used on Windows (and other non-Unix hosts) when creating a real symlink is
 /// refused: silently returning Ok without writing left packages missing their
-/// linked binaries.
+/// linked binaries. Directories are copied too — releases ship `share/doc ->
+/// ../docs` and without this branch Windows extract failed with "not a file".
 #[cfg_attr(unix, allow(dead_code))] // called from write_symlink on Windows; tests on Unix
 fn materialize_symlink_as_copy(target: &Path, link: &Path) -> Result<()> {
     let resolved = link.parent().unwrap_or_else(|| Path::new(".")).join(target);
@@ -62,11 +63,56 @@ fn materialize_symlink_as_copy(target: &Path, link: &Path) -> Result<()> {
         std::fs::copy(&resolved, link).map_err(|e| Error::io(link, e))?;
         return Ok(());
     }
+    if resolved.is_dir() {
+        copy_dir_contents(&resolved, link)?;
+        return Ok(());
+    }
     Err(Error::msg(format!(
-        "cannot materialise archive symlink {} → {} (target missing or not a file; on Windows enable Developer Mode or ship a real file)",
+        "cannot materialise archive symlink {} → {} (target missing; on Windows enable Developer Mode or ship a real file/dir)",
         link.display(),
         target.display()
     )))
+}
+
+/// Recursively copy `src` into `dest` for directory symlink materialisation.
+///
+/// Kept local to this module so extract does not depend on `source::local`
+/// (that crate already depends on extract). Nested symlinks are skipped: the
+/// outer materialisation already flattened what the archive could express.
+#[cfg_attr(unix, allow(dead_code))]
+fn copy_dir_contents(src: &Path, dest: &Path) -> Result<()> {
+    std::fs::create_dir_all(dest).map_err(|e| Error::io(dest, e))?;
+    for entry in walkdir::WalkDir::new(src) {
+        let entry = entry.map_err(|e| Error::msg(format!("walking {}: {e}", src.display())))?;
+        let rel = pathdiff::diff_paths(entry.path(), src)
+            .filter(|r| !r.components().any(|c| matches!(c, Component::ParentDir)))
+            .ok_or_else(|| {
+                Error::msg(format!(
+                    "path {} escaped {}",
+                    entry.path().display(),
+                    src.display()
+                ))
+            })?;
+        if rel.as_os_str().is_empty() {
+            continue;
+        }
+        let target = dest.join(&rel);
+        let ft = entry.file_type();
+        if ft.is_dir() {
+            std::fs::create_dir_all(&target).map_err(|e| Error::io(&target, e))?;
+        } else if ft.is_symlink() {
+            // Nested links inside a materialised directory are left out: creating
+            // them would re-enter the Windows privilege problem this path exists
+            // to avoid, and following them could escape the payload root.
+            continue;
+        } else {
+            if let Some(parent) = target.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
+            }
+            std::fs::copy(entry.path(), &target).map_err(|e| Error::io(&target, e))?;
+        }
+    }
+    Ok(())
 }
 
 /// `.tar.gz` / `.tgz`
@@ -598,6 +644,24 @@ mod tests {
         let err = materialize_symlink_as_copy(Path::new("missing"), &link).unwrap_err();
         assert!(err.to_string().contains("cannot materialise"), "{err}");
         assert!(std::fs::symlink_metadata(&link).is_err());
+    }
+
+    #[test]
+    fn materialize_symlink_as_copy_writes_a_directory_tree() {
+        let dest = tempfile::tempdir().unwrap();
+        let docs = dest.path().join("docs");
+        std::fs::create_dir_all(docs.join("nested")).unwrap();
+        std::fs::write(docs.join("readme.txt"), b"hi").unwrap();
+        std::fs::write(docs.join("nested/more.txt"), b"there").unwrap();
+        let link = dest.path().join("share-doc");
+        materialize_symlink_as_copy(Path::new("docs"), &link).unwrap();
+        assert!(link.is_dir());
+        assert!(!link.is_symlink());
+        assert_eq!(std::fs::read(link.join("readme.txt")).unwrap(), b"hi");
+        assert_eq!(
+            std::fs::read(link.join("nested/more.txt")).unwrap(),
+            b"there"
+        );
     }
 
     /// Archives often list `bin/tool -> tool` before the real file. Deferring
