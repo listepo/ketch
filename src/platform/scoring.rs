@@ -560,6 +560,8 @@ mod tests {
     fn windows_prefers_native_architecture() {
         assert!(score_windows_asset("tool-aarch64-pc-windows-msvc.zip", Arch::X86_64).is_none());
         assert!(score_windows_asset("tool-x86_64-pc-windows-msvc.zip", Arch::X86_64).is_some());
+        // cargo-dist name used by listepo/rtok releases (ketch-registry include).
+        assert!(score_windows_asset("rtok-x86_64-pc-windows-msvc.zip", Arch::X86_64).is_some());
     }
 
     #[test]

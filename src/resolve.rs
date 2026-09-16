@@ -588,6 +588,131 @@ mod tests {
         assert!(!json.contains("authorization"));
     }
 
+    /// Stand-in for a native Windows host: real `score_windows_asset` scoring.
+    struct WindowsX64Platform;
+
+    impl Platform for WindowsX64Platform {
+        fn id(&self) -> &str {
+            "windows"
+        }
+        fn target(&self) -> TargetSpec {
+            TargetSpec {
+                os: Os::Windows,
+                arch: Arch::X86_64,
+            }
+        }
+        fn score_asset(&self, name: &str, _emu: bool) -> Option<AssetScore> {
+            crate::platform::scoring::score_windows_asset(name, Arch::X86_64)
+        }
+        fn extractors(&self) -> Vec<Box<dyn crate::extract::Extractor>> {
+            Vec::new()
+        }
+        fn place(
+            &self,
+            _plan: &crate::platform::Placement<'_>,
+        ) -> Result<Vec<crate::model::LinkRecord>> {
+            Ok(Vec::new())
+        }
+        fn unplace(&self, _links: &[crate::model::LinkRecord]) -> Result<()> {
+            Ok(())
+        }
+        fn is_executable(&self, _path: &Path) -> bool {
+            true
+        }
+        fn doctor(&self, _cfg: &Config) -> Vec<crate::platform::DoctorCheck> {
+            Vec::new()
+        }
+    }
+
+    fn windows_cfg() -> Config {
+        let mut cfg = config();
+        cfg.target = TargetSpec {
+            os: Os::Windows,
+            arch: Arch::X86_64,
+        };
+        cfg
+    }
+
+    /// Patterns published for `rtok` in listepo/ketch-registry (after the
+    /// Windows zip was added to `include`).
+    fn rtok_registry_selector() -> AssetSelector {
+        AssetSelector {
+            include: vec![
+                "*-apple-darwin.tar.xz".into(),
+                "*-linux-gnu.tar.xz".into(),
+                "*-pc-windows-msvc.zip".into(),
+            ],
+            exclude: vec!["*-update*".into(), "source.tar.gz".into()],
+            ..Default::default()
+        }
+    }
+
+    /// Asset names from a real cargo-dist rtok release (v0.1.3 shape).
+    fn rtok_release_assets() -> Release {
+        release(&[
+            "rtok-aarch64-apple-darwin.tar.xz",
+            "rtok-aarch64-apple-darwin-update",
+            "rtok-x86_64-unknown-linux-gnu.tar.xz",
+            "rtok-x86_64-unknown-linux-gnu-update",
+            "rtok-x86_64-pc-windows-msvc.zip",
+            "rtok-x86_64-pc-windows-msvc-update",
+            "source.tar.gz",
+            "sha256.sum",
+        ])
+    }
+
+    #[test]
+    fn rtok_registry_include_picks_windows_msvc_zip() {
+        // Regression: an include list of only darwin/linux .tar.xz made
+        // `ketch install rtok` fail with "no asset for windows-x86_64" even
+        // though the release published `*-pc-windows-msvc.zip`.
+        let eval = evaluate_assets(
+            &windows_cfg(),
+            &WindowsX64Platform,
+            &rtok_release_assets(),
+            &rtok_registry_selector(),
+        );
+        assert_eq!(
+            eval.scored
+                .iter()
+                .map(|s| s.asset.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["rtok-x86_64-pc-windows-msvc.zip"]
+        );
+    }
+
+    #[test]
+    fn rtok_registry_include_without_windows_leaves_windows_empty() {
+        // The pre-fix selector that caused the Windows install failure.
+        let selector = AssetSelector {
+            include: vec!["*-apple-darwin.tar.xz".into(), "*-linux-gnu.tar.xz".into()],
+            exclude: vec!["*-update*".into(), "source.tar.gz".into()],
+            ..Default::default()
+        };
+        let eval = evaluate_assets(
+            &windows_cfg(),
+            &WindowsX64Platform,
+            &rtok_release_assets(),
+            &selector,
+        );
+        assert!(
+            eval.scored.is_empty(),
+            "expected no Windows pick, got {:?}",
+            eval.scored
+                .iter()
+                .map(|s| &s.asset.name)
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            eval.rejected.iter().any(|r| {
+                r.name == "rtok-x86_64-pc-windows-msvc.zip"
+                    && r.reason.contains("does not match any include pattern")
+            }),
+            "{:?}",
+            eval.rejected
+        );
+    }
+
     #[test]
     fn origin_tiers_name_the_four_manifest_sources() {
         use std::path::PathBuf;
