@@ -410,7 +410,11 @@ fn windows_path_eq(entry: &str, dir: &Path) -> bool {
 
 #[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) fn windows_path_key(p: &Path) -> String {
+    // Registry PATH values are sometimes quoted (`"C:\\Program Files\\…"`).
+    // Strip the quotes before folding so doctor/install see the same entry as
+    // an unquoted bin dir and do not prepend a duplicate.
     let s = p.to_string_lossy().replace('/', "\\");
+    let s = s.trim().trim_matches('"').trim_matches('\'');
     s.trim_end_matches('\\').to_ascii_lowercase()
 }
 
@@ -832,6 +836,18 @@ mod tests {
             &added,
             Path::new("C:/Users/u/.ketch/bin/")
         ));
+    }
+
+    #[test]
+    fn windows_path_has_matches_a_quoted_registry_entry() {
+        let dir = Path::new(r"C:\Users\u\.ketch\bin");
+        let path = r#"C:\Windows\System32;"C:\Users\u\.ketch\bin";C:\Windows"#;
+        assert!(windows_path_has(path, dir));
+        assert!(windows_path_prepend(path, dir).is_none());
+        assert_eq!(
+            windows_path_remove(path, dir).as_deref(),
+            Some(r"C:\Windows\System32;C:\Windows")
+        );
     }
 
     #[rstest]
