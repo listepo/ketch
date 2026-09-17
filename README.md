@@ -351,6 +351,7 @@ the package registry is [`listepo/ketch-registry`](https://github.com/listepo/ke
 | [docs/LOCKFILE.md](docs/LOCKFILE.md) | `ketch.lock`: pinning a machine's tools to exact releases |
 | [ROADMAP.md](ROADMAP.md) | What is missing, and what is deliberately out of scope |
 | [AGENTS.md](AGENTS.md) | The layout, the conventions and the trust boundaries |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Short contributor checklist |
 
 The same pages are published at
 **[listepo.github.io/ketch/docs](https://listepo.github.io/ketch/docs/)** — the
@@ -402,11 +403,12 @@ a crate.
 
 ## Contributing
 
-[AGENTS.md](AGENTS.md) documents the layout, the conventions, and the trust
-boundaries — read it before changing anything. Repository prose (commits, PRs,
-docs, comments) is English. `cargo test`, `cargo clippy --all-targets` and
-`cargo fmt --check` all have to be clean; CI enforces those on macOS, Linux and
-Windows, but only on `main` pushes and `workflow_dispatch` — dispatch
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the checklist.
+[AGENTS.md](AGENTS.md) documents layout, conventions, and trust boundaries —
+read it before changing anything. Repository prose (commits, PRs, docs,
+comments) is English. `cargo test`, `cargo clippy --all-targets`, and
+`cargo fmt --check` all have to be clean; CI enforces those on macOS, Linux,
+and Windows, but only on `main` pushes and `workflow_dispatch` — dispatch
 `ci.yml` on your branch and wait for green before merging.
 
 With [just](https://github.com/casey/just) installed, `just deps` sets up the
