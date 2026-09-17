@@ -31,3 +31,22 @@ Plan (Claude Code / claude-opus-5): `trust` table on Manifest (verifier sigstore
 
 Signatures and provenance for release assets so install can verify more than a checksum sidecar.
 
+
+---
+
+## Note 2026-09-17 — testing library candidates
+
+Shared catalog: [`listepo/rust.md`](../../rust.md) → Code rules *Testing candidates*
+and cargo *Testing candidates (evaluate — not auto-added)*. Do **not** add these
+deps unless a concrete gap shows up.
+
+Fits for ketch (1–3):
+
+1. `vfs` — evaluate for install/store unit tests that today use `tempfile` /
+   `assert_fs` host trees (path quirks, no disk).
+2. `temp-env` — scoped `KETCH_*` / `PATH` overrides in unit tests.
+3. `fake` — only if synthetic GitHub release/asset fixtures beat hand-written JSON.
+
+Already covered: `assert_cmd`, `assert_fs`, `insta`, `predicates`,
+`pretty_assertions`, `proptest`, `rstest`, `trycmd`. Skip `mockall` /
+`tokio-test` / `testcontainers` / extra fuzzers unless a new seam needs them.
