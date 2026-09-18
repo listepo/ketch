@@ -33,6 +33,7 @@ const NOISE_DIRS: &[&str] = &[
     "licenses",
     "_internal",
     "resources",
+    "plugins",
 ];
 
 /// Native Windows CLI releases: copy executables, record every destination.
