@@ -111,14 +111,18 @@ fn matches_exe(exe: &Path, candidate: &Path, key: &str) -> bool {
 fn cmd_hits(cmdline: &str, candidate: &Path, key: &str) -> bool {
     // Windows CommandLine casing is arbitrary; keys from `path_key` are folded.
     #[cfg(windows)]
-    let cmdline = cmdline.to_ascii_lowercase();
+    let cmdline_cmp = cmdline.to_ascii_lowercase();
+    #[cfg(not(windows))]
+    let cmdline_cmp = cmdline;
     let raw = candidate.to_string_lossy();
     #[cfg(windows)]
-    let raw = raw.to_ascii_lowercase().replace('/', "\");
-    if !raw.is_empty() && cmdline.contains(raw.as_ref()) {
+    let raw = raw.to_ascii_lowercase().replace('/', "\\");
+    #[cfg(not(windows))]
+    let raw = raw;
+    if !raw.is_empty() && cmdline_cmp.contains(raw.as_ref()) {
         return true;
     }
-    !key.is_empty() && cmdline.contains(key)
+    !key.is_empty() && cmdline_cmp.contains(key)
 }
 
 #[cfg(target_os = "linux")]
@@ -375,13 +379,13 @@ mod tests {
             found.pid
         );
     }
-
     #[cfg(windows)]
     #[test]
     fn cmd_hits_folds_command_line_case() {
         let path = PathBuf::from(r"C:\Users\User\.ketch\bin\tool.cmd");
         let key = path_key(&path);
-        let cmdline = r"C:\WINDOWS\system32\cmd.exe /c \"C:\Users\User\.ketch\bin\TOOL.CMD\"";
+        let cmdline =
+            r#"C:\WINDOWS\system32\cmd.exe /c "C:\Users\User\.ketch\bin\TOOL.CMD""#;
         assert!(cmd_hits(cmdline, &path, &key));
     }
 
