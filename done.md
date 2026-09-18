@@ -1,3 +1,9 @@
+### F4. Self upgrade, in-use processes, auto-update
+
+`ketch self update` is now `ketch self upgrade` (same verb as client packages). `self update` remains a clap alias so the Homebrew cask and existing scripts keep working. `ketch upgrade` and `ketch self upgrade` list other processes running from a file about to be replaced, ask whether to stop them, and on yes TERM then KILL (taskkill /F on Windows); a decline leaves them running and replacement continues as before. The current ketch pid is never offered. `auto_update` in `config.toml` / `KETCH_AUTO_UPDATE` defaults to `true`: `install` and `upgrade` refresh the registry and print that auto-update is enabled; a failed fetch is a warning. `false` leaves previous behaviour. Offline e2e sets `KETCH_AUTO_UPDATE=false`.
+
+Tests: occupant listing and `--yes` stop in `src/process.rs`; CLI e2e in `tests/auto_update.rs` and `tests/self_update.rs` (alias + dry-run verbs).
+
 ### M4. Man pages and completions
 
 `extra_paths` is classified as a man page or a completion from explicit `{ path, kind }` metadata or the path rules in `docs/MANIFESTS.md`. Ambiguous or untyped entries are refused at validate rather than guessed. Entries resolve only under the extracted payload; destinations go in `LinkRecord` with `role` man/completion so uninstall and relink use the same ownership proof as binaries. Old state without `role` still loads as binaries.

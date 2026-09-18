@@ -12,9 +12,11 @@
 /site/resources/
 /site/.hugo_build.lock
 /site/content/docs/manifests.md
+/site/content/docs/commands.md
 /site/content/docs/registry.md
 /site/content/docs/lockfile.md
 /site/content/docs/plugins.md
 /site/content/docs/roadmap.md
 /site/content/docs/plan.md
 /site/content/docs/contributing.md
+site/__pycache__/

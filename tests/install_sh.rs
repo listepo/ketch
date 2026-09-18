@@ -213,7 +213,7 @@ exit 0
     }
 
     /// An explicit `--install-dir` gets a link to the store's binary, so
-    /// `ketch self update` — which replaces that binary in place — is what the
+    /// `ketch self upgrade` — which replaces that binary in place — is what the
     /// bootstrap path runs afterwards. A copy would keep running this version.
     #[test]
     fn an_explicit_install_dir_gets_a_link_to_the_installed_binary() {

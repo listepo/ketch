@@ -49,6 +49,14 @@ def sync_version() -> None:
 # source path -> (slug, title, sidebar weight, description)
 PAGES = [
     (
+        "docs/COMMANDS.md",
+        "commands",
+        "Commands",
+        10,
+        "Every ketch command in one place: what it does, the form it takes, "
+        "and one working example.",
+    ),
+    (
         "docs/MANIFESTS.md",
         "manifests",
         "Manifests",

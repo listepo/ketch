@@ -1,4 +1,4 @@
-//! `ketch self update --dry-run` must not claim an update when already current.
+//! `ketch self upgrade --dry-run` must not claim an update when already current.
 
 use assert_cmd::Command;
 use assert_fs::fixture::PathChild;
@@ -99,7 +99,7 @@ fn ketch_self_update_dry_run(
             "--root",
             root.to_str().unwrap(),
             "self",
-            "update",
+            "upgrade",
             "--dry-run",
         ])
         .env("NO_COLOR", "1")
@@ -122,7 +122,34 @@ fn dry_run_when_already_current_does_not_claim_an_update() {
         .success()
         .stdout(predicate::str::is_empty())
         .stderr(predicate::str::contains("already current"))
-        .stderr(predicate::str::contains("would update").not());
+        .stderr(predicate::str::contains("would upgrade").not());
+}
+
+#[test]
+fn self_update_alias_still_dry_runs() {
+    let mock = GithubLatestMock::spawn(&format!("v{}", env!("CARGO_PKG_VERSION")));
+    let temp = TempDir::new().unwrap();
+
+    Command::cargo_bin("ketch")
+        .unwrap()
+        .args([
+            "--root",
+            temp.child("root").path().to_str().unwrap(),
+            "self",
+            "update",
+            "--dry-run",
+        ])
+        .env("NO_COLOR", "1")
+        .env("KETCH_GITHUB_API", &mock.api_base)
+        .env_remove("HTTP_PROXY")
+        .env_remove("HTTPS_PROXY")
+        .env_remove("ALL_PROXY")
+        .env_remove("http_proxy")
+        .env_remove("https_proxy")
+        .env_remove("all_proxy")
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("already current"));
 }
 
 #[test]
@@ -133,7 +160,7 @@ fn dry_run_when_a_newer_release_exists_claims_an_update() {
     ketch_self_update_dry_run(&mock, temp.child("root").path())
         .success()
         .stdout(predicate::str::is_empty())
-        .stderr(predicate::str::contains("would update"))
+        .stderr(predicate::str::contains("would upgrade"))
         .stderr(predicate::str::contains("already current").not());
 }
 

@@ -37,7 +37,7 @@ ambiguous in a package manager:
   everything about it — asset names, archive members, `CHANGELOG.md`, release
   notes — is untrusted input, not ketch's own data.
 
-Where the distinction matters most: `ketch self update` upgrades the host,
+Where the distinction matters most: `ketch self upgrade` upgrades the host,
 `ketch upgrade` upgrades clients; `scripts/release.sh` releases the host,
 `ketch.lock` pins clients; `src/changelog.rs` reads a client's changelog, while
 the host's own `CHANGELOG.md` is written for it by release-plz. The host is
@@ -362,11 +362,11 @@ aggregate `SHA256SUMS` go up on a **draft** release
 creates the tag, at the commit that was built.
 
 That ordering is the point. A tag exists if and only if a release finished, so
-`ketch self update` and `install.sh` can never find a tag whose binaries are
+`ketch self upgrade` and `install.sh` can never find a tag whose binaries are
 still building or never arrived; a failed run leaves a draft to re-run or
 delete, and main simply stays untagged. It also removes the old mismatch
 hazard: the version in `Cargo.toml` *is* the tag, derived rather than compared,
-and `ketch self update` measures itself against exactly that.
+and `ketch self upgrade` measures itself against exactly that.
 
 A re-run is `workflow_dispatch` with `force` — the one case the tag check would
 otherwise skip, such as a `tap` job that failed after the release published.
@@ -454,7 +454,7 @@ Bumping the version by hand in an ordinary commit is what both of these exist
 to stop: the version is written in one place and read as the tag, so a stray
 bump publishes a release.
 
-Asset names are load-bearing: `install.sh` and `ketch self update` both look for
+Asset names are load-bearing: `install.sh` and `ketch self upgrade` both look for
 `ketch-<target>.tar.gz` and `SHA256SUMS`. Renaming either strips the upgrade
 path from every copy already out there. CI runs the same `scripts/package.sh`
 on every green gate (main push or a dispatched run on a branch) so packaging

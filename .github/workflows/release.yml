@@ -7,7 +7,7 @@ name: release
 # signed, the tarballs go up on a *draft* release, and publishing that draft is
 # what creates `v<version>` — at the commit that was built. So a tag exists if
 # and only if a release completed. A build that fails leaves main untagged and
-# nothing half-published for `install.sh` or `ketch self update` to find.
+# nothing half-published for `install.sh` or `ketch self upgrade` to find.
 #
 # Nothing is typed to cut a release: release-plz keeps a pull request holding
 # the next version, and merging it is the release.
@@ -37,7 +37,7 @@ jobs:
   # The cheap job that decides whether this merge is a release at all, so an
   # ordinary one stops here in seconds.
   #
-  # The version in `Cargo.toml` *is* the tag: `ketch self update` compares the
+  # The version in `Cargo.toml` *is* the tag: `ketch self upgrade` compares the
   # running binary's version against the release tag, so deriving one from the
   # other is what keeps them from disagreeing. It also means "already tagged"
   # is the same statement as "already released".
@@ -293,7 +293,7 @@ jobs:
           mkdir -p dist
           find staging -name '*.tar.gz' -exec mv {} dist/ \;
           cd dist
-          # One aggregate file, named so `ketch self update` recognises it and
+          # One aggregate file, named so `ketch self upgrade` recognises it and
           # install.sh can grep it. Sorted, so the file is reproducible.
           shasum -a 256 $(ls *.tar.gz | sort) > SHA256SUMS
           cat SHA256SUMS
