@@ -109,7 +109,12 @@ fn matches_exe(exe: &Path, candidate: &Path, key: &str) -> bool {
 
 #[cfg(any(target_os = "linux", windows))]
 fn cmd_hits(cmdline: &str, candidate: &Path, key: &str) -> bool {
+    // Windows CommandLine casing is arbitrary; keys from `path_key` are folded.
+    #[cfg(windows)]
+    let cmdline = cmdline.to_ascii_lowercase();
     let raw = candidate.to_string_lossy();
+    #[cfg(windows)]
+    let raw = raw.to_ascii_lowercase().replace('/', "\");
     if !raw.is_empty() && cmdline.contains(raw.as_ref()) {
         return true;
     }
@@ -183,8 +188,16 @@ fn list(keys: &[(PathBuf, String)]) -> Vec<Occupant> {
 }
 
 #[cfg(windows)]
+fn powershell_exe() -> PathBuf {
+    std::env::var_os("SystemRoot")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(r"C:\Windows"))
+        .join(r"System32\WindowsPowerShell\v1.0\powershell.exe")
+}
+
+#[cfg(windows)]
 fn list(keys: &[(PathBuf, String)]) -> Vec<Occupant> {
-    let output = Command::new("powershell")
+    let output = Command::new(powershell_exe())
         .args([
             "-NoProfile",
             "-NonInteractive",
@@ -362,4 +375,14 @@ mod tests {
             found.pid
         );
     }
+
+    #[cfg(windows)]
+    #[test]
+    fn cmd_hits_folds_command_line_case() {
+        let path = PathBuf::from(r"C:\Users\User\.ketch\bin\tool.cmd");
+        let key = path_key(&path);
+        let cmdline = r"C:\WINDOWS\system32\cmd.exe /c \"C:\Users\User\.ketch\bin\TOOL.CMD\"";
+        assert!(cmd_hits(cmdline, &path, &key));
+    }
+
 }
