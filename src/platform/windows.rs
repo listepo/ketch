@@ -733,13 +733,17 @@ mod tests {
         std::fs::create_dir_all(&payload).unwrap();
         std::fs::write(payload.join("tool.exe"), b"v2").unwrap();
         let store = tmp.path().join("store/tool/1.0");
+        std::fs::create_dir_all(&store).unwrap();
+        let store_target = store.join("tool.exe");
+        // still_placed(CopiedFile) requires link bytes == recorded target bytes.
+        std::fs::write(&store_target, b"v1").unwrap();
         let bin = tmp.path().join("bin");
         std::fs::create_dir_all(&bin).unwrap();
         let link = bin.join("tool.exe");
         std::fs::write(&link, b"v1").unwrap();
         let recorded = [LinkRecord {
             link: link.clone(),
-            target: store.join("tool.exe"),
+            target: store_target,
             kind: LinkKind::CopiedFile,
             role: LinkRole::Binary,
         }];
@@ -765,22 +769,32 @@ mod tests {
         )));
     }
 
-    /// Hold an exclusive share mode so delete/overwrite fail the way a running
-    /// Windows image does; clear_for_replace must rename aside and free the name.
+    /// A live Windows image can be renamed but not deleted/overwritten.
+    /// `FILE_SHARE_NONE` is the wrong simulation (it blocks rename too); spawn
+    /// a real process from a copied `cmd.exe` instead.
+    #[cfg(windows)]
+    fn spawn_running_cmd_copy(path: &Path) -> std::process::Child {
+        use std::process::{Command, Stdio};
+
+        let cmd = Path::new(r"C:\Windows\System32\cmd.exe");
+        std::fs::copy(cmd, path).unwrap();
+        Command::new(path)
+            .arg("/K")
+            .arg("echo holding")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn copied cmd.exe")
+    }
+
     #[cfg(windows)]
     #[test]
-    fn clear_for_replace_renames_aside_a_share_locked_file() {
-        use std::fs::OpenOptions;
-        use std::os::windows::fs::OpenOptionsExt;
-
+    fn clear_for_replace_renames_aside_a_running_exe() {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("ketch.exe");
-        std::fs::write(&path, b"old").unwrap();
-        let _lock = OpenOptions::new()
-            .read(true)
-            .share_mode(0) // FILE_SHARE_NONE
-            .open(&path)
-            .unwrap();
+        let mut child = spawn_running_cmd_copy(&path);
+        std::thread::sleep(std::time::Duration::from_millis(100));
 
         clear_for_replace(&path).unwrap();
         assert!(
@@ -797,35 +811,32 @@ mod tests {
 
         std::fs::write(&path, b"new").unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), b"new");
+        let _ = child.kill();
+        let _ = child.wait();
     }
 
     #[cfg(windows)]
     #[test]
-    fn copy_binary_replaces_a_share_locked_recorded_exe() {
-        use std::fs::OpenOptions;
-        use std::os::windows::fs::OpenOptionsExt;
-
+    fn copy_binary_replaces_a_running_recorded_exe() {
         let tmp = tempfile::tempdir().unwrap();
         let payload = tmp.path().join("payload");
         std::fs::create_dir_all(&payload).unwrap();
         std::fs::write(payload.join("tool.exe"), b"v2").unwrap();
         let store = tmp.path().join("store/tool/1.0");
         std::fs::create_dir_all(&store).unwrap();
+        let store_target = store.join("tool.exe");
         let bin = tmp.path().join("bin");
         std::fs::create_dir_all(&bin).unwrap();
         let link = bin.join("tool.exe");
-        std::fs::write(&link, b"v1").unwrap();
+        let mut child = spawn_running_cmd_copy(&link);
+        std::fs::copy(&link, &store_target).unwrap();
         let recorded = [LinkRecord {
             link: link.clone(),
-            target: store.join("tool.exe"),
+            target: store_target,
             kind: LinkKind::CopiedFile,
             role: LinkRole::Binary,
         }];
-        let _lock = OpenOptions::new()
-            .read(true)
-            .share_mode(0)
-            .open(&link)
-            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(100));
 
         copy_binary(
             payload.join("tool.exe").as_path(),
@@ -834,8 +845,8 @@ mod tests {
             &recorded,
         )
         .unwrap();
-        // Drop lock by ending scope — but we still hold it; read may need drop.
-        drop(_lock);
         assert_eq!(std::fs::read(&link).unwrap(), b"v2");
+        let _ = child.kill();
+        let _ = child.wait();
     }
 }
