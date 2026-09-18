@@ -64,6 +64,55 @@ fn remove_any(path: &Path) -> std::io::Result<()> {
     }
 }
 
+/// Windows `ERROR_ACCESS_DENIED` (5) / `ERROR_SHARING_VIOLATION` (32), plus
+/// `PermissionDenied`. A running `.exe` typically cannot be deleted or
+/// overwritten, but it *can* be renamed aside so a fresh copy can take its path.
+fn is_busy(err: &std::io::Error) -> bool {
+    err.kind() == std::io::ErrorKind::PermissionDenied
+        || matches!(err.raw_os_error(), Some(5) | Some(32))
+}
+
+fn busy_aside(path: &Path) -> PathBuf {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    sibling(path, &format!(".old.{}-{stamp}", std::process::id()))
+}
+
+/// Free `path` so a replacement can be written there.
+///
+/// Prefer delete. If the file is mapped by a live process (the usual Windows
+/// `Access is denied` on `ketch self update` / `ketch upgrade`), rename it
+/// aside instead — the running image keeps its handle, and the destination
+/// name becomes available for `copy`.
+fn clear_for_replace(path: &Path) -> std::io::Result<()> {
+    match remove_any(path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) if is_busy(&e) => {
+            let aside = busy_aside(path);
+            let _ = remove_any(&aside);
+            std::fs::rename(path, &aside)?;
+            // Best-effort: often still fails while the image is mapped.
+            let _ = std::fs::remove_file(&aside);
+            Ok(())
+        }
+        Err(e) => Err(e),
+    }
+}
+
+fn copy_over(from: &Path, to: &Path) -> std::io::Result<()> {
+    match std::fs::copy(from, to) {
+        Ok(_) => Ok(()),
+        Err(e) if is_busy(&e) => {
+            clear_for_replace(to)?;
+            std::fs::copy(from, to).map(|_| ())
+        }
+        Err(e) => Err(e),
+    }
+}
+
 fn sibling(original: &Path, suffix: &str) -> PathBuf {
     let name = original
         .file_name()
@@ -167,7 +216,7 @@ fn destination_available(link: &Path, recorded: &[LinkRecord]) -> Result<()> {
 
 fn clear_destination(link: &Path, recorded: &[LinkRecord]) -> Result<()> {
     destination_available(link, recorded)?;
-    remove_any(link).map_err(|e| Error::io(link, e))
+    clear_for_replace(link).map_err(|e| Error::io(link, e))
 }
 
 /// Keep a Windows executable suffix, or add `.exe` so PATH lookup finds it.
@@ -342,7 +391,7 @@ fn copy_binary(
         }
     }
     clear_destination(&link, recorded)?;
-    std::fs::copy(target, &link).map_err(|e| Error::io(&link, e))?;
+    copy_over(target, &link).map_err(|e| Error::io(&link, e))?;
     Ok(LinkRecord {
         link,
         target: target.to_path_buf(),
@@ -666,5 +715,127 @@ mod tests {
             link.join("Contents/mine.txt").is_file(),
             "a stale record must not authorize deleting the user's bundle"
         );
+    }
+
+    #[test]
+    fn clear_for_replace_deletes_an_unlocked_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("tool.exe");
+        std::fs::write(&path, b"v1").unwrap();
+        clear_for_replace(&path).unwrap();
+        assert!(std::fs::symlink_metadata(&path).is_err());
+    }
+
+    #[test]
+    fn copy_binary_replaces_our_previous_copy() {
+        let tmp = tempfile::tempdir().unwrap();
+        let payload = tmp.path().join("payload");
+        std::fs::create_dir_all(&payload).unwrap();
+        std::fs::write(payload.join("tool.exe"), b"v2").unwrap();
+        let store = tmp.path().join("store/tool/1.0");
+        let bin = tmp.path().join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let link = bin.join("tool.exe");
+        std::fs::write(&link, b"v1").unwrap();
+        let recorded = [LinkRecord {
+            link: link.clone(),
+            target: store.join("tool.exe"),
+            kind: LinkKind::CopiedFile,
+            role: LinkRole::Binary,
+        }];
+        let got = copy_binary(
+            payload.join("tool.exe").as_path(),
+            &bin,
+            "tool.exe",
+            &recorded,
+        )
+        .unwrap();
+        assert_eq!(got.link, link);
+        assert_eq!(std::fs::read(&link).unwrap(), b"v2");
+    }
+
+    #[test]
+    fn is_busy_recognizes_access_denied_codes() {
+        let denied = std::io::Error::from_raw_os_error(5);
+        let sharing = std::io::Error::from_raw_os_error(32);
+        assert!(is_busy(&denied));
+        assert!(is_busy(&sharing));
+        assert!(!is_busy(&std::io::Error::from(
+            std::io::ErrorKind::NotFound
+        )));
+    }
+
+    /// Hold an exclusive share mode so delete/overwrite fail the way a running
+    /// Windows image does; clear_for_replace must rename aside and free the name.
+    #[cfg(windows)]
+    #[test]
+    fn clear_for_replace_renames_aside_a_share_locked_file() {
+        use std::fs::OpenOptions;
+        use std::os::windows::fs::OpenOptionsExt;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("ketch.exe");
+        std::fs::write(&path, b"old").unwrap();
+        let _lock = OpenOptions::new()
+            .read(true)
+            .share_mode(0) // FILE_SHARE_NONE
+            .open(&path)
+            .unwrap();
+
+        clear_for_replace(&path).unwrap();
+        assert!(
+            std::fs::symlink_metadata(&path).is_err(),
+            "destination name must be free for the replacement copy"
+        );
+        let asides: Vec<_> = std::fs::read_dir(tmp.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.starts_with("ketch.exe.old."))
+            .collect();
+        assert_eq!(asides.len(), 1, "expected one aside, got {asides:?}");
+
+        std::fs::write(&path, b"new").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"new");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn copy_binary_replaces_a_share_locked_recorded_exe() {
+        use std::fs::OpenOptions;
+        use std::os::windows::fs::OpenOptionsExt;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let payload = tmp.path().join("payload");
+        std::fs::create_dir_all(&payload).unwrap();
+        std::fs::write(payload.join("tool.exe"), b"v2").unwrap();
+        let store = tmp.path().join("store/tool/1.0");
+        std::fs::create_dir_all(&store).unwrap();
+        let bin = tmp.path().join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let link = bin.join("tool.exe");
+        std::fs::write(&link, b"v1").unwrap();
+        let recorded = [LinkRecord {
+            link: link.clone(),
+            target: store.join("tool.exe"),
+            kind: LinkKind::CopiedFile,
+            role: LinkRole::Binary,
+        }];
+        let _lock = OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&link)
+            .unwrap();
+
+        copy_binary(
+            payload.join("tool.exe").as_path(),
+            &bin,
+            "tool.exe",
+            &recorded,
+        )
+        .unwrap();
+        // Drop lock by ending scope — but we still hold it; read may need drop.
+        drop(_lock);
+        assert_eq!(std::fs::read(&link).unwrap(), b"v2");
     }
 }
