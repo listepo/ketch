@@ -33,6 +33,7 @@ const NOISE_DIRS: &[&str] = &[
     "licenses",
     "_internal",
     "resources",
+    "plugins",
 ];
 
 /// Native Windows CLI releases: copy executables, record every destination.
@@ -260,7 +261,13 @@ fn resolve_bin_specs(root: &Path, specs: &[BinSpec]) -> Result<Vec<(PathBuf, Str
                 let want = spec.name.as_deref().unwrap_or_default();
                 candidates.iter().find(|p| {
                     p.file_name().is_some_and(|n| {
-                        n == want || dest_key(Path::new(n)) == dest_key(Path::new(want))
+                        let n_s = n.to_string_lossy();
+                        n == want
+                            || dest_key(Path::new(n)) == dest_key(Path::new(want))
+                            // `bin = [{ name = "rtok" }]` must find `rtok.exe`.
+                            || n_s.eq_ignore_ascii_case(&format!("{want}.exe"))
+                            || n_s.eq_ignore_ascii_case(&format!("{want}.cmd"))
+                            || n_s.eq_ignore_ascii_case(&format!("{want}.bat"))
                     })
                 })
             }

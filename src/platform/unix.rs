@@ -34,6 +34,7 @@ pub(crate) const NOISE_DIRS: &[&str] = &[
     "licenses",
     "_internal",
     "resources",
+    "plugins",
 ];
 
 /// Remove whatever is at `path` — file, symlink or directory — treating "it
