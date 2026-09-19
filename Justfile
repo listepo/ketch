@@ -44,7 +44,11 @@ setup:
     #!/usr/bin/env bash
     set -euo pipefail
     mkdir -p .cargo
-    if [ ! -e .cargo/config.toml ]; then
+    # Cargo reads both `.cargo/config` and `.cargo/config.toml` (the latter
+    # wins), so a legacy `config` file must not be silently shadowed.
+    if [ -e .cargo/config.toml ] || [ -e .cargo/config ]; then
+      echo ".cargo/config.toml already exists; leaving it alone"
+    else
       printf '%s\n' \
         '# Local-only Cargo overrides, never committed.' \
         '#' \
@@ -57,8 +61,6 @@ setup:
         'paths = ["../../packages/crates/file-backup"]' \
         > .cargo/config.toml
       echo "wrote .cargo/config.toml (local file-backup override)"
-    else
-      echo ".cargo/config.toml already exists; leaving it alone"
     fi
 
 # opt in to the commit-msg hook; undo with `git config --unset core.hooksPath`
