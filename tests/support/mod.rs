@@ -146,12 +146,14 @@ impl Sandbox {
         self.ketch_with_path(args, std::env::var_os("PATH").unwrap_or_default())
     }
 
-    fn ketch_with_path(&self, args: &[&str], path: std::ffi::OsString) -> Output {
+    fn command(&self, args: &[&str], path: std::ffi::OsString) -> Command {
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_ketch"));
         cmd.args(args);
         // `Config::load` reads every KETCH_* variable before config.toml. Strip
         // the whole namespace so a developer shell or CI job cannot leak values
-        // into the sandbox; the two lines below are the only ones we set.
+        // into the sandbox; ROOT, APPS_DIR and AUTO_UPDATE=false are the only
+        // ones we set. Auto-update would fetch the real registry and break the
+        // offline suite.
         for (key, _) in std::env::vars_os() {
             if key.to_str().is_some_and(|k| k.starts_with("KETCH_")) {
                 cmd.env_remove(key);
@@ -159,6 +161,7 @@ impl Sandbox {
         }
         cmd.env("KETCH_ROOT", self.root())
             .env("KETCH_APPS_DIR", self.apps())
+            .env("KETCH_AUTO_UPDATE", "false")
             .env("NO_COLOR", "1")
             .env("PATH", path)
             // Shell setup writes into `$HOME`. Pointing it at the sandbox is
@@ -175,9 +178,22 @@ impl Sandbox {
             // A token in the ambient environment (CI always has one) must not
             // reach a test: nothing here is allowed to touch the network.
             .env_remove("GITHUB_TOKEN")
-            .env_remove("GH_TOKEN")
-            .output()
-            .expect("run ketch")
+            .env_remove("GH_TOKEN");
+        cmd
+    }
+
+    fn ketch_with_path(&self, args: &[&str], path: std::ffi::OsString) -> Output {
+        self.command(args, path).output().expect("run ketch")
+    }
+
+    /// Like [`Self::ketch`], with extra environment variables. Later keys win,
+    /// so a test can turn auto-update back on without copying the sandbox setup.
+    pub fn ketch_overrides(&self, args: &[&str], envs: &[(&str, &str)]) -> Output {
+        let mut cmd = self.command(args, self.path_with_bin());
+        for (key, value) in envs {
+            cmd.env(key, value);
+        }
+        cmd.output().expect("run ketch")
     }
 
     /// `PATH` with the sandbox bin dir in front of the inherited one.
@@ -408,6 +424,34 @@ impl Entry {
             Entry {
                 path: path.to_string(),
                 body: format!("#!/bin/sh\necho '{says}'\n").into_bytes(),
+                mode: 0o755,
+            }
+        }
+    }
+
+    /// A program that stays running, so upgrade can see a process holding the file.
+    pub fn sleeper(path: &str) -> Entry {
+        #[cfg(windows)]
+        {
+            let path = if path.to_ascii_lowercase().ends_with(".cmd")
+                || path.to_ascii_lowercase().ends_with(".exe")
+                || path.to_ascii_lowercase().ends_with(".bat")
+            {
+                path.to_string()
+            } else {
+                format!("{path}.cmd")
+            };
+            Entry {
+                path,
+                body: b"@echo off\r\nping -n 30 127.0.0.1 >nul\r\n".to_vec(),
+                mode: 0o755,
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            Entry {
+                path: path.to_string(),
+                body: b"#!/bin/sh\nsleep 30\n".to_vec(),
                 mode: 0o755,
             }
         }

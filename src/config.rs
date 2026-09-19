@@ -31,6 +31,8 @@ pub struct ConfigFile {
     pub require_checksums: Option<bool>,
     /// Remove the quarantine flag from code that passes signature checks.
     pub strip_quarantine: Option<bool>,
+    /// Refresh the package registry before `install` and `upgrade`.
+    pub auto_update: Option<bool>,
     pub self_repo: Option<String>,
     /// `owner/repo` of the package registry.
     pub registry: Option<String>,
@@ -65,6 +67,8 @@ pub struct Config {
     pub link_apps: bool,
     pub require_checksums: bool,
     pub strip_quarantine: bool,
+    /// Refresh the package registry before `install` and `upgrade`.
+    pub auto_update: bool,
     pub self_repo: String,
     pub registry: String,
     pub registry_dir: PathBuf,
@@ -231,6 +235,9 @@ impl Config {
             strip_quarantine: env_bool("KETCH_STRIP_QUARANTINE")?
                 .or(file.strip_quarantine)
                 .unwrap_or(true),
+            auto_update: env_bool("KETCH_AUTO_UPDATE")?
+                .or(file.auto_update)
+                .unwrap_or(true),
             self_repo,
             registry,
             // Deliberately not in `ensure_dirs`: the directory existing is how
@@ -267,6 +274,31 @@ impl Config {
     /// Where a specific version of a package is unpacked.
     pub fn package_dir(&self, name: &str, version: &str) -> PathBuf {
         self.store_dir.join(name).join(sanitize_component(version))
+    }
+
+    /// The `config.toml` body for the compiled defaults: what
+    /// `ketch config reset` writes.
+    pub fn default_toml() -> String {
+        let file = ConfigFile {
+            apps_dir: None,
+            github_token: None,
+            prerelease: Some(false),
+            allow_emulation: Some(true),
+            link_apps: Some(false),
+            require_checksums: Some(false),
+            strip_quarantine: Some(true),
+            auto_update: Some(true),
+            self_repo: Some(SELF_REPO.to_string()),
+            registry: Some(REGISTRY_REPO.to_string()),
+            jobs: Some(4),
+            log_level: Some(crate::log::Level::default().to_string()),
+            log_format: Some(crate::log::Format::default().to_string()),
+            root: None,
+        };
+        format!(
+            "# Written by `ketch config reset`. Edit freely.\n{}",
+            toml::to_string_pretty(&file).unwrap_or_default()
+        )
     }
 
     /// True when the bin dir is on the caller's PATH.

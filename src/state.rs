@@ -69,7 +69,7 @@ impl State {
             .map_err(|e| Error::parse(path.display().to_string(), e.to_string()))?;
         if state.version > STATE_VERSION {
             return Err(Error::msg(format!(
-                "{} was written by a newer ketch (state version {}); upgrade with `ketch self update`",
+                "{} was written by a newer ketch (state version {}); upgrade with `ketch self upgrade`",
                 path.display(),
                 state.version
             )));

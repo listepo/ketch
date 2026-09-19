@@ -37,7 +37,7 @@ ambiguous in a package manager:
   everything about it — asset names, archive members, `CHANGELOG.md`, release
   notes — is untrusted input, not ketch's own data.
 
-Where the distinction matters most: `ketch self update` upgrades the host,
+Where the distinction matters most: `ketch self upgrade` upgrades the host,
 `ketch upgrade` upgrades clients; `scripts/release.sh` releases the host,
 `ketch.lock` pins clients; `src/changelog.rs` reads a client's changelog, while
 the host's own `CHANGELOG.md` is written for it by release-plz. The host is
@@ -79,6 +79,14 @@ The commit-msg hook is opt-in via `just hooks`: commitlint then runs on every
 `git commit`, rejecting a malformed subject outright and letting merge and
 revert subjects through.
 
+`file-backup` comes from crates.io (pinned in `Cargo.lock`). For local work
+against the sibling checkout, `just setup` writes a gitignored
+`.cargo/config.toml` with a `paths` override pointing at
+`packages/crates/file-backup`. CI and release builds never run it, so they
+always resolve the registry version. A `paths` override — not a `[patch]` —
+swaps the source without touching `Cargo.lock`, so `--locked` builds work on
+the same committed lock in both directions.
+
 Run the binary against a throwaway tree instead of your real `~/.ketch`:
 
 ```bash
@@ -118,9 +126,10 @@ fail without the fix.
 
 CI runs `fmt --check`, `clippy -D warnings` and `test` on macOS, and clippy
 plus `test` on Linux and Windows. All of those must pass before a change is
-done. The workflow triggers only on pushes to `main` and on
-`workflow_dispatch` — it does not run automatically on pull request events.
-Before merging a branch, dispatch CI on that ref and wait for green:
+done. The workflow runs on pushes to `main` and on pull requests targeting
+`main` — drafts are skipped until marked ready. A `/review` comment in a pull
+request (owner, member or collaborator) dispatches CI fresh on the PR's
+branch; `workflow_dispatch` does the same by hand:
 
 ```bash
 gh workflow run ci.yml --ref <branch>
@@ -346,9 +355,8 @@ existing CLI behavior is marked breaking — `feat!:`/`fix!:` or a
 Below 1.0 that marker is all that keeps a removed command from shipping as a
 patch release. commitlint rejects a malformed subject outright via the
 opt-in commit-msg hook (`just hooks`); prefer that locally. The CI job still
-contains a pull-request commitlint step, but the workflow no longer triggers
-on `pull_request` events — so branch verification is a dispatched `ci.yml`
-run, not an automatic PR check. The commit-msg hook also prints a reminder,
+contains a pull-request commitlint step, which now runs automatically on every
+non-draft pull request. The commit-msg hook also prints a reminder,
 not a rejection, when the staged diff touches `src/cli.rs` or `src/cmd/` and
 the message carries no breaking marker.
 
@@ -362,14 +370,17 @@ aggregate `SHA256SUMS` go up on a **draft** release
 creates the tag, at the commit that was built.
 
 That ordering is the point. A tag exists if and only if a release finished, so
-`ketch self update` and `install.sh` can never find a tag whose binaries are
+`ketch self upgrade` and `install.sh` can never find a tag whose binaries are
 still building or never arrived; a failed run leaves a draft to re-run or
 delete, and main simply stays untagged. It also removes the old mismatch
 hazard: the version in `Cargo.toml` *is* the tag, derived rather than compared,
-and `ketch self update` measures itself against exactly that.
+and `ketch self upgrade` measures itself against exactly that.
 
 A re-run is `workflow_dispatch` with `force` — the one case the tag check would
 otherwise skip, such as a `tap` job that failed after the release published.
+A bump is `workflow_dispatch` with `bump` set to `patch`, `minor` or `major` —
+it opens a `release/v<version>` pull request with the `Cargo.toml`/`Cargo.lock`
+bump, and merging it is the release through the path above.
 
 The binaries are code-signed with a Developer ID Application certificate,
 held in two repository secrets: `MACOS_CERTIFICATE`, the `.p12` as base64, and
@@ -432,8 +443,8 @@ Six things about that handoff are easy to break:
   secrets with the renewed `.p12` and re-run with `force`.
 - **The cask is generated.** Editing `Casks/ketch.rb` in the tap by hand lasts
   until the next release overwrites it; change `scripts/cask.sh` instead. CI
-  runs `brew style` on its output on every gate run (main or dispatched
-  branch), because the `tap` job runs the same check *after* the release has
+  runs `brew style` on its output on every gate run (main push, pull request,
+  or dispatched branch), because the `tap` job runs the same check *after* the release has
   published — where a rejected cask leaves the tap a version behind and takes
   another release to correct.
 
@@ -454,7 +465,7 @@ Bumping the version by hand in an ordinary commit is what both of these exist
 to stop: the version is written in one place and read as the tag, so a stray
 bump publishes a release.
 
-Asset names are load-bearing: `install.sh` and `ketch self update` both look for
+Asset names are load-bearing: `install.sh` and `ketch self upgrade` both look for
 `ketch-<target>.tar.gz` and `SHA256SUMS`. Renaming either strips the upgrade
 path from every copy already out there. CI runs the same `scripts/package.sh`
 on every green gate (main push or a dispatched run on a branch) so packaging

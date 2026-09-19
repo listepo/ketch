@@ -63,11 +63,11 @@ brew install --cask listepo/tap/ketch
 ```
 
 Either way ketch ends up in `~/.ketch`, installed as one of its own packages:
-`ketch list` shows it, and `ketch self update` upgrades it like anything else.
+`ketch list` shows it, and `ketch self upgrade` upgrades it like anything else.
 The curl and PowerShell installers run `ketch self install`, then `ketch path
 install`, and place a bootstrap copy at `--install-dir` when you give one.
 Homebrew keeps nothing but the bootstrap binary, and `brew upgrade` hands over
-to `ketch self update`.
+to `ketch self upgrade`.
 
 Then make sure `~/.ketch/bin` is on your `PATH`. `ketch doctor` will tell you if
 it is not, along with anything else that needs attention.
@@ -139,7 +139,7 @@ ketch registry push        # offer it to the registry, showing the diff first
 ketch registry validate    # check a registry tree the way registry CI does
 ketch registry status      # age and source of the local copy; no network
 ketch self version         # print version, target, root and binary path
-ketch self update          # upgrade ketch itself
+ketch self upgrade          # upgrade ketch itself
 ketch self uninstall       # remove ketch and everything it installed
 ```
 
@@ -149,7 +149,7 @@ what happened. Nothing is written outside that tree except the `.app` bundles
 that belong in `/Applications`, the user man and completion directories `ketch
 doctor` reports, the shell startup file `ketch path install` edits when you
 ask it to, `./ketch.lock` and `./ketch.toml` when you ask for them, and the
-running binary itself when `ketch self update` replaces it in place outside the
+running binary itself when `ketch self upgrade` replaces it in place outside the
 store.
 
 An upgrade keeps the previous prefix on disk and records it under `retained`
@@ -315,11 +315,26 @@ release required. See [docs/PLUGINS.md](docs/PLUGINS.md).
 | `link_apps` | `KETCH_LINK_APPS` | `false` |
 | `require_checksums` | `KETCH_REQUIRE_CHECKSUMS` | `false` |
 | `strip_quarantine` | `KETCH_STRIP_QUARANTINE` | `true` |
+| `auto_update` | `KETCH_AUTO_UPDATE` | `true` |
 | `registry` | `KETCH_REGISTRY` | `listepo/ketch-registry` |
 | `self_repo` | `KETCH_SELF_REPO` | `listepo/ketch` |
 | `jobs` | `KETCH_JOBS` | `4` (capped at `16`) |
 | `log_level` | `KETCH_LOG_LEVEL` | `info` |
 | `log_format` | `KETCH_LOG_FORMAT` | `text` |
+
+To start over, `ketch config reset` writes `config.toml` with those defaults
+(after asking, unless `--yes`). The existing file is backed up beside itself
+as `config.toml.bak-<unix-seconds>`, unless it is missing or already matches a
+sibling backup:
+
+```bash
+ketch config reset          # ask, back up, write the defaults
+ketch config reset --yes    # for scripts and CI
+```
+
+`auto_update` (default `true`) runs `ketch update` at the start of `install` and
+`upgrade`. Set it to `false`, or `KETCH_AUTO_UPDATE=false`, to skip the registry
+refresh.
 
 The root itself is `KETCH_ROOT` or `--root`; it cannot be set from the config
 file, because the file lives inside it. `KETCH_GITHUB_API` overrides the GitHub
@@ -345,12 +360,14 @@ the package registry is [`listepo/ketch-registry`](https://github.com/listepo/ke
 
 | | |
 | --- | --- |
+| [docs/COMMANDS.md](docs/COMMANDS.md) | Every command: what it does, and one working example |
 | [docs/MANIFESTS.md](docs/MANIFESTS.md) | The package config: every field, and when you need one |
 | [docs/REGISTRY.md](docs/REGISTRY.md) | The registry layout, and how to add a package to it |
 | [docs/PLUGINS.md](docs/PLUGINS.md) | The source-plugin protocol, for sources other than GitHub |
 | [docs/LOCKFILE.md](docs/LOCKFILE.md) | `ketch.lock`: pinning a machine's tools to exact releases |
 | [ROADMAP.md](ROADMAP.md) | What is missing, and what is deliberately out of scope |
 | [AGENTS.md](AGENTS.md) | The layout, the conventions and the trust boundaries |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Short contributor checklist |
 
 The same pages are published at
 **[listepo.github.io/ketch/docs](https://listepo.github.io/ketch/docs/)** — the
@@ -402,11 +419,12 @@ a crate.
 
 ## Contributing
 
-[AGENTS.md](AGENTS.md) documents the layout, the conventions, and the trust
-boundaries — read it before changing anything. Repository prose (commits, PRs,
-docs, comments) is English. `cargo test`, `cargo clippy --all-targets` and
-`cargo fmt --check` all have to be clean; CI enforces those on macOS, Linux and
-Windows, but only on `main` pushes and `workflow_dispatch` — dispatch
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the checklist.
+[AGENTS.md](AGENTS.md) documents layout, conventions, and trust boundaries —
+read it before changing anything. Repository prose (commits, PRs, docs,
+comments) is English. `cargo test`, `cargo clippy --all-targets`, and
+`cargo fmt --check` all have to be clean; CI enforces those on macOS, Linux,
+and Windows, but only on `main` pushes and `workflow_dispatch` — dispatch
 `ci.yml` on your branch and wait for green before merging.
 
 With [just](https://github.com/casey/just) installed, `just deps` sets up the

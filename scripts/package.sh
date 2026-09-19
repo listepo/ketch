@@ -7,7 +7,7 @@
 #   scripts/package.sh <rust-target> <output-dir>
 #
 # The asset name is `ketch-<target>.tar.gz`, which is what install.sh and
-# `ketch self update` both look for. Renaming it breaks upgrades for everyone
+# `ketch self upgrade` both look for. Renaming it breaks upgrades for everyone
 # already installed.
 #
 # With KETCH_SIGN_IDENTITY set, the binary is code-signed with that identity

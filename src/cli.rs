@@ -424,6 +424,12 @@ pub enum ConfigCommand {
         #[arg(long, short = 'y')]
         yes: bool,
     },
+    /// Reset `config.toml` in the ketch root to the compiled defaults
+    Reset {
+        /// Write without asking first
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -536,13 +542,17 @@ pub enum SelfCommand {
         link_dir: Option<PathBuf>,
     },
     /// Upgrade ketch to the latest release
-    Update {
+    #[command(visible_alias = "update")]
+    Upgrade {
         /// Report what would happen without replacing anything
         #[arg(long)]
         dry_run: bool,
         /// Reinstall even when already current
         #[arg(long, short)]
         force: bool,
+        /// Answer yes to every prompt
+        #[arg(long, short = 'y')]
+        yes: bool,
     },
     /// Print the running version and where it lives
     Version,

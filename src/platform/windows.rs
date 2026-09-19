@@ -33,6 +33,7 @@ const NOISE_DIRS: &[&str] = &[
     "licenses",
     "_internal",
     "resources",
+    "plugins",
 ];
 
 /// Native Windows CLI releases: copy executables, record every destination.
@@ -59,6 +60,55 @@ fn remove_any(path: &Path) -> std::io::Result<()> {
         Ok(meta) if meta.is_dir() => std::fs::remove_dir_all(path),
         Ok(_) => std::fs::remove_file(path),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e),
+    }
+}
+
+/// Windows `ERROR_ACCESS_DENIED` (5) / `ERROR_SHARING_VIOLATION` (32), plus
+/// `PermissionDenied`. A running `.exe` typically cannot be deleted or
+/// overwritten, but it *can* be renamed aside so a fresh copy can take its path.
+fn is_busy(err: &std::io::Error) -> bool {
+    err.kind() == std::io::ErrorKind::PermissionDenied
+        || matches!(err.raw_os_error(), Some(5) | Some(32))
+}
+
+fn busy_aside(path: &Path) -> PathBuf {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    sibling(path, &format!(".old.{}-{stamp}", std::process::id()))
+}
+
+/// Free `path` so a replacement can be written there.
+///
+/// Prefer delete. If the file is mapped by a live process (the usual Windows
+/// `Access is denied` on `ketch self upgrade` / `ketch upgrade`), rename it
+/// aside instead — the running image keeps its handle, and the destination
+/// name becomes available for `copy`.
+fn clear_for_replace(path: &Path) -> std::io::Result<()> {
+    match remove_any(path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) if is_busy(&e) => {
+            let aside = busy_aside(path);
+            let _ = remove_any(&aside);
+            std::fs::rename(path, &aside)?;
+            // Best-effort: often still fails while the image is mapped.
+            let _ = std::fs::remove_file(&aside);
+            Ok(())
+        }
+        Err(e) => Err(e),
+    }
+}
+
+fn copy_over(from: &Path, to: &Path) -> std::io::Result<()> {
+    match std::fs::copy(from, to) {
+        Ok(_) => Ok(()),
+        Err(e) if is_busy(&e) => {
+            clear_for_replace(to)?;
+            std::fs::copy(from, to).map(|_| ())
+        }
         Err(e) => Err(e),
     }
 }
@@ -166,7 +216,7 @@ fn destination_available(link: &Path, recorded: &[LinkRecord]) -> Result<()> {
 
 fn clear_destination(link: &Path, recorded: &[LinkRecord]) -> Result<()> {
     destination_available(link, recorded)?;
-    remove_any(link).map_err(|e| Error::io(link, e))
+    clear_for_replace(link).map_err(|e| Error::io(link, e))
 }
 
 /// Keep a Windows executable suffix, or add `.exe` so PATH lookup finds it.
@@ -260,7 +310,13 @@ fn resolve_bin_specs(root: &Path, specs: &[BinSpec]) -> Result<Vec<(PathBuf, Str
                 let want = spec.name.as_deref().unwrap_or_default();
                 candidates.iter().find(|p| {
                     p.file_name().is_some_and(|n| {
-                        n == want || dest_key(Path::new(n)) == dest_key(Path::new(want))
+                        let n_s = n.to_string_lossy();
+                        n == want
+                            || dest_key(Path::new(n)) == dest_key(Path::new(want))
+                            // `bin = [{ name = "rtok" }]` must find `rtok.exe`.
+                            || n_s.eq_ignore_ascii_case(&format!("{want}.exe"))
+                            || n_s.eq_ignore_ascii_case(&format!("{want}.cmd"))
+                            || n_s.eq_ignore_ascii_case(&format!("{want}.bat"))
                     })
                 })
             }
@@ -335,7 +391,7 @@ fn copy_binary(
         }
     }
     clear_destination(&link, recorded)?;
-    std::fs::copy(target, &link).map_err(|e| Error::io(&link, e))?;
+    copy_over(target, &link).map_err(|e| Error::io(&link, e))?;
     Ok(LinkRecord {
         link,
         target: target.to_path_buf(),
@@ -659,5 +715,138 @@ mod tests {
             link.join("Contents/mine.txt").is_file(),
             "a stale record must not authorize deleting the user's bundle"
         );
+    }
+
+    #[test]
+    fn clear_for_replace_deletes_an_unlocked_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("tool.exe");
+        std::fs::write(&path, b"v1").unwrap();
+        clear_for_replace(&path).unwrap();
+        assert!(std::fs::symlink_metadata(&path).is_err());
+    }
+
+    #[test]
+    fn copy_binary_replaces_our_previous_copy() {
+        let tmp = tempfile::tempdir().unwrap();
+        let payload = tmp.path().join("payload");
+        std::fs::create_dir_all(&payload).unwrap();
+        std::fs::write(payload.join("tool.exe"), b"v2").unwrap();
+        let store = tmp.path().join("store/tool/1.0");
+        std::fs::create_dir_all(&store).unwrap();
+        let store_target = store.join("tool.exe");
+        // still_placed(CopiedFile) requires link bytes == recorded target bytes.
+        std::fs::write(&store_target, b"v1").unwrap();
+        let bin = tmp.path().join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let link = bin.join("tool.exe");
+        std::fs::write(&link, b"v1").unwrap();
+        let recorded = [LinkRecord {
+            link: link.clone(),
+            target: store_target,
+            kind: LinkKind::CopiedFile,
+            role: LinkRole::Binary,
+        }];
+        let got = copy_binary(
+            payload.join("tool.exe").as_path(),
+            &bin,
+            "tool.exe",
+            &recorded,
+        )
+        .unwrap();
+        assert_eq!(got.link, link);
+        assert_eq!(std::fs::read(&link).unwrap(), b"v2");
+    }
+
+    #[test]
+    fn is_busy_recognizes_access_denied_codes() {
+        let denied = std::io::Error::from_raw_os_error(5);
+        let sharing = std::io::Error::from_raw_os_error(32);
+        assert!(is_busy(&denied));
+        assert!(is_busy(&sharing));
+        assert!(!is_busy(&std::io::Error::from(
+            std::io::ErrorKind::NotFound
+        )));
+    }
+
+    /// A live Windows image can be renamed but not deleted/overwritten.
+    /// `FILE_SHARE_NONE` is the wrong simulation (it blocks rename too); spawn
+    /// a real process from a copied `cmd.exe` instead.
+    #[cfg(windows)]
+    fn spawn_running_cmd_copy(path: &Path) -> std::process::Child {
+        use std::process::{Command, Stdio};
+
+        let cmd = Path::new(r"C:\Windows\System32\cmd.exe");
+        std::fs::copy(cmd, path).unwrap();
+        Command::new(path)
+            .arg("/K")
+            .arg("echo holding")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn copied cmd.exe")
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn clear_for_replace_renames_aside_a_running_exe() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("ketch.exe");
+        let mut child = spawn_running_cmd_copy(&path);
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        clear_for_replace(&path).unwrap();
+        assert!(
+            std::fs::symlink_metadata(&path).is_err(),
+            "destination name must be free for the replacement copy"
+        );
+        let asides: Vec<_> = std::fs::read_dir(tmp.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.starts_with("ketch.exe.old."))
+            .collect();
+        assert_eq!(asides.len(), 1, "expected one aside, got {asides:?}");
+
+        std::fs::write(&path, b"new").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"new");
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn copy_binary_replaces_a_running_recorded_exe() {
+        let tmp = tempfile::tempdir().unwrap();
+        let payload = tmp.path().join("payload");
+        std::fs::create_dir_all(&payload).unwrap();
+        std::fs::write(payload.join("tool.exe"), b"v2").unwrap();
+        let store = tmp.path().join("store/tool/1.0");
+        std::fs::create_dir_all(&store).unwrap();
+        let store_target = store.join("tool.exe");
+        let bin = tmp.path().join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let link = bin.join("tool.exe");
+        let mut child = spawn_running_cmd_copy(&link);
+        std::fs::copy(&link, &store_target).unwrap();
+        let recorded = [LinkRecord {
+            link: link.clone(),
+            target: store_target,
+            kind: LinkKind::CopiedFile,
+            role: LinkRole::Binary,
+        }];
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        copy_binary(
+            payload.join("tool.exe").as_path(),
+            &bin,
+            "tool.exe",
+            &recorded,
+        )
+        .unwrap();
+        assert_eq!(std::fs::read(&link).unwrap(), b"v2");
+        let _ = child.kill();
+        let _ = child.wait();
     }
 }

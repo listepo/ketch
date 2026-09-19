@@ -69,7 +69,7 @@ cask "ketch" do
     # from there, not from HOME. ~/.ketch is the one path under the home
     # directory a step may write, and the only one ketch touches.
     if_path_exists ".ketch/store/ketch", base: :home do
-      run "/bin/sh", args:           ["-c", 'eval "r=~\$1/.ketch" && KETCH_ROOT="\$r" exec "\$2" self update',
+      run "/bin/sh", args:           ["-c", 'eval "r=~\$1/.ketch" && KETCH_ROOT="\$r" exec "\$2" self upgrade',
                                       "ketch", "{{user}}", "{{staged_path}}/ketch"],
                      network_access: true,
                      writable_paths: [".ketch"],

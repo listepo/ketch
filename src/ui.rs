@@ -358,6 +358,12 @@ pub fn confirm(question: &str, default: bool) -> bool {
     answered
 }
 
+/// Ask a yes/no question without treating a decline as cancelling the command.
+/// Used when the command continues either way (stop a process, or leave it).
+pub fn offer(question: &str, default: bool) -> bool {
+    ask(question, default)
+}
+
 /// A yes/no question that is a form field rather than consent: "no" is an
 /// answer, not a cancellation, so nothing is announced when it is declined.
 /// The questionnaire's prerelease and `bin`-entry questions are the users.

@@ -1,3 +1,2 @@
-- F1. Notarisation
-- F2. Registry CI in ketch-registry
 - M3. Provenance and signatures
+- F5. Config reset and shared file backup (ketch side done; rtok re-export needs rtok owner)
