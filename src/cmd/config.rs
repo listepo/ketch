@@ -1,10 +1,14 @@
-//! `ketch config`: writing a package file.
+//! `ketch config`: writing a package file, and resetting ketch's own config.
 //!
 //! `create` is the questionnaire: it asks what each field of a `ketch.toml`
 //! should say, assembles the manifest behind [`crate::wizard`], and writes the
 //! file this project offers to the registry. This body is deliberately only
 //! prompting, previewing and writing — every rule about what an answer means
 //! lives in `wizard.rs`, where it is testable without a terminal.
+//!
+//! `reset` is the opposite direction: it writes `config.toml` in the ketch
+//! root with the compiled defaults, backing up the existing file beside it
+//! through the shared `file-backup` crate first.
 
 use crate::cli::ConfigCommand;
 use crate::config::{sanitize_component, Config};
@@ -26,7 +30,28 @@ pub fn run(cfg: &Config, command: ConfigCommand) -> Result<()> {
             let _ = cfg;
             create(file, force, yes)
         }
+        ConfigCommand::Reset { yes } => reset(cfg, yes),
     }
+}
+
+/// Write `config.toml` in the ketch root with the compiled defaults.
+///
+/// The existing file is backed up beside itself first (`config.toml.bak-<unix
+/// seconds>`), unless it is missing or already byte-identical to a sibling
+/// backup — the same rule rtok agent setup uses, from the shared crate.
+fn reset(cfg: &Config, yes: bool) -> Result<()> {
+    if !yes && !ui::confirm("reset config.toml to the compiled defaults?", false) {
+        return Ok(());
+    }
+    if let Some(made) =
+        file_backup::backup(&cfg.config_file).map_err(|e| Error::io(&cfg.config_file, e))?
+    {
+        ui::note(&format!("backed up to {}", made.display()));
+    }
+    std::fs::write(&cfg.config_file, Config::default_toml())
+        .map_err(|e| Error::io(&cfg.config_file, e))?;
+    ui::success("reset", &cfg.config_file.display().to_string());
+    Ok(())
 }
 
 /// Ask every question, then write what the answers add up to.

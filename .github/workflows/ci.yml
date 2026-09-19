@@ -1,6 +1,15 @@
 name: ci
 
+# CI runs on pushes and merges to main, and on pull requests targeting main
+# (not drafts — review happens when the PR is marked ready).
 on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  issue_comment:
+    types: [created]
   workflow_dispatch:
 
 env:
@@ -8,6 +17,9 @@ env:
 
 jobs:
   check:
+    # Draft PRs are skipped here and reported green: review happens when the PR
+    # is marked ready, and a draft must not look broken meanwhile.
+    if: github.event.pull_request.draft != true
     # macOS gate: unit tests plus macos e2e. Linux e2e is check-linux;
     # Windows e2e is check-windows.
     runs-on: macos-latest
@@ -98,6 +110,7 @@ jobs:
 
   # Linux compile, unit tests, and tests/install_linux.rs (cfg linux).
   check-linux:
+    if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -120,6 +133,7 @@ jobs:
 
   # Windows compile, unit tests, and tests/install_windows.rs (cfg windows).
   check-windows:
+    if: github.event.pull_request.draft != true
     runs-on: windows-latest
     defaults:
       run:
@@ -154,6 +168,7 @@ jobs:
   # Packaging is exercised on every pull request, so it breaks here rather than
   # halfway through a release, after the merge that started one.
   package:
+    if: github.event.pull_request.draft != true
     strategy:
       fail-fast: false
       matrix:
@@ -180,6 +195,7 @@ jobs:
           bash -n scripts/release.sh
           sh tests/release-sh-version.sh
           sh tests/release-yml-notarize.sh
+          sh tests/ci-yml-triggers.sh
 
       - name: Package the host target
         run: scripts/package.sh ${{ matrix.target }} dist
@@ -224,3 +240,34 @@ jobs:
           scripts/cask.sh 0.0.0 "$(printf '%064d' 0)" "$(printf '%064d' 1)" \
             > cask/Casks/ketch.rb
           brew style cask/Casks/ketch.rb
+
+  # A `/review` comment in a pull request re-runs CI on that PR's head by
+  # dispatching ci.yml on the PR's branch. The default token cannot dispatch
+  # (that needs `workflow_dispatch` callers with write access), so this job
+  # only runs where the commenter could push — same visibility as the branch.
+  review:
+    if: >
+      github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/review') &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      actions: write
+    steps:
+      - name: Re-run CI on this pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.issue.number }}
+        run: |
+          head="$(gh pr view "$PR" --json headRefOid -q .headRefOid)"
+          [ -n "$head" ] || { echo "could not read the head of #$PR" >&2; exit 1; }
+          branch="$(gh pr view "$PR" --json headRefName -q .headRefName)"
+          # The default token cannot re-run a workflow run, and `gh run rerun`
+          # re-runs the whole run including skipped-on-draft jobs — so dispatch
+          # CI fresh on the PR's branch instead. A dispatch on the branch runs
+          # the pull_request jobs below against the same head.
+          gh workflow run ci.yml --ref "$branch"
+          gh pr comment "$PR" --body "CI dispatched on \`$branch\` (\`$head\`)."

@@ -2,20 +2,30 @@ name: release
 
 # Publishing creates the tag, not the other way round.
 #
-# Every merge to main is a candidate release: if the version in `Cargo.toml`
-# has no tag yet, the whole gate runs, both macOS architectures are built and
-# signed, the tarballs go up on a *draft* release, and publishing that draft is
-# what creates `v<version>` — at the commit that was built. So a tag exists if
-# and only if a release completed. A build that fails leaves main untagged and
-# nothing half-published for `install.sh` or `ketch self upgrade` to find.
+# Two ways to start a release:
 #
-# Nothing is typed to cut a release: release-plz keeps a pull request holding
-# the next version, and merging it is the release.
+# - Merging to main (including merging a `release/*` branch or a manual bump
+#   pull request): if the version in `Cargo.toml` has no tag yet, the whole
+#   gate runs, both macOS architectures are built and signed, the tarballs go
+#   up on a *draft* release, and publishing that draft is what creates
+#   `v<version>` — at the commit that was built. So a tag exists if and only
+#   if a release completed. A build that fails leaves main untagged and
+#   nothing half-published for `install.sh` or `ketch self upgrade` to find.
+#
+# - Manually, with a bump: `gh workflow run release.yml -f bump=patch|minor|
+#   major` opens a version-bump pull request from `release/v<version>`.
+#   Merging it is the release, through the path above. Nothing is typed to
+#   cut a patch by hand beyond choosing the bump.
 on:
   push:
     branches: [main]
   workflow_dispatch:
     inputs:
+      bump:
+        description: "Version bump to propose (opens a release pull request)"
+        type: choice
+        options: [patch, minor, major]
+        required: false
       force:
         description: "Publish even when the tag exists, to re-run a failed upload or cask push"
         type: boolean
@@ -34,6 +44,90 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # A manual bump run stops here: it proposes a version, it does not publish.
+  # Everything below only runs on pushes to main (or a force re-run).
+  propose:
+    if: github.event_name == 'workflow_dispatch' && inputs.bump != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Compute the bumped version
+        id: bump
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          current="$(cargo metadata --no-deps --format-version 1 \
+            | sed -n 's/.*"name":"ketch","version":"\([^"]*\)".*/\1/p')"
+          [ -n "$current" ] || { echo "could not read the version out of Cargo.toml" >&2; exit 1; }
+          # Only the numeric core is bumped; a prerelease suffix never survives one.
+          core="${current%%-*}"
+          major="${core%%.*}"; rest="${core#*.}"
+          minor="${rest%%.*}"; patch="${rest#*.}"
+          case "$BUMP" in
+            patch) patch="$((patch + 1))" ;;
+            minor) minor="$((minor + 1))"; patch=0 ;;
+            major) major="$((major + 1))"; minor=0; patch=0 ;;
+            *) echo "unknown bump: $BUMP" >&2; exit 1 ;;
+          esac
+          version="$major.$minor.$patch"
+          {
+            echo "current=$current"
+            echo "version=$version"
+            echo "tag=v$version"
+            echo "branch=release/v$version"
+          } >> "$GITHUB_OUTPUT"
+          echo "$current -> $version"
+
+      - name: Open the release pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CURRENT: ${{ steps.bump.outputs.current }}
+          VERSION: ${{ steps.bump.outputs.version }}
+          TAG: ${{ steps.bump.outputs.tag }}
+          BRANCH: ${{ steps.bump.outputs.branch }}
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "$TAG already exists" >&2
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin "refs/heads/$BRANCH" >/dev/null 2>&1; then
+            echo "branch $BRANCH already exists; doing nothing" >&2
+            exit 0
+          fi
+          git checkout -b "$BRANCH"
+          # Rewrite only the version inside [package]: `rust-version` and every
+          # dependency's inline `version =` must be left alone.
+          awk -v new="$VERSION" '
+            /^\[package\]/ { in_pkg = 1; print; next }
+            /^\[/          { in_pkg = 0 }
+            in_pkg && /^version[[:space:]]*=/ && !done {
+              printf "version = \"%s\"\n", new; done = 1; next
+            }
+            { print }
+          ' Cargo.toml > Cargo.toml.new && mv Cargo.toml.new Cargo.toml
+          cargo update --workspace --quiet \
+            || { echo "could not update Cargo.lock" >&2; exit 1; }
+          git add Cargo.toml Cargo.lock
+          git commit -m "Release $TAG
+
+          Bumps the version the release workflow publishes and tags."
+          git push -u origin "$BRANCH"
+          if gh pr view "$BRANCH" --json number -q .number >/dev/null 2>&1; then
+            echo "a pull request for $BRANCH is already open"
+          else
+            gh pr create --base main --head "$BRANCH" --title "Release $TAG" \
+              --body "Bumps \`Cargo.toml\` and \`Cargo.lock\` from \`$CURRENT\` to \`$VERSION\`.
+
+          Merging this pull request is the release: the release workflow re-runs the whole gate, builds both macOS architectures, publishes the tarballs with an aggregate \`SHA256SUMS\`, and creates \`$TAG\` last."
+          fi
   # The cheap job that decides whether this merge is a release at all, so an
   # ordinary one stops here in seconds.
   #
@@ -42,6 +136,8 @@ jobs:
   # other is what keeps them from disagreeing. It also means "already tagged"
   # is the same statement as "already released".
   version:
+    # A manual bump proposes a version rather than publishing one.
+    if: github.event_name != 'workflow_dispatch' || inputs.bump == ''
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.decide.outputs.version }}

@@ -424,6 +424,12 @@ pub enum ConfigCommand {
         #[arg(long, short = 'y')]
         yes: bool,
     },
+    /// Reset `config.toml` in the ketch root to the compiled defaults
+    Reset {
+        /// Write without asking first
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
 }
 
 #[derive(Subcommand, Debug, Clone)]

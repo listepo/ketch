@@ -322,6 +322,16 @@ release required. See [docs/PLUGINS.md](docs/PLUGINS.md).
 | `log_level` | `KETCH_LOG_LEVEL` | `info` |
 | `log_format` | `KETCH_LOG_FORMAT` | `text` |
 
+To start over, `ketch config reset` writes `config.toml` with those defaults
+(after asking, unless `--yes`). The existing file is backed up beside itself
+as `config.toml.bak-<unix-seconds>`, unless it is missing or already matches a
+sibling backup:
+
+```bash
+ketch config reset          # ask, back up, write the defaults
+ketch config reset --yes    # for scripts and CI
+```
+
 `auto_update` (default `true`) runs `ketch update` at the start of `install` and
 `upgrade`. Set it to `false`, or `KETCH_AUTO_UPDATE=false`, to skip the registry
 refresh.

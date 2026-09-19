@@ -71,6 +71,7 @@ lint-shell:
     bash -n scripts/package.sh
     bash -n scripts/release.sh
     sh tests/release-yml-notarize.sh
+    sh tests/ci-yml-triggers.sh
 
 package:
     #!/usr/bin/env bash

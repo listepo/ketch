@@ -61,6 +61,8 @@ libsqlite3-sys = { version = "0.38.2", features = ["bundled"] }
 # runtime to block on; everything else in ketch stays synchronous.
 octocrab = "0.54"
 tokio = { version = "1", features = ["rt"] }
+# Shared file backup (`<name>.bak-<unix-seconds>`) used by `ketch config reset`.
+file-backup = { path = "../../packages/file-backup" }
 # Publisher signatures (the manifest's `trust` table). Verification only:
 # sigstore without its signing, OCI and TUF-fetching halves, rPGP without
 # bzip2 (signatures are never compressed), minisign-verify has no deps.

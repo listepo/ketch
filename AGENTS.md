@@ -118,9 +118,10 @@ fail without the fix.
 
 CI runs `fmt --check`, `clippy -D warnings` and `test` on macOS, and clippy
 plus `test` on Linux and Windows. All of those must pass before a change is
-done. The workflow triggers only on pushes to `main` and on
-`workflow_dispatch` — it does not run automatically on pull request events.
-Before merging a branch, dispatch CI on that ref and wait for green:
+done. The workflow runs on pushes to `main` and on pull requests targeting
+`main` — drafts are skipped until marked ready. A `/review` comment in a pull
+request (owner, member or collaborator) dispatches CI fresh on the PR's
+branch; `workflow_dispatch` does the same by hand:
 
 ```bash
 gh workflow run ci.yml --ref <branch>
@@ -346,9 +347,8 @@ existing CLI behavior is marked breaking — `feat!:`/`fix!:` or a
 Below 1.0 that marker is all that keeps a removed command from shipping as a
 patch release. commitlint rejects a malformed subject outright via the
 opt-in commit-msg hook (`just hooks`); prefer that locally. The CI job still
-contains a pull-request commitlint step, but the workflow no longer triggers
-on `pull_request` events — so branch verification is a dispatched `ci.yml`
-run, not an automatic PR check. The commit-msg hook also prints a reminder,
+contains a pull-request commitlint step, which now runs automatically on every
+non-draft pull request. The commit-msg hook also prints a reminder,
 not a rejection, when the staged diff touches `src/cli.rs` or `src/cmd/` and
 the message carries no breaking marker.
 
@@ -370,6 +370,9 @@ and `ketch self upgrade` measures itself against exactly that.
 
 A re-run is `workflow_dispatch` with `force` — the one case the tag check would
 otherwise skip, such as a `tap` job that failed after the release published.
+A bump is `workflow_dispatch` with `bump` set to `patch`, `minor` or `major` —
+it opens a `release/v<version>` pull request with the `Cargo.toml`/`Cargo.lock`
+bump, and merging it is the release through the path above.
 
 The binaries are code-signed with a Developer ID Application certificate,
 held in two repository secrets: `MACOS_CERTIFICATE`, the `.p12` as base64, and
@@ -432,8 +435,8 @@ Six things about that handoff are easy to break:
   secrets with the renewed `.p12` and re-run with `force`.
 - **The cask is generated.** Editing `Casks/ketch.rb` in the tap by hand lasts
   until the next release overwrites it; change `scripts/cask.sh` instead. CI
-  runs `brew style` on its output on every gate run (main or dispatched
-  branch), because the `tap` job runs the same check *after* the release has
+  runs `brew style` on its output on every gate run (main push, pull request,
+  or dispatched branch), because the `tap` job runs the same check *after* the release has
   published — where a rejected cask leaves the tap a version behind and takes
   another release to correct.
 

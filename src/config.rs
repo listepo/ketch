@@ -276,6 +276,31 @@ impl Config {
         self.store_dir.join(name).join(sanitize_component(version))
     }
 
+    /// The `config.toml` body for the compiled defaults: what
+    /// `ketch config reset` writes.
+    pub fn default_toml() -> String {
+        let file = ConfigFile {
+            apps_dir: None,
+            github_token: None,
+            prerelease: Some(false),
+            allow_emulation: Some(true),
+            link_apps: Some(false),
+            require_checksums: Some(false),
+            strip_quarantine: Some(true),
+            auto_update: Some(true),
+            self_repo: Some(SELF_REPO.to_string()),
+            registry: Some(REGISTRY_REPO.to_string()),
+            jobs: Some(4),
+            log_level: Some(crate::log::Level::default().to_string()),
+            log_format: Some(crate::log::Format::default().to_string()),
+            root: None,
+        };
+        format!(
+            "# Written by `ketch config reset`. Edit freely.\n{}",
+            toml::to_string_pretty(&file).unwrap_or_default()
+        )
+    }
+
     /// True when the bin dir is on the caller's PATH.
     ///
     /// On Windows the comparison folds case, `/` vs `\\`, and a trailing

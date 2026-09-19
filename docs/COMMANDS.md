@@ -305,6 +305,18 @@ ketch config create
 ketch config create --file ./ketch.toml --yes
 ```
 
+### `ketch config reset [--yes]`
+
+Write `config.toml` in the ketch root with the compiled defaults. Asks first
+unless `--yes`; backs the existing file up beside itself as
+`config.toml.bak-<unix-seconds>` unless it is missing or already matches a
+sibling backup.
+
+```bash
+ketch config reset
+ketch config reset --yes
+```
+
 ### `ketch completions <SHELL> [--install]`
 
 Print a shell completion script, or install it into the shell's user
