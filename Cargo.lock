@@ -1579,7 +1579,9 @@ checksum = "28dea519a9695b9977216879a3ebfddf92f1c08c05d984f8996aecd6ecdc811d"
 
 [[package]]
 name = "file-backup"
-version = "0.1.0"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ff3b890ef50489901e35eaf6be4dc7b77d3ac3b568dbf121331f55b3a568fe6"
 
 [[package]]
 name = "filetime"

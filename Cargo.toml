@@ -62,7 +62,12 @@ libsqlite3-sys = { version = "0.38.2", features = ["bundled"] }
 octocrab = "0.54"
 tokio = { version = "1", features = ["rt"] }
 # Shared file backup (`<name>.bak-<unix-seconds>`) used by `ketch config reset`.
-file-backup = { path = "../../packages/file-backup" }
+# Published on crates.io as `file-backup`; local development against
+# `packages/crates/file-backup` uses a `paths` override in
+# `.cargo/config.toml` (see `just setup` / `AGENTS.md`). Do not add a `path`
+# or `[patch]` here — CI and release builds must resolve this from the
+# registry on the committed lock.
+file-backup = "0.1"
 # Publisher signatures (the manifest's `trust` table). Verification only:
 # sigstore without its signing, OCI and TUF-fetching halves, rPGP without
 # bzip2 (signatures are never compressed), minisign-verify has no deps.

@@ -34,6 +34,33 @@ deps:
     mise install
     mise exec -- npm ci
 
+# local dev only (never committed, never on CI): use the sibling checkout at
+# packages/crates/file-backup instead of crates.io.
+#
+# This is a `paths` override, not a `[patch]`: it swaps the source without
+# touching Cargo.lock, so `--locked` builds keep working on the committed
+# lock in both directions.
+setup:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p .cargo
+    if [ ! -e .cargo/config.toml ]; then
+      printf '%s\n' \
+        '# Local-only Cargo overrides, never committed.' \
+        '#' \
+        '# Written by `just setup` so `file-backup` resolves to the sibling' \
+        '# checkout at `packages/crates/file-backup` instead of crates.io.' \
+        '# A `paths` override (not a `[patch]`): the source is swapped' \
+        '# without touching Cargo.lock, so `--locked` keeps working.' \
+        '# CI and release builds never run this, so they always resolve the' \
+        '# pinned crates.io version from `Cargo.lock`.' \
+        'paths = ["../../packages/crates/file-backup"]' \
+        > .cargo/config.toml
+      echo "wrote .cargo/config.toml (local file-backup override)"
+    else
+      echo ".cargo/config.toml already exists; leaving it alone"
+    fi
+
 # opt in to the commit-msg hook; undo with `git config --unset core.hooksPath`
 hooks:
     git config core.hooksPath .githooks

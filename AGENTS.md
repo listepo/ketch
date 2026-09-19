@@ -79,6 +79,14 @@ The commit-msg hook is opt-in via `just hooks`: commitlint then runs on every
 `git commit`, rejecting a malformed subject outright and letting merge and
 revert subjects through.
 
+`file-backup` comes from crates.io (pinned in `Cargo.lock`). For local work
+against the sibling checkout, `just setup` writes a gitignored
+`.cargo/config.toml` with a `paths` override pointing at
+`packages/crates/file-backup`. CI and release builds never run it, so they
+always resolve the registry version. A `paths` override — not a `[patch]` —
+swaps the source without touching `Cargo.lock`, so `--locked` builds work on
+the same committed lock in both directions.
+
 Run the binary against a throwaway tree instead of your real `~/.ketch`:
 
 ```bash
