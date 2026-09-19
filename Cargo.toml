@@ -33,7 +33,7 @@ hex = "0.4"
 flate2 = "1"
 bzip2 = "0.6"
 tar = "0.4"
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "8", default-features = false, features = ["deflate"] }
 lzma-rs = "0.3"
 walkdir = "2"
 semver = "1"
