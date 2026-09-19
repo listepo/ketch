@@ -211,7 +211,7 @@ fn list(keys: &[(PathBuf, String)]) -> Vec<Occupant> {
             "-NoProfile",
             "-NonInteractive",
             "-Command",
-            "Get-CimInstance Win32_Process | ForEach-Object { '{0}`t{1}`t{2}' -f $_.ProcessId, $_.ExecutablePath, $_.CommandLine }",
+            "Get-CimInstance Win32_Process | ForEach-Object { '{0}\t{1}\t{2}' -f $_.ProcessId, $_.ExecutablePath, $_.CommandLine }",
         ])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
@@ -384,6 +384,22 @@ mod tests {
             found.pid
         );
     }
+    #[cfg(windows)]
+    #[test]
+    fn lists_a_child_running_a_cmd_script() {
+        let tmp = tempfile::tempdir().unwrap();
+        let script = tmp.path().join("tool.cmd");
+        std::fs::write(&script, b"@echo off\r\nping -n 30 127.0.0.1 >nul\r\n").unwrap();
+        let child = Command::new(&script)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn cmd script");
+        let child = ChildGuard(child);
+        let found = wait_for(&script);
+        assert_eq!(found.pid, child.0.id());
+    }
+
     #[cfg(windows)]
     #[test]
     fn cmd_hits_folds_command_line_case() {
