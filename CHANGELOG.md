@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.5](https://github.com/listepo/ketch/releases/tag/v0.4.5) - 2026-09-19
+
+### Added
+
+- self upgrade, stop in-use processes, auto_update
+
+### Fixed
+
+- *(windows)* emit real tabs from Win32_Process listing
+- *(windows)* split cmd_hits for case-fold without clippy/E0283
+- *(windows)* repair process.rs string literals after bad patch
+- *(windows)* match in-use .cmd paths case-insensitively
+- *(windows)* replace busy bin copies via rename-aside ([#109](https://github.com/listepo/ketch/pull/109))
+
 ## [0.4.4](https://github.com/listepo/ketch/releases/tag/v0.4.4) - 2026-09-18
 
 ### Fixed
