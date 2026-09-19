@@ -124,7 +124,7 @@ release*, never *where it lands*.
 | an empty `tag` | there is nothing to resolve |
 | a `target` ketch does not recognise | it silently turns the entry into a cross-target one, so the recorded asset and hash stop applying and a hash that drifted under the tag reads as clean |
 | an unknown key | a misspelt key that is silently ignored locks something other than what you wrote |
-| a `version` newer than this ketch understands | upgrade with `ketch self update` |
+| a `version` newer than this ketch understands | upgrade with `ketch self upgrade` |
 
 One bad entry fails the whole file rather than being skipped. Unlike the
 registry — where a partial answer beats none — a lockfile that installed most

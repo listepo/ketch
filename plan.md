@@ -7,6 +7,7 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | F1 | in progress | P2 | 3 | 95% | Cursor / grok 4.6 |
 | F2 | in progress | P2 | 3 | 70% | Cursor / grok 4.6 |
 | M3 | in progress | P2 | 5 | 95% | Claude Code / claude-opus-5 |
+| F5 | in progress | P1 | 3 | 10% | Cursor / grok 4.6 |
 
 ### F1. Notarisation
 
@@ -28,6 +29,16 @@ Plan (Cursor / grok 4.6): remaining Check. The Notarise step, smoke `spctl` gate
 ### M3. Provenance and signatures
 
 Plan (Claude Code / claude-opus-5): `trust` table on Manifest (verifier sigstore|minisign|gpg, mode require|warn, signature/signed sidecar templates, issuer + repository/identity, public_key, fingerprint), checked in `Manifest::validate`; docs/MANIFESTS.md + `site/sync-docs.py`. Optional `InstalledPackage.provenance` with old/new state tests. New `src/trust.rs`: sigstore-rs offline against an embedded trusted root plus a Rekor SET check, minisign-verify with the pinned key, pgp with an inline key pinned by fingerprint (never a keyring); fail closed unless `mode = "warn"`. Results in `info` (text + JSON), the install report and the log, identities sanitised. Fixtures in tests/fixtures/trust, unit tests in trust.rs, e2e in tests/trust.rs. Verify: `cargo fmt --all -- --check`, `cargo clippy --all-targets --locked -- -D warnings`, `cargo test --locked`. Crates: sigstore, minisign-verify, pgp. No commit.
+
+### F5. Config reset and shared file backup
+
+`ketch config reset` writes `config.toml` with compiled defaults after confirming. Existing file is copied with the same `.bak-<unix-seconds>` scheme as rtok agent setup (identical bytes skip a second copy). No daemon — ketch has none. Backup lives in `packages/file-backup`; ketch and `rtok-agent-sdk` depend on it by path.
+
+Plan (Cursor / grok 4.6):
+
+1. Create `packages/file-backup` (std-only `backup` / `backup_at`) and move the rtok backup tests there. `rtok-agent-sdk::backup` re-exports through anyhow.
+2. `ConfigCommand::Reset { yes }`; write default toml; `--yes` skips confirm.
+3. CLI e2e in `tests/config_reset.rs`.
 
 Signatures and provenance for release assets so install can verify more than a checksum sidecar.
 

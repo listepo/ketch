@@ -12,7 +12,7 @@
 # - `git_release_enable`, because release.yml creates the GitHub release and
 #   attaches both tarballs and the aggregate `SHA256SUMS`. Two tools creating
 #   the same release is a race, and losing it leaves a release with no assets —
-#   which is the one thing `install.sh` and `ketch self update` both read.
+#   which is the one thing `install.sh` and `ketch self upgrade` both read.
 # - tagging, because a tag is a promise that a release exists. release.yml
 #   creates it by publishing the release it has just finished building, so a
 #   failed build leaves main untagged rather than tagged with nothing behind
@@ -62,7 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 # From the second release onwards, release-plz points a version heading at the
 # diff against the previous tag. For ketch the release page is the useful
 # destination: it holds the tarballs and the `SHA256SUMS` that `install.sh` and
-# `ketch self update` fetch, so it is what someone reading the changelog is
+# `ketch self upgrade` fetch, so it is what someone reading the changelog is
 # looking for. `tests/release_changelog.rs` checks every heading links there.
 postprocessors = [
   { pattern = 'https://github\.com/listepo/ketch/compare/v[^)]*\.\.\.v([0-9][^)]*)', replace = "https://github.com/listepo/ketch/releases/tag/v${1}" },

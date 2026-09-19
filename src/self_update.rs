@@ -3,7 +3,7 @@
 //! ketch prefers to be one of its own packages: `self install` puts the running
 //! release into the store under the name `ketch` and links it from the bin dir,
 //! exactly as `ketch install listepo/ketch` would, so `list`, `history` and
-//! `doctor` see it and `self update` is an ordinary upgrade. A ketch copied flat
+//! `doctor` see it and `self upgrade` is an ordinary upgrade. A ketch copied flat
 //! into the bin dir by an older installer is still updated in place.
 //!
 //! Either way this is deliberately stricter than a normal install: the running
@@ -169,7 +169,7 @@ fn remove_any(path: &Path) -> std::io::Result<()> {
 
 /// Record a bootstrap link or copy outside `<root>/bin`, for install.sh.
 ///
-/// The link follows `<root>/bin/ketch` so `self update` keeps the bootstrap
+/// The link follows `<root>/bin/ketch` so `self upgrade` keeps the bootstrap
 /// path current. Uninstall removes it through the package's link records.
 fn record_bootstrap_link(cfg: &Config, state: &mut State, link_dir: &Path) -> Result<()> {
     let platform = crate::platform::host()?;

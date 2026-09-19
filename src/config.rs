@@ -31,6 +31,8 @@ pub struct ConfigFile {
     pub require_checksums: Option<bool>,
     /// Remove the quarantine flag from code that passes signature checks.
     pub strip_quarantine: Option<bool>,
+    /// Refresh the package registry before `install` and `upgrade`.
+    pub auto_update: Option<bool>,
     pub self_repo: Option<String>,
     /// `owner/repo` of the package registry.
     pub registry: Option<String>,
@@ -65,6 +67,8 @@ pub struct Config {
     pub link_apps: bool,
     pub require_checksums: bool,
     pub strip_quarantine: bool,
+    /// Refresh the package registry before `install` and `upgrade`.
+    pub auto_update: bool,
     pub self_repo: String,
     pub registry: String,
     pub registry_dir: PathBuf,
@@ -230,6 +234,9 @@ impl Config {
                 .unwrap_or(false),
             strip_quarantine: env_bool("KETCH_STRIP_QUARANTINE")?
                 .or(file.strip_quarantine)
+                .unwrap_or(true),
+            auto_update: env_bool("KETCH_AUTO_UPDATE")?
+                .or(file.auto_update)
                 .unwrap_or(true),
             self_repo,
             registry,

@@ -19,6 +19,7 @@ mod log;
 mod manifest;
 mod model;
 mod platform;
+mod process;
 mod push;
 mod registry;
 mod resolve;

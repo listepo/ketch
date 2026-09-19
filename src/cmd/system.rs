@@ -188,6 +188,18 @@ pub fn update(cfg: &Config) -> Result<()> {
     Ok(())
 }
 
+/// Refresh the registry when `auto_update` is on. A failed fetch is a warning:
+/// install and upgrade still proceed with whatever copy is already on disk.
+pub(crate) fn maybe_auto_update(cfg: &Config) {
+    if !cfg.auto_update {
+        return;
+    }
+    ui::step("auto-update", "enabled");
+    if let Err(error) = update(cfg) {
+        ui::warn(&format!("{error}"));
+    }
+}
+
 /// Where this machine's log is, so nobody has to be told twice.
 fn log_check(cfg: &Config) -> DoctorCheck {
     if cfg.log_level == crate::log::Level::Off {
@@ -677,15 +689,22 @@ pub fn zelf(cfg: &Config, command: SelfCommand) -> Result<()> {
             }
             Ok(())
         }
-        SelfCommand::Update { dry_run, force } => {
+        SelfCommand::Upgrade {
+            dry_run,
+            force,
+            yes,
+        } => {
+            if !dry_run {
+                crate::process::offer_to_stop(&self_replacement_paths(cfg), yes);
+            }
             let out = self_update::update(cfg, force, dry_run)?;
             // `replaced` is false both when already current and on dry-run, so
-            // the verb has to look at whether an update is actually needed.
+            // the verb has to look at whether an upgrade is actually needed.
             let needs_update = out.to > out.from || force;
             let verb = if out.replaced {
-                "updated"
+                "upgraded"
             } else if dry_run && needs_update {
-                "would update"
+                "would upgrade"
             } else {
                 "already current"
             };
@@ -736,6 +755,25 @@ pub fn zelf(cfg: &Config, command: SelfCommand) -> Result<()> {
 fn store_ketch_link(cfg: &Config) -> std::path::PathBuf {
     cfg.bin_dir
         .join(if cfg!(windows) { "ketch.exe" } else { "ketch" })
+}
+
+/// Binaries `self upgrade` may overwrite: the running image, the store link,
+/// and any recorded links for the `ketch` package.
+fn self_replacement_paths(cfg: &Config) -> Vec<std::path::PathBuf> {
+    let mut paths = Vec::new();
+    if let Ok(exe) = self_update::current_exe() {
+        paths.push(exe);
+    }
+    paths.push(store_ketch_link(cfg));
+    if let Ok(state) = State::load(cfg) {
+        if let Some(pkg) = state.get(self_update::SELF_NAME) {
+            for link in &pkg.links {
+                paths.push(link.link.clone());
+                paths.push(link.target.clone());
+            }
+        }
+    }
+    paths
 }
 
 fn same_binary(a: &std::path::Path, b: &std::path::Path) -> bool {

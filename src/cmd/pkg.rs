@@ -13,6 +13,7 @@ use crate::state::{Lock, State};
 use crate::ui;
 
 pub fn install(cfg: &Config, args: InstallArgs) -> Result<()> {
+    super::system::maybe_auto_update(cfg);
     if let Some(asset) = &args.asset {
         if args.packages.len() > 1 || args.path.is_some() {
             return Err(Error::msg(
@@ -163,6 +164,7 @@ pub fn uninstall(cfg: &Config, args: UninstallArgs) -> Result<()> {
 }
 
 pub fn upgrade(cfg: &Config, args: UpgradeArgs) -> Result<()> {
+    super::system::maybe_auto_update(cfg);
     let _lock = Lock::acquire(cfg)?;
     let sources = SourceRegistry::load(cfg);
     let mut state = State::load(cfg)?;
@@ -247,6 +249,16 @@ pub fn upgrade(cfg: &Config, args: UpgradeArgs) -> Result<()> {
     if !args.yes && !ui::confirm(&format!("upgrade {} packages?", plan.len()), false) {
         return Ok(());
     }
+
+    let files: Vec<std::path::PathBuf> = plan
+        .iter()
+        .flat_map(|(pkg, _)| {
+            pkg.links
+                .iter()
+                .flat_map(|link| [link.link.clone(), link.target.clone()])
+        })
+        .collect();
+    crate::process::offer_to_stop(&files, args.yes);
 
     let reqs: Vec<InstallRequest> = plan
         .iter()

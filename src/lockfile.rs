@@ -151,7 +151,7 @@ impl Lockfile {
         if self.version > LOCK_VERSION {
             return Err(Error::msg(format!(
                 "{where_} was written by a newer ketch (lock version {}); \
-                 upgrade with `ketch self update`",
+                 upgrade with `ketch self upgrade`",
                 self.version
             )));
         }

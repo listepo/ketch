@@ -298,7 +298,7 @@ fi
 # `self install`, which fetches this same release again through ketch's own
 # pipeline: verified against SHA256SUMS, unpacked into the store, linked from
 # the bin dir and recorded like any other package, so `ketch list` shows it
-# and `ketch self update` is an ordinary upgrade.
+# and `ketch self upgrade` is an ordinary upgrade.
 chmod 755 "${BINARY_PATH}"
 if [ "${OS}" = "Darwin" ]; then
   xattr -d com.apple.quarantine "${BINARY_PATH}" 2>/dev/null || true

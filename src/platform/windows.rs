@@ -83,7 +83,7 @@ fn busy_aside(path: &Path) -> PathBuf {
 /// Free `path` so a replacement can be written there.
 ///
 /// Prefer delete. If the file is mapped by a live process (the usual Windows
-/// `Access is denied` on `ketch self update` / `ketch upgrade`), rename it
+/// `Access is denied` on `ketch self upgrade` / `ketch upgrade`), rename it
 /// aside instead — the running image keeps its handle, and the destination
 /// name becomes available for `copy`.
 fn clear_for_replace(path: &Path) -> std::io::Result<()> {

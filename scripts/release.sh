@@ -8,7 +8,7 @@
 # opens a pull request. Merging that pull request is the release: the release
 # workflow builds it, publishes the tarballs, and creates the tag afterwards.
 #
-# The version is written in one place and read as the tag: `ketch self update`
+# The version is written in one place and read as the tag: `ketch self upgrade`
 # compares the running binary's version against the release tag, so deriving
 # one from the other is what keeps them level. Bumping by hand in an ordinary
 # commit is what this command exists to stop.
@@ -226,7 +226,7 @@ step "opening the pull request"
   printf 'tarballs with an aggregate `SHA256SUMS`, and creates `%s` last — so the\n' "$TAG"
   printf 'tag exists only if the release actually completed. Nothing else to type.\n\n'
   printf 'The tag is derived from `Cargo.toml`, which is why the version is bumped\n'
-  printf 'here rather than by hand: `ketch self update` compares the running\n'
+  printf 'here rather than by hand: `ketch self upgrade` compares the running\n'
   printf "binary's version against the release tag, and a mismatch breaks upgrades\n"
   printf 'for everyone already installed.\n'
 } > "$TMP/body"
