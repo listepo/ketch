@@ -2,6 +2,9 @@
 **/*.rs.bk
 .DS_Store
 .serena/
+# Local-only Cargo override (written by `just setup`, never committed): CI and
+# release builds resolve `file-backup` from crates.io via Cargo.lock.
+/.cargo/config.toml
 
 # npm install output for commit-message tooling (package-lock.json is committed)
 /node_modules/
