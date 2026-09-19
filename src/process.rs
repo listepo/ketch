@@ -107,22 +107,27 @@ fn matches_exe(exe: &Path, candidate: &Path, key: &str) -> bool {
     exe_key.starts_with(&format!("{key}/")) || exe_key.starts_with(&format!("{key}\\"))
 }
 
-#[cfg(any(target_os = "linux", windows))]
+#[cfg(windows)]
 fn cmd_hits(cmdline: &str, candidate: &Path, key: &str) -> bool {
     // Windows CommandLine casing is arbitrary; keys from `path_key` are folded.
-    #[cfg(windows)]
-    let cmdline_cmp = cmdline.to_ascii_lowercase();
-    #[cfg(not(windows))]
-    let cmdline_cmp = cmdline;
-    let raw = candidate.to_string_lossy();
-    #[cfg(windows)]
-    let raw = raw.to_ascii_lowercase().replace('/', "\\");
-    #[cfg(not(windows))]
-    let raw = raw;
-    if !raw.is_empty() && cmdline_cmp.contains(raw.as_ref()) {
+    let cmdline = cmdline.to_ascii_lowercase();
+    let raw = candidate
+        .to_string_lossy()
+        .to_ascii_lowercase()
+        .replace('/', "\\");
+    if !raw.is_empty() && cmdline.contains(raw.as_str()) {
         return true;
     }
-    !key.is_empty() && cmdline_cmp.contains(key)
+    !key.is_empty() && cmdline.contains(key)
+}
+
+#[cfg(target_os = "linux")]
+fn cmd_hits(cmdline: &str, candidate: &Path, key: &str) -> bool {
+    let raw = candidate.to_string_lossy();
+    if !raw.is_empty() && cmdline.contains(raw.as_ref()) {
+        return true;
+    }
+    !key.is_empty() && cmdline.contains(key)
 }
 
 #[cfg(target_os = "linux")]
