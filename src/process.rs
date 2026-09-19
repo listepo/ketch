@@ -384,9 +384,7 @@ mod tests {
     fn cmd_hits_folds_command_line_case() {
         let path = PathBuf::from(r"C:\Users\User\.ketch\bin\tool.cmd");
         let key = path_key(&path);
-        let cmdline =
-            r#"C:\WINDOWS\system32\cmd.exe /c "C:\Users\User\.ketch\bin\TOOL.CMD""#;
+        let cmdline = r#"C:\WINDOWS\system32\cmd.exe /c "C:\Users\User\.ketch\bin\TOOL.CMD""#;
         assert!(cmd_hits(cmdline, &path, &key));
     }
-
 }
