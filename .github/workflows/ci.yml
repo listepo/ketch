@@ -184,7 +184,10 @@ jobs:
       run:
         shell: bash
     steps:
+      # Tags are required by tests/crate-version.sh (latest tag vs Cargo.toml).
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - uses: Swatinem/rust-cache@v2
 
