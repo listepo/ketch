@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.6](https://github.com/listepo/ketch/releases/tag/v0.4.6) - 2026-09-20
+
+### Other
+
+- *(deps)* bump ratatui from 0.29.0 to 0.30.2 ([#115](https://github.com/listepo/ketch/pull/115))
+- *(deps)* bump zip from 2.4.2 to 8.6.0 ([#104](https://github.com/listepo/ketch/pull/104))
+- *(deps)* bump toml from 0.9.12+spec-1.1.0 to 1.1.6+spec-1.1.0 ([#103](https://github.com/listepo/ketch/pull/103))
+- *(deps)* resolve file-backup from crates.io, keep local override ([#114](https://github.com/listepo/ketch/pull/114))
+- *(deps)* bump release-plz/action in the actions group ([#101](https://github.com/listepo/ketch/pull/101))
+- Prepare release
+
 ## [0.4.5](https://github.com/listepo/ketch/releases/tag/v0.4.5) - 2026-09-19
 
 ### Added
