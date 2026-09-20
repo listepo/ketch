@@ -117,8 +117,8 @@ unpack fails the same way as a collision.
 
 ### Compatibility
 
-- **Registry CI / `ketch registry validate`** is fail-closed. Invalid or
-  colliding entries do not merge.
+- **Local validation (`ketch registry validate`)** is fail-closed. Invalid or
+  colliding entries fail the run, so they cannot be pushed upstream.
 - **Clients** (`ketch update`, lookup, install by name) stay best-effort
   about an already-published bad registry: they warn, skip the broken folder,
   and keep resolving the rest. They never fetch as a side effect of status
@@ -126,12 +126,31 @@ unpack fails the same way as a collision.
 - A fixture install is extra proof for changed entries. It does not replace
   the tree-wide collision scan.
 
-The `ketch-registry` repository still needs a workflow that runs this command
-on every pull request.
+Registry CI was deliberately dropped (plan.md F2): the `ketch-registry`
+repository removed its only workflow (commit `5a9bbd6`, "no CI is wanted in
+this repo"), so there is no upstream workflow to land this in. Validate locally
+before pushing, from the registry checkout root (or any tree laid out the same
+way):
+
+```bash
+ketch registry validate .
+```
+
+Add the same check as a pre-push hook so nothing unvalidated leaves the
+machine — from the registry checkout root:
+
+```bash
+cat > .git/hooks/pre-push <<'EOF'
+#!/bin/sh
+# Refuse the push when the registry tree would not validate.
+ketch registry validate . || exit 1
+EOF
+chmod +x .git/hooks/pre-push
+```
 
 `registry push` runs those same per-package checks on the file it is about to
-send. It does not scan the rest of the registry for name collisions — only CI
-and `registry validate` do that. It does not offline-install against a fixture.
+send. It does not scan the rest of the registry for name collisions — only
+`registry validate` does that. It does not offline-install against a fixture.
 
 ## Contributing a package
 

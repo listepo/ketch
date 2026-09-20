@@ -14,7 +14,7 @@ enableRobotsTXT = true
 disableKinds = ["taxonomy", "term"]
 
 [params]
-  version = "0.4.4"
+  version = "0.4.6"
   description = "Install command-line tools and apps from GitHub releases on macOS, Linux, and Windows. No taps, no formulae, no build step — just what the project already ships, verified."
   tagline = "Catch releases straight from GitHub."
   author = "Ivan Tugay"

@@ -194,6 +194,7 @@ jobs:
           bash -n scripts/package.sh
           bash -n scripts/release.sh
           sh tests/release-sh-version.sh
+          sh tests/crate-version.sh
           sh tests/release-yml-notarize.sh
           sh tests/ci-yml-triggers.sh
 

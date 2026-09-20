@@ -218,6 +218,20 @@ impl Sandbox {
         String::from_utf8_lossy(&out.stdout).to_string()
     }
 
+    /// Run ketch with extra environment variables, failing like [`ok`] does.
+    pub fn ok_env(&self, args: &[&str], envs: &[(&str, &str)]) -> String {
+        let out = self.ketch_overrides(args, envs);
+        assert!(
+            out.status.success(),
+            "`ketch {}` failed with {}\n--- stdout ---\n{}\n--- stderr ---\n{}",
+            args.join(" "),
+            out.status,
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr),
+        );
+        String::from_utf8_lossy(&out.stdout).to_string()
+    }
+
     /// Run ketch expecting failure, returning stderr.
     pub fn fails(&self, args: &[&str]) -> String {
         let out = self.ketch(args);

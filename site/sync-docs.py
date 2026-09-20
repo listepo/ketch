@@ -93,6 +93,15 @@ PAGES = [
         "how sync catches up.",
     ),
     (
+        "docs/TROUBLESHOOTING.md",
+        "troubleshooting",
+        "Troubleshooting",
+        47,
+        "Failures ketch already explains, collected in one place: a locked "
+        "Windows binary, brew handing over to self upgrade, registry "
+        "collisions, notarisation failures.",
+    ),
+    (
         "ROADMAP.md",
         "roadmap",
         "Roadmap",

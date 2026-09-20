@@ -1,0 +1,93 @@
+```console
+$ ketch install --help
+Install one or more packages
+
+Usage: ketch install [OPTIONS] [PKG]...
+
+Arguments:
+  [PKG]...  `owner/repo`, `scheme:id`, `local:<path>`, or a known alias — each may carry `@version`
+
+Options:
+      --path <PATH>       Install from a local archive, binary, symlink, or `.app` (sets
+                          `local:<PATH>`)
+      --name <NAME>       Installed name for a single package (with `--path`, defaults to the file
+                          basename)
+  -f, --force             Reinstall even when the requested version is already present
+      --pre               Consider prereleases when resolving `latest`
+      --no-link           Unpack and record the package without putting it on PATH
+      --require-checksum  Refuse to install unless the release publishes a checksum
+      --asset <NAME>      Use this release asset by exact file name instead of auto-selecting
+  -j, --jobs <N>          Packages to work on at once (default: 4, or `jobs` in config.toml)
+  -y, --yes               Answer yes to every prompt
+      --root <DIR>        ketch root directory (default: ~/.ketch)
+  -v, --verbose           Show what ketch is doing, including every request
+  -q, --quiet             Only print errors and requested data
+      --no-color          Never emit ANSI colour
+  -h, --help              Print help
+  -V, --version           Print version
+
+```
+
+```console
+$ ketch upgrade --help
+Upgrade installed packages to their latest release
+
+Usage: ketch upgrade [OPTIONS] [NAME]...
+
+Arguments:
+  [NAME]...  Packages to upgrade. Empty means every unpinned package
+
+Options:
+      --dry-run     Report what would change without touching anything
+      --pre         Consider prereleases
+      --force       Upgrade pinned packages too
+  -j, --jobs <N>    Packages to work on at once (default: 4, or `jobs` in config.toml)
+  -y, --yes         Answer yes to every prompt
+      --root <DIR>  ketch root directory (default: ~/.ketch)
+  -v, --verbose     Show what ketch is doing, including every request
+  -q, --quiet       Only print errors and requested data
+      --no-color    Never emit ANSI colour
+  -h, --help        Print help
+  -V, --version     Print version
+
+```
+
+```console
+$ ketch doctor --help
+Check the environment and the install tree
+
+Usage: ketch doctor [OPTIONS]
+
+Options:
+      --fix         Repair what can be repaired without asking: currently the PATH setup
+      --json        Emit JSON instead of text
+      --root <DIR>  ketch root directory (default: ~/.ketch)
+  -v, --verbose     Show what ketch is doing, including every request
+  -q, --quiet       Only print errors and requested data
+      --no-color    Never emit ANSI colour
+  -h, --help        Print help
+  -V, --version     Print version
+
+```
+
+```console
+$ ketch registry --help
+Compare a package config with the registry's copy before pulling-requesting it
+
+Usage: ketch registry [OPTIONS] <COMMAND>
+
+Commands:
+  validate  Validate a registry tree (every `ketch.toml`) the way the pre-push hook does
+  status    Show the local registry copy's age and source, without fetching
+  push      Compare this project's `ketch.toml` with the registry's copy, show the difference, and
+            open a pull request with it
+
+Options:
+      --root <DIR>  ketch root directory (default: ~/.ketch)
+  -v, --verbose     Show what ketch is doing, including every request
+  -q, --quiet       Only print errors and requested data
+      --no-color    Never emit ANSI colour
+  -h, --help        Print help
+  -V, --version     Print version
+
+```
