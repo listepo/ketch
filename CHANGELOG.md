@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.7](https://github.com/listepo/ketch/releases/tag/v0.4.7) - 2026-09-20
+
+### Other
+
+- sync ROADMAP and registry docs with shipped work ([#117](https://github.com/listepo/ketch/pull/117))
+
 ## [0.4.6](https://github.com/listepo/ketch/releases/tag/v0.4.6) - 2026-09-20
 
 ### Other
