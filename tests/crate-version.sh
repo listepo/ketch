@@ -2,6 +2,10 @@
 # The crate version must match the latest git tag, and the changelog must
 # carry an entry for it — otherwise `ketch self upgrade` and install.sh
 # look for a tag whose binaries never shipped.
+#
+# On a release-plz PR the version is bumped before the tag exists: Cargo.toml
+# may be exactly one release ahead of the latest tag, as long as CHANGELOG
+# already has the matching entry. After the tag is cut, version and tag match.
 set -eu
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -16,9 +20,21 @@ version="$(awk '/^\[package\]/ { in_pkg = 1; next }
 
 tag="$(git tag --sort=-v:refname | head -n 1)"
 [ -n "$tag" ] || { echo "crate-version: no git tags found" >&2; exit 1; }
-[ "$tag" = "v$version" ] \
-    || { echo "crate-version: Cargo.toml says $version but latest tag is $tag" >&2; exit 1; }
 
 grep -q "^\#\# \[$version\](.*releases/tag/v$version)" CHANGELOG.md \
     || { echo "crate-version: CHANGELOG.md has no [$version] entry linked to releases/tag/v$version" >&2; exit 1; }
-echo "crate-version: $version matches $tag with a changelog entry"
+
+if [ "$tag" = "v$version" ]; then
+    echo "crate-version: $version matches $tag with a changelog entry"
+    exit 0
+fi
+
+# Version ahead of latest tag (release PR before the tag is cut).
+newest="$(printf '%s\n' "$tag" "v$version" | sort -V | tail -n 1)"
+if [ "$newest" = "v$version" ] && [ "$tag" != "v$version" ]; then
+    echo "crate-version: $version is ahead of $tag (pre-tag release) with a changelog entry"
+    exit 0
+fi
+
+echo "crate-version: Cargo.toml says $version but latest tag is $tag" >&2
+exit 1

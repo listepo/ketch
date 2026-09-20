@@ -11,10 +11,20 @@ mod support;
 
 use support::{host_arch, Archive, Entry, Release, Sandbox};
 
-fn publish_tool(sandbox: &Sandbox, name: &str, version: &str) {
+fn host_triple() -> String {
     let arch = host_arch();
+    if cfg!(target_os = "linux") {
+        format!("{arch}-unknown-linux-gnu")
+    } else {
+        // macOS (and any other unix this file's `cfg(unix)` gate admits).
+        format!("{arch}-apple-darwin")
+    }
+}
+
+fn publish_tool(sandbox: &Sandbox, name: &str, version: &str) {
+    let triple = host_triple();
     let native = sandbox.asset(
-        &format!("{name}-{version}-{arch}-apple-darwin.tar.gz"),
+        &format!("{name}-{version}-{triple}.tar.gz"),
         Archive::TarGz(vec![Entry::program(
             &format!("{name}-{version}/bin/{name}"),
             &format!("{name} {version}"),
@@ -59,9 +69,9 @@ fn a_second_upgrade_while_the_lock_is_held_reports_the_holder() {
 #[test]
 fn extras_are_linked_on_install_and_removed_on_uninstall() {
     let sandbox = Sandbox::new();
-    let arch = host_arch();
+    let triple = host_triple();
     let native = sandbox.asset(
-        &format!("extratool-1.0.0-{arch}-apple-darwin.tar.gz"),
+        &format!("extratool-1.0.0-{triple}.tar.gz"),
         Archive::TarGz(vec![
             Entry::program("extratool-1.0.0/bin/extratool", "extratool 1.0.0"),
             Entry::file("extratool-1.0.0/doc/extratool.1", ".TH EXTRATOOL 1\n"),
