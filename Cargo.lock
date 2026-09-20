@@ -2641,7 +2641,7 @@ dependencies = [
 
 [[package]]
 name = "ketch"
-version = "0.4.5"
+version = "0.4.6"
 dependencies = [
  "assert_cmd",
  "assert_fs",
