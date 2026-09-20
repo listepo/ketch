@@ -1,0 +1,20 @@
+#!/bin/sh
+# ketch-source-example — a minimal source plugin, kept executable so it can be
+# copied straight into ~/.ketch/plugins and tried with `ketch plugin list`.
+# Mirrors the example in docs/PLUGINS.md; change one and change both.
+set -eu
+case "$1" in
+  capabilities)
+    printf '{"protocol":1,"scheme":"example","search":false}\n'
+    ;;
+  describe)
+    printf '{"id":"%s","name":"%s"}\n' "$2" "${2##*/}"
+    ;;
+  releases)
+    printf '[{"version":"1.0.0","tag":"v1.0.0","assets":[{"name":"tool-1.0.0-aarch64-apple-darwin.tar.gz","url":"https://example.invalid/tool.tar.gz"}]}]\n'
+    ;;
+  *)
+    echo "unsupported subcommand: $1" >&2
+    exit 1
+    ;;
+esac

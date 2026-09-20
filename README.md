@@ -136,7 +136,7 @@ ketch path                 # show PATH setup (same as `path status`)
 ketch path install         # put ~/.ketch/bin on PATH
 ketch config create        # write a ketch.toml by answering questions
 ketch registry push        # offer it to the registry, showing the diff first
-ketch registry validate    # check a registry tree the way registry CI does
+ketch registry validate    # check a registry tree the way the pre-push hook does
 ketch registry status      # age and source of the local copy; no network
 ketch self version         # print version, target, root and binary path
 ketch self upgrade          # upgrade ketch itself

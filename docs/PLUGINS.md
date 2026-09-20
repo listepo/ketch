@@ -7,6 +7,10 @@ A plugin is an executable named `ketch-source-<scheme>`. ketch runs it with a
 subcommand and reads one JSON document from its stdout. That is the whole
 contract, so a plugin can be written in any language.
 
+The checked-in [`ketch-source-example`](../examples/ketch-source-example) is the
+same script as below, kept executable so it can be copied straight into
+`~/.ketch/plugins` and tried with `ketch plugin list`.
+
 ## Discovery
 
 ketch looks in `~/.ketch/plugins` first, then every directory on `PATH`. The

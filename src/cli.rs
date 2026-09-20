@@ -434,7 +434,7 @@ pub enum ConfigCommand {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum RegistryCommand {
-    /// Validate a registry tree (every `ketch.toml`) the way CI will
+    /// Validate a registry tree (every `ketch.toml`) the way the pre-push hook does
     Validate {
         /// Registry tree to validate (default: current directory)
         #[arg(value_name = "DIR")]

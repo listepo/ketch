@@ -1,2 +1,4 @@
-- M3. Provenance and signatures
-- F5. Config reset and shared file backup (ketch side done; rtok re-export needs rtok owner)
+- F1. Notarisation — done (ketch side; creator step remains: secrets + `KETCH_NOTARIZE=true`)
+- F2. Registry CI in ketch-registry — dropped (upstream declined, commit `5a9bbd6`)
+- M3. Provenance and signatures — done
+- F5. Config reset and shared file backup — done (ketch side)

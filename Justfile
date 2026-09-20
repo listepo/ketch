@@ -99,6 +99,7 @@ lint-shell:
     bash -n install.sh
     bash -n scripts/package.sh
     bash -n scripts/release.sh
+    sh tests/crate-version.sh
     sh tests/release-yml-notarize.sh
     sh tests/ci-yml-triggers.sh
 

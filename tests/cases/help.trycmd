@@ -1,0 +1,56 @@
+```console
+$ ketch --help
+ketch installs command-line tools and apps from GitHub releases on macOS, Linux, and Windows.
+No taps, no formulae, no build step — it downloads what the project already ships.
+
+Usage: ketch [OPTIONS] <COMMAND>
+
+Commands:
+  install      Install one or more packages [alias: i]
+  uninstall    Remove installed packages [aliases: remove, rm]
+  list         Show installed packages [alias: ls]
+  outdated     Show installed packages that have a newer release
+  info         Show details about a package, installed or not [alias: show]
+  why          Explain how a package would be resolved, without installing it
+  changelog    Show what changed: the package's own changelog, or its release notes
+  search       Search GitHub for installable repositories
+  history      Show what was installed, upgraded and removed, newest first
+  stats        Summarise everything ketch has recorded
+  update       Refresh the package registry (see `upgrade` for installed packages)
+  upgrade      Upgrade installed packages to their latest release
+  rollback     Switch a package back to a version still on disk
+  prune        Remove retained prefixes according to the retention policy
+  pin          Hold a package at its current version
+  unpin        Release a pin
+  link         Re-create the links for an installed package
+  unlink       Remove the links for an installed package, keeping it installed
+  lock         Write or check `ketch.lock`, a reproducible record of what is installed
+  sync         Install everything `ketch.lock` names, at the versions it names
+  doctor       Check the environment and the install tree
+  config       Write a package config (`ketch.toml`) by answering questions
+  registry     Compare a package config with the registry's copy before pulling-requesting it
+  path         Put the ketch bin directory on PATH
+  plugin       Manage source plugins
+  self         Manage ketch itself
+  completions  Print a shell completion script, or install it with `--install`
+
+Options:
+      --root <DIR>
+          ketch root directory (default: ~/.ketch)
+
+  -v, --verbose
+          Show what ketch is doing, including every request
+
+  -q, --quiet
+          Only print errors and requested data
+
+      --no-color
+          Never emit ANSI colour
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+
+```

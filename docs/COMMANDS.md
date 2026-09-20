@@ -229,7 +229,7 @@ Runs automatically at the start of `install` and `upgrade` unless
 
 ### `ketch registry validate [DIR] [--fixture <DIR>] [--changed <NAME>] [--json]`
 
-Validate a registry tree the way CI will: every `ketch.toml` parsed and
+Validate a registry tree the way the pre-push hook does: every `ketch.toml` parsed and
 checked, plus name collisions. `--fixture` offline-installs entries against
 local files as extra proof.
 
