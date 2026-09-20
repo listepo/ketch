@@ -443,3 +443,33 @@ Line builders (`step_line`, `success_line`, `warn_line`, `note_line`, `debug_lin
 
 `check_tree_treats_name_collisions_as_errors` now uses the `foo`/`foo.git` path-keyed collision and asserts the error is reported against the registry root. `recognises_program_headers` loops the four on-disk Mach-O prefixes, requires 64-bit variants to exceed 32-bit-only matching, covers universal LE, and rejects a near-miss prefix. `registry_validate_rejects_a_bin_name_that_would_escape` requires both `binary name` and `not usable as a file name` in stdout.
 
+### A2. 2026-09-20 product audit — docs sync, version guard, troubleshooting, reference plugin, e2e gaps
+
+ROADMAP rewritten to match reality (signatures → shipped M3, man pages → shipped M4, `why` → shipped M7, registry maturity → partial with registry CI dropped as F2); `todo.md` synced with `plan.md`. Version drift closed (`Cargo.toml` = CHANGELOG 0.4.6 = tag `v0.4.6` = `site/hugo.toml`) plus a CI guard: `tests/crate-version.sh` fails when crate version, latest tag, and changelog entry disagree (wired into `just lint-shell` and CI). Registry CI resolved as dropped with local validation + pre-push hook in `docs/REGISTRY.md`; staleness needs no new code (`registry status` / doctor already report age from `registry.meta.toml`). Added `docs/TROUBLESHOOTING.md` (site-wired), `examples/ketch-source-example`, trycmd help snapshots (`tests/cases/help*.trycmd`), `tests/plugin_fail.rs`, `tests/lock_extras.rs` (lock exit 8 + extras link/unlink, new `Sandbox::ok_env`).
+
+Verified: `cargo fmt --check` clean, `cargo clippy --all-targets -D warnings` clean, full `cargo nextest run` 571 passed, shell checks green. Left open: notarisation secrets (creator step), multi-version/aqua evaluation (see A3).
+
+### A3. Multi-version side-by-side and aqua parity — evaluated, not built
+
+Audit item 13, verdict after reading the tree; no code changed. Side-by-side versions are already answered by retention: upgrades keep the previous prefix (`retained` in state, default `keep = 1`), `ketch rollback` relinks without redownloading, `ketch prune` drops old ones (see M6 in this file). Two versions on PATH at once is deliberately not a thing: one bin dir, one link per name. Global lockfile UX is already shipped (`ketch lock` / `--check` / `sync`, see `docs/LOCKFILE.md`); built-in catalog is already shipped (`src/builtin.toml` tiers in `src/manifest.rs`). No gap to fill, no issues filed.
+
+### F1. Notarisation — done (ketch side)
+
+Done on the ketch side: `release.yml` has a `Notarise` step for the two signed targets, gated on `KETCH_NOTARIZE == 'true'`. Once on, it fails on a missing `APPSTORE_CONNECT_KEY` (the `.p8`, base64), `APPSTORE_CONNECT_KEY_ID` or `APPSTORE_CONNECT_ISSUER_ID`. It zips the packed binary with `ditto`, runs `xcrun notarytool submit --wait`, and fails unless the status is `Accepted`. The smoke test requires `spctl` to report `source=Notarized Developer ID`. `AGENTS.md` Releasing documents the switch and the three secrets. `tests/release-yml-notarize.sh` is wired into `just lint-shell` and CI.
+
+Not done (creator step, needs the App Store Connect key): add the secrets, set `KETCH_NOTARIZE=true`, and run a release.
+
+### F2. Registry CI in ketch-registry — dropped
+
+`ketch registry validate` exists in this repo (tree checks, name/alias collisions, optional `--fixture` / `--changed` offline-install). There is deliberately no registry-side workflow: ketch-registry removed its only workflow (commit `5a9bbd6`, "no CI is wanted in this repo"). The documented substitute is local validation plus a pre-push hook (`docs/REGISTRY.md`). Collisions are fatal in `validate` and warnings on `update` by design.
+
+### M3. Provenance and signatures — done
+
+`trust` table on Manifest (verifier sigstore|minisign|gpg, mode require|warn, sidecar templates, issuer + repository/identity, public_key, fingerprint), checked in `Manifest::validate`; docs/MANIFESTS.md. `src/trust.rs`: sigstore offline against an embedded trusted root plus Rekor SET check, minisign-verify with the pinned key, pgp with an inline key pinned by fingerprint (never a keyring); fail closed unless `mode = "warn"`. Results in `info` (text + JSON), the install report and the log. Fixtures in tests/fixtures/trust, unit tests in trust.rs, e2e in tests/trust.rs.
+
+### F5. Config reset and shared file backup — done (ketch side)
+
+`ketch config reset` writes `config.toml` with compiled defaults after confirming, backing the existing file up beside itself as `config.toml.bak-<unix-seconds>` via the `file-backup` crate. `ConfigCommand::Reset { yes }`, `Config::default_toml()`, `reset()` in `src/cmd/config.rs`, e2e in `tests/config_reset.rs`, docs in README Configuration and `docs/COMMANDS.md`. Unit tests `default_toml_parses_back_to_compiled_defaults` and `a_reset_file_loads_back_to_the_effective_defaults` in `src/config.rs` (plus the `ENV_GUARD`/`CleanEnv` fix for the flaky token-fallback test).
+
+Not done (needs rtok owner): `rtok-agent-sdk::backup` still has its own copy and does not re-export the shared crate.
+

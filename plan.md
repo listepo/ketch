@@ -8,6 +8,8 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | F2 | dropped (upstream declined) | P2 | 3 | — | Cursor / grok 4.6 |
 | M3 | done | P2 | 5 | 100% | Claude Code / claude-opus-5 |
 | F5 | done (ketch side) | P1 | 3 | 100% | Cursor / grok 4.6 |
+| A2 | done | P1 | 2 | 100% | Muse Spark |
+| A3 | evaluated (already shipped) | P3 | 1 | 100% | Muse Spark |
 
 ### F1. Notarisation
 
@@ -62,8 +64,8 @@ Actionable follow-ups from the 2026-09-20 product audit:
 10. Plugin protocol: little e2e coverage with a fake `ketch-source-*` (fail paths). — done: `tests/plugin_fail.rs` (capabilities failure named by `plugin list`, future-protocol scheme refused, `releases` failure carries stderr); green.
 11. Concurrent upgrade stress: few tests for "two `ketch upgrade` at once" / "binary busy mid-upgrade". — done (lock half): `tests/lock_extras.rs::a_second_upgrade_while_the_lock_is_held_reports_the_holder` proves the second run fails with exit 8 and the holder message. "Binary busy mid-upgrade" (in-use process stop offer, Windows rename-aside) is already covered in `src/process.rs` + `tests/self_update.rs` / `tests/auto_update.rs`; no new test added.
 12. `extra_paths` e2e: "install → man/completion on disk → uninstall removes them". — done: `tests/lock_extras.rs::extras_are_linked_on_install_and_removed_on_uninstall` (sandbox `XDG_DATA_HOME` via new `Sandbox::ok_env`); green.
-13. Evaluate multi-version side-by-side and aqua parity (global lockfile UX, built-in catalog) — open issues.
-14. Suggested order: (1) sync ROADMAP/todo + version — done above, (2) ~~CI validate on the registry~~ dropped (F2; local validate + pre-push hook instead), (3) trycmd + fake plugin + uninstall e2e + concurrent stress — done above, (4) notarize secrets — creator step, (5) multi-version issues — open.
+13. Evaluate multi-version side-by-side and aqua parity (global lockfile UX, built-in catalog) — done as A3 in `done.md`: all three already shipped (retention + rollback/prune, `lock`/`sync`, `builtin.toml` tiers), no gap, no issues filed.
+14. Suggested order: (1) sync ROADMAP/todo + version — done above, (2) ~~CI validate on the registry~~ dropped (F2; local validate + pre-push hook instead), (3) trycmd + fake plugin + uninstall e2e + concurrent stress — done above, (4) notarize secrets — creator step, (5) multi-version issues — done as A3, nothing to file.
 
 
 ---
