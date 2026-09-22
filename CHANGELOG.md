@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0](https://github.com/listepo/ketch/releases/tag/v0.5.0) - 2026-09-22
+
+### Added
+
+- *(site)* add Pagefind site search
+
 ## [0.4.7](https://github.com/listepo/ketch/releases/tag/v0.4.7) - 2026-09-20
 
 ### Other
