@@ -99,6 +99,7 @@ Page gutters: `clamp(1rem, 4vw, 3rem)`. Content max defaults to ~1180px.
 - **Feature / doc cards** — glass panels with hover hairline → accent.
 - **Release chip** — pill with coral dot; release-tag metaphor.
 - **Docs nav** — sticky under header; current page uses `--accent-soft` wash.
+- **Search** — Pagefind box in the header (`layouts/partials/search.html`); static index built into `public/pagefind` after Hugo (see Pages workflow). Styled with ketch tokens.
 - **Skip link** — visible on focus.
 
 ## Logos

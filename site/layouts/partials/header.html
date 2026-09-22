@@ -5,6 +5,7 @@
     <span class="brand-name">ketch</span>
   </a>
   <div class="header-actions">
+    {{ partial "search.html" . }}
     <nav aria-label="Main">
       {{ range site.Menus.main }}
         {{ $external := strings.HasPrefix .URL "http" }}

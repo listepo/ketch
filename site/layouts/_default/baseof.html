@@ -25,7 +25,9 @@
   <link rel="stylesheet" href="{{ "css/mini-ui.css" | relURL }}">
   {{ end }}
   <link rel="icon" href="{{ "img/favicon.svg" | relURL }}" type="image/svg+xml">
+  {{ partial "search-head.html" . }}
   <script defer src="{{ "js/theme.js" | relURL }}"></script>
+  {{ partial "search-scripts.html" . }}
 </head>
 <body class="{{ if .IsHome }}home{{ else }}doc{{ end }}">
   {{ partial "header.html" . }}
