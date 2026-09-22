@@ -14,7 +14,7 @@ enableRobotsTXT = true
 disableKinds = ["taxonomy", "term"]
 
 [params]
-  version = "0.4.6"
+  version = "0.4.7"
   description = "Install command-line tools and apps from GitHub releases on macOS, Linux, and Windows. No taps, no formulae, no build step — just what the project already ships, verified."
   tagline = "Catch releases straight from GitHub."
   author = "Ivan Tugay"
@@ -22,6 +22,9 @@ disableKinds = ["taxonomy", "term"]
   registryRepo = "https://github.com/listepo/ketch-registry"
   ogImage = "img/og.png"
   keywords = ["package manager", "macOS", "Linux", "Windows", "GitHub releases", "CLI", "Rust", "homebrew alternative", "install binaries"]
+
+# Site search is Pagefind: a static index written into site/public/pagefind
+# after the Hugo build (see .github/workflows/pages.yml). No API keys.
 
 [menu]
   [[menu.main]]
