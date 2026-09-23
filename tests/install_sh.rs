@@ -62,7 +62,7 @@ fn help_describes_root_and_install_dir_without_naming_the_root() {
 }
 
 /// The script used to abort on anything but Darwin before flags were even
-/// exercised. The host tarball names are the contract with package.sh.
+/// exercised. The host tarball names are the contract with dist-workspace.toml.
 #[test]
 fn the_script_names_linux_and_windows_release_tarballs() {
     let src = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/install.sh"));

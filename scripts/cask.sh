@@ -63,21 +63,22 @@ cask "ketch" do
     # downloads and verifies itself. Gatekeeper would refuse the quarantined
     # bootstrap otherwise, as it refuses any command-line binary that is not
     # notarised; install.sh lifts the same attribute.
-    run "/usr/bin/xattr", args: ["-d", "com.apple.quarantine", "{{staged_path}}/ketch"], must_succeed: false
+    # The binary sits in the tarball's one directory, \`ketch-<target>/\`.
+    run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{staged_path}}"], must_succeed: false
     # The steps run with a throwaway HOME and the DSL has no token for the
     # real one, so the shell asks the user database instead: \`~user\` expands
     # from there, not from HOME. ~/.ketch is the one path under the home
     # directory a step may write, and the only one ketch touches.
     if_path_exists ".ketch/store/ketch", base: :home do
-      run "/bin/sh", args:           ["-c", 'eval "r=~\$1/.ketch" && KETCH_ROOT="\$r" exec "\$2" self upgrade',
-                                      "ketch", "{{user}}", "{{staged_path}}/ketch"],
+      run "/bin/sh", args:           ["-c", 'eval "r=~\$1/.ketch" && KETCH_ROOT="\$r" exec "\$2"/*/ketch self upgrade',
+                                      "ketch", "{{user}}", "{{staged_path}}"],
                      network_access: true,
                      writable_paths: [".ketch"],
                      writable_base:  :home
     end
     unless_path_exists ".ketch/store/ketch", base: :home do
-      run "/bin/sh", args:           ["-c", 'eval "r=~\$1/.ketch" && KETCH_ROOT="\$r" exec "\$2" self install',
-                                      "ketch", "{{user}}", "{{staged_path}}/ketch"],
+      run "/bin/sh", args:           ["-c", 'eval "r=~\$1/.ketch" && KETCH_ROOT="\$r" exec "\$2"/*/ketch self install',
+                                      "ketch", "{{user}}", "{{staged_path}}"],
                      network_access: true,
                      writable_paths: [".ketch"],
                      writable_base:  :home
