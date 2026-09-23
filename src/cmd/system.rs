@@ -720,7 +720,7 @@ pub fn zelf(cfg: &Config, command: SelfCommand) -> Result<()> {
             dry_run,
             yes,
         } => {
-            let plan = self_update::uninstall_plan(cfg, keep_packages, no_brew)?;
+            let mut plan = self_update::uninstall_plan(cfg, keep_packages, no_brew)?;
             for line in plan_lines(&plan) {
                 ui::step(
                     if dry_run {
@@ -729,6 +729,12 @@ pub fn zelf(cfg: &Config, command: SelfCommand) -> Result<()> {
                         "will remove"
                     },
                     &line,
+                );
+            }
+            if let Some(mise) = &plan.mise {
+                ui::step(
+                    if dry_run { "would ask" } else { "will ask" },
+                    &format!("to run `mise unuse -g {}`", mise.tool),
                 );
             }
             if dry_run {
@@ -742,6 +748,17 @@ pub fn zelf(cfg: &Config, command: SelfCommand) -> Result<()> {
             };
             if !yes && !ui::confirm(question, false) {
                 return Ok(());
+            }
+            // A question of its own: mise's copy belongs to another tool's
+            // config, and someone may want ketch's tree gone but mise's entry
+            // kept — to reinstall from it, or because a project pins it.
+            if let Some(mise) = plan.mise.take() {
+                let run = format!("mise unuse -g {}", mise.tool);
+                if yes || ui::confirm(&format!("also run `{run}`?"), false) {
+                    plan.mise = Some(mise);
+                } else {
+                    ui::note(&format!("mise still has this ketch; `{run}` removes it"));
+                }
             }
             for path in self_update::uninstall_self(cfg, &plan)? {
                 ui::success("removed", &path.display().to_string());
