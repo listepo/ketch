@@ -340,7 +340,9 @@ ketch self install
 
 ### `ketch self upgrade [--dry-run] [--force] [--yes]`
 
-Upgrade ketch to the latest release. Aliased as `ketch self update`.
+Upgrade ketch to the latest release. Aliased as `ketch self update`. A ketch
+installed with mise and never `self install`ed is mise's to upgrade: this
+refuses, and names `mise upgrade`.
 
 ```bash
 ketch self upgrade
@@ -358,7 +360,9 @@ ketch self version
 ### `ketch self uninstall [--keep-packages] [--dry-run] [--yes]`
 
 Remove ketch and everything it installed, permanently. Lists what it is about
-to delete and asks first. `--keep-packages` removes only ketch.
+to delete and asks first. `--keep-packages` removes only ketch. A ketch
+installed with mise also asks whether to run `mise unuse -g` for its own copy;
+`--yes` answers that too.
 
 ```bash
 ketch self uninstall --dry-run

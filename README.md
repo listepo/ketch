@@ -69,6 +69,18 @@ install`, and place a bootstrap copy at `--install-dir` when you give one.
 Homebrew keeps nothing but the bootstrap binary, and `brew upgrade` hands over
 to `ketch self upgrade`.
 
+With [mise](https://mise.jdx.dev), no installer runs; the release tarball is
+the whole install:
+
+```bash
+mise use -g github:listepo/ketch
+ketch path install
+```
+
+mise then owns the binary: `mise upgrade` upgrades it, and `ketch self upgrade`
+refuses to rewrite a file in mise's tree. Run `ketch self install` as well if
+you would rather ketch manage itself, as with the installers above.
+
 Then make sure `~/.ketch/bin` is on your `PATH`. `ketch doctor` will tell you if
 it is not, along with anything else that needs attention.
 
@@ -87,7 +99,9 @@ only ketch and leaves the tools it installed alone.
 
 `brew uninstall --cask ketch` removes only the bootstrap binary Homebrew kept;
 everything under `~/.ketch` and every package ketch installed stays until you
-run `ketch self uninstall` (or delete the tree yourself).
+run `ketch self uninstall` (or delete the tree yourself). The same holds for
+`mise unuse -g github:listepo/ketch`. Run from a mise install, `ketch self
+uninstall` asks, separately, whether to run that command for you as well.
 
 ## Why
 

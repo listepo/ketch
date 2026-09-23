@@ -29,6 +29,24 @@ ketch self upgrade
 
 `ketch self update` is kept as an alias, so existing scripts keep working.
 
+## `ketch self upgrade` says ketch is managed by mise
+
+A ketch installed with `mise use -g github:listepo/ketch` lives in mise's
+install tree, under a directory named for its version. Rewriting that binary
+would leave mise reporting a version that is no longer on disk, so ketch
+declines. Either let mise upgrade it:
+
+```bash
+mise upgrade
+```
+
+or hand ketch over to itself once, after which `ketch self upgrade` works and
+the mise copy is only a bootstrap:
+
+```bash
+ketch self install
+```
+
 ## A registry entry collides or will not validate
 
 Name and alias collisions are fatal in `ketch registry validate` (so they

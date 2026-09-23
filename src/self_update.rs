@@ -353,6 +353,21 @@ pub fn update(cfg: &Config, force: bool, dry_run: bool) -> Result<SelfUpdate> {
     let installed = state.get(SELF_NAME).map(|p| p.version.clone());
     let from = installed.clone().unwrap_or_else(current_version);
 
+    // With no package, the upgrade would rewrite this binary in place. mise
+    // names the version directory after the release it unpacked, so that
+    // would leave `mise ls` and `mise upgrade` believing in a version that is
+    // no longer the one on disk. Refused before any network call, dry run
+    // included, so the two never disagree about what would happen.
+    if installed.is_none() {
+        if let Some(tool) = mise_tool_dir() {
+            return Err(Error::msg(format!(
+                "this ketch is managed by mise ({}): upgrade it with `mise upgrade`, \
+                 or run `ketch self install` to let ketch manage itself",
+                tool.display()
+            )));
+        }
+    }
+
     // Built-in sources only: a third-party plugin must never be in a position
     // to hand ketch its own replacement.
     let sources = SourceRegistry::builtin_only(cfg);
@@ -522,6 +537,17 @@ pub struct UninstallPlan {
     pub cask: Option<PathBuf>,
     /// The running binary, when it lives inside the root and so goes with it.
     pub exe: Option<PathBuf>,
+    /// The mise install the running binary came from. Removed only when the
+    /// caller leaves it set, which the command does after asking separately.
+    pub mise: Option<MiseInstall>,
+}
+
+/// A ketch that `mise use` installed: where it lives, and the tool name mise
+/// knows it by, which is what `mise unuse` needs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MiseInstall {
+    pub dir: PathBuf,
+    pub tool: String,
 }
 
 /// Work out what removing ketch would take, without removing any of it.
@@ -553,6 +579,10 @@ pub fn uninstall_plan(cfg: &Config, keep_packages: bool, no_brew: bool) -> Resul
             // Windows Path::starts_with is case-sensitive; a root typed with
             // different ASCII case than the running image must still count.
             crate::platform::path_is_within(&exe, &root)
+        }),
+        mise: mise_tool_dir().map(|dir| MiseInstall {
+            tool: mise_tool_name(&dir, &cfg.self_repo),
+            dir,
         }),
     })
 }
@@ -617,6 +647,9 @@ pub fn uninstall_self(cfg: &Config, plan: &UninstallPlan) -> Result<Vec<PathBuf>
         Some(_) => {}
         // A ketch outside the root is not ketch's to delete: a `cargo run`
         // build, or a copy someone put on PATH themselves.
+        // Nor is a mise install, but it has an owner that can take it away:
+        // below when the user agreed, and the command says how when not.
+        None if mise_tool_dir().is_some() => {}
         None => {
             if let Ok(exe) = current_exe() {
                 ui::note(&format!(
@@ -625,6 +658,16 @@ pub fn uninstall_self(cfg: &Config, plan: &UninstallPlan) -> Result<Vec<PathBuf>
                     cfg.root.display()
                 ));
             }
+        }
+    }
+
+    // Last: mise deletes the very binary running this, and on Windows that
+    // fails outright while it runs, so everything else is done by then.
+    if let Some(mise) = &plan.mise {
+        #[cfg(windows)]
+        move_out_of(&mise.dir);
+        if unuse_mise(&mise.tool) {
+            removed.push(mise.dir.clone());
         }
     }
     Ok(removed)
@@ -787,6 +830,121 @@ fn remove_cask(cask: &Path) -> bool {
     }
 }
 
+/// The mise tool directory (`<data dir>/installs/<tool>`) holding the running
+/// binary, when ketch was installed with `mise use`.
+///
+/// Answered from the path alone, like the cask: a mise install is a directory
+/// under mise's data dir, and asking `mise` itself would mean running a
+/// program ketch did not install to learn something the path already says.
+pub(crate) fn mise_tool_dir() -> Option<PathBuf> {
+    mise_tool_dir_in(&current_exe().ok()?, &mise_data_dirs())
+}
+
+fn mise_tool_dir_in(exe: &Path, data_dirs: &[PathBuf]) -> Option<PathBuf> {
+    data_dirs.iter().find_map(|data| {
+        let installs = data.join("installs");
+        // The data dir may itself sit behind a symlink; `exe` is canonical.
+        let installs = dunce::canonicalize(&installs).unwrap_or(installs);
+        if !crate::platform::path_is_strict_within(exe, &installs) {
+            return None;
+        }
+        let depth = installs.components().count() + 1;
+        exe.ancestors()
+            .find(|dir| dir.components().count() == depth)
+            .map(Path::to_path_buf)
+    })
+}
+
+/// The name `mise unuse` takes for the tool in `dir`.
+///
+/// mise names an install directory after the tool with `:` and `/` turned
+/// into `-`, so `github:listepo/ketch` lives in `github-listepo-ketch`. That
+/// is only reversible for a name that ends in this repository; anything else
+/// (a registry short name such as `ketch`) is already the tool name.
+fn mise_tool_name(dir: &Path, self_repo: &str) -> String {
+    let name = dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(SELF_NAME);
+    let backend = name
+        .strip_suffix(&self_repo.replace('/', "-"))
+        .and_then(|rest| rest.strip_suffix('-'))
+        .filter(|b| !b.is_empty() && b.chars().all(|c| c.is_ascii_alphanumeric()));
+    match backend {
+        Some(backend) => format!("{backend}:{self_repo}"),
+        None => name.to_string(),
+    }
+}
+
+/// Hand the install back to mise, the only thing that can forget it: removing
+/// the directory would leave the tool in mise's config, to be reinstalled on
+/// the next `mise install`. `-g` because that is how the README installs it.
+fn unuse_mise(tool: &str) -> bool {
+    ui::step("removing", &format!("{tool} from mise"));
+    // Inherited stdio, as for brew: mise prints its own progress. `--yes`
+    // because the user has just answered this very question, and mise would
+    // otherwise ask it again for every version it prunes.
+    match Command::new("mise")
+        .args(["--yes", "unuse", "-g", tool])
+        .status()
+    {
+        Ok(status) if status.success() => true,
+        Ok(status) => {
+            ui::warn(&format!(
+                "`mise unuse -g {tool}` failed ({status}); run it by hand to finish"
+            ));
+            false
+        }
+        Err(e) => {
+            ui::warn(&format!(
+                "could not run mise ({e}); run `mise unuse -g {tool}` by hand"
+            ));
+            false
+        }
+    }
+}
+
+/// Move the running binary out of `dir`, so mise can delete the directory.
+///
+/// Windows will not delete a directory holding a mapped image, but it will
+/// rename the image: the process keeps its handle either way. The temp dir is
+/// on the same volume as the profile mise lives in, so this is a rename, not
+/// a copy, and the file is left for the system's own temp cleanup — nothing
+/// else can delete it while this process is still running.
+#[cfg(windows)]
+fn move_out_of(dir: &Path) {
+    let Ok(exe) = current_exe() else {
+        return;
+    };
+    if !crate::platform::path_is_within(&exe, dir) {
+        return;
+    }
+    let aside = std::env::temp_dir().join(format!("ketch-uninstalled-{}.exe", std::process::id()));
+    if let Err(e) = std::fs::rename(&exe, &aside) {
+        ui::warn(&format!(
+            "could not move {} out of mise's tree ({e}); mise may fail to remove it",
+            exe.display()
+        ));
+    }
+}
+
+/// Where mise might keep its installs: its own override first, then the
+/// default it picks on this OS.
+fn mise_data_dirs() -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    if let Some(dir) = std::env::var_os("MISE_DATA_DIR").filter(|v| !v.is_empty()) {
+        found.push(PathBuf::from(dir));
+    }
+    let default = if cfg!(windows) {
+        dirs::data_local_dir().map(|d| d.join("mise"))
+    } else {
+        // mise follows XDG on macOS too, not Application Support.
+        Some(crate::platform::data_home().join("mise"))
+    };
+    found.extend(default.filter(|d| !found.contains(d)));
+    found
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -815,6 +973,46 @@ mod tests {
         assert_eq!(cask_dir(), Some(cask));
 
         std::env::remove_var("HOMEBREW_PREFIX");
+    }
+
+    #[test]
+    fn a_binary_under_mise_installs_belongs_to_that_tool_directory() {
+        let data = PathBuf::from("/home/u/.local/share/mise");
+        let exe = data.join("installs/github-listepo-ketch/0.4.7/ketch");
+        assert_eq!(
+            mise_tool_dir_in(&exe, &[PathBuf::from("/elsewhere"), data.clone()]),
+            Some(data.join("installs/github-listepo-ketch"))
+        );
+    }
+
+    #[test]
+    fn a_binary_outside_mise_installs_is_not_mises() {
+        let data = PathBuf::from("/home/u/.local/share/mise");
+        for exe in [
+            "/home/u/.ketch/store/ketch/0.4.7/ketch",
+            "/home/u/.local/share/mise/shims/ketch",
+            "/home/u/.local/share/mise/installs",
+        ] {
+            assert_eq!(
+                mise_tool_dir_in(Path::new(exe), std::slice::from_ref(&data)),
+                None,
+                "{exe}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_mise_install_directory_maps_back_to_the_tool_name_unuse_takes() {
+        for (dir, tool) in [
+            ("github-listepo-ketch", "github:listepo/ketch"),
+            ("ubi-listepo-ketch", "ubi:listepo/ketch"),
+            ("ketch", "ketch"),
+            ("-listepo-ketch", "-listepo-ketch"),
+            ("github-other-ketch", "github-other-ketch"),
+        ] {
+            let dir = Path::new("/mise/installs").join(dir);
+            assert_eq!(mise_tool_name(&dir, "listepo/ketch"), tool);
+        }
     }
 
     #[test]
