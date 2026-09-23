@@ -1,0 +1,121 @@
+name: tap
+
+# The Homebrew cask in listepo/homebrew-tap, regenerated from the release dist
+# has just published: version and both macOS checksums. A dist custom publish
+# job (`publish-jobs = ["./tap"]` in dist-workspace.toml), so it runs after the
+# release exists and `brew install` never names a tarball that is not on the
+# releases page yet. A failure here leaves the release published and the tap a
+# version behind: re-run this job from the release run.
+#
+# The cask is a cask and not a dist formula because ketch lives in ~/.ketch: a
+# formula's post_install runs sandboxed away from $HOME, while a cask's steps
+# can be granted network access and one writable path under it — all `ketch
+# self install` needs.
+on:
+  workflow_call:
+    inputs:
+      plan:
+        required: true
+        type: string
+
+jobs:
+  tap:
+    runs-on: macos-latest
+    env:
+      TAG: ${{ fromJson(inputs.plan).announcement_tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # From the published release, not the build artifacts: this job can be
+      # re-run without rebuilding binaries the tag already describes.
+      - name: Fetch release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p dist
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern 'ketch-*-apple-darwin.tar.gz' --dir dist
+          ls -l dist
+
+      - name: Generate the cask
+        env:
+          # A token that can push to listepo/homebrew-tap. The default
+          # GITHUB_TOKEN is scoped to this repository, so it cannot.
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAP_REPO: listepo/homebrew-tap
+        run: |
+          if [ -z "$TAP_TOKEN" ]; then
+            echo "HOMEBREW_TAP_TOKEN is not set; the cask in $TAP_REPO was not updated" >&2
+            exit 1
+          fi
+          version="$(scripts/tap-release-version.sh "$TAG")"
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          arm="$(shasum -a 256 dist/ketch-aarch64-apple-darwin.tar.gz | cut -d' ' -f1)"
+          intel="$(shasum -a 256 dist/ketch-x86_64-apple-darwin.tar.gz | cut -d' ' -f1)"
+
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/${TAP_REPO}.git" tap
+          mkdir -p tap/Casks
+          scripts/cask.sh "$version" "$arm" "$intel" > tap/Casks/ketch.rb
+
+      - name: Lint the cask
+        run: brew style tap/Casks/ketch.rb
+
+      # Commit before smoking: `brew tap … $PWD/tap` uses the git HEAD of a
+      # path tap, so an uncommitted Casks/ketch.rb would still install the
+      # previous release and leave the new checksums untested.
+      - name: Commit the cask
+        run: |
+          cd tap
+          git rev-parse --verify HEAD >/dev/null 2>&1 || git checkout -q -B main
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/ketch.rb
+          if git diff --cached --quiet; then
+            echo "cask already at $VERSION"
+          else
+            git commit -m "ketch $VERSION"
+          fi
+
+      # brew style only checks syntax; install and uninstall postflights run
+      # for real only under `brew install --cask`. Smoke the file about to be
+      # pushed so a broken bootstrap never reaches the tap.
+      - name: Smoke test the cask
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+          # postflight runs `ketch self install`, which hits the GitHub API for
+          # the just-published tag. Without a token, shared runner IPs are
+          # rate-limited (HTTP 403) and the smoke fails after the release is
+          # already public — leaving the tap a version behind.
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+          KETCH_GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Homebrew 4.6+ rejects bare cask paths; install via a local tap of
+          # the clone about to be pushed (listepo/homebrew-tap → listepo/tap).
+          # Drop a prior tap first, or `brew tap name path` can leave the
+          # remote clone in place and smoke the published cask instead.
+          brew untap listepo/tap >/dev/null 2>&1 || true
+          brew tap listepo/tap "$PWD/tap"
+          cask_version="$(brew info --cask --json=v2 listepo/tap/ketch | python3 -c 'import json,sys; print(json.load(sys.stdin)["casks"][0]["version"])')"
+          if [ "$cask_version" != "$VERSION" ]; then
+            echo "smoke would install cask $cask_version, expected $VERSION" >&2
+            cat tap/Casks/ketch.rb >&2
+            exit 1
+          fi
+          brew install --cask --verbose listepo/tap/ketch
+          brew uninstall --cask ketch
+
+      - name: Push the cask
+        run: |
+          cd tap
+          # Commit happened before smoke; push whatever HEAD is (may already
+          # match the remote if this job was re-run).
+          if git rev-parse --verify @{u} >/dev/null 2>&1 \
+            && [ "$(git rev-parse HEAD)" = "$(git rev-parse @{u})" ]; then
+            echo "cask already at $VERSION on the remote"
+            exit 0
+          fi
+          git push origin HEAD

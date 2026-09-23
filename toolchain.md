@@ -13,6 +13,9 @@ Project programs and direct packages from manifests.
 | rustc | rustup / system | Rust compiler | https://github.com/rust-lang/rust |
 | cargo | with rustc | Rust build and dependencies | https://github.com/rust-lang/cargo |
 | just | cargo install just / brew | Command recipes | https://github.com/casey/just |
+| cargo-dist | mise | Generates `release.yml` and builds the release tarballs (`just dist-generate`, `just package`) | https://github.com/axodotdev/cargo-dist |
+| git-cliff | mise | Writes the `CHANGELOG.md` entry from `cliff.toml` (`scripts/release.sh`) | https://github.com/orhun/git-cliff |
+| release-plz | GitHub Action | The release pull request | https://github.com/release-plz/release-plz |
 
 ## cargo
 

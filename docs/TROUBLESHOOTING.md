@@ -46,10 +46,10 @@ F2), so validate locally and keep the pre-push hook in
 
 ## Notarisation fails on a release run
 
-The `Notarise` step in `release.yml` only runs when the repository variable
+The `Notarise` step in `release.yml` (from `.github/build-check.yml`) only runs when the repository variable
 `KETCH_NOTARIZE` is `true`, and then fails rather than ships unsigned: the
 three secrets must exist — `APPSTORE_CONNECT_KEY` (the `.p8`, base64),
 `APPSTORE_CONNECT_KEY_ID`, `APPSTORE_CONNECT_ISSUER_ID`. The smoke test needs
 `spctl` to report `source=Notarized Developer ID`; a bare Mach-O binary cannot
 be stapled, so Gatekeeper looks its ticket up online. See `AGENTS.md`
-Releasing and `tests/release-yml-notarize.sh`.
+Releasing and `tests/release-workflows.sh`.

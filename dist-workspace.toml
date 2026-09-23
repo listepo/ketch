@@ -1,0 +1,69 @@
+[workspace]
+members = ["cargo:."]
+
+# Config for 'dist'. `.github/workflows/release.yml` is generated from this file
+# by `just dist-generate` (scripts/dist-generate.sh); never edit the workflow.
+[dist]
+# The preferred dist version to use in CI (Cargo.toml SemVer syntax)
+cargo-dist-version = "0.32.0"
+# CI backends to support
+ci = "github"
+# No dist installers and no dist updater. ketch ships its own: install.sh and
+# install.ps1 bootstrap `ketch self install`, and `ketch self upgrade` replaces
+# the binary against SHA256SUMS. A second installer would be a second way to
+# end up with a ketch that `ketch list` does not know about. The Homebrew cask
+# is published by the `./tap` job below, not by dist's formula installer.
+installers = []
+# The five targets every release has shipped. `install.sh`, `install.ps1` and
+# `ketch self upgrade` look for `ketch-<target>.tar.gz`; dropping one strips
+# the upgrade path from every copy already installed there.
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-unknown-linux-gnu",
+  "x86_64-pc-windows-msvc",
+]
+# Where to host releases
+hosting = "github"
+# `.tar.gz` everywhere, Windows included: the asset names are load-bearing
+# (see targets above), and dist's defaults (.tar.xz, .zip) would rename them.
+unix-archive = ".tar.gz"
+windows-archive = ".tar.gz"
+# Sign macOS binaries with the Developer ID in MACOS_CERTIFICATE /
+# MACOS_CERTIFICATE_PWD. dist expects CODESIGN_*; `just dist-generate` patches
+# the generated workflow to the MACOS_* names, and .github/build-setup.yml
+# discovers CODESIGN_IDENTITY.
+macos-sign = true
+# release.yml is post-patched by scripts/dist-generate.sh
+allow-dirty = ["ci"]
+# Injected into build-local-artifacts after checkout; discovers CODESIGN_IDENTITY on macOS.
+github-build-setup = "../build-setup.yml"
+# Releases start from `bump.yml` or the release-plz merge, both through
+# scripts/release.sh, which dispatches this workflow with the tag. dist creates
+# the tag itself, with the GitHub release, once every target has built.
+dispatch-releases = true
+install-updater = false
+# The Homebrew cask in listepo/homebrew-tap, regenerated from the published
+# release by .github/workflows/tap.yml.
+publish-jobs = ["./tap"]
+# The test gate is NOT a dist `plan-jobs` entry: `host` runs when
+# `build-local-artifacts` is skipped, and a failed custom job skips it — so a
+# red gate would publish a release with no binaries instead of stopping one.
+# The gate is .github/workflows/verify.yml, run by the two workflows that
+# dispatch this one, before any tag exists.
+
+# Runners the release has always used. dist's default for Intel macOS is a
+# macos-13 runner, which GitHub has retired; the arm64 runner cross-builds it.
+# The Linux runners are 22.04 for an older glibc floor than ubuntu-latest's.
+[dist.github-custom-runners]
+aarch64-apple-darwin = "macos-latest"
+x86_64-apple-darwin = "macos-latest"
+aarch64-unknown-linux-gnu = "ubuntu-22.04-arm"
+x86_64-unknown-linux-gnu = "ubuntu-22.04"
+x86_64-pc-windows-msvc = "windows-2022"
+
+# A job-level `permissions` block sets everything it omits to none, and dist
+# writes one for every publish job. The tap job reads the published release.
+[dist.github-custom-job-permissions]
+"tap" = { contents = "read" }

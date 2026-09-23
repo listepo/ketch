@@ -392,14 +392,16 @@ KETCH_ROOT=/tmp/ketch-scratch cargo run -- doctor
 ## Releasing
 
 Nothing is typed. [release-plz](https://release-plz.dev) keeps one pull request
-up to date on every merge to `main`, holding the next version and the
+up to date on every push to `main`, holding the next version and the
 `CHANGELOG.md` entry for it, both read off the conventional commits since the
-last tag. Merging that pull request is the release: `release.yml` sees that
-`v<version>` from `Cargo.toml` has no tag yet, rebuilds and signs both macOS
-architectures (Linux and Windows unsigned), publishes draft assets, then
-creates the tag when the draft is published, and the `tap` job bumps
-`listepo/homebrew-tap`'s cask. So `v0.4.1` existing means v0.4.1 shipped, and a
-build that fails leaves nothing to clean up but a draft.
+last tag. Merging that pull request is the release; so is Actions → **Bump and
+release** (`bump.yml`), which raises the version and commits the entry itself.
+Either way `scripts/release.sh` dispatches `release.yml`, which
+[cargo-dist](https://github.com/axodotdev/cargo-dist) generates: it builds and
+signs both macOS architectures (Linux and Windows unsigned), and only once
+every target has built does it create the tag and the release, after which the
+`tap` job bumps `listepo/homebrew-tap`'s cask. So `v0.4.1` existing means
+v0.4.1 shipped, and a build that fails leaves nothing to clean up.
 
 CI (`ci.yml`) runs only on pushes to `main` and on manual
 `workflow_dispatch`. It does not run on pull request events. Before merging a
@@ -410,7 +412,8 @@ gh workflow run ci.yml --ref <branch>
 ```
 
 ```bash
-scripts/release.sh 0.4.1        # the same thing by hand, for a specific version
+just release minor --dry-run    # the version a release would get; changes nothing
+just release minor              # the same thing from a clean, up-to-date main
 ```
 
 ketch is not on crates.io — it ships as a tarball on a GitHub release, so
