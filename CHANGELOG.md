@@ -8,6 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [0.6.0](https://github.com/listepo/ketch/releases/tag/v0.6.0) - 2026-09-23
+
+### Added
+
+- *(self)* support installing ketch with mise
+
+### Other
+
+- *(process)* stop the process-listing tests racing a killed sleeper
+- *(release)* release through cargo-dist, bump.yml and git-cliff
 
 ## [0.5.0](https://github.com/listepo/ketch/releases/tag/v0.5.0) - 2026-09-22
 
