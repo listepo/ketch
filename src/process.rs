@@ -297,28 +297,61 @@ mod tests {
         }
     }
 
-    fn sleeper_src() -> &'static str {
+    /// Set in the environment of a macOS sleeper, which is a copy of this
+    /// test binary told to run `sleeps_only_when_spawned_as_the_sleeper`.
+    #[cfg(target_os = "macos")]
+    const SLEEPER_ENV: &str = "KETCH_TEST_SLEEPER";
+
+    // macOS launch constraints SIGKILL a copied platform binary such as
+    // `/bin/sleep` within milliseconds of exec, so a copy of it only looked
+    // listed when `lsof` won that race — and under load it never did. This
+    // test binary is not a platform binary, and on APFS the copy is a clone.
+    #[cfg(target_os = "macos")]
+    fn sleeper_src() -> PathBuf {
+        std::env::current_exe().expect("current test binary")
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    fn sleeper_src() -> PathBuf {
+        PathBuf::from("/bin/sleep")
+    }
+
+    #[cfg(windows)]
+    fn sleeper_src() -> PathBuf {
+        PathBuf::from(r"C:\Windows\System32\PING.EXE")
+    }
+
+    fn copy_sleeper(dir: &Path) -> PathBuf {
+        let copy = dir.join(if cfg!(windows) {
+            "sleeper.exe"
+        } else {
+            "sleeper"
+        });
+        std::fs::copy(sleeper_src(), &copy).expect("copy sleeper");
         #[cfg(unix)]
         {
-            "/bin/sleep"
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&copy).expect("stat copy").permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&copy, perms).expect("chmod copy");
         }
-        #[cfg(windows)]
-        {
-            r"C:\Windows\System32\PING.EXE"
-        }
+        copy
     }
 
     fn spawn_sleeper(copy: &Path) -> ChildGuard {
-        #[cfg(unix)]
-        let child = Command::new(copy)
-            .arg("30")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("spawn sleeper");
+        let mut command = Command::new(copy);
+        #[cfg(target_os = "macos")]
+        command
+            .args([
+                "--exact",
+                "process::tests::sleeps_only_when_spawned_as_the_sleeper",
+            ])
+            .env(SLEEPER_ENV, "1");
+        #[cfg(all(unix, not(target_os = "macos")))]
+        command.arg("30");
         #[cfg(windows)]
-        let child = Command::new(copy)
-            .args(["-n", "30", "127.0.0.1"])
+        command.args(["-n", "30", "127.0.0.1"]);
+        let child = command
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
@@ -326,61 +359,75 @@ mod tests {
         ChildGuard(child)
     }
 
-    fn wait_for(path: &Path) -> Occupant {
+    /// The occupant listed for `path`. `spawn` returns only after the child
+    /// has exec'd, so the first scan is expected to find it; the retry is a
+    /// wall-clock backstop, and a child that already exited fails at once
+    /// with its status instead of polling a scan that can never succeed.
+    fn wait_for(path: &Path, child: &mut ChildGuard) -> Occupant {
         let paths = [path.to_path_buf()];
-        for _ in 0..50 {
+        let deadline = std::time::Instant::now() + Duration::from_secs(30);
+        loop {
+            if let Some(status) = child.0.try_wait().expect("poll sleeper") {
+                panic!("sleeper exited before it was listed: {status:?}");
+            }
             if let Some(found) = using(&paths).into_iter().next() {
                 return found;
             }
+            if std::time::Instant::now() >= deadline {
+                panic!("no occupant for {}", path.display());
+            }
             std::thread::sleep(Duration::from_millis(20));
         }
-        panic!("no occupant for {}", path.display());
+    }
+
+    /// Not a claim about ketch: the body a macOS sleeper runs. Run normally,
+    /// without the variable, it returns at once.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn sleeps_only_when_spawned_as_the_sleeper() {
+        if std::env::var_os(SLEEPER_ENV).is_some() {
+            std::thread::sleep(Duration::from_secs(30));
+        }
     }
 
     #[test]
     fn lists_a_child_running_from_a_copied_file() {
         let tmp = tempfile::tempdir().unwrap();
-        let copy = tmp.path().join(if cfg!(windows) {
-            "sleeper.exe"
-        } else {
-            "sleeper"
-        });
-        std::fs::copy(sleeper_src(), &copy).unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut perms = std::fs::metadata(&copy).unwrap().permissions();
-            perms.set_mode(0o755);
-            std::fs::set_permissions(&copy, perms).unwrap();
-        }
-        let child = spawn_sleeper(&copy);
-        let found = wait_for(&copy);
+        let copy = copy_sleeper(tmp.path());
+        let mut child = spawn_sleeper(&copy);
+        let found = wait_for(&copy, &mut child);
         assert_eq!(found.pid, child.0.id());
+        assert_eq!(
+            child.0.try_wait().unwrap(),
+            None,
+            "sleeper exited while being listed"
+        );
     }
 
     #[test]
     fn yes_stops_the_child_holding_the_file() {
         let tmp = tempfile::tempdir().unwrap();
-        let copy = tmp.path().join(if cfg!(windows) {
-            "sleeper.exe"
-        } else {
-            "sleeper"
-        });
-        std::fs::copy(sleeper_src(), &copy).unwrap();
+        let copy = copy_sleeper(tmp.path());
+        let mut child = spawn_sleeper(&copy);
+        let found = wait_for(&copy, &mut child);
+        assert_eq!(found.pid, child.0.id());
+        offer_to_stop(&[copy], true);
+        // Blocking, not polled: a child `offer_to_stop` missed runs out its
+        // 30 s sleep and exits successfully, which the assertion rejects.
+        let status = child.0.wait().unwrap();
         #[cfg(unix)]
         {
-            use std::os::unix::fs::PermissionsExt;
-            let mut perms = std::fs::metadata(&copy).unwrap().permissions();
-            perms.set_mode(0o755);
-            std::fs::set_permissions(&copy, perms).unwrap();
+            use std::os::unix::process::ExitStatusExt;
+            assert!(
+                status.signal().is_some(),
+                "pid {} was not stopped by a signal: {status:?}",
+                found.pid
+            );
         }
-        let mut child = spawn_sleeper(&copy);
-        let found = wait_for(&copy);
-        offer_to_stop(&[copy], true);
-        let status = child.0.wait().unwrap();
+        #[cfg(windows)]
         assert!(
-            !crate::state::process_alive(found.pid),
-            "pid {} still alive after stop, status {status:?}",
+            !status.success(),
+            "pid {} ran to completion instead of being stopped: {status:?}",
             found.pid
         );
     }
@@ -395,8 +442,8 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .expect("spawn cmd script");
-        let child = ChildGuard(child);
-        let found = wait_for(&script);
+        let mut child = ChildGuard(child);
+        let found = wait_for(&script, &mut child);
         assert_eq!(found.pid, child.0.id());
     }
 
