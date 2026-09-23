@@ -22,7 +22,7 @@ lint:
 # the same gate under the name people type
 alias clippy := lint
 
-test:
+test: && dunnage
     cargo nextest run --all-targets --locked
 
 test-install:
@@ -181,3 +181,10 @@ cache-dry-run:
 # drop extracted crate/git checkouts; keep archives
 cache-autoclean:
     {{cache}} --autoclean
+
+# Lossless cleanup of this checkout's cargo target dir (compress + dedupe); never deletes.
+dunnage:
+    #!/usr/bin/env sh
+    command -v dunnage >/dev/null || { echo "dunnage not found; install it with: ketch install dunnage"; exit 0; }
+    [ -d target ] || exit 0
+    dunnage run target || test $? -eq 2
