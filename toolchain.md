@@ -16,6 +16,8 @@ Project programs and direct packages from manifests.
 | cargo-dist | mise | Generates `release.yml` and builds the release tarballs (`just dist-generate`, `just package`) | https://github.com/axodotdev/cargo-dist |
 | git-cliff | mise | Writes the `CHANGELOG.md` entry from `cliff.toml` (`scripts/release.sh`) | https://github.com/orhun/git-cliff |
 | release-plz | GitHub Action | The release pull request | https://github.com/release-plz/release-plz |
+| ketch | see its README | Installs dunnage | https://github.com/listepo/ketch |
+| dunnage | `ketch` | Lossless cleanup of `target/` after tests | https://github.com/listepo/dunnage |
 
 ## cargo
 
