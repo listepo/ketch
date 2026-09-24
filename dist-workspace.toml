@@ -67,3 +67,7 @@ x86_64-pc-windows-msvc = "windows-2022"
 # writes one for every publish job. The tap job reads the published release.
 [dist.github-custom-job-permissions]
 "tap" = { contents = "read" }
+
+# Dependabot wants checkout@v7; dist 0.32 defaults to v6.
+[dist.github-action-commits]
+"actions/checkout" = "v7"
