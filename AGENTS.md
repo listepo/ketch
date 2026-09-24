@@ -68,6 +68,10 @@ syntax on `install.sh` and the release scripts, whether `release.yml` is what
 `brew style` on the generated cask. Cross-target
 builds and the Linux/Windows jobs are CI-only.
 
+`just test` ends with a lossless `dunnage` cleanup of this checkout's cargo
+`target/` dirs (compress + dedupe, never deletes); a machine without `dunnage`
+just gets a note to install it, not a failure.
+
 Commitlint checks commit messages against the conventional-commit format:
 
 ```bash
