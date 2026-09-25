@@ -72,13 +72,26 @@ jobs:
 
       - name: Refuse if another CI run on this commit did not pass
         if: steps.meta.outputs.update-type == 'version-update:semver-patch'
+        env:
+          # Wait up to WAIT_TRIES * WAIT_SECONDS (8 minutes) for a standalone
+          # run to finish; the job's own timeout is 10 minutes.
+          WAIT_TRIES: 16
+          WAIT_SECONDS: 30
         run: |
-          # ci.yml may also run on the pull request by itself; a red, cancelled
-          # or timed-out run there blocks the merge too. Runs still in progress
-          # are not counted.
+          # ci.yml may also run on the pull request by itself, and that run
+          # includes steps the reusable call skips (commit messages). It must
+          # finish green too: a red, cancelled, timed-out or still-running run
+          # there blocks the merge.
+          for _ in $(seq 1 "$WAIT_TRIES"); do
+            pending=$(gh run list --workflow ci.yml --commit "$HEAD_SHA" \
+              --json status --jq '[.[] | select(.status != "completed")] | length')
+            [ "$pending" = "0" ] && break
+            echo "Waiting for $pending ci.yml run(s) on $HEAD_SHA to finish."
+            sleep "$WAIT_SECONDS"
+          done
           bad=$(gh run list --workflow ci.yml --commit "$HEAD_SHA" \
             --json status,conclusion \
-            --jq '[.[] | select(.status == "completed" and .conclusion != "success" and .conclusion != "skipped")] | length')
+            --jq '[.[] | select(.status != "completed" or (.conclusion != "success" and .conclusion != "skipped"))] | length')
           if [ "$bad" != "0" ]; then
             echo "::error::$bad ci.yml run(s) on $HEAD_SHA did not pass; not merging."
             exit 1

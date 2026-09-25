@@ -49,6 +49,9 @@ updates:
       # the same exact version, so they move together, majors included.
       commitlint:
         patterns: ["@commitlint/*"]
+      # tailwindcss and its @tailwindcss/* plugins must stay on one version, so
+      # they also move together. A grouped pull request reports its highest
+      # update type, so a mixed one is labelled for review, never auto-merged.
       tailwind:
         patterns: ["tailwindcss", "@tailwindcss/*"]
       npm-patch:
