@@ -11,6 +11,15 @@ on:
   issue_comment:
     types: [created]
   workflow_dispatch:
+  # Dependabot pull requests: dependabot.yml calls this workflow so they get the
+  # same jobs before its patch-only auto-merge.
+  workflow_call:
+
+# Build and test jobs need only to read the repository; a job that needs more
+# (review) declares its own. This also caps these jobs when
+# dependabot.yml calls this workflow with wider permissions.
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
