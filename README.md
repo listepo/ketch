@@ -4,6 +4,8 @@
 
 # ketch
 
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=listepo_ketch&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=listepo_ketch) [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=listepo_ketch&metric=coverage)](https://sonarcloud.io/component_measures?id=listepo_ketch&metric=coverage) [![Tests](https://img.shields.io/sonar/tests/listepo_ketch?server=https%3A%2F%2Fsonarcloud.io&compact_message)](https://sonarcloud.io/component_measures?id=listepo_ketch&metric=tests)
+
 **Catch releases straight from GitHub.**
 
 Install command-line tools and apps from GitHub releases on macOS, Linux, and Windows.
