@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize, Serializer};
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 // ---------------------------------------------------------------------------
 // Target
@@ -574,8 +574,9 @@ impl AssetSelector {
 /// One executable to expose on PATH.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct BinSpec {
-    /// Path inside the extracted payload. Globs allowed. When absent, ketch
-    /// discovers executables automatically.
+    /// Path inside the extracted payload. Globs allowed; when a glob matches
+    /// several files, the one whose stem is `name` is linked. When absent,
+    /// ketch discovers executables automatically.
     #[serde(default)]
     pub path: Option<String>,
     /// Name of the symlink. Defaults to the file name of `path`.
@@ -1308,6 +1309,25 @@ pub fn glob_match(pattern: &str, text: &str) -> bool {
     pi == p.len()
 }
 
+/// The payload file to link when one `bin` glob matched several: the one whose
+/// stem is the spec's link `name` — `rtok.exe` for `rtok*`, never the
+/// `rtok-hook.exe` a release ships beside it — else the first match. Without
+/// the preference the pick is whatever order the directory lists, and NTFS
+/// puts `rtok-hook.exe` ahead of `rtok.exe` (B62).
+pub fn glob_preferred<'a>(matched: &[&'a Path], name: Option<&str>) -> Option<&'a Path> {
+    let want = name
+        .and_then(|n| Path::new(n).file_stem())
+        .map(|s| s.to_string_lossy().into_owned());
+    matched
+        .iter()
+        .copied()
+        .find(|p| {
+            want.as_deref()
+                .is_some_and(|w| p.file_stem().is_some_and(|s| s.eq_ignore_ascii_case(w)))
+        })
+        .or_else(|| matched.first().copied())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1462,6 +1482,23 @@ mod tests {
         assert!(Version::parse("v14.1.0").matches_request("14.1.0"));
         assert!(Version::parse("14.1.0").matches_request("v14.1.0"));
         assert!(!Version::parse("14.1.0").matches_request("14.1.1"));
+    }
+
+    #[test]
+    fn glob_preferred_picks_the_stem_named_match_over_directory_order() {
+        let hook = PathBuf::from("payload/rtok-hook.exe");
+        let main = PathBuf::from("payload/rtok.exe");
+        let matched = [hook.as_path(), main.as_path()];
+        // NTFS lists rtok-hook.exe first; the stem preference must win anyway.
+        assert_eq!(glob_preferred(&matched, Some("rtok")), Some(main.as_path()));
+        // Case-insensitive like glob_match; a name carrying its own suffix still stems.
+        assert_eq!(
+            glob_preferred(&matched, Some("RTOK.EXE")),
+            Some(main.as_path())
+        );
+        // No name to prefer, or nothing matched: the old first-match / None answer.
+        assert_eq!(glob_preferred(&matched, None), Some(hook.as_path()));
+        assert_eq!(glob_preferred(&[], Some("rtok")), None);
     }
 
     #[test]

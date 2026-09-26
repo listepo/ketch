@@ -12,7 +12,8 @@ use crate::extra::ExtraPlacement;
 use crate::extract::archive::is_program_head;
 use crate::extract::Extractor;
 use crate::model::{
-    glob_match, BinSpec, CompletionShell, LinkKind, LinkRecord, LinkRole, PackageKind, TargetSpec,
+    glob_match, glob_preferred, BinSpec, CompletionShell, LinkKind, LinkRecord, LinkRole,
+    PackageKind, TargetSpec,
 };
 use crate::source::local::copy_tree;
 use std::collections::HashSet;
@@ -301,24 +302,34 @@ fn resolve_bin_specs(root: &Path, specs: &[BinSpec]) -> Result<Vec<(PathBuf, Str
     let mut out = Vec::new();
     for spec in specs {
         let matched = match &spec.path {
-            Some(pattern) => candidates.iter().find(|p| {
-                p.strip_prefix(root)
-                    .ok()
-                    .is_some_and(|rel| glob_match(pattern, &rel.to_string_lossy()))
-            }),
+            Some(pattern) => {
+                let matched: Vec<&Path> = candidates
+                    .iter()
+                    .filter(|p| {
+                        p.strip_prefix(root)
+                            .ok()
+                            .is_some_and(|rel| glob_match(pattern, &rel.to_string_lossy()))
+                    })
+                    .map(|p| p.as_path())
+                    .collect();
+                glob_preferred(&matched, spec.name.as_deref())
+            }
             None => {
                 let want = spec.name.as_deref().unwrap_or_default();
-                candidates.iter().find(|p| {
-                    p.file_name().is_some_and(|n| {
-                        let n_s = n.to_string_lossy();
-                        n == want
-                            || dest_key(Path::new(n)) == dest_key(Path::new(want))
-                            // `bin = [{ name = "rtok" }]` must find `rtok.exe`.
-                            || n_s.eq_ignore_ascii_case(&format!("{want}.exe"))
-                            || n_s.eq_ignore_ascii_case(&format!("{want}.cmd"))
-                            || n_s.eq_ignore_ascii_case(&format!("{want}.bat"))
+                candidates
+                    .iter()
+                    .find(|p| {
+                        p.file_name().is_some_and(|n| {
+                            let n_s = n.to_string_lossy();
+                            n == want
+                                || dest_key(Path::new(n)) == dest_key(Path::new(want))
+                                // `bin = [{ name = "rtok" }]` must find `rtok.exe`.
+                                || n_s.eq_ignore_ascii_case(&format!("{want}.exe"))
+                                || n_s.eq_ignore_ascii_case(&format!("{want}.cmd"))
+                                || n_s.eq_ignore_ascii_case(&format!("{want}.bat"))
+                        })
                     })
-                })
+                    .map(|p| p.as_path())
             }
         };
         let path = matched.ok_or_else(|| {
@@ -336,7 +347,7 @@ fn resolve_bin_specs(root: &Path, specs: &[BinSpec]) -> Result<Vec<(PathBuf, Str
                 .to_string_lossy()
                 .into_owned()
         });
-        out.push((path.clone(), windows_bin_name(&name)));
+        out.push((path.to_path_buf(), windows_bin_name(&name)));
     }
     Ok(out)
 }
@@ -568,7 +579,22 @@ impl Platform for WindowsPlatform {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::PackageKind;
+    use crate::model::{BinSpec, PackageKind};
+
+    #[test]
+    fn a_bin_glob_prefers_the_link_named_binary_over_a_helper_beside_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("rtok-hook.exe"), b"hook").unwrap();
+        std::fs::write(tmp.path().join("rtok.exe"), b"main").unwrap();
+        let specs = [BinSpec {
+            path: Some("rtok*".into()),
+            name: Some("rtok".into()),
+        }];
+        let got = resolve_bin_specs(tmp.path(), &specs).unwrap();
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].0.file_name().unwrap(), "rtok.exe");
+        assert_eq!(got[0].1, "rtok.exe");
+    }
 
     fn cmd_body(says: &str) -> Vec<u8> {
         format!("@echo off\r\necho {says}\r\n").into_bytes()
