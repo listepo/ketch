@@ -5,7 +5,7 @@
 use super::Platform;
 use crate::error::{Error, Result};
 use crate::extra::ExtraPlacement;
-use crate::model::{glob_match, BinSpec, LinkKind, LinkRecord, LinkRole};
+use crate::model::{glob_match, glob_preferred, BinSpec, LinkKind, LinkRecord, LinkRole};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
@@ -285,16 +285,24 @@ pub(crate) fn resolve_bin_specs(root: &Path, specs: &[BinSpec]) -> Result<Vec<(P
     let mut out = Vec::new();
     for spec in specs {
         let matched = match &spec.path {
-            Some(pattern) => candidates.iter().find(|p| {
-                p.strip_prefix(root)
-                    .ok()
-                    .is_some_and(|rel| glob_match(pattern, &rel.to_string_lossy()))
-            }),
+            Some(pattern) => {
+                let matched: Vec<&Path> = candidates
+                    .iter()
+                    .filter(|p| {
+                        p.strip_prefix(root)
+                            .ok()
+                            .is_some_and(|rel| glob_match(pattern, &rel.to_string_lossy()))
+                    })
+                    .map(|p| p.as_path())
+                    .collect();
+                glob_preferred(&matched, spec.name.as_deref())
+            }
             None => {
                 let want = spec.name.as_deref().unwrap_or_default();
                 candidates
                     .iter()
                     .find(|p| p.file_name().is_some_and(|n| n == want))
+                    .map(|p| p.as_path())
             }
         };
         let path = matched.ok_or_else(|| {
@@ -312,7 +320,7 @@ pub(crate) fn resolve_bin_specs(root: &Path, specs: &[BinSpec]) -> Result<Vec<(P
                 .to_string_lossy()
                 .into_owned()
         });
-        out.push((path.clone(), name));
+        out.push((path.to_path_buf(), name));
     }
     Ok(out)
 }
@@ -489,8 +497,23 @@ pub(crate) fn link_planned_extras(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{LinkKind, LinkRecord, LinkRole};
+    use crate::model::{BinSpec, LinkKind, LinkRecord, LinkRole};
     use std::path::PathBuf;
+
+    #[test]
+    fn a_bin_glob_prefers_the_link_named_binary_over_a_helper_beside_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("rtok-hook"), b"hook").unwrap();
+        std::fs::write(tmp.path().join("rtok"), b"main").unwrap();
+        let specs = [BinSpec {
+            path: Some("rtok*".into()),
+            name: Some("rtok".into()),
+        }];
+        let got = resolve_bin_specs(tmp.path(), &specs).unwrap();
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].0.file_name().unwrap(), "rtok");
+        assert_eq!(got[0].1, "rtok");
+    }
 
     #[test]
     fn parent_dir_is_bin_ignores_ascii_case() {

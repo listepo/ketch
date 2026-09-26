@@ -5,5 +5,6 @@
 [tools]
 "cargo:cargo-cache" = "0.8.3" # `just cache` / `just cache-autoclean`; the shared cargo home fills up
 node = "24.20.0"              # commitlint for `just lint-commits` and the commit-msg hook; node-based checks live in Just and CI only
+ruby = "3.4.11"               # `just lint-shell` -> tests/release-workflows.sh parses the workflows with ruby
 cargo-dist = "0.32.0" # generates .github/workflows/release.yml and builds the release tarballs (`just dist-generate`, `just package`)
 git-cliff = "2.13.1" # writes the CHANGELOG.md entry for a release, from cliff.toml (`scripts/release.sh`, and release-plz on its pull request)

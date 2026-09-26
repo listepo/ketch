@@ -10,6 +10,8 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | F5 | done (ketch side) | P1 | 3 | 100% | Cursor / grok 4.6 |
 | A2 | done | P1 | 2 | 100% | Muse Spark |
 | A3 | evaluated (already shipped) | P3 | 1 | 100% | Muse Spark |
+| B60 | todo | P3 | 1 | 90% | — |
+| B61 | todo | P2 | 2 | 85% | — |
 
 ### F1. Notarisation
 
@@ -86,3 +88,15 @@ Fits for ketch (1–3):
 Already covered: `assert_cmd`, `assert_fs`, `insta`, `predicates`,
 `pretty_assertions`, `proptest`, `rstest`, `trycmd`. Skip `mockall` /
 `tokio-test` / `testcontainers` / extra fuzzers unless a new seam needs them.
+
+### B60. Windows self-update leaves `ketch.exe.old` behind
+
+Observed on Windows: `ketch self update` 0.4.4 → 0.5.1 succeeded, but the old binary stayed in the bin dir as `ketch.exe.old`. Windows will not delete the file backing a running image, and at the success cleanup in `replace_binary` (`let _ = std::fs::remove_file(&backup)` after the smoke test) the process doing the deleting is that renamed old image — so the removal fails with access denied and the error is dropped. `install_self`'s aside cleanup has the same silent drop, and a stale `.old` left behind also becomes a destination that can fail the next swap's rename.
+
+Plan: sweep the aside at the start of the self commands instead of at the end of the swap. `self update` and `self install` delete `<bin>/ketch.exe.old` before touching anything: by then any earlier updater process has exited, so the deletion works. Failure stays non-fatal. `doctor` gains a stale-`.old` note for the case where even that fails.
+
+### B61. `self update` swap fails on a transient Windows lock
+
+Observed on Windows: `self update` downloaded and verified the release, then failed with `…in\ketch.exe: Access is denied. (os error 5)` during the swap; an identical retry minutes later updated cleanly, and the restore path left the running 0.4.4 working throughout. That error at exactly this moment is the signature of antivirus real-time protection (Defender) holding `ketch.exe` or the `.old` destination across the rename or copy — a lock that lasts milliseconds and is gone by the next attempt.
+
+Plan: a bounded retry with backoff around the filesystem operations in `replace_binary` — `rename(exe, backup)`, `copy(fresh, exe)` and the backup removal — retrying only `PermissionDenied` and sharing violations (Windows `os error 5` and `os error 32`), a few attempts 100–250 ms apart. The existing restore-on-failure stays the response once the retries run out. Unit tests drive the retry helper with a closure that fails N times before succeeding, and assert that other error kinds surface immediately.
