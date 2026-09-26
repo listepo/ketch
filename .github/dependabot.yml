@@ -9,25 +9,38 @@
 # is not a conventional commit. A merged cargo bump still changes Cargo.lock, so
 # release-plz proposes a patch release for it; merging that stays a human call.
 #
-# Minor and patch updates arrive as one grouped pull request per ecosystem; a
-# major update arrives alone, because it is the one that can break the build.
+# .github/workflows/dependabot.yml runs the full CI on every one of these pull
+# requests and merges a patch update once that run is green; minor and major
+# updates are labelled `needs-review` and wait for a human.
+#
+# Patch and minor updates arrive as separate grouped pull requests per
+# ecosystem, so a patch-only one can merge on its own; a major update arrives
+# alone, because it is the one that can break the build.
 version: 2
 updates:
   - package-ecosystem: cargo
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
     commit-message:
       prefix: chore
       include: scope
     groups:
-      cargo:
-        update-types: [minor, patch]
+      cargo-patch:
+        update-types: [patch]
+      cargo-minor:
+        update-types: [minor]
 
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
     commit-message:
       prefix: chore
       include: scope
@@ -36,16 +49,31 @@ updates:
       # the same exact version, so they move together, majors included.
       commitlint:
         patterns: ["@commitlint/*"]
-      tailwind:
+      # Keep tailwindcss and its @tailwindcss/* plugins together per update
+      # type. Major updates stay standalone for review.
+      tailwind-patch:
         patterns: ["tailwindcss", "@tailwindcss/*"]
+        update-types: [patch]
+      tailwind-minor:
+        patterns: ["tailwindcss", "@tailwindcss/*"]
+        update-types: [minor]
+      npm-patch:
+        update-types: [patch]
+      npm-minor:
+        update-types: [minor]
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
     commit-message:
       prefix: chore
       include: scope
     groups:
-      actions:
-        update-types: [minor, patch]
+      actions-patch:
+        update-types: [patch]
+      actions-minor:
+        update-types: [minor]
