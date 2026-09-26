@@ -8,11 +8,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-## [0.5.2](https://github.com/listepo/ketch/releases/tag/v0.5.2) - 2026-09-24
+## [0.6.0](https://github.com/listepo/ketch/releases/tag/v0.6.0) - 2026-09-26
+
+### Fixed
+
+- prefer the link-named payload file when a bin glob matches several ([#140](https://github.com/listepo/ketch/pull/140))
 
 ### Other
 
+- add Dependabot updates with CI-gated patch-only auto-merge ([#137](https://github.com/listepo/ketch/pull/137))
+- add SonarCloud OSS analysis ([#135](https://github.com/listepo/ketch/pull/135))
+- Add SonarCloud quality gate, coverage and tests badges to README
+- run CodeRabbit only on manual request
+- *(deps)* pin actions/checkout@v7 in dist config
+- merge main into checkout-7 bump
+- *(deps)* bump actions/checkout from 6 to 7
 - add the config-file rule to AGENTS.md
+- *(deps)* bump the cargo group with 3 updates
+- *(deps-dev)* bump the commitlint group with 2 updates
+- *(deps)* bump release-plz/action in the actions group
+- sync ROADMAP and registry docs with shipped work
+
 ## [0.5.1](https://github.com/listepo/ketch/releases/tag/v0.5.1) - 2026-09-23
 
 ### Other
