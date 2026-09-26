@@ -1,5 +1,9 @@
 //! Documentation-style command snapshots for compact, stable output.
 
+// `--features tui` adds a global `--tui` flag to every help page. Snapshots
+// capture the default (non-tui) CLI contract; the tui build is covered by the
+// dedicated `Test (tui)` compile/run, not by rewriting these fixtures twice.
+#[cfg(not(feature = "tui"))]
 #[test]
 fn command_snapshots_match_the_public_cli_contract() {
     let cases = trycmd::TestCases::new();

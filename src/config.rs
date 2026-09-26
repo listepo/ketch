@@ -510,8 +510,47 @@ mod tests {
         assert!(error.to_string().contains(KEY));
     }
 
+    /// `KETCH_*` keys read by `Config::load`, saved and restored around a
+    /// caller that must not leak into the rest of the suite.
+    struct CleanEnv {
+        saved: Vec<(String, Option<std::ffi::OsString>)>,
+    }
+
+    impl CleanEnv {
+        fn take(keys: &[&str]) -> Self {
+            let saved = keys
+                .iter()
+                .map(|k| (k.to_string(), std::env::var_os(k)))
+                .collect();
+            for k in keys {
+                std::env::remove_var(k);
+            }
+            CleanEnv { saved }
+        }
+    }
+
+    impl Drop for CleanEnv {
+        fn drop(&mut self) {
+            for (key, value) in self.saved.drain(..) {
+                match value {
+                    Some(v) => std::env::set_var(&key, v),
+                    None => std::env::remove_var(&key),
+                }
+            }
+        }
+    }
+
+    // Every env-touching test in this module shares one lock, so clearing
+    // one key can never interleave with another test's reads. Declared once
+    // at module scope: a `static` inside each test would be a separate lock.
+    static ENV_GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn an_empty_ketch_github_token_falls_back_to_the_next_token_variable() {
+        // `GH_TOKEN` outranks nothing here, but an ambient one would beat the
+        // `GITHUB_TOKEN` this test relies on, so it is kept out of the way.
+        let _lock = ENV_GUARD.lock().unwrap();
+        let _env = CleanEnv::take(&["GH_TOKEN"]);
         std::env::set_var("KETCH_GITHUB_TOKEN", "");
         std::env::set_var("GITHUB_TOKEN", "ghp_fallback");
 
@@ -577,5 +616,66 @@ mod tests {
             None => std::env::remove_var("PATH"),
         }
         assert!(on, "folded PATH entry must count as on PATH");
+    }
+
+    #[test]
+    fn default_toml_parses_back_to_compiled_defaults() {
+        let file: ConfigFile = toml::from_str(&Config::default_toml()).unwrap();
+        assert_eq!(file.prerelease, Some(false));
+        assert_eq!(file.allow_emulation, Some(true));
+        assert_eq!(file.link_apps, Some(false));
+        assert_eq!(file.require_checksums, Some(false));
+        assert_eq!(file.strip_quarantine, Some(true));
+        assert_eq!(file.auto_update, Some(true));
+        assert_eq!(file.self_repo.as_deref(), Some(SELF_REPO));
+        assert_eq!(file.registry.as_deref(), Some(REGISTRY_REPO));
+        assert_eq!(file.jobs, Some(4));
+        assert_eq!(file.log_level.as_deref(), Some("info"));
+        assert_eq!(file.log_format.as_deref(), Some("text"));
+        assert!(file.apps_dir.is_none());
+        assert!(file.github_token.is_none());
+        assert!(file.root.is_none());
+    }
+
+    #[test]
+    fn a_reset_file_loads_back_to_the_effective_defaults() {
+        // Shared with the token fallback test above: clearing must not
+        // interleave with its reads.
+        let _lock = ENV_GUARD.lock().unwrap();
+        const KEYS: &[&str] = &[
+            "KETCH_ROOT",
+            "KETCH_APPS_DIR",
+            "KETCH_SELF_REPO",
+            "KETCH_REGISTRY",
+            "KETCH_GITHUB_TOKEN",
+            "GITHUB_TOKEN",
+            "GH_TOKEN",
+            "KETCH_LOG_LEVEL",
+            "KETCH_LOG_FORMAT",
+            "KETCH_JOBS",
+            "KETCH_PRERELEASE",
+            "KETCH_ALLOW_EMULATION",
+            "KETCH_LINK_APPS",
+            "KETCH_REQUIRE_CHECKSUMS",
+            "KETCH_STRIP_QUARANTINE",
+            "KETCH_AUTO_UPDATE",
+        ];
+        let _env = CleanEnv::take(KEYS);
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("root");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("config.toml"), Config::default_toml()).unwrap();
+        let cfg = Config::load(Some(root.clone())).unwrap();
+        assert!(!cfg.prerelease);
+        assert!(cfg.allow_emulation);
+        assert!(!cfg.link_apps);
+        assert!(!cfg.require_checksums);
+        assert!(cfg.strip_quarantine);
+        assert!(cfg.auto_update);
+        assert_eq!(cfg.self_repo, SELF_REPO);
+        assert_eq!(cfg.registry, REGISTRY_REPO);
+        assert_eq!(cfg.jobs, 4);
+        assert_eq!(cfg.log_level.to_string(), "info");
+        assert_eq!(cfg.log_format.to_string(), "text");
     }
 }

@@ -1,12 +1,18 @@
 name: release-plz
 
-# Every merge to main keeps one pull request up to date: the next version, and
-# the changelog entry for it, both derived from the conventional commits since
-# the last tag. Merging that pull request is the release — release.yml builds
-# it, publishes the tarballs, and only then creates the tag.
+# The second way in: release-plz keeps one "chore: release vX.Y.Z" pull request
+# open on main with the next version and its CHANGELOG.md entry, both derived
+# from the conventional commits since the last tag. Merging it dispatches the
+# dist release workflow through the same scripts/release.sh as bump.yml.
 #
-# Nothing here tags anything. Only `release-pr` is ever run: the tag is
-# release.yml's to create, once there is something behind it.
+# release-plz creates neither the tag nor the GitHub release — dist does both
+# from release.yml, once every target has built — and reads the tag dist
+# pushes to learn that a version is out (release-plz.toml).
+#
+# RELEASE_PLZ_TOKEN (a fine-grained PAT or GitHub App token: contents and pull
+# requests, write) is required, not optional: GitHub starts no workflow from a
+# GITHUB_TOKEN event, so a pull request opened with the default token would be
+# merged having never run ci.yml.
 on:
   push:
     branches: [main]
@@ -14,38 +20,60 @@ on:
 permissions:
   contents: read
 
-jobs:
-  release-plz:
-    runs-on: ubuntu-latest
+concurrency:
+  group: release-plz
+  cancel-in-progress: false
 
-    # release-plz never builds ketch — it reads metadata, rewrites the version
-    # and resolves the lockfile — so the macOS-only gate does not apply here.
+jobs:
+  # Is this push the merge of release-plz's pull request? Two things must hold.
+  # A line that *is* the pull request title — the squash title, with the
+  # " (#123)" GitHub appends, or the title line of a merge commit — never a
+  # mention inside a sentence. And the commit belongs to a pull request from a
+  # `release-plz-` branch: `just release` pushes a version commit with that
+  # same subject straight to main, and dispatches the release itself.
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      merged: ${{ steps.check.outputs.merged }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          merged=false
+          if git log -1 --format=%B | grep -qE '^chore: release v[0-9]+\.[0-9]+\.[0-9]+( \(#[0-9]+\))?$'; then
+            prs="$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" \
+              --jq '[.[] | select(.head.ref | startswith("release-plz-"))] | length')"
+            [ "$prs" -gt 0 ] && merged=true
+          fi
+          echo "merged=$merged" >> "$GITHUB_OUTPUT"
+          echo "release pull request merged: $merged"
+
+  release-pr:
+    # The merge of the release pull request itself has nothing new to propose.
+    needs: gate
+    if: needs.gate.outputs.merged != 'true'
+    runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
-
-    # Two merges landing together must not race for the same release pull
-    # request, and cancelling the first one halfway would leave it stale.
-    concurrency:
-      group: release-plz-${{ github.ref }}
-      cancel-in-progress: false
-
     steps:
-      # A workflow run authenticated with the default GITHUB_TOKEN cannot start
-      # another workflow run, so the release pull request it opens would land
-      # on main without CI ever running on it — and merging that pull request
-      # is what publishes ketch. Fail here, loudly, instead.
-      #
-      # See https://release-plz.dev/docs/github/token — a fine-grained PAT or a
-      # GitHub App token with contents and pull-requests read/write.
-      - name: A token that can trigger release.yml
+      # Without the token, release-plz/action still opens the pull request —
+      # with GITHUB_TOKEN, whose events GitHub refuses to start workflows from.
+      # The pull request then carries no CI at all, and the only sign is a
+      # checks list that is empty rather than red. Fail here instead.
+      # https://release-plz.dev/docs/github/token
+      - name: A token that gives the release pull request its CI
         env:
           TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
         run: |
           if [ -z "$TOKEN" ]; then
             echo "RELEASE_PLZ_TOKEN is not set." >&2
-            echo "The default GITHUB_TOKEN cannot trigger release.yml from a" >&2
-            echo "pushed tag, so a release would be created with no binaries." >&2
+            echo "A pull request opened with the default GITHUB_TOKEN starts no workflows," >&2
+            echo "so the release would be merged without ci.yml ever having run on it." >&2
             echo "See https://release-plz.dev/docs/github/token" >&2
             exit 1
           fi
@@ -59,11 +87,11 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      # A release pull request is written against the last released version, so
-      # proposing one while a release is still being published would compare
+      # A release pull request is written against the last released version,
+      # so proposing one while a release is still being built would compare
       # against a tag that does not exist yet and bump from the wrong place.
-      # The merge that starts a release therefore opens no pull request; the
-      # next commit after it does, by which time the tag is there.
+      # dist creates the tag only when the release is published; until then
+      # the pull request is left alone, and the next push after it updates it.
       - name: Is a release still being published?
         id: pending
         run: |
@@ -78,8 +106,33 @@ jobs:
 
       - name: Open or update the release pull request
         if: steps.pending.outputs.pending == 'false'
-        uses: release-plz/action@v0.5.137
+        uses: release-plz/action@v0.5.139
         with:
           command: release-pr
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
+
+  # The same gate every pull request passes, on the merge commit this release
+  # is cut from.
+  verify:
+    needs: gate
+    if: needs.gate.outputs.merged == 'true'
+    uses: ./.github/workflows/verify.yml
+
+  release:
+    needs: [gate, verify]
+    if: needs.gate.outputs.merged == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write # dispatch release.yml
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Start the dist release workflow for the merged version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # --no-bump: dispatch the version Cargo.toml already carries; never
+        # raise it here. Nothing is committed, so git-cliff is not needed.
+        run: scripts/release.sh patch --no-bump

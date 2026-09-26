@@ -347,6 +347,37 @@ pre code { background: none; border: 0; padding: 0; color: inherit; font-size: i
 
 .theme-toggle[data-theme-label] { /* noop attribute presence */ }
 
+/* ---------- site search (Pagefind) ---------- */
+
+.site-search { min-width: 0; flex: 1 1 12rem; max-width: 20rem; }
+.site-search .pagefind-ui { --pagefind-ui-scale: 0.85; }
+.site-search .pagefind-ui__form {
+  margin: 0;
+}
+.site-search .pagefind-ui__search-input {
+  height: 44px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--surface-1);
+  color: var(--ink);
+  box-shadow: var(--elev-1);
+}
+.site-search .pagefind-ui__search-input:hover { border-color: var(--accent); }
+.site-search .pagefind-ui__search-input:focus { outline: none; box-shadow: var(--focus-ring); }
+.site-search .pagefind-ui__drawer {
+  background: var(--surface-1);
+  color: var(--ink);
+  border-radius: var(--radius);
+  box-shadow: var(--elev-2, var(--elev-1));
+}
+.site-search .pagefind-ui__result-link { color: var(--accent); }
+.site-search .pagefind-ui__result-excerpt { color: var(--ink-muted); }
+
+@media (max-width: 639px) {
+  .site-search { order: 3; flex-basis: 100%; max-width: none; }
+  .site-search .pagefind-ui__search-input { width: 100%; }
+}
+
 /* ---------- hero ---------- */
 
 .hero {

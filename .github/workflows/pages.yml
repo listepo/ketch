@@ -82,6 +82,9 @@ jobs:
         run: |
           hugo --source site --minify --gc --baseURL "$BASE_URL/"
 
+      - name: Index the site with Pagefind
+        run: npx --yes pagefind@1 --site site/public
+
       - name: Check the build produced what it should
         run: |
           cd site/public
@@ -89,7 +92,8 @@ jobs:
                           docs/manifests/index.html docs/registry/index.html \
                           docs/plugins/index.html docs/roadmap/index.html \
                           docs/plan/index.html docs/troubleshooting/index.html \
-                          css/main.css css/mini-ui.css img/og.png; do
+                          css/main.css css/mini-ui.css img/og.png \
+                          pagefind/pagefind-ui.js pagefind/pagefind-ui.css; do
             [ -s "$required" ] || { echo "missing or empty: $required" >&2; exit 1; }
           done
           # The SEO tags are the point of the landing page; a template that

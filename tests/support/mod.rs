@@ -109,6 +109,78 @@ impl Sandbox {
         log
     }
 
+    /// mise's data dir for this sandbox; every run points `MISE_DATA_DIR` here.
+    pub fn mise_data(&self) -> PathBuf {
+        self.tmp.child("mise").to_path_buf()
+    }
+
+    /// Copy the ketch under test to where `mise use -g github:listepo/ketch`
+    /// would have put release 0.4.7. Returns the copy, to run it from there.
+    pub fn install_with_mise(&self) -> PathBuf {
+        let dir = self.mise_tool_dir().join("0.4.7");
+        std::fs::create_dir_all(&dir).expect("create mise install dir");
+        let exe = dir.join(if cfg!(windows) { "ketch.exe" } else { "ketch" });
+        std::fs::copy(env!("CARGO_BIN_EXE_ketch"), &exe).expect("copy ketch into mise tree");
+        exe
+    }
+
+    /// The tool directory `mise unuse` removes.
+    pub fn mise_tool_dir(&self) -> PathBuf {
+        self.mise_data()
+            .join("installs")
+            .join("github-listepo-ketch")
+    }
+
+    /// A `mise` that records its arguments and removes the tool directory, as
+    /// the real one does — while the ketch that called it is still running,
+    /// which is the part Windows objects to. Compiled rather than scripted:
+    /// `Command::new("mise")` finds only `mise.exe` on Windows, never a `.cmd`.
+    /// Returns the directory to put on PATH and the file the arguments go to.
+    pub fn fake_mise(&self) -> (PathBuf, PathBuf) {
+        let bin = self.tmp.child("mise-bin").to_path_buf();
+        std::fs::create_dir_all(&bin).expect("create mise bin");
+        let log = bin.join("mise-args");
+        let src = bin.join("mise.rs");
+        std::fs::write(
+            &src,
+            format!(
+                r#"fn main() {{
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    std::fs::write({log:?}, args.join(" ")).expect("write mise log");
+    if let Err(e) = std::fs::remove_dir_all({dir:?}) {{
+        eprintln!("mise: {{e}}");
+        std::process::exit(1);
+    }}
+}}
+"#,
+                log = log,
+                dir = self.mise_tool_dir(),
+            ),
+        )
+        .expect("write mise source");
+        let exe = bin.join(if cfg!(windows) { "mise.exe" } else { "mise" });
+        let status = Command::new("rustc")
+            .arg(&src)
+            .arg("-o")
+            .arg(&exe)
+            .status()
+            .expect("run rustc");
+        assert!(status.success(), "rustc could not build the fake mise");
+        (bin, log)
+    }
+
+    /// Run `program` — a ketch copied somewhere else — against this sandbox,
+    /// with `extra` in front of PATH.
+    pub fn ketch_from(&self, program: &Path, args: &[&str], extra: &Path) -> Output {
+        let inherited = std::env::var_os("PATH").unwrap_or_default();
+        let mut dirs = vec![extra.to_path_buf(), self.bin()];
+        dirs.extend(std::env::split_paths(&inherited));
+        let path = std::env::join_paths(dirs).expect("join PATH");
+        self.command_for(program, args, path)
+            .output()
+            .expect("run ketch")
+    }
+
     /// Where the run's log lands.
     pub fn log(&self) -> String {
         std::fs::read_to_string(self.root().join("logs").join("ketch.log")).unwrap_or_default()
@@ -147,7 +219,11 @@ impl Sandbox {
     }
 
     fn command(&self, args: &[&str], path: std::ffi::OsString) -> Command {
-        let mut cmd = Command::new(env!("CARGO_BIN_EXE_ketch"));
+        self.command_for(Path::new(env!("CARGO_BIN_EXE_ketch")), args, path)
+    }
+
+    fn command_for(&self, program: &Path, args: &[&str], path: std::ffi::OsString) -> Command {
+        let mut cmd = Command::new(program);
         cmd.args(args);
         // `Config::load` reads every KETCH_* variable before config.toml. Strip
         // the whole namespace so a developer shell or CI job cannot leak values
@@ -173,6 +249,9 @@ impl Sandbox {
             // Homebrew's own answer to where it lives, so cask detection looks
             // inside the sandbox and nowhere else.
             .env("HOMEBREW_PREFIX", self.homebrew())
+            // The same for mise: a developer who installed ketch with it must
+            // not see the suite's build mistaken for a mise install, or theirs.
+            .env("MISE_DATA_DIR", self.mise_data())
             .env_remove("ZDOTDIR")
             .env_remove("XDG_CONFIG_HOME")
             // A token in the ambient environment (CI always has one) must not

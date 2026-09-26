@@ -1,0 +1,89 @@
+# Inserted by scripts/dist-generate.sh into cargo-dist's build-local-artifacts
+# job, after `dist build` and before the artifacts are uploaded — so a tarball
+# that fails here never reaches the release. dist has no hook at this point;
+# github-build-setup (.github/build-setup.yml) runs before the build.
+
+# Off until an App Store Connect key exists: setting the repository variable
+# KETCH_NOTARIZE to `true` turns it on, and from then on a missing secret fails
+# the release, as a missing certificate does. A bare Mach-O cannot carry a
+# stapled ticket (stapler takes only bundles, disk images and packages), so the
+# tarball stays as built and Gatekeeper looks the ticket up online by the
+# binary's cdhash.
+- name: Notarise
+  if: runner.os == 'macOS' && vars.KETCH_NOTARIZE == 'true'
+  shell: bash
+  env:
+    NOTARY_KEY: ${{ secrets.APPSTORE_CONNECT_KEY }}
+    NOTARY_KEY_ID: ${{ secrets.APPSTORE_CONNECT_KEY_ID }}
+    NOTARY_ISSUER: ${{ secrets.APPSTORE_CONNECT_ISSUER_ID }}
+    TARGETS: ${{ join(matrix.targets, ' ') }}
+  run: |
+    set -euo pipefail
+    if [ -z "$NOTARY_KEY" ] || [ -z "$NOTARY_KEY_ID" ] || [ -z "$NOTARY_ISSUER" ]; then
+      echo "KETCH_NOTARIZE is on, so APPSTORE_CONNECT_KEY (the .p8 as base64)," >&2
+      echo "APPSTORE_CONNECT_KEY_ID and APPSTORE_CONNECT_ISSUER_ID must all be set." >&2
+      exit 1
+    fi
+    work="$RUNNER_TEMP/notarise"
+    mkdir -p "$work"
+    key="$work/key.p8"
+    trap 'rm -f "$key"' EXIT
+    echo "$NOTARY_KEY" | base64 --decode > "$key"
+    auth=(--key "$key" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER")
+
+    for target in $TARGETS; do
+      # notarytool takes a zip, not a tarball. The ticket is keyed by the
+      # binary's cdhash, so notarising this copy covers the one in the tarball.
+      dir="$work/$target"
+      mkdir -p "$dir"
+      tar -xzf "target/distrib/ketch-$target.tar.gz" -C "$dir"
+      ditto -c -k --keepParent "$dir/ketch-$target/ketch" "$dir/ketch.zip"
+      xcrun notarytool submit "$dir/ketch.zip" "${auth[@]}" \
+        --wait --output-format json > "$dir/result.json" || true
+      cat "$dir/result.json"
+      if [ "$(jq -r .status "$dir/result.json")" != "Accepted" ]; then
+        id="$(jq -r .id "$dir/result.json")"
+        xcrun notarytool log "$id" "${auth[@]}" >&2 || true
+        exit 1
+      fi
+    done
+
+# Everything install.sh and `ketch self upgrade` rely on, per tarball: the
+# asset name, a `ketch` binary inside it, a Developer ID signature on macOS.
+# A binary built for another architecture than the runner's is not run — the
+# arm64 runner builds the Intel slice but cannot execute it. Extraction goes
+# to a workspace-relative dir: Git Bash on Windows mangles `$RUNNER_TEMP`
+# (`D:\a\_temp` → `D\:\a\\_temp`) so GNU tar cannot open it.
+- name: Smoke test
+  shell: bash
+  env:
+    TARGETS: ${{ join(matrix.targets, ' ') }}
+    NOTARIZE: ${{ vars.KETCH_NOTARIZE }}
+  run: |
+    set -euo pipefail
+    host="$(rustc -vV | sed -n 's/^host: //p')"
+    for target in $TARGETS; do
+      tarball="target/distrib/ketch-$target.tar.gz"
+      [ -f "$tarball" ] || { echo "no $tarball: install.sh and ketch self upgrade look for that name" >&2; exit 1; }
+      dir="smoke/$target"
+      mkdir -p "$dir"
+      tar -xzf "$tarball" -C "$dir"
+      bin="$(find "$dir" \( -name ketch -o -name ketch.exe \) -type f | head -1)"
+      [ -n "$bin" ] || { echo "no ketch binary in $tarball" >&2; exit 1; }
+      if [ "$target" = "$host" ]; then
+        "$bin" --version
+      else
+        echo "$target: built on $host, not run"
+      fi
+      case "$target" in
+        *-apple-darwin)
+          codesign --verify --strict "$bin"
+          codesign --display --verbose=2 "$bin" 2>&1 \
+            | grep -q 'Authority=Developer ID Application'
+          if [ "$NOTARIZE" = "true" ]; then
+            spctl --assess --type install -vv "$bin" 2>&1 \
+              | tee /dev/stderr | grep -q 'source=Notarized Developer ID'
+          fi
+          ;;
+      esac
+    done

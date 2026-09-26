@@ -1,4 +1,7 @@
-- F1. Notarisation — done (ketch side; creator step remains: secrets + `KETCH_NOTARIZE=true`)
-- F2. Registry CI in ketch-registry — dropped (upstream declined, commit `5a9bbd6`)
-- M3. Provenance and signatures — done
-- F5. Config reset and shared file backup — done (ketch side)
+# ketch — todo
+
+Empty: F1/F2/M3/F5 and the 2026-09-20 audit follow-ups (A2) are in `done.md`; the audit-13 evaluation (A3) also landed there with "already shipped, no gap" verdicts. The two remaining notes are not actionable from inside the repo:
+
+- Notarisation secrets + first notarized release — creator step (needs the App Store Connect key).
+- `src/config.rs` unit tests (`default_toml_*`, `ENV_GUARD`/`CleanEnv`) — uncommitted in the working tree, owned by an earlier session; commit separately, do not fold into an audit PR.
+

@@ -5,6 +5,8 @@
 # everywhere. Set CARGO_CACHE to a bare `cargo-cache` if mise is already
 # activated in your shell, or to skip mise entirely.
 cache := env("CARGO_CACHE", "mise exec -- cargo-cache")
+# cargo-dist is pinned in mise.toml too; DIST overrides it the same way.
+dist := env("DIST", "mise exec -- dist")
 
 default: check
 
@@ -20,7 +22,7 @@ lint:
 # the same gate under the name people type
 alias clippy := lint
 
-test:
+test: && dunnage
     cargo nextest run --all-targets --locked
 
 test-install:
@@ -97,24 +99,26 @@ lint-commits:
 
 lint-shell:
     bash -n install.sh
-    bash -n scripts/package.sh
     bash -n scripts/release.sh
+    bash -n scripts/dist-generate.sh
     sh tests/crate-version.sh
-    sh tests/release-yml-notarize.sh
+    sh tests/release-sh.sh
+    sh tests/release-workflows.sh
     sh tests/ci-yml-triggers.sh
 
 package:
     #!/usr/bin/env bash
     set -euo pipefail
     target=$(rustc -vV | sed -n 's/^host: //p')
-    scripts/package.sh "$target" dist
-    cd dist
+    {{dist}} build --artifacts=local --target "$target"
+    cd "$(cargo metadata --no-deps --format-version 1 | tr ',' '\n' | grep target_directory | cut -d'"' -f4)/distrib"
+    rm -rf unpacked
     if command -v shasum >/dev/null 2>&1; then
-        shasum -a 256 *.tar.gz > SHA256SUMS
+        shasum -a 256 ketch-*.tar.gz > SHA256SUMS
         shasum -a 256 -c SHA256SUMS
         hash() { shasum -a 256 "$1" | awk '{print $1}'; }
     else
-        sha256sum *.tar.gz > SHA256SUMS
+        sha256sum ketch-*.tar.gz > SHA256SUMS
         sha256sum -c SHA256SUMS
         hash() { sha256sum "$1" | awk '{print $1}'; }
     fi
@@ -139,7 +143,31 @@ lint-cask:
         > cask/Casks/ketch.rb
     brew style cask/Casks/ketch.rb
 
-check: fmt-check lint test lint-commits lint-shell package lint-cask
+# what `dist` would release for the version in Cargo.toml, per target
+dist-plan:
+    {{dist}} plan
+
+# regenerate .github/workflows/release.yml from dist-workspace.toml; never edit it by hand
+dist-generate:
+    DIST="{{dist}}" scripts/dist-generate.sh
+
+# release.yml is exactly what dist-generate writes; compared with the file as
+# it stands, not the index, so an uncommitted regeneration counts
+dist-check:
+    #!/bin/sh
+    set -eu
+    before="$(mktemp)"
+    trap 'rm -f "$before"' EXIT
+    cp .github/workflows/release.yml "$before"
+    DIST="{{dist}}" scripts/dist-generate.sh >/dev/null
+    diff -u "$before" .github/workflows/release.yml \
+        || { echo "release.yml is stale: commit what just dist-generate wrote" >&2; exit 1; }
+
+# release Cargo.toml's version, or the next one if it is tagged (`just release minor --dry-run`)
+release level="patch" *flags:
+    scripts/release.sh {{level}} {{flags}}
+
+check: fmt-check lint test lint-commits lint-shell dist-check package lint-cask
 
 # $CARGO_HOME sizes (no deletes) and the build output, wherever cargo puts it
 cache:
@@ -153,3 +181,10 @@ cache-dry-run:
 # drop extracted crate/git checkouts; keep archives
 cache-autoclean:
     {{cache}} --autoclean
+
+# Lossless cleanup of this checkout's cargo target dir (compress + dedupe); never deletes.
+dunnage:
+    #!/usr/bin/env sh
+    command -v dunnage >/dev/null || { echo "dunnage not found; install it with: ketch install dunnage"; exit 0; }
+    [ -d target ] || exit 0
+    dunnage run target || test $? -eq 2

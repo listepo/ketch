@@ -2,7 +2,7 @@
 $ ketch install --help
 Install one or more packages
 
-Usage: ketch install [OPTIONS] [PKG]...
+Usage: ketch[EXE] install [OPTIONS] [PKG]...
 
 Arguments:
   [PKG]...  `owner/repo`, `scheme:id`, `local:<path>`, or a known alias — each may carry `@version`
@@ -32,7 +32,7 @@ Options:
 $ ketch upgrade --help
 Upgrade installed packages to their latest release
 
-Usage: ketch upgrade [OPTIONS] [NAME]...
+Usage: ketch[EXE] upgrade [OPTIONS] [NAME]...
 
 Arguments:
   [NAME]...  Packages to upgrade. Empty means every unpinned package
@@ -56,7 +56,7 @@ Options:
 $ ketch doctor --help
 Check the environment and the install tree
 
-Usage: ketch doctor [OPTIONS]
+Usage: ketch[EXE] doctor [OPTIONS]
 
 Options:
       --fix         Repair what can be repaired without asking: currently the PATH setup
@@ -74,7 +74,7 @@ Options:
 $ ketch registry --help
 Compare a package config with the registry's copy before pulling-requesting it
 
-Usage: ketch registry [OPTIONS] <COMMAND>
+Usage: ketch[EXE] registry [OPTIONS] <COMMAND>
 
 Commands:
   validate  Validate a registry tree (every `ketch.toml`) the way the pre-push hook does

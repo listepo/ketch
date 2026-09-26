@@ -3,7 +3,7 @@ $ ketch --help
 ketch installs command-line tools and apps from GitHub releases on macOS, Linux, and Windows.
 No taps, no formulae, no build step — it downloads what the project already ships.
 
-Usage: ketch [OPTIONS] <COMMAND>
+Usage: ketch[EXE] [OPTIONS] <COMMAND>
 
 Commands:
   install      Install one or more packages [alias: i]

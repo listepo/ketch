@@ -4,6 +4,8 @@
 
 # ketch
 
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=listepo_ketch&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=listepo_ketch) [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=listepo_ketch&metric=coverage)](https://sonarcloud.io/component_measures?id=listepo_ketch&metric=coverage) [![Tests](https://img.shields.io/sonar/tests/listepo_ketch?server=https%3A%2F%2Fsonarcloud.io&compact_message)](https://sonarcloud.io/component_measures?id=listepo_ketch&metric=tests)
+
 **Catch releases straight from GitHub.**
 
 Install command-line tools and apps from GitHub releases on macOS, Linux, and Windows.
@@ -69,6 +71,18 @@ install`, and place a bootstrap copy at `--install-dir` when you give one.
 Homebrew keeps nothing but the bootstrap binary, and `brew upgrade` hands over
 to `ketch self upgrade`.
 
+With [mise](https://mise.jdx.dev), no installer runs; the release tarball is
+the whole install:
+
+```bash
+mise use -g github:listepo/ketch
+ketch path install
+```
+
+mise then owns the binary: `mise upgrade` upgrades it, and `ketch self upgrade`
+refuses to rewrite a file in mise's tree. Run `ketch self install` as well if
+you would rather ketch manage itself, as with the installers above.
+
 Then make sure `~/.ketch/bin` is on your `PATH`. `ketch doctor` will tell you if
 it is not, along with anything else that needs attention.
 
@@ -87,7 +101,9 @@ only ketch and leaves the tools it installed alone.
 
 `brew uninstall --cask ketch` removes only the bootstrap binary Homebrew kept;
 everything under `~/.ketch` and every package ketch installed stays until you
-run `ketch self uninstall` (or delete the tree yourself).
+run `ketch self uninstall` (or delete the tree yourself). The same holds for
+`mise unuse -g github:listepo/ketch`. Run from a mise install, `ketch self
+uninstall` asks, separately, whether to run that command for you as well.
 
 ## Why
 
@@ -392,14 +408,16 @@ KETCH_ROOT=/tmp/ketch-scratch cargo run -- doctor
 ## Releasing
 
 Nothing is typed. [release-plz](https://release-plz.dev) keeps one pull request
-up to date on every merge to `main`, holding the next version and the
+up to date on every push to `main`, holding the next version and the
 `CHANGELOG.md` entry for it, both read off the conventional commits since the
-last tag. Merging that pull request is the release: `release.yml` sees that
-`v<version>` from `Cargo.toml` has no tag yet, rebuilds and signs both macOS
-architectures (Linux and Windows unsigned), publishes draft assets, then
-creates the tag when the draft is published, and the `tap` job bumps
-`listepo/homebrew-tap`'s cask. So `v0.4.1` existing means v0.4.1 shipped, and a
-build that fails leaves nothing to clean up but a draft.
+last tag. Merging that pull request is the release; so is Actions → **Bump and
+release** (`bump.yml`), which raises the version and commits the entry itself.
+Either way `scripts/release.sh` dispatches `release.yml`, which
+[cargo-dist](https://github.com/axodotdev/cargo-dist) generates: it builds and
+signs both macOS architectures (Linux and Windows unsigned), and only once
+every target has built does it create the tag and the release, after which the
+`tap` job bumps `listepo/homebrew-tap`'s cask. So `v0.4.1` existing means
+v0.4.1 shipped, and a build that fails leaves nothing to clean up.
 
 CI (`ci.yml`) runs only on pushes to `main` and on manual
 `workflow_dispatch`. It does not run on pull request events. Before merging a
@@ -410,7 +428,8 @@ gh workflow run ci.yml --ref <branch>
 ```
 
 ```bash
-scripts/release.sh 0.4.1        # the same thing by hand, for a specific version
+just release minor --dry-run    # the version a release would get; changes nothing
+just release minor              # the same thing from a clean, up-to-date main
 ```
 
 ketch is not on crates.io — it ships as a tarball on a GitHub release, so
