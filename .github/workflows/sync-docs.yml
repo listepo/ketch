@@ -7,7 +7,7 @@
 # SITE_DEPLOY_KEY secret. GITHUB_TOKEN stays read-only. This workflow is independent of the
 # pipeline gate, releases and Pages: it never builds, tests or deploys this repository.
 #
-# On a v* tag the card's `version:` front matter is set from the tag (v1.2.3 -> "1.2.3"), so the
+# On a v* tag or release the card's `version:` front matter is set from the tag (v1.2.3 -> "1.2.3"), so the
 # site shows the released version even before docs/site.md is bumped on main.
 name: sync-docs
 
@@ -17,6 +17,11 @@ on:
     # Path filters are not evaluated for tag pushes, so every v* tag syncs.
     paths: [docs/site.md]
     tags: ["v*"]
+  # A tag pushed with GITHUB_TOKEN triggers no workflow, so also sync when a release is published
+  # (its ref is the release tag, so the version below is set the same way); workflow_dispatch
+  # remains the manual fallback.
+  release:
+    types: [published]
   workflow_dispatch:
 
 # One sync at a time per source repo, never cancelled half-way; the push below fetches and
