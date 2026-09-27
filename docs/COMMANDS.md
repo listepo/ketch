@@ -30,6 +30,12 @@ package; `--force/-f` reinstalls the requested version even when present;
 since the platform check is skipped); `-j/--jobs <N>` and `-y/--yes` control
 parallelism and prompts. Aliased as `ketch i`.
 
+When a release ships several binaries sharing the package's name and no
+manifest names one, the binary named exactly like the package is linked; failing
+that, a choice remembered from last time, or a numbered pick in a terminal. With
+`--yes` or without a terminal there is no pick, and the install fails with the
+candidates listed — see the `bin` section of [MANIFESTS.md](MANIFESTS.md).
+
 ### `ketch uninstall <NAME>...`
 
 Remove installed packages. Names resolve like `install` (installed name,
@@ -297,8 +303,10 @@ ketch path uninstall        # take the block back out again
 ### `ketch config create [--file <FILE>] [--force] [--yes]`
 
 Write a package config (`ketch.toml`) by answering questions — source, name,
-bin entries, asset patterns — then preview and write the file. Answers can be
-piped on stdin, one per line. See [MANIFESTS.md](MANIFESTS.md).
+bin entries, asset patterns — then preview and write the file. A package that
+links binaries must name the command it puts on PATH, so the first `bin` entry
+is asked for rather than offered; its name defaults to the package name.
+Answers can be piped on stdin, one per line. See [MANIFESTS.md](MANIFESTS.md).
 
 ```bash
 ketch config create
