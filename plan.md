@@ -117,3 +117,97 @@ Kimi Code (`session_12034d9b-d032-4fb3-92be-3154393b064f`) wrote the deadline an
 Plan: keep the deadlines already in the tree. `process::run_bounded` runs the child off the caller's wait: after 30s a process listing is stopped and warned about by program and pid; after 60s `ketch --version` is stopped and the error says so, then restore puts the previous binary back. A spawn that never returns has no pid; the message says the wait was ended, and the spawn thread stops the child if creation later succeeds. Tests: the stopped-probe wording, a command that outlives a short budget and is no longer alive, and on Windows `tree.com` (exit 0) / `where.exe` (exit 1).
 
 Verify: `cargo fmt` is clean, and `cargo test --locked --bin ketch -- process:: self_update::` passed (28, 0 failed), including the stopped-child cases. `cargo clippy --all-targets -- -D warnings` and the full suite have not run.
+
+## Plan 2026-09-27 (drafting with Ivan)
+
+### Goals
+
+### Tasks
+
+#### Binary name must be an explicit config parameter (bug + fix)
+
+Bug: when several binaries in a release share the same name prefix, selection differs per OS. On macOS and Linux the intended binary is picked (first in the list). On Windows, alphabetical sorting picks `rtok hook` instead of the intended binary, so the wrong CLI runs.
+
+Fix:
+
+1. The config must name the binary that the CLI invokes.
+2. On project/config creation this parameter is required.
+3. For configs that already exist it stays optional (backward compatible).
+4. If it is missing and more than one binary matches the expected name, prompt the user in select mode listing all candidate binaries. Write the chosen binary into the config and use it on subsequent runs.
+
+#### Spinner and progress bar
+
+Show a spinner while a command is running so the user sees that it started. Use a progress bar where measurable progress is available, and a spinner elsewhere. Match the behavior in rtok.
+
+#### Cross-platform CI
+
+Run verification on macOS, Windows and Linux. A ketch config is either a local file in the project or pushed to a registry; keep that model. The cross-platform check must catch OS-specific binary selection bugs like the one in the binary-name task above.
+
+Current state: `ci.yml` has separate jobs on macOS, Linux and Windows running lint, the full nextest suite and the `tui`-feature tests on all three. Formatting and commit-message checks run on macOS only, PowerShell syntax on Windows only. The packaging matrix runs on all three OSes. `Swatinem/rust-cache` is already in every job. `verify.yml` mirrors the same three-OS checks before a release.
+
+To add:
+
+1. Binary selection regression test: see the task "Binary selection regression test" below.
+2. Both config paths, local file and registry: cover the select-mode prompt when the binary name is missing and several candidates match, and assert the chosen binary is written back into the config.
+3. Caching: rust-cache is already in place. Also evaluate caching the mise toolchain and the target directories on all three OSes. Do this in any case, and base the decision on the before/after build-time numbers from the cox and ketch infra-template PRs.
+
+#### Binary selection regression test
+
+Add a fixture with two similarly named binaries (for example `rtok` and `rtok-hook`) and assert the intended one is chosen on every OS: macOS, Windows and Linux. This is the test that would have caught the Windows alphabetical-sort bug, where `rtok hook` was selected instead of the intended binary.
+
+#### `ketch list` refactor: `local`, `remote`, and both by default
+
+Today `ketch list` (`cmd/query.rs:40`) prints only installed packages from the state file (package, version with `(pinned)` / `(+N retained)`, source), with `--json` and `--names-only`. The registry is visible only through `ketch search`, and newer versions only through `ketch outdated`.
+
+New syntax: `ketch list [local|remote] [--json] [--names-only]`.
+
+1. `ketch list local`: installed packages only, from the state file, no network. Columns `package`, `installed`, `source`, keeping the `(pinned)` and `(+N retained)` notes. This is today's `ketch list` output.
+2. `ketch list remote`: packages in the registry that can be installed. Columns `package`, `latest`, `description` (trimmed to the terminal width). Needs the network for `latest`.
+3. `ketch list` with no argument: every package, installed and available, sorted by name, one table with columns `package`, `installed`, `latest`, `source`:
+   - Installed packages are marked: a `●` in the first column and bold name on a TTY (plain `*` without colour), with both versions. When `latest` is newer than `installed`, the row says `update available` (yellow on a TTY) and a footer prints `N updates available: ketch upgrade <names>`. A pinned package shows `(pinned)` and is not offered as an update.
+   - Packages not installed show only `latest`, with `installed` empty.
+   - Installed packages that are not in the registry (installed from `owner/repo` or a local config) are still listed, with `latest` from their own source.
+
+Where `latest` comes from: the registry manifests (`manifest.rs`) carry no version, so `latest` is the newest release of each package's source, from the same lookup `ketch outdated` uses (`cmd/query.rs:87`, prerelease rules from `resolve::list_opts`). Requests run in parallel with a small limit, results are cached with a short TTL (reuse the existing cache directory), and a rate-limited or unreachable package shows `?` in `latest` with a one-line note under the table instead of failing the whole list. `ketch list` with no network prints the local part plus `latest: offline` and exits 0; `ketch list remote` with no network is an error. A spinner or progress bar (`N/M packages`) runs while versions load, per the spinner task above.
+
+Output: a compact table through the existing `ui::table`, one row per package, no blank lines; `ketch list local` with nothing installed prints `nothing installed`; `ketch list remote` with an empty registry prints `registry is empty; run ketch update`.
+
+`--json`:
+- `local`: an array of `{"name","installed","pinned","retained","source"}`.
+- `remote`: an array of `{"name","latest","description","source"}`.
+- no argument: `{"packages":[{"name","installed":null|"x.y.z","latest":null|"x.y.z","update_available":bool,"pinned":bool,"source"}],"unreachable":["name"]}`.
+- `--names-only` prints names only, for each of the three modes.
+
+Compatibility: `ketch list` without an argument changes from installed-only to everything, and its JSON shape changes. Scripts should use `ketch list local`; note it in `CHANGELOG.md` and the docs as a breaking change, and keep `ketch list --installed` as a hidden alias of `local` for one release.
+
+Documentation (required; the task is not done without it):
+- Update the `ketch list` section of `docs/COMMANDS.md`, written so a user understands it without reading the code:
+  - the three modes (`local`, `remote`, no argument), what each shows and whether it needs the network;
+  - every column (`package`, `installed`, `latest`, `source`, `description`) and the markers (`●` / `*`, bold, `update available`, `(pinned)`, `(+N retained)`, `?`);
+  - how `update available` is decided: `latest` is the newest release of the package's source from the same lookup as `ketch outdated`, compared with the installed version, prerelease rules as in `resolve::list_opts`, never for pinned packages;
+  - pinned packages: listed with both versions, marked `(pinned)`, not offered as an update, not in the footer;
+  - packages installed from outside the registry (`owner/repo`, local config): listed, with `latest` from their own source;
+  - offline behaviour: `ketch list` shows the local part and `latest: offline`, `ketch list remote` errors; unreachable packages show `?` and are named under the table; the cache and its TTL;
+  - `--json` for each mode, with the full field list, and `--names-only`;
+  - the breaking change from installed-only to everything, `ketch list local` for scripts, and the hidden `--installed` alias kept for one release.
+- Each mode gets a command example with real output copied from a run (not invented), including one row with `update available` and one pinned row.
+- Links: README's command overview links the section (`[ketch list](docs/COMMANDS.md#ketch-list)`); `docs/TROUBLESHOOTING.md` gets an entry for `?` / `latest: offline`; `CHANGELOG.md` names the breaking change and links the section. The landing site picks the docs up through the existing docs sync (not edited by this task).
+
+Tests (required; all must pass in `just check` and CI on macOS, Linux and Windows):
+- Unit:
+  - merging state and registry: installed only, available only, both, installed but not in the registry, pinned;
+  - `update_available`: newer, equal, older, prerelease versus stable per `list_opts`, pinned always false.
+- Integration with a fake registry and a mock release API (the existing test HTTP fixtures), with colour off so snapshots are stable:
+  - table snapshots of `ketch list local`, `ketch list remote` and `ketch list`;
+  - `--json` snapshots of all three modes, checked against the documented fields;
+  - bare `ketch list` marks installed packages (`*` without colour, `●` and bold with colour forced on) and shows both `installed` and `latest` for them, and only `latest` for the rest;
+  - `update available` and the footer appear only for installed, unpinned packages with a newer `latest`;
+  - a pinned package with a newer `latest` shows `(pinned)` and no `update available`;
+  - a package installed from `owner/repo` or a local config, not in the registry, is listed with `latest` from its own source;
+  - offline: bare `ketch list` prints the local part and `latest: offline` and exits 0; `ketch list remote` exits non-zero with a clear message;
+  - one unreachable package: its `latest` is `?`, the note under the table names it, it appears in `unreachable` in JSON, and every other row is still printed;
+  - `--names-only` in each of the three modes;
+  - `ketch list --installed` gives the same output as `ketch list local`;
+  - empty cases: `nothing installed` for `local`, `registry is empty; run ketch update` for `remote`.
+
+### Priorities
