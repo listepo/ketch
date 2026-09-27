@@ -4,6 +4,14 @@
 
 # ketch
 
+**Install any CLI tool or app straight from its GitHub releases — no formula, checked against the published checksum, versioned, and cleanly removable.**
+
+[![license](https://img.shields.io/badge/license-GPLv3%20%7C%20royalty--free%20%7C%20commercial-blue.svg)](#license)
+![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)
+[![release](https://img.shields.io/github/v/release/listepo/ketch?sort=semver)](https://github.com/listepo/ketch/releases/latest)
+[![ci](https://github.com/listepo/ketch/actions/workflows/ci.yml/badge.svg)](https://github.com/listepo/ketch/actions/workflows/ci.yml)
+[![site](https://github.com/listepo/ketch/actions/workflows/pages.yml/badge.svg)](https://github.com/listepo/ketch/actions/workflows/pages.yml)
+<br>
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=listepo_ketch&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=listepo_ketch) [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=listepo_ketch&metric=coverage)](https://sonarcloud.io/component_measures?id=listepo_ketch&metric=coverage) [![Tests](https://img.shields.io/sonar/tests/listepo_ketch?server=https%3A%2F%2Fsonarcloud.io&compact_message)](https://sonarcloud.io/component_measures?id=listepo_ketch&metric=tests)
 
 **Catch releases straight from GitHub.**
@@ -11,11 +19,6 @@
 Install command-line tools and apps from GitHub releases on macOS, Linux, and Windows.
 No taps, no formulae, no build step — ketch downloads what a project already
 ships, verifies it, and puts it on your `PATH`.
-
-[![ci](https://github.com/listepo/ketch/actions/workflows/ci.yml/badge.svg)](https://github.com/listepo/ketch/actions/workflows/ci.yml)
-[![site](https://github.com/listepo/ketch/actions/workflows/pages.yml/badge.svg)](https://github.com/listepo/ketch/actions/workflows/pages.yml)
-[![license](https://img.shields.io/badge/license-GPLv3%20%7C%20royalty--free%20%7C%20commercial-blue.svg)](#license)
-![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)
 
 [Website](https://listepo.github.io/ketch/) ·
 [Documentation](https://listepo.github.io/ketch/docs/) ·
@@ -25,6 +28,20 @@ ships, verifies it, and puts it on your `PATH`.
 </div>
 
 ---
+
+## Quick start
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/listepo/ketch/main/install.sh | bash
+ketch install BurntSushi/ripgrep     # any repo that publishes releases
+ketch why rg                         # how it was resolved, and which asset won
+```
+
+On Windows, install ketch with
+`irm https://raw.githubusercontent.com/listepo/ketch/main/install.ps1 | iex`;
+the other commands are the same. `ketch list` shows what you have.
+
+A package can be named several ways:
 
 ```bash
 ketch install BurntSushi/ripgrep     # any repo that publishes releases
@@ -45,6 +62,57 @@ the published SHA-256, and leaves the binary on your `PATH`.
 tools current — each upgrade is verified the same way.
 
 ![ketch list, outdated, and upgrade for rtok](site/static/img/demo/ketch-manage.png)
+
+## Why ketch
+
+Most command-line tools are already published as a release asset built for your
+machine. A package manager does not need to compile them, and a maintainer does
+not need to write a formula for them — the artefact is right there. ketch picks
+the right one, checks the checksum the project published, unpacks it into a
+versioned store, and links it onto your `PATH`.
+
+- **Any repo that ships releases.** No formula, no tap, no waiting for a
+  maintainer. Point it at `owner/repo`.
+- **Verified, not just downloaded.** Published SHA-256 sums are checked against
+  what landed on disk. `require_checksums` refuses anything that publishes none,
+  and ketch's own updates never accept trust-on-first-use.
+- **Apps as well as binaries.** An `.app` bundle goes to `/Applications`,
+  quarantine cleared when the signature checks out, removed cleanly on
+  uninstall.
+- **One tree.** Everything under `~/.ketch`. Uninstalling leaves nothing behind.
+- **Sources beyond GitHub.** A plugin is one executable that answers in JSON —
+  no recompile, no ketch release.
+
+## Highlights
+
+| | |
+| --- | --- |
+| **Explains its choices** | `ketch why <pkg>` traces a resolution without installing; `ketch info <pkg> --assets` lists every release asset with its score and the reason. |
+| **Checksums and signatures** | SHA-256 from the release's checksum files or GitHub's own asset digest. A manifest's `trust` table requires a publisher signature — sigstore, minisign or gpg — and a release without it is refused. See [docs/MANIFESTS.md](docs/MANIFESTS.md). |
+| **Rollback without a re-download** | An upgrade keeps the previous version on disk; `ketch rollback <pkg>` relinks it. |
+| **Reproducible machines** | `ketch lock` writes `ketch.lock`; `ketch sync` installs exactly what it names. |
+| **Fast batches** | Downloads run four at a time by default (`--jobs N`). |
+| **History that outlives packages** | `ketch history` and `ketch stats` read an append-only `stats.db`. |
+| **Changelogs on demand** | `ketch changelog <pkg>` shows the shipped `CHANGELOG.md` entry, or the release notes. |
+| **Manages itself** | ketch is one of its own packages: `ketch self upgrade`, `ketch self uninstall`. |
+
+## How it compares
+
+Every tool below is good at what it was built for; this is where ketch sits
+among them. Checked against each project's documentation in September 2026.
+
+| | ketch | Homebrew | apt | mise |
+| --- | --- | --- | --- | --- |
+| Needs a formula or package written first | No — any `owner/repo` with release assets; a manifest only when inference picks wrong | Yes — a formula or cask, in core or a tap | Yes — a `.deb` in a configured repository | No for `github:` / `aqua:` backends; short names come from its registry |
+| Platforms | macOS, Linux, Windows | macOS, Linux | Debian-family Linux | macOS, Linux, Windows |
+| Verification by default | SHA-256 when the release publishes one (checksum file or GitHub asset digest); publisher signature when the manifest declares `trust` | SHA-256 pinned in every formula | Signed repository metadata plus per-package hashes | Checksums when recorded (config or `mise.lock`); GitHub attestations and SLSA provenance when the release has them |
+| Versioned store with rollback | Yes — previous version retained; `ketch rollback` relinks it | Old versions stay until `brew cleanup`; no rollback command | No — downgrade only if the old version is still available | Versions side by side; switch with `mise use tool@version` |
+| Clean uninstall | `ketch uninstall`; `ketch self uninstall` removes the whole `~/.ketch` tree and its PATH block | `brew uninstall` (`--zap` for cask leftovers) | `apt purge` removes the package and its config files | `mise uninstall`; `mise implode` removes mise itself |
+| Builds from source | Never | When no bottle fits | Never (binary packages) | Some backends do |
+
+Where ketch is the odd one out: `.app` bundles into `/Applications`, an
+explanation for every asset it picks, and a store it can roll back without
+touching the network.
 
 ## Install
 
@@ -105,27 +173,21 @@ run `ketch self uninstall` (or delete the tree yourself). The same holds for
 `mise unuse -g github:listepo/ketch`. Run from a mise install, `ketch self
 uninstall` asks, separately, whether to run that command for you as well.
 
-## Why
+## Usage
 
-Most command-line tools are already published as a release asset built for your
-machine. A package manager does not need to compile them, and a maintainer does
-not need to write a formula for them — the artefact is right there. ketch picks
-the right one, checks the checksum the project published, unpacks it into a
-versioned store, and links it onto your `PATH`.
+```bash
+ketch install sharkdp/bat            # install from any owner/repo
+ketch why bat                        # explain the resolution, install nothing
+ketch info bat --assets              # every release asset, its score and why
+ketch upgrade                        # bring everything unpinned up to date
+ketch rollback bat                   # back to the previous version, no download
+ketch lock                           # record this machine in ./ketch.lock
+ketch sync                           # make another machine match it
+ketch self upgrade                   # upgrade ketch itself
+ketch uninstall bat                  # remove it, links and all
+```
 
-- **Any repo that ships releases.** No formula, no tap, no waiting for a
-  maintainer. Point it at `owner/repo`.
-- **Verified, not just downloaded.** Published SHA-256 sums are checked against
-  what landed on disk. `require_checksums` refuses anything that publishes none,
-  and ketch's own updates never accept trust-on-first-use.
-- **Apps as well as binaries.** An `.app` bundle goes to `/Applications`,
-  quarantine cleared when the signature checks out, removed cleanly on
-  uninstall.
-- **One tree.** Everything under `~/.ketch`. Uninstalling leaves nothing behind.
-- **Sources beyond GitHub.** A plugin is one executable that answers in JSON —
-  no recompile, no ketch release.
-
-## Using it
+### Every command
 
 ```bash
 ketch install <pkg>...     # install; concurrent by default, --jobs N to change
@@ -133,16 +195,16 @@ ketch install --path PATH  # install a local archive, binary, symlink, or .app
 ketch list                 # what is installed
 ketch outdated             # what has a newer release
 ketch upgrade              # bring everything unpinned up to date
-ketch rollback <pkg>      # restore the previous retained version (`--to` for an older one)
+ketch rollback <pkg>       # restore the previous retained version (`--to` for an older one)
 ketch prune [pkg]          # apply the retention policy; upgrade never deletes a prefix
 ketch info <pkg>           # details, including --assets and why each scored
 ketch why <pkg>            # explain a resolution without installing
-ketch search <query>       # the registry and GitHub
+ketch search <query>       # GitHub, and any source plugin that can search
 ketch changelog <pkg>      # what changed: the shipped file, or the release notes
 ketch update               # refresh the package registry
 ketch pin / unpin <pkg>    # hold a version, or let go
-ketch link <pkg>...         # re-create links for installed packages
-ketch unlink <pkg>...       # remove links, keep the installed package
+ketch link <pkg>...        # re-create links for installed packages
+ketch unlink <pkg>...      # remove links, keep the installed package
 ketch uninstall <pkg>...   # remove it
 ketch lock                 # write ketch.lock from what is installed
 ketch sync                 # install what ketch.lock names, at those versions
@@ -155,9 +217,13 @@ ketch registry push        # offer it to the registry, showing the diff first
 ketch registry validate    # check a registry tree the way the pre-push hook does
 ketch registry status      # age and source of the local copy; no network
 ketch self version         # print version, target, root and binary path
-ketch self upgrade          # upgrade ketch itself
+ketch self upgrade         # upgrade ketch itself
 ketch self uninstall       # remove ketch and everything it installed
 ```
+
+[docs/COMMANDS.md](docs/COMMANDS.md) has every command with a working example.
+
+## The store and rollback
 
 Everything lives under `~/.ketch`: versioned payloads in `store/`, links in
 `bin/`, a `state.json` recording what is installed, and a `stats.db` recording
@@ -419,9 +485,9 @@ every target has built does it create the tag and the release, after which the
 `tap` job bumps `listepo/homebrew-tap`'s cask. So `v0.4.1` existing means
 v0.4.1 shipped, and a build that fails leaves nothing to clean up.
 
-CI (`ci.yml`) runs only on pushes to `main` and on manual
-`workflow_dispatch`. It does not run on pull request events. Before merging a
-branch, dispatch the gate on that ref and merge only when it is green:
+CI (`ci.yml`) runs on pushes to `main`, on pull requests that are not drafts,
+and on manual `workflow_dispatch`. Before merging a branch, dispatch the gate
+on that ref and merge only when it is green:
 
 ```bash
 gh workflow run ci.yml --ref <branch>
@@ -436,15 +502,67 @@ ketch is not on crates.io — it ships as a tarball on a GitHub release, so
 release-plz proposes the version and writes the changelog, and never publishes
 a crate.
 
+## Where to share
+
+Draft posts for announcing ketch, grouped by site. Add new posts as more bullets under the right site.
+
+### Hacker News
+
+- [Show HN draft](notes/hacker.news.md)
+
+### Reddit
+
+- [Community post](notes/reddit.com.md)
+
+### Dev.to
+
+- [Technical article](notes/dev.to.md)
+
+### Hashnode
+
+- [Design-decisions article](notes/hashnode.dev.md)
+
+### Medium
+
+- [Story for a broader audience](notes/medium.com.md)
+
+### Lobsters
+
+- [Submission with author comment](notes/lobste.rs.md)
+
+### Indie Hackers
+
+- [Progress and sustainability post](notes/indiehackers.com.md)
+
+### Product Hunt
+
+- [Launch page](notes/producthunt.com.md)
+
+### X / Twitter
+
+- [Launch thread](notes/x.com.md)
+
+### LinkedIn
+
+- [Release announcement](notes/linkedin.com.md)
+
 ## Contributing
+
+Contributions are welcome, from individuals and companies alike. Found a bug or
+an asset ketch picks wrong? [Open an issue](https://github.com/listepo/ketch/issues)
+with the command you ran and what `ketch why <pkg>` says. Discussion happens in
+the repository's issues, so that is also the place for ideas and questions
+before you start on something bigger. Pull requests are welcome for fixes, docs
+and features; the checklist below and [`CONTRIBUTING.md`](CONTRIBUTING.md) say
+what a change needs before it can be merged.
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the checklist.
 [AGENTS.md](AGENTS.md) documents layout, conventions, and trust boundaries —
 read it before changing anything. Repository prose (commits, PRs, docs,
 comments) is English. `cargo test`, `cargo clippy --all-targets`, and
 `cargo fmt --check` all have to be clean; CI enforces those on macOS, Linux,
-and Windows, but only on `main` pushes and `workflow_dispatch` — dispatch
-`ci.yml` on your branch and wait for green before merging.
+and Windows — dispatch `ci.yml` on your branch and wait for green before
+merging.
 
 With [just](https://github.com/casey/just) installed, `just deps` sets up the
 pinned tools and commitlint once, and `just hooks` opts in to the

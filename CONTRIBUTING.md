@@ -12,8 +12,9 @@ cargo clippy --all-targets
 cargo fmt --check
 ```
 
-CI (`ci.yml`) runs on pushes to `main` and on `workflow_dispatch` — not on pull
-request events. Before merging a branch, dispatch the gate on that ref:
+CI (`ci.yml`) runs on pushes to `main`, on pull requests that are not drafts,
+and on `workflow_dispatch`. Before merging a branch, dispatch the gate on that
+ref:
 
 ```bash
 gh workflow run ci.yml --ref <branch>
