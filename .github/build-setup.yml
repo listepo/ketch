@@ -8,17 +8,24 @@
 # secret: the certificate is imported into a throwaway keychain and the one
 # Developer ID Application identity in it is read back out.
 
-# An exact Rust for release builds, not whatever stable the runner image
-# ships, so a release is reproducible from its tag. Runs first so rust-cache
-# keys on this rustc. MSRV (rust-version in Cargo.toml) is 1.86.
-- name: Pin Rust toolchain
+# The Rust that mise.toml pins, the same one local work and ci.yml use, not
+# whatever stable the runner image ships, so a release is reproducible from its
+# tag. Only rust is installed from mise.toml; the release build needs nothing
+# else from it. Runs first so rust-cache keys on this rustc. mise installs the
+# toolchain through rustup and sets RUSTUP_TOOLCHAIN, so the cross targets this
+# matrix entry builds are added to that toolchain. MSRV (rust-version in
+# Cargo.toml) is 1.86.
+- name: Install Rust from mise.toml
+  uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+  with:
+    install_args: rust
+
+- name: Add the Rust targets this build needs
   shell: bash
   env:
     TARGETS: ${{ join(matrix.targets, ' ') }}
   run: |
     set -euo pipefail
-    rustup toolchain install 1.98.1 --profile minimal
-    rustup default 1.98.1
     # shellcheck disable=SC2086
     rustup target add $TARGETS
     rustc --version

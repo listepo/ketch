@@ -37,7 +37,8 @@ case "$mode" in
   *) echo "unknown option: $mode" >&2; exit 2 ;;
 esac
 
-# The Rust toolchain is deliberately not pinned (see mise.toml); git-cliff is.
+# git-cliff runs through mise; cargo is the Rust mise.toml pins wherever mise is
+# active (CI installs it with jdx/mise-action).
 CARGO="${CARGO:-cargo}"
 CLIFF="${CLIFF:-mise exec -- git-cliff}"
 

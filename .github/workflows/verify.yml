@@ -35,8 +35,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install toolchain
-        run: rustup component add rustfmt clippy
+      # The Rust mise.toml pins, with rustfmt and clippy: the same one ci.yml
+      # tests and release.yml builds with.
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install_args: rust
 
       - uses: Swatinem/rust-cache@v2
 

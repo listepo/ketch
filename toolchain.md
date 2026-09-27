@@ -10,7 +10,7 @@ Project programs and direct packages from manifests.
 | cargo-cache | mise | `just cache` / `just cache-autoclean`; the shared cargo home fills up | https://github.com/matthiaskrgr/cargo-cache |
 | cargo-nextest | global (cargo install) | Parallel test runner | https://github.com/nextest-rs/nextest |
 | node | mise | commitlint for `just lint-commits` and the commit-msg hook; node-based checks live in Just and CI only | https://github.com/nodejs/node |
-| rustc | rustup / system | Rust compiler | https://github.com/rust-lang/rust |
+| rustc | mise (through rustup) | Rust compiler; `mise.toml` pins the one version local work, CI and release builds use | https://github.com/rust-lang/rust |
 | cargo | with rustc | Rust build and dependencies | https://github.com/rust-lang/cargo |
 | just | cargo install just / brew | Command recipes | https://github.com/casey/just |
 | cargo-dist | mise | Generates `release.yml` and builds the release tarballs (`just dist-generate`, `just package`) | https://github.com/axodotdev/cargo-dist |

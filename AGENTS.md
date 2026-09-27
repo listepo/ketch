@@ -159,8 +159,14 @@ tool that is a crate dependency belongs in `Cargo.toml` instead, not here.
 
 `cargo-cache` is a developer utility, not a crate dependency, and it is pinned
 in `mise.toml` so every machine runs the same one; so is the Node that
-commitlint runs on. `mise install` fetches both, and the Rust toolchain is
-deliberately not pinned because CI builds on the runner's default stable.
+commitlint runs on. `mise install` fetches both.
+
+The Rust toolchain is pinned there too, with rustfmt and clippy: `mise.toml` is
+the one source of the Rust version for local work, every CI workflow and the
+release build, which all install it with `jdx/mise-action`. To move to a new
+Rust, bump the `rust` entry in `mise.toml` and nothing else, then run `just
+dist-generate` if `release.yml` changes. The MSRV (`rust-version` in
+`Cargo.toml`, 1.86) is a separate promise and does not follow the pin.
 
 ```bash
 just cache            # $CARGO_HOME sizes and the build output, no deletes
