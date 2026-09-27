@@ -177,7 +177,7 @@ fn preflight_destinations(
     };
     let binaries = if want_binaries {
         if plan.bin_specs.is_empty() {
-            let found = discover_executables(platform, plan.payload_dir);
+            let found = discover_executables(platform, plan.payload_dir, plan.name);
             let sole = found.len() == 1;
             found
                 .into_iter()
@@ -306,7 +306,7 @@ impl Platform for MacOsPlatform {
         ]
     }
 
-    fn bin_candidates(&self, payload: &Path, kind: PackageKind) -> Vec<PathBuf> {
+    fn bin_candidates(&self, payload: &Path, kind: PackageKind, package: &str) -> Vec<PathBuf> {
         // The same rule `place` applies: an app bundle carries its own
         // executables, so an `auto` payload holding one links none.
         let want_binaries = match kind {
@@ -315,7 +315,7 @@ impl Platform for MacOsPlatform {
             PackageKind::Auto => find_app_bundles(payload).is_empty(),
         };
         if want_binaries {
-            discover_executables(self, payload)
+            discover_executables(self, payload, package)
         } else {
             Vec::new()
         }
@@ -356,7 +356,7 @@ impl Platform for MacOsPlatform {
         };
         if want_binaries {
             let targets = if plan.bin_specs.is_empty() {
-                let found = discover_executables(self, plan.store_dir);
+                let found = discover_executables(self, plan.store_dir, plan.name);
                 let sole = found.len() == 1;
                 found
                     .into_iter()
@@ -703,7 +703,7 @@ mod tests {
         std::fs::write(&noise, b"#!/bin/sh\necho noise\n").unwrap();
         std::fs::set_permissions(&noise, std::fs::Permissions::from_mode(0o755)).unwrap();
 
-        let found = discover_executables(&MacOsPlatform::new(), &payload);
+        let found = discover_executables(&MacOsPlatform::new(), &payload, "rg");
         assert_eq!(found, vec![keep], "{found:?}");
     }
 

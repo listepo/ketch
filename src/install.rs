@@ -439,7 +439,7 @@ fn pick_bin(
         return Ok(None);
     }
     let kind = manifest.map(|m| m.kind).unwrap_or_default();
-    let found = platform.bin_candidates(payload, kind);
+    let found = platform.bin_candidates(payload, kind, name);
     let files: Vec<String> = found
         .iter()
         .map(|p| {
