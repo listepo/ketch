@@ -8,6 +8,21 @@
 # secret: the certificate is imported into a throwaway keychain and the one
 # Developer ID Application identity in it is read back out.
 
+# An exact Rust for release builds, not whatever stable the runner image
+# ships, so a release is reproducible from its tag. Runs first so rust-cache
+# keys on this rustc. MSRV (rust-version in Cargo.toml) is 1.86.
+- name: Pin Rust toolchain
+  shell: bash
+  env:
+    TARGETS: ${{ join(matrix.targets, ' ') }}
+  run: |
+    set -euo pipefail
+    rustup toolchain install 1.98.1 --profile minimal
+    rustup default 1.98.1
+    # shellcheck disable=SC2086
+    rustup target add $TARGETS
+    rustc --version
+
 # Release builds are rare; always save so the next cut is warm.
 - name: Cache Cargo build
   uses: Swatinem/rust-cache@v2

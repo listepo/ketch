@@ -134,6 +134,17 @@ jobs:
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
             echo "$HOME/.cargo/bin" >> $GITHUB_PATH
           fi
+      - name: "Pin Rust toolchain"
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.98.1 --profile minimal
+          rustup default 1.98.1
+          # shellcheck disable=SC2086
+          rustup target add $TARGETS
+          rustc --version
+        shell: "bash"
+        env:
+          "TARGETS": "${{ join(matrix.targets, ' ') }}"
       - name: "Cache Cargo build"
         uses: "Swatinem/rust-cache@v2"
         with:
