@@ -51,9 +51,9 @@ jobs:
 
       # git-cliff and the Rust (scripts/release.sh runs cargo) at the versions
       # mise.toml pins, as everywhere else in CI.
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      - uses: ./.github/actions/rust
         with:
-          install_args: rust git-cliff
+          install-args: rust git-cliff
 
       - name: Release
         env:
