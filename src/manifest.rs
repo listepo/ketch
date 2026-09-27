@@ -4,6 +4,9 @@
 //! the fetched package registry, the built-in registry compiled into the
 //! binary, then inference from the source reference itself. Inference is what
 //! lets `ketch install owner/repo` work for a repository nobody has curated.
+//!
+//! It is also the one place a user manifest is edited: [`write_bins`] records
+//! the binaries a package links, and the only module that imports `toml_edit`.
 
 use crate::config::Config;
 use crate::error::{Error, Result};
@@ -251,6 +254,80 @@ pub fn to_toml(manifest: &Manifest) -> Result<String> {
     toml::to_string_pretty(manifest).map_err(|e| Error::parse("manifest", e.to_string()))
 }
 
+/// Write `bin = [{ name = "<a>" }, { name = "<b>" }, …]` for `package` into
+/// the user manifest at `path`, one entry per name in `bins`, changing nothing
+/// else in the file. `false` when the package there already has a `bin`: a
+/// choice is only ever written where none was made.
+///
+/// The file is the user's, so what they wrote — comments, order, spacing —
+/// survives: `toml_edit` changes the one key and renders the rest back as it
+/// was read. The result is parsed as a manifest again before it replaces the
+/// file, so a write that would leave it unloadable fails instead; and it
+/// replaces the file by renaming a finished copy over it, so an interrupted
+/// write leaves the old one whole.
+pub fn write_bins(path: &Path, package: &str, bins: &[String]) -> Result<bool> {
+    // A manifest linked in from a dotfiles repository is edited there, not
+    // replaced by a copy that silently stops following the repository.
+    let target = std::fs::canonicalize(path).map_err(|e| Error::io(path, e))?;
+    let label = target.display().to_string();
+    let text = std::fs::read_to_string(&target).map_err(|e| Error::io(&target, e))?;
+    let mut doc: toml_edit::DocumentMut = text
+        .parse()
+        .map_err(|e: toml_edit::TomlError| Error::parse(&label, e.to_string()))?;
+    let table = package_table(&mut doc, package).ok_or_else(|| {
+        Error::msg(format!(
+            "{label} has no `[[package]]` table named `{package}` to write `bin` into"
+        ))
+    })?;
+    if table.contains_key("bin") {
+        return Ok(false);
+    }
+    let mut list = toml_edit::Array::new();
+    for bin in bins {
+        let mut entry = toml_edit::InlineTable::new();
+        entry.insert("name", bin.as_str().into());
+        list.push(entry);
+    }
+    table.insert("bin", toml_edit::value(list));
+    let body = doc.to_string();
+    parse_registry(&body, &label)?;
+
+    let dir = target.parent().unwrap_or_else(|| Path::new("."));
+    let mut temp = tempfile::NamedTempFile::new_in(dir).map_err(|e| Error::io(dir, e))?;
+    std::io::Write::write_all(&mut temp, body.as_bytes()).map_err(|e| Error::io(temp.path(), e))?;
+    if let Ok(meta) = std::fs::metadata(&target) {
+        // A temporary file is created private; the manifest keeps the mode
+        // the user gave it.
+        let _ = std::fs::set_permissions(temp.path(), meta.permissions());
+    }
+    temp.persist(&target)
+        .map_err(|e| Error::io(&target, e.error))?;
+    Ok(true)
+}
+
+/// The table in a manifest file that describes `package`: the whole document
+/// for a single manifest, or the matching entry of a `[[package]]` array.
+fn package_table<'a>(
+    doc: &'a mut toml_edit::DocumentMut,
+    package: &str,
+) -> Option<&'a mut toml_edit::Table> {
+    if !doc
+        .get("package")
+        .is_some_and(toml_edit::Item::is_array_of_tables)
+    {
+        return Some(doc.as_table_mut());
+    }
+    let wanted = normalize_name(package);
+    doc.get_mut("package")?
+        .as_array_of_tables_mut()?
+        .iter_mut()
+        .find(|t| {
+            t.get("name")
+                .and_then(toml_edit::Item::as_str)
+                .is_some_and(|n| normalize_name(n) == wanted)
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -378,5 +455,99 @@ mod tests {
         let (manifest, origin) = resolver.resolve(&PackageSpec::parse("rg")).unwrap();
         assert_eq!(manifest.source.id, "me/my-ripgrep");
         assert!(matches!(origin, ManifestOrigin::User(_)));
+    }
+
+    fn user_file(body: &str) -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("rtok.toml");
+        std::fs::write(&path, body).unwrap();
+        (dir, path)
+    }
+
+    #[test]
+    fn write_bins_adds_the_entry_and_keeps_every_other_byte() {
+        let body = concat!(
+            "# my rtok, pinned to the fork\n",
+            "name   = \"rtok\"   # spaced on purpose\n",
+            "source = \"github:me/rtok\"\n",
+            "\n",
+            "[asset]\n",
+            "include = [\"*.tar.xz\"]\n",
+        );
+        let (_dir, path) = user_file(body);
+
+        assert!(write_bins(&path, "rtok", &one("rtok-cli")).unwrap());
+
+        let written = std::fs::read_to_string(&path).unwrap();
+        let expected = concat!(
+            "# my rtok, pinned to the fork\n",
+            "name   = \"rtok\"   # spaced on purpose\n",
+            "source = \"github:me/rtok\"\n",
+            "bin = [{ name = \"rtok-cli\" }]\n",
+            "\n",
+            "[asset]\n",
+            "include = [\"*.tar.xz\"]\n",
+        );
+        pretty_assertions::assert_eq!(written, expected);
+        let parsed = parse_registry(&written, "test").unwrap();
+        assert_eq!(parsed[0].bin[0].name.as_deref(), Some("rtok-cli"));
+    }
+
+    fn one(bin: &str) -> Vec<String> {
+        vec![bin.to_string()]
+    }
+
+    #[test]
+    fn write_bins_writes_one_entry_per_name_in_order() {
+        let (_dir, path) = user_file("name = \"rtok\"\nsource = \"github:me/rtok\"\n");
+        let bins = vec!["rtok".to_string(), "other-tool".to_string()];
+        assert!(write_bins(&path, "rtok", &bins).unwrap());
+        let written = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            written.ends_with("bin = [{ name = \"rtok\" }, { name = \"other-tool\" }]\n"),
+            "{written}"
+        );
+    }
+
+    #[test]
+    fn write_bins_leaves_a_manifest_that_already_names_one_alone() {
+        let body = "name = \"rtok\"\nsource = \"github:me/rtok\"\nbin = [{ name = \"rtok\" }]\n";
+        let (_dir, path) = user_file(body);
+        assert!(!write_bins(&path, "rtok", &one("rtok-cli")).unwrap());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), body);
+    }
+
+    #[test]
+    fn write_bins_finds_the_package_in_a_multi_package_file() {
+        let body = concat!(
+            "[[package]]\n",
+            "name = \"other\"\n",
+            "source = \"github:me/other\"\n",
+            "\n",
+            "[[package]]\n",
+            "name = \"rtok\"\n",
+            "source = \"github:me/rtok\"\n",
+        );
+        let (_dir, path) = user_file(body);
+        assert!(write_bins(&path, "rtok", &one("rtok-cli")).unwrap());
+        let parsed = parse_registry(&std::fs::read_to_string(&path).unwrap(), "t").unwrap();
+        assert!(parsed[0].bin.is_empty());
+        assert_eq!(parsed[1].bin[0].name.as_deref(), Some("rtok-cli"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_bins_edits_the_target_of_a_symlinked_manifest() {
+        let (dir, target) = user_file("name = \"rtok\"\nsource = \"github:me/rtok\"\n");
+        let link = dir.path().join("link.toml");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        assert!(write_bins(&link, "rtok", &one("rtok-cli")).unwrap());
+        assert!(std::fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert!(std::fs::read_to_string(&target)
+            .unwrap()
+            .contains("rtok-cli"));
     }
 }

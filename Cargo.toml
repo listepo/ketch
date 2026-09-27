@@ -27,6 +27,9 @@ clap_complete = "4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "1.1"
+# Writing a chosen `bin` back into a user manifest without touching the rest
+# of the file, comments and layout included; `toml` alone would re-render it.
+toml_edit = "0.25"
 ureq = { version = "2", features = ["json", "proxy-from-env"] }
 sha2 = "0.11"
 hex = "0.4"

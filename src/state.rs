@@ -318,6 +318,7 @@ mod tests {
             trust: crate::model::TrustResult::default(),
             retained: Vec::new(),
             provenance: None,
+            bin_choice: None,
         }
     }
 
@@ -437,6 +438,7 @@ mod tests {
         assert!(pkg.retained.is_empty());
         assert!(pkg.trust.is_not_applicable());
         assert!(pkg.provenance.is_none());
+        assert!(pkg.bin_choice.is_none());
         assert_eq!(pkg.publisher_trust(), "first use");
         assert_eq!(pkg.version.to_string(), "14.1.0");
     }
@@ -467,6 +469,28 @@ mod tests {
         assert_eq!(loaded.get("signed").unwrap().provenance, Some(signed));
         assert_eq!(loaded.get("signed").unwrap().publisher_trust(), "signed");
         assert!(loaded.get("plain").unwrap().provenance.is_none());
+    }
+
+    #[test]
+    fn a_bin_choice_round_trips_and_stays_out_of_records_without_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let mut state = State::default();
+        state.insert(InstalledPackage {
+            bin_choice: Some("rtok-cli".into()),
+            ..pkg("chosen")
+        });
+        state.insert(pkg("plain"));
+        state.save_path(&path).unwrap();
+
+        let written = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(written.matches("\"bin_choice\"").count(), 1, "{written}");
+        let loaded = State::load_path(&path).unwrap();
+        assert_eq!(
+            loaded.get("chosen").unwrap().bin_choice.as_deref(),
+            Some("rtok-cli")
+        );
+        assert!(loaded.get("plain").unwrap().bin_choice.is_none());
     }
 
     #[test]

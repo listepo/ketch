@@ -36,6 +36,35 @@ testtool 1.0.0 -> 2.0.0
 stop 1 process using testtool? [y/N]
 ```
 
+## An install stops at "ships several binaries sharing its name"
+
+The release holds more than one executable that answers to the package's name
+(`rtok-cli` and `rtok-hook` for a package called `rtok`), none of them is named
+exactly like the package, the manifest has no `bin` entry, and there was no
+terminal to ask in — piped, in CI, or run with `--yes`. Nothing is installed.
+
+```text
+$ ketch install owner/rtok --yes
+error: `rtok` ships several binaries sharing its name (rtok-cli, rtok-hook) and none is named `rtok`; ...
+```
+
+Pass `--bin` with the one you want — `ketch install owner/rtok --bin rtok-cli`,
+which needs no terminal — or run the same command in a terminal without `--yes`
+and pick one from the list. Either way the choice is remembered in `state.json`,
+reused on every upgrade, and copied into `ketch.lock` by `ketch lock`, so
+`ketch sync` repeats it on another machine. Or name the binary in your own
+manifest, which wins over the registry:
+
+```toml
+# ~/.ketch/manifests/rtok.toml
+name = "rtok"
+source = "github:owner/rtok"
+bin = [{ name = "rtok-cli" }]
+```
+
+The same choice is made on macOS, Linux and Windows; see the `bin` section of
+[MANIFESTS.md](MANIFESTS.md) for the order.
+
 ## `ketch.exe.old` is still in the bin dir
 
 Windows will not delete the file that backs a running image. `self upgrade`

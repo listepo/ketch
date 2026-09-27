@@ -166,6 +166,10 @@ pub struct InstallArgs {
     #[arg(long, value_name = "NAME")]
     pub name: Option<String>,
 
+    /// Which binary to link when several share the package's name (single package)
+    #[arg(long, value_name = "NAME")]
+    pub bin: Option<String>,
+
     /// Reinstall even when the requested version is already present
     #[arg(long, short)]
     pub force: bool,
@@ -344,6 +348,10 @@ pub struct UpgradeArgs {
     /// Upgrade pinned packages too
     #[arg(long)]
     pub force: bool,
+
+    /// Which binary to link when several share the package's name (single package)
+    #[arg(long, value_name = "NAME")]
+    pub bin: Option<String>,
 
     /// Packages to work on at once (default: 4, or `jobs` in config.toml)
     #[arg(long, short = 'j', value_name = "N")]

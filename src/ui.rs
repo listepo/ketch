@@ -473,6 +473,42 @@ pub fn prompt_required(question: &str) -> crate::error::Result<String> {
     })
 }
 
+/// Ask the user to pick one of `options` by number; the index of the pick.
+///
+/// `None` when nobody can answer: stdin or stderr is not a terminal, or the
+/// input ended. Unlike [`prompt`], a pipe does not answer this: a number read
+/// from a script picks by position, and position is the very thing that
+/// differs between platforms. The options come from a client app's payload,
+/// so they are printed through [`printable`].
+pub fn select(question: &str, options: &[String]) -> Option<usize> {
+    with_tui_input_paused(|| {
+        if !std::io::stdin().is_terminal() || !std::io::stderr().is_terminal() {
+            return None;
+        }
+        eprintln!("{} {question}", cyan(&format!("{:>10}", "choose")));
+        for (i, option) in options.iter().enumerate() {
+            eprintln!("{:>11} {}", format!("{})", i + 1), printable(option));
+        }
+        loop {
+            eprint!(
+                "{} number, 1 to {}: ",
+                cyan(&format!("{:>10}", "answer")),
+                options.len()
+            );
+            let _ = std::io::stderr().flush();
+            let mut answer = String::new();
+            match std::io::stdin().read_line(&mut answer) {
+                Ok(0) | Err(_) => return None,
+                Ok(_) => {}
+            }
+            match answer.trim().parse::<usize>() {
+                Ok(n) if (1..=options.len()).contains(&n) => return Some(n - 1),
+                _ => warn(&format!("answer with a number from 1 to {}", options.len())),
+            }
+        }
+    })
+}
+
 /// Human-readable byte count.
 pub fn bytes(n: u64) -> String {
     const UNITS: [&str; 5] = ["B", "KiB", "MiB", "GiB", "TiB"];
