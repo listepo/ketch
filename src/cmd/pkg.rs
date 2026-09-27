@@ -36,6 +36,11 @@ pub fn install(cfg: &Config, args: InstallArgs) -> Result<()> {
             "--name needs exactly one package (or use it with --path)",
         ));
     }
+    if args.bin.is_some() && args.path.is_none() && args.packages.len() != 1 {
+        return Err(Error::msg(
+            "--bin needs exactly one package (or use it with --path)",
+        ));
+    }
     if args.path.is_some() && !args.packages.is_empty() {
         return Err(Error::msg(
             "--path already names the package; do not also pass a PKG argument",
@@ -74,6 +79,9 @@ pub fn install(cfg: &Config, args: InstallArgs) -> Result<()> {
             expected_sha256: None,
             // --name applies to the single package being installed.
             name_override: if i == 0 { name_override.clone() } else { None },
+            interactive: !args.yes,
+            bin: args.bin.clone(),
+            locked_bin: None,
         })
         .collect();
 
@@ -165,6 +173,9 @@ pub fn uninstall(cfg: &Config, args: UninstallArgs) -> Result<()> {
 
 pub fn upgrade(cfg: &Config, args: UpgradeArgs) -> Result<()> {
     super::system::maybe_auto_update(cfg);
+    if args.bin.is_some() && args.names.len() != 1 {
+        return Err(Error::msg("--bin needs exactly one package name"));
+    }
     let _lock = Lock::acquire(cfg)?;
     let sources = SourceRegistry::load(cfg);
     let mut state = State::load(cfg)?;
@@ -296,6 +307,9 @@ pub fn upgrade(cfg: &Config, args: UpgradeArgs) -> Result<()> {
             // The installed name, which `--name` may have chosen. Resolving
             // the source alone would infer another and install a second copy.
             name_override: Some(pkg.name.clone()),
+            interactive: !args.yes,
+            bin: args.bin.clone(),
+            locked_bin: None,
         })
         .collect();
 

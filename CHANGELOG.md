@@ -8,6 +8,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [0.6.2](https://github.com/listepo/ketch/releases/tag/v0.6.2) - 2026-09-27
+
+### Other
+
+- run the shared listepo/infra Rust CI and check the rustc pin ([#151](https://github.com/listepo/ketch/pull/151))
+- *(plan)* leave B65 with its Cursor owner and point it at B64's test
+- *(plan)* record B64 follow-up decisions and M9 pull request
+- *(plan)* number the 2026-09-27 tasks and claim B64 and M9
+- *(plan)* add ketch list refactor task with local and remote modes
+- install Rust from mise in CI and release ([#150](https://github.com/listepo/ketch/pull/150))
+- refresh README for v0.6.0 — clearer pitch, examples, comparison ([#143](https://github.com/listepo/ketch/pull/143))
+- switch to triple license (GPLv3, royalty-free, commercial) ([#145](https://github.com/listepo/ketch/pull/145))
+- sync docs/site.md to listepo/landing instead of shop-mvp ([#148](https://github.com/listepo/ketch/pull/148))
 
 ## [0.6.1](https://github.com/listepo/ketch/releases/tag/v0.6.1) - 2026-09-27
 

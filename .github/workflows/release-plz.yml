@@ -85,10 +85,9 @@ jobs:
           persist-credentials: false
           token: ${{ secrets.RELEASE_PLZ_TOKEN }}
 
-      # cargo from the Rust mise.toml pins, as in ci.yml; release-plz runs it.
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
-        with:
-          install_args: rust
+      # cargo from the Rust mise.toml pins, checked as in ci.yml; release-plz
+      # runs it.
+      - uses: ./.github/actions/rust
 
       # A release pull request is written against the last released version,
       # so proposing one while a release is still being built would compare

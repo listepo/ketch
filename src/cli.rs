@@ -58,7 +58,7 @@ pub enum Command {
     #[command(visible_aliases = ["remove", "rm"])]
     Uninstall(UninstallArgs),
 
-    /// Show installed packages
+    /// Show installed and available packages
     #[command(visible_alias = "ls")]
     List(ListArgs),
 
@@ -166,6 +166,10 @@ pub struct InstallArgs {
     #[arg(long, value_name = "NAME")]
     pub name: Option<String>,
 
+    /// Which binary to link when several share the package's name (single package)
+    #[arg(long, value_name = "NAME")]
+    pub bin: Option<String>,
+
     /// Reinstall even when the requested version is already present
     #[arg(long, short)]
     pub force: bool,
@@ -207,6 +211,11 @@ pub struct UninstallArgs {
 
 #[derive(Args, Debug, Clone)]
 pub struct ListArgs {
+    /// `local`: installed packages only, no network. `remote`: the registry.
+    /// Omit for both in one table, with the latest version of each.
+    #[arg(value_enum, value_name = "MODE")]
+    pub mode: Option<ListMode>,
+
     /// Emit JSON instead of a table
     #[arg(long)]
     pub json: bool,
@@ -214,6 +223,20 @@ pub struct ListArgs {
     /// Print only package names, one per line
     #[arg(long, conflicts_with = "json")]
     pub names_only: bool,
+
+    /// Same as `ketch list local`. Bare `ketch list` used to mean installed
+    /// only; this hidden alias gives scripts one release to move to `local`.
+    #[arg(long, hide = true, conflicts_with = "mode")]
+    pub installed: bool,
+}
+
+/// Which packages `ketch list` shows.
+#[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ListMode {
+    /// Installed packages, from the state file
+    Local,
+    /// Packages the registry offers
+    Remote,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -325,6 +348,10 @@ pub struct UpgradeArgs {
     /// Upgrade pinned packages too
     #[arg(long)]
     pub force: bool,
+
+    /// Which binary to link when several share the package's name (single package)
+    #[arg(long, value_name = "NAME")]
+    pub bin: Option<String>,
 
     /// Packages to work on at once (default: 4, or `jobs` in config.toml)
     #[arg(long, short = 'j', value_name = "N")]

@@ -460,6 +460,13 @@ impl Platform for WindowsPlatform {
         ]
     }
 
+    fn bin_candidates(&self, payload: &Path, kind: PackageKind) -> Vec<PathBuf> {
+        if kind == PackageKind::App {
+            return Vec::new();
+        }
+        discover_executables(self, payload)
+    }
+
     fn place(&self, plan: &Placement<'_>) -> Result<Vec<LinkRecord>> {
         if plan.link {
             let found = cli_targets(self, plan.payload_dir, plan)?;

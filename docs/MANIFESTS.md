@@ -44,7 +44,8 @@ source = "github:BurntSushi/ripgrep"
 ```
 
 Everything else has a default. In a registry package folder the name comes from
-the folder; elsewhere `name` is required.
+the folder; elsewhere `name` is required. `ketch config create` also writes the
+`bin` entry naming the command, which it always asks for.
 
 ## A complete one
 
@@ -124,6 +125,39 @@ levels deep, ignores documentation directories and bundle internals, and prefers
 a `bin/` directory when the payload has one. A single executable whose name
 plainly carries build metadata — `jq-macos-arm64` — is linked under the package
 name instead.
+
+Discovery links everything it finds, until a release ships several executables
+sharing the package's name — `rtok` beside `rtok-hook`, say, where one is the
+command and the other a helper. A name shares the package's when it is the
+package name, or the package name followed by `-`, `_` or `.` (`gofmt` does not
+share `go`'s). Then ketch links exactly one of them, chosen the same way on
+every OS, and leaves the others in that family out; executables with other
+names — `other-tool` beside `rtok` and `rtok-hook` — are linked as always. The
+choice is:
+
+1. the one `--bin <name>` names on `ketch install` or `ketch upgrade`, ignoring
+   case and `.exe`; a name that matches no binary in the release is an error;
+2. otherwise the one whose name is the package name — `rtok`, never
+   `rtok-hook` — ignoring case and `.exe`;
+3. otherwise the one chosen for this package before, which `state.json`
+   remembers across upgrades, reinstalls, `ketch link` and `ketch rollback`,
+   and which `ketch sync` also reads from the `bin` key in `ketch.lock` (state
+   first, then the lockfile);
+4. otherwise the one you pick from a numbered list, when ketch runs in a
+   terminal and `--yes` was not passed;
+5. otherwise nothing: the install fails, listing the candidates and the `bin`
+   entry that would settle it.
+
+When the manifest that answered is your own (`~/.ketch/manifests/<name>.toml`),
+the choice is written into it as `bin = [{ name = "..." }, ...]` — the chosen
+binary and every other one linked — leaving the rest of the file exactly as it
+was, and from then on the file names its binaries. For a registry, built-in or
+inferred manifest the choice is kept in `state.json` (and `ketch lock` copies it
+into `ketch.lock`) instead, and the manifest keeps updating with the
+registry.
+
+`ketch config create` always asks for the binary's name, so a package file it
+writes has a `bin` entry. A manifest without one still loads.
 
 ### `extra_paths`
 

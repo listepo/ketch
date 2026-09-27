@@ -14,9 +14,9 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | B61 | in progress | P2 | 2 | 80% | Cursor / grok 4.7 |
 | B63 | in progress | P1 | 3 | 95% | Cursor / grok 4.7 |
 | B64 | in progress | P0 | 4 | 70% | Claude Code / opus-5.5 |
-| B65 | in progress | P0 | 2 | 90% | Claude Code / opus-5.5 |
-| R3 | todo | P1 | 3 | 0% | |
-| F8 | todo | P2 | 3 | 0% | |
+| B65 | in progress | P0 | 2 | 0% | Cursor / grok 4.7 high |
+| R3 | in progress | P1 | 3 | 0% | Cursor / grok 4.7 high |
+| F8 | in progress | P2 | 3 | 0% | Cursor / grok 4.7 high |
 | M9 | in progress | P2 | 5 | 90% | Claude Code / opus-5.5 |
 
 ### F1. Notarisation
@@ -159,7 +159,7 @@ Follow-up decisions (creator, 2026-09-27):
 - A choice drops only the losing binaries that share the package name; every other executable in the release is linked as before.
 - `ketch.lock` records the choice (new optional field, validated, `docs/LOCKFILE.md` row); `ketch sync` reuses it, so a fresh machine without a TTY does not stop on the ambiguity.
 - `ketch install --bin <name>` makes the choice without a TTY and wins over every other rule; it is stored in state like a prompt answer.
-- B65 closes with B64: `tests/bin_choice.rs` checks `rtok` against `rtok-hook` on every OS in CI.
+- B65 stays with its own owner (creator, 2026-09-27). B64's branch already has `tests/bin_choice.rs` (`rtok` against `rtok-hook`, not gated by OS); B65 builds on it rather than adding a second fixture.
 - The same directory-order fallback in `glob_preferred` is recorded in `ideas.md`, not fixed here.
 
 ### F8. Spinner and progress bar
@@ -182,7 +182,7 @@ To add:
 
 Add a fixture with two similarly named binaries (for example `rtok` and `rtok-hook`) and assert the intended one is chosen on every OS: macOS, Windows and Linux. This is the test that would have caught the Windows alphabetical-sort bug, where `rtok hook` was selected instead of the intended binary.
 
-Covered by B64's `tests/bin_choice.rs` (not gated by OS); closes together with B64.
+Note for the owner: B64's branch `b64-bin-name` already adds `tests/bin_choice.rs` with `rtok`, `rtok-hook` and `other-tool` fixtures, not gated by OS. Reuse or extend it once B64 merges instead of writing a second fixture.
 
 ### M9. `ketch list` refactor: `local`, `remote`, and both by default
 
