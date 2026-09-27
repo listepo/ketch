@@ -306,7 +306,7 @@ impl Platform for MacOsPlatform {
         ]
     }
 
-    fn bin_candidates(&self, payload: &Path, kind: PackageKind) -> Vec<PathBuf> {
+    fn bin_candidates(&self, payload: &Path, kind: PackageKind, package: &str) -> Vec<PathBuf> {
         // The same rule `place` applies: an app bundle carries its own
         // executables, so an `auto` payload holding one links none.
         let want_binaries = match kind {
@@ -315,7 +315,7 @@ impl Platform for MacOsPlatform {
             PackageKind::Auto => find_app_bundles(payload).is_empty(),
         };
         if want_binaries {
-            discover_executables(self, payload)
+            discover_executables(self, payload, package)
         } else {
             Vec::new()
         }

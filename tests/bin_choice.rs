@@ -135,11 +135,12 @@ fn a_user_manifest_gets_the_chosen_binary_written_into_it() {
     sandbox.ok(&["install", "rtok", "--yes"]);
 
     // Windows would link a bare name as `.exe`, so a script keeps its own.
+    // Discovery puts the package-named binary first; the rest stay alphabetical.
     let ext = if cfg!(windows) { ".cmd" } else { "" };
     let written = std::fs::read_to_string(&file).unwrap();
     assert_eq!(
         written,
-        format!("{original}bin = [{{ name = \"other-tool{ext}\" }}, {{ name = \"rtok{ext}\" }}]\n"),
+        format!("{original}bin = [{{ name = \"rtok{ext}\" }}, {{ name = \"other-tool{ext}\" }}]\n"),
         "everything but the new entry must be left as it was"
     );
     assert_eq!(run(&linked(&sandbox, "rtok")), "rtok 1.0.0");

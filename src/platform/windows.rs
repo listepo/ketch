@@ -460,11 +460,11 @@ impl Platform for WindowsPlatform {
         ]
     }
 
-    fn bin_candidates(&self, payload: &Path, kind: PackageKind) -> Vec<PathBuf> {
+    fn bin_candidates(&self, payload: &Path, kind: PackageKind, package: &str) -> Vec<PathBuf> {
         if kind == PackageKind::App {
             return Vec::new();
         }
-        discover_executables(self, payload)
+        discover_executables(self, payload, package)
     }
 
     fn place(&self, plan: &Placement<'_>) -> Result<Vec<LinkRecord>> {

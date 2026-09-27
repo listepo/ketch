@@ -178,10 +178,11 @@ pub trait Platform: Send + Sync {
     fn place(&self, plan: &Placement<'_>) -> Result<Vec<LinkRecord>>;
 
     /// The executables `place` would discover and link in `payload` when the
-    /// manifest names none, in discovery order. Install asks before placing,
-    /// so that a choice between them is made once, by `bin_choice`, and not
-    /// by whichever order this platform happens to sort them in.
-    fn bin_candidates(&self, _payload: &Path, _kind: PackageKind) -> Vec<PathBuf> {
+    /// manifest names none, in discovery order. The file named `package` leads.
+    /// Install asks before placing, so that a choice between them is made once,
+    /// by `bin_choice`, and not by whichever order this platform happens to
+    /// sort them in.
+    fn bin_candidates(&self, _payload: &Path, _kind: PackageKind, _package: &str) -> Vec<PathBuf> {
         Vec::new()
     }
 
