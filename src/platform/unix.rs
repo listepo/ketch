@@ -242,7 +242,14 @@ pub(crate) fn parent_dir_is_bin(path: &Path) -> bool {
 }
 
 /// Every executable file in the payload that is a plausible entry point.
-pub(crate) fn discover_executables(platform: &dyn Platform, root: &Path) -> Vec<PathBuf> {
+///
+/// The package-named binary is first. A plain sort is not that order once
+/// the names carry `.exe`.
+pub(crate) fn discover_executables(
+    platform: &dyn Platform,
+    root: &Path,
+    package: &str,
+) -> Vec<PathBuf> {
     let mut found: Vec<PathBuf> = walkdir::WalkDir::new(root)
         .max_depth(4)
         .follow_links(false)
@@ -267,7 +274,7 @@ pub(crate) fn discover_executables(platform: &dyn Platform, root: &Path) -> Vec<
     if !in_bin.is_empty() {
         found = in_bin;
     }
-    found.sort();
+    super::order_discovered_executables(&mut found, package);
     found
 }
 
@@ -355,7 +362,7 @@ fn cli_targets(
         return Ok(Vec::new());
     }
     if plan.bin_specs.is_empty() {
-        let found = discover_executables(platform, root);
+        let found = discover_executables(platform, root, plan.name);
         let sole = found.len() == 1;
         Ok(found
             .into_iter()
