@@ -13,11 +13,11 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | B60 | in progress | P3 | 1 | 80% | Cursor / grok 4.7 |
 | B61 | in progress | P2 | 2 | 80% | Cursor / grok 4.7 |
 | B63 | in progress | P1 | 3 | 95% | Cursor / grok 4.7 |
-| B64 | in progress | P0 | 4 | 0% | Claude Code / opus-5.5 |
-| B65 | todo | P0 | 2 | 0% | |
+| B64 | in progress | P0 | 4 | 70% | Claude Code / opus-5.5 |
+| B65 | in progress | P0 | 2 | 90% | Claude Code / opus-5.5 |
 | R3 | todo | P1 | 3 | 0% | |
 | F8 | todo | P2 | 3 | 0% | |
-| M9 | in progress | P2 | 5 | 0% | Claude Code / opus-5.5 |
+| M9 | in progress | P2 | 5 | 90% | Claude Code / opus-5.5 |
 
 ### F1. Notarisation
 
@@ -152,6 +152,16 @@ Execution plan:
 6. Tests: unit tests for the selection order; e2e in `tests/` with a fixture holding `rtok` and `rtok-hook` (non-TTY exact match, non-TTY ambiguity error, remembered choice on upgrade, local file write-back). Docs: `docs/MANIFESTS.md`, `docs/TROUBLESHOOTING.md`.
 7. Verify: `just check` clean; run the binary against a `KETCH_ROOT` scratch tree.
 
+Findings: with no `bin`, every OS linked every discovered executable; only the order differed (`rtok-hook.exe` sorts before `rtok.exe`, `rtok` before `rtok-hook`). The Windows symptom of linking the hook as `rtok` was B62's glob fallback. The only file manifest a user installs from today is `~/.ketch/manifests/<name>.toml`, so that is where the choice is written back.
+
+Follow-up decisions (creator, 2026-09-27):
+
+- A choice drops only the losing binaries that share the package name; every other executable in the release is linked as before.
+- `ketch.lock` records the choice (new optional field, validated, `docs/LOCKFILE.md` row); `ketch sync` reuses it, so a fresh machine without a TTY does not stop on the ambiguity.
+- `ketch install --bin <name>` makes the choice without a TTY and wins over every other rule; it is stored in state like a prompt answer.
+- B65 closes with B64: `tests/bin_choice.rs` checks `rtok` against `rtok-hook` on every OS in CI.
+- The same directory-order fallback in `glob_preferred` is recorded in `ideas.md`, not fixed here.
+
 ### F8. Spinner and progress bar
 
 Show a spinner while a command is running so the user sees that it started. Use a progress bar where measurable progress is available, and a spinner elsewhere. Match the behavior in rtok.
@@ -171,6 +181,8 @@ To add:
 ### B65. Binary selection regression test
 
 Add a fixture with two similarly named binaries (for example `rtok` and `rtok-hook`) and assert the intended one is chosen on every OS: macOS, Windows and Linux. This is the test that would have caught the Windows alphabetical-sort bug, where `rtok hook` was selected instead of the intended binary.
+
+Covered by B64's `tests/bin_choice.rs` (not gated by OS); closes together with B64.
 
 ### M9. `ketch list` refactor: `local`, `remote`, and both by default
 
@@ -218,6 +230,8 @@ Execution plan:
 4. `--json` and `--names-only` for all three modes; offline and unreachable handling as specified.
 5. Tests as listed, snapshots with `insta`/`trycmd`, colour off; `docs/COMMANDS.md`, README link, `docs/TROUBLESHOOTING.md`, breaking-change commit (`feat!:`), examples copied from a real run against a scratch `KETCH_ROOT`.
 6. Verify: `just check` clean.
+
+Status: implemented on branch `m9-list-modes`, PR https://github.com/listepo/ketch/pull/152; waiting for CI and merge.
 
 Tests (required; all must pass in `just check` and CI on macOS, Linux and Windows):
 - Unit:
