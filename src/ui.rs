@@ -1,8 +1,10 @@
 //! Terminal output.
 //!
-//! Kept dependency-light on purpose: sources and platforms report progress
-//! through the `ProgressSink` trait, so nothing below this module needs to know
-//! whether a human, a pipe, or a test is watching.
+//! Kept dependency-light on purpose: sources and platforms report download
+//! progress through the `ProgressSink` trait, so nothing below this module needs
+//! to know whether a human, a pipe, or a test is watching. Other long work
+//! reports through [`activity`]: a bar when the total is known, a spinner
+//! otherwise.
 
 use crate::log;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
@@ -722,6 +724,184 @@ pub fn progress_for(label: &str) -> Box<dyn ProgressSink> {
     }
 }
 
+/// Whether [`activity`] draws a bar or a spinner.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActivityKind {
+    /// `total` was `Some`: a bar of that many units.
+    Bar,
+    /// `total` was `None`: a spinner with no length.
+    Spinner,
+}
+
+/// A stderr bar, or a spinner when the length of the work is unknown.
+///
+/// Silent when stderr is not a terminal, under `--quiet`, and while the
+/// full-screen renderer owns the terminal. Dropping the value clears the line,
+/// including when the work returns early.
+pub struct Activity {
+    bar: ProgressBar,
+    kind: ActivityKind,
+    /// The batch group this bar was added to. Finish removes it from that
+    /// group only: removing a bar from a different group asserts.
+    group: Option<MultiProgress>,
+    /// Set when this activity installed [`BARS`]. Finish takes that slot back.
+    /// A bar joined to a batch's existing group leaves the slot alone.
+    owns_group: bool,
+}
+
+impl Activity {
+    /// Which mode this was started in.
+    ///
+    /// Read by unit tests. `ketch list` does not need it.
+    #[cfg_attr(not(test), expect(dead_code))]
+    pub fn kind(&self) -> ActivityKind {
+        self.kind
+    }
+
+    /// Move the bar forward by `delta` units.
+    ///
+    /// A spinner keeps the count internally. Its template has no position, so
+    /// the count is not drawn; pass `Some(total)` when the units should show.
+    pub fn inc(&self, delta: u64) {
+        self.bar.inc(delta);
+    }
+
+    /// Set the absolute position, for a caller that knows `n` of `total`.
+    ///
+    /// `ketch list` will use this for `N/M packages`. Nothing in this binary
+    /// has that shape yet.
+    #[cfg_attr(not(test), expect(dead_code))]
+    pub fn set_position(&self, position: u64) {
+        self.bar.set_position(position);
+    }
+
+    /// Replace the message. Client-app text is filtered the same way a status
+    /// line is.
+    pub fn set_message(&self, message: &str) {
+        self.bar.set_message(activity_message(message, self.kind));
+    }
+
+    /// Clear the line. Also runs on drop.
+    pub fn finish(&self) {
+        self.bar.disable_steady_tick();
+        // Take the global before touching the bar. `emit` holds that lock and
+        // then suspends the group; grabbing the group first and the lock
+        // second deadlocks a status line printed while this finishes.
+        if self.owns_group {
+            held().take();
+        }
+        self.bar.finish_and_clear();
+        if let Some(group) = &self.group {
+            group.remove(&self.bar);
+            if self.owns_group {
+                group.clear().ok();
+            }
+        }
+    }
+
+    /// Run `work` and clear the line before returning its value.
+    pub fn run<T>(self, work: impl FnOnce(&Self) -> T) -> T {
+        let out = work(&self);
+        self.finish();
+        out
+    }
+}
+
+impl Drop for Activity {
+    fn drop(&mut self) {
+        self.finish();
+    }
+}
+
+/// Start a bar when `total` is known and a spinner otherwise.
+///
+/// The spinner follows rtok's loader: `{spinner:.cyan} {msg}` on stderr,
+/// ticking every 120ms, and indicatif draws nothing when stderr is not a
+/// terminal. A known total uses the download bar's glyphs, counted in units
+/// rather than bytes. Hold the returned value for the length of the work, or
+/// pass the work to [`Activity::run`].
+#[must_use = "the bar clears when dropped; hold it or call run"]
+pub fn activity(message: &str, total: Option<u64>) -> Activity {
+    let kind = match total {
+        Some(_) => ActivityKind::Bar,
+        None => ActivityKind::Spinner,
+    };
+    // Hidden first so a pipe, `--quiet`, and tests still record the mode in
+    // the bar's length without drawing or starting a tick thread.
+    let bar = ProgressBar::hidden();
+    if let Some(total) = total {
+        bar.set_length(total);
+    }
+    let visible = activity_visible();
+    // A batch already owns the terminal through one `MultiProgress`. Joining
+    // it keeps concurrent prepares from overwriting each other. With no batch,
+    // this activity installs the slot itself so a status line printed mid-work
+    // is suspended above the bar instead of landing in the middle of it.
+    let existing = if visible {
+        held().as_ref().cloned()
+    } else {
+        None
+    };
+    let (group, owns_group) = if let Some(group) = existing {
+        group.add(bar.clone());
+        (Some(group), false)
+    } else if visible {
+        let group = MultiProgress::new();
+        group.add(bar.clone());
+        *held() = Some(group.clone());
+        (Some(group), true)
+    } else {
+        (None, false)
+    };
+    if visible {
+        // Style after the draw target is attached: indicatif only points
+        // `{spinner:.cyan}` at stderr once it knows the bar is drawing there.
+        bar.set_style(activity_style(kind));
+        if kind == ActivityKind::Spinner {
+            bar.enable_steady_tick(std::time::Duration::from_millis(120));
+        }
+    }
+    bar.set_message(activity_message(message, kind));
+    Activity {
+        bar,
+        kind,
+        group,
+        owns_group,
+    }
+}
+
+fn activity_visible() -> bool {
+    // The full-screen renderer already receives stage events; a bar beside it
+    // would fight for the same terminal.
+    #[cfg(feature = "tui")]
+    if tui_controller().is_some() {
+        return false;
+    }
+    !is_quiet() && std::io::stderr().is_terminal()
+}
+
+fn activity_style(kind: ActivityKind) -> ProgressStyle {
+    match kind {
+        ActivityKind::Bar => {
+            ProgressStyle::with_template("  {msg:<28} [{bar:24.cyan/blue}] {pos}/{len}")
+                .unwrap_or_else(|_| ProgressStyle::default_bar())
+                .progress_chars("=> ")
+        }
+        ActivityKind::Spinner => ProgressStyle::with_template("{spinner:.cyan} {msg}")
+            .unwrap_or_else(|_| ProgressStyle::default_spinner()),
+    }
+}
+
+fn activity_message(message: &str, kind: ActivityKind) -> String {
+    let message = printable(message);
+    match kind {
+        // Download bars cap the label so a batch stays aligned. A spinner's
+        // message is the whole line, as in rtok's loader.
+        ActivityKind::Bar => truncate(&message, 28),
+        ActivityKind::Spinner => message,
+    }
+}
+
 /// Report an install pipeline stage to the optional interactive renderer.
 pub fn stage(package: &str, stage: ProgressStage) {
     #[cfg(not(feature = "tui"))]
@@ -1043,6 +1223,48 @@ mod tests {
         assert_eq!(truncate("abcdef", 4), "abc…");
         // Multi-byte input must not panic or split a character.
         assert_eq!(truncate("ünïcödé-package", 6), "ünïcö…");
+    }
+
+    #[test]
+    fn a_known_total_is_a_bar() {
+        for total in [0, 4] {
+            let activity = activity("packages", Some(total));
+            assert_eq!(activity.kind(), ActivityKind::Bar);
+            assert_eq!(activity.bar.length(), Some(total));
+        }
+    }
+
+    #[test]
+    fn an_unknown_total_is_a_spinner() {
+        let activity = activity("resolving", None);
+        assert_eq!(activity.kind(), ActivityKind::Spinner);
+        assert_eq!(activity.bar.length(), None);
+    }
+
+    #[test]
+    fn a_bar_advances_when_work_advances() {
+        let activity = activity("packages", Some(3));
+        activity.inc(2);
+        assert_eq!(activity.bar.position(), 2);
+        activity.set_position(3);
+        assert_eq!(activity.bar.position(), 3);
+    }
+
+    #[test]
+    fn an_activity_message_cannot_redraw_the_terminal() {
+        let activity = activity(HOSTILE, None);
+        let message = activity.bar.message();
+        assert!(!message.contains('\u{1b}'), "{message:?}");
+        assert!(message.contains(FILTERED), "{message:?}");
+    }
+
+    #[test]
+    fn a_replaced_activity_message_cannot_redraw_the_terminal() {
+        let activity = activity("packages", Some(1));
+        activity.set_message(HOSTILE);
+        let message = activity.bar.message();
+        assert!(!message.contains('\u{1b}'), "{message:?}");
+        assert!(message.contains(FILTERED), "{message:?}");
     }
 
     #[cfg(feature = "tui")]

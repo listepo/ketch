@@ -1,9 +1,9 @@
-//! Side-effect-free resolution trace.
+//! Resolution trace shared by install and `ketch why`.
 //!
 //! Install and `ketch why` share these functions so an explanation cannot drift
-//! from what would actually be installed. Nothing here downloads, fetches
-//! checksum files, or talks to the network beyond the single `Source::resolve`
-//! call install already makes.
+//! from what would actually be installed. Nothing here downloads or fetches
+//! checksum files. The one network call is the same `Source::resolve` install
+//! makes; `explain` shows a spinner on stderr while that call runs.
 
 use crate::config::Config;
 use crate::error::Result;
@@ -257,7 +257,9 @@ fn explain_with(
     // bit is false; config and the manifest still match a default install.
     let opts = list_opts(cfg, &manifest, false);
     let include_prerelease = opts.include_prerelease;
-    let selected = match source.resolve(&manifest.source.id, &spec.version, &opts) {
+    let selected = match ui::activity(&format!("resolving {}", manifest.name), None)
+        .run(|_| source.resolve(&manifest.source.id, &spec.version, &opts))
+    {
         Ok(release) => Some(release),
         Err(crate::error::Error::NoRelease(_)) => None,
         Err(e) => return Err(e),

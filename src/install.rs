@@ -241,7 +241,8 @@ pub fn prepare(
         "resolving",
         &format!("{} ({})", manifest.name, manifest.source),
     );
-    let release = source.resolve(&manifest.source.id, &req.spec.version, &opts)?;
+    let release = ui::activity(&format!("resolving {}", manifest.name), None)
+        .run(|_| source.resolve(&manifest.source.id, &req.spec.version, &opts))?;
 
     // Nothing is downloaded until we know the install is actually wanted.
     let existing = state.get(&manifest.name).cloned();
@@ -278,101 +279,101 @@ pub fn prepare(
 
     // Local `.app` bundles are directories: copy the tree into the unpack root
     // rather than pretending they are a downloadable archive.
-    let (sha256, asset_name, checksum_verified, provenance, payload) = if local_kind
-        == Some(LocalKind::App)
-    {
-        let app_path = local_path.as_ref().ok_or_else(|| {
-            Error::msg("internal error: local .app install without a recorded path")
-        })?;
-        ui::stage(&label, ui::ProgressStage::Downloading);
-        let dest_name = app_path
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "App.app".into());
-        let dest = unpack.path().join(&dest_name);
-        crate::source::local::copy_tree(app_path, &dest)?;
-        // The copy is hashed, not the original, so the digest describes exactly
-        // what gets placed. Like a local file, a bundle has no published
-        // checksum to require, but a lockfile's hash still holds it.
-        let sha256 = crate::source::local::sha256_tree(&dest)?;
-        progress.finish("copied");
-        ui::stage(&label, ui::ProgressStage::Verifying);
-        check_locked(req, &manifest.name, &dest_name, &sha256)?;
-        // A bundle on disk has no release to carry a signature, so a policy
-        // that requires one cannot be met.
-        let provenance = match &manifest.trust {
-            Some(policy) => crate::trust::refuse(
-                policy,
-                &dest_name,
-                "a local app bundle has no published signature",
-            )?,
-            None => None,
-        };
-        let payload = payload_root(unpack.path(), manifest.strip_prefix)?;
-        (sha256, dest_name, false, provenance, payload)
-    } else {
-        // --- download -------------------------------------------------------
-        ui::stage(&label, ui::ProgressStage::Downloading);
-        // A directory of its own, not a name under the cache. Two `prepare`s
-        // run side by side, and an alias and a repo path naming the same
-        // package would pick the same file name: they would overwrite each
-        // other's archive, extract whichever landed last, and delete it from
-        // under each other. The archive is staging, never a cache — it is
-        // deleted as soon as the payload is unpacked — so a unique directory
-        // costs nothing.
-        let staging =
-            tempfile::tempdir_in(&cfg.cache_dir).map_err(|e| Error::io(&cfg.cache_dir, e))?;
-        let download_path = staging.path().join(sanitize_component(&asset.name));
-        // For a local symlink, point the asset URL at the origin path so
-        // LocalSource::download follows it; classification already recorded
-        // that the user named a link.
-        let mut asset = asset;
-        if let Some(path) = &local_path {
-            asset.url = path.to_string_lossy().into_owned();
-        }
-        let sha256 = source.download(&asset, &download_path, progress)?;
-
-        // --- checksum -------------------------------------------------------
-        check_locked(req, &manifest.name, &asset.name, &sha256)?;
-
-        ui::stage(&label, ui::ProgressStage::Verifying);
-        // Local packages never publish a checksum; requiring one would make
-        // every `local:` install fail for a reason the user cannot fix.
-        let require = if local_kind.is_some() {
-            false
+    let (sha256, asset_name, checksum_verified, provenance, payload) =
+        if local_kind == Some(LocalKind::App) {
+            let app_path = local_path.as_ref().ok_or_else(|| {
+                Error::msg("internal error: local .app install without a recorded path")
+            })?;
+            ui::stage(&label, ui::ProgressStage::Downloading);
+            let dest_name = app_path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "App.app".into());
+            let dest = unpack.path().join(&dest_name);
+            crate::source::local::copy_tree(app_path, &dest)?;
+            // The copy is hashed, not the original, so the digest describes exactly
+            // what gets placed. Like a local file, a bundle has no published
+            // checksum to require, but a lockfile's hash still holds it.
+            let sha256 = crate::source::local::sha256_tree(&dest)?;
+            progress.finish("copied");
+            ui::stage(&label, ui::ProgressStage::Verifying);
+            check_locked(req, &manifest.name, &dest_name, &sha256)?;
+            // A bundle on disk has no release to carry a signature, so a policy
+            // that requires one cannot be met.
+            let provenance = match &manifest.trust {
+                Some(policy) => crate::trust::refuse(
+                    policy,
+                    &dest_name,
+                    "a local app bundle has no published signature",
+                )?,
+                None => None,
+            };
+            let payload = payload_root(unpack.path(), manifest.strip_prefix)?;
+            (sha256, dest_name, false, provenance, payload)
         } else {
-            req.require_checksum || cfg.require_checksums
+            // --- download -------------------------------------------------------
+            ui::stage(&label, ui::ProgressStage::Downloading);
+            // A directory of its own, not a name under the cache. Two `prepare`s
+            // run side by side, and an alias and a repo path naming the same
+            // package would pick the same file name: they would overwrite each
+            // other's archive, extract whichever landed last, and delete it from
+            // under each other. The archive is staging, never a cache — it is
+            // deleted as soon as the payload is unpacked — so a unique directory
+            // costs nothing.
+            let staging =
+                tempfile::tempdir_in(&cfg.cache_dir).map_err(|e| Error::io(&cfg.cache_dir, e))?;
+            let download_path = staging.path().join(sanitize_component(&asset.name));
+            // For a local symlink, point the asset URL at the origin path so
+            // LocalSource::download follows it; classification already recorded
+            // that the user named a link.
+            let mut asset = asset;
+            if let Some(path) = &local_path {
+                asset.url = path.to_string_lossy().into_owned();
+            }
+            let sha256 = source.download(&asset, &download_path, progress)?;
+
+            // --- checksum -------------------------------------------------------
+            check_locked(req, &manifest.name, &asset.name, &sha256)?;
+
+            ui::stage(&label, ui::ProgressStage::Verifying);
+            // Local packages never publish a checksum; requiring one would make
+            // every `local:` install fail for a reason the user cannot fix.
+            let require = if local_kind.is_some() {
+                false
+            } else {
+                req.require_checksum || cfg.require_checksums
+            };
+            let checksum_verified = verify_checksum(
+                source.as_ref(),
+                &manifest.source.id,
+                &release,
+                &asset,
+                &sha256,
+                require,
+            )?;
+
+            // --- signature ------------------------------------------------------
+            // Before extraction: the unpacker is the widest attack surface ketch
+            // has, and a file its publisher did not vouch for need not reach it.
+            let provenance = crate::trust::verify(
+                manifest.trust.as_ref(),
+                source.as_ref(),
+                &release,
+                &asset,
+                &download_path,
+                &sha256,
+                staging.path(),
+            )?;
+
+            // --- extract --------------------------------------------------------
+            ui::stage(&label, ui::ProgressStage::Extracting);
+            let format = ui::activity(&format!("extracting {}", asset.name), None).run(|_| {
+                crate::extract::extract_auto(&download_path, unpack.path(), &platform.extractors())
+            })?;
+            ui::debug(&format!("unpacked {} as {format}", asset.name));
+            let payload = payload_root(unpack.path(), manifest.strip_prefix)?;
+            (sha256, asset.name, checksum_verified, provenance, payload)
         };
-        let checksum_verified = verify_checksum(
-            source.as_ref(),
-            &manifest.source.id,
-            &release,
-            &asset,
-            &sha256,
-            require,
-        )?;
-
-        // --- signature ------------------------------------------------------
-        // Before extraction: the unpacker is the widest attack surface ketch
-        // has, and a file its publisher did not vouch for need not reach it.
-        let provenance = crate::trust::verify(
-            manifest.trust.as_ref(),
-            source.as_ref(),
-            &release,
-            &asset,
-            &download_path,
-            &sha256,
-            staging.path(),
-        )?;
-
-        // --- extract --------------------------------------------------------
-        ui::stage(&label, ui::ProgressStage::Extracting);
-        let format =
-            crate::extract::extract_auto(&download_path, unpack.path(), &platform.extractors())?;
-        ui::debug(&format!("unpacked {} as {format}", asset.name));
-        let payload = payload_root(unpack.path(), manifest.strip_prefix)?;
-        (sha256, asset.name, checksum_verified, provenance, payload)
-    };
 
     ui::stage(&label, ui::ProgressStage::Trusting);
     let trust = check_trust(platform.as_ref(), cfg, &payload, &manifest.name);

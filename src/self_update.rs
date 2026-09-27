@@ -380,7 +380,8 @@ pub fn update(cfg: &Config, force: bool, dry_run: bool) -> Result<SelfUpdate> {
     let sources = SourceRegistry::builtin_only(cfg);
     let source = sources.get("github")?;
     ui::step("checking", &cfg.self_repo);
-    let release = source.resolve(&cfg.self_repo, &VersionSpec::Latest, &ListOpts::default())?;
+    let release = ui::activity("checking for updates", None)
+        .run(|_| source.resolve(&cfg.self_repo, &VersionSpec::Latest, &ListOpts::default()))?;
     let to = release.version.clone();
 
     if to <= from && !force {
@@ -446,21 +447,24 @@ pub fn update(cfg: &Config, force: bool, dry_run: bool) -> Result<SelfUpdate> {
 
     // `require` is hard-coded: for its own binary ketch does not accept the
     // trust-on-first-use path it allows for packages.
-    install::verify_checksum(
-        source.as_ref(),
-        &cfg.self_repo,
-        &release,
-        &chosen.asset,
-        &sha256,
-        true,
-    )?;
+    ui::activity("verifying", None).run(|_| {
+        install::verify_checksum(
+            source.as_ref(),
+            &cfg.self_repo,
+            &release,
+            &chosen.asset,
+            &sha256,
+            true,
+        )
+    })?;
 
     let unpacked = work.path().join("payload");
-    crate::extract::extract_auto(&download, &unpacked, &platform.extractors())?;
+    ui::activity("extracting", None)
+        .run(|_| crate::extract::extract_auto(&download, &unpacked, &platform.extractors()))?;
     let fresh = find_binary(&unpacked)?;
 
     let exe = current_exe()?;
-    replace_binary(&exe, &fresh)?;
+    ui::activity("replacing", None).run(|_| replace_binary(&exe, &fresh))?;
     Ok(SelfUpdate {
         from,
         to,
