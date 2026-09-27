@@ -208,6 +208,7 @@ conditional, multi-stage Rust automation.
 | `src/cmd/` | thin command bodies: arguments, output, confirmations |
 | `src/install.rs` | the install/uninstall/relink pipeline every command shares |
 | `src/resolve.rs` | side-effect-free resolution trace shared by install and `ketch why` |
+| `src/bin_choice.rs` | which binary to link when several share the package's name, the same on every OS |
 | `src/source/` | where releases come from: GitHub built in, plugins external |
 | `src/extract/` | archive formats, selected by sniffing content not file names |
 | `src/platform/` | OS-specific placement, linking, trust checks (`macos.rs`, `linux.rs`, `windows.rs`) |

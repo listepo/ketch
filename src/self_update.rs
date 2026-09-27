@@ -1289,6 +1289,7 @@ mod tests {
             trust: Default::default(),
             retained: Vec::new(),
             provenance: None,
+            bin_choice: None,
         }
     }
 

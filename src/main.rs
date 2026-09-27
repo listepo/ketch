@@ -4,6 +4,7 @@
 //! `Config`, and hand off to a command. Every failure path converges here so a
 //! single place decides how errors are shown and what the process exits with.
 
+mod bin_choice;
 mod changelog;
 mod cli;
 mod cmd;

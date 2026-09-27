@@ -74,6 +74,7 @@ pub fn install(cfg: &Config, args: InstallArgs) -> Result<()> {
             expected_sha256: None,
             // --name applies to the single package being installed.
             name_override: if i == 0 { name_override.clone() } else { None },
+            interactive: !args.yes,
         })
         .collect();
 
@@ -281,6 +282,7 @@ pub fn upgrade(cfg: &Config, args: UpgradeArgs) -> Result<()> {
             // The installed name, which `--name` may have chosen. Resolving
             // the source alone would infer another and install a second copy.
             name_override: Some(pkg.name.clone()),
+            interactive: !args.yes,
         })
         .collect();
 
