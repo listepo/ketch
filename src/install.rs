@@ -45,6 +45,9 @@ pub struct InstallRequest {
     /// `--yes` and for installs no person started; the prompt itself still
     /// needs a terminal on stdin and stderr.
     pub interactive: bool,
+    /// `--bin`: which of several binaries sharing the package's name to
+    /// link, answered before anyone asks. Wins over every other rule.
+    pub bin: Option<String>,
 }
 
 impl InstallRequest {
@@ -60,6 +63,7 @@ impl InstallRequest {
             expected_sha256: None,
             name_override: None,
             interactive: false,
+            bin: None,
         }
     }
 }
@@ -100,6 +104,8 @@ pub struct Prepared {
     link: bool,
     /// Carried from the request: `commit` is where a binary is chosen.
     interactive: bool,
+    /// Carried from the request, like `interactive`.
+    bin: Option<String>,
     /// Root of the unpacked payload, inside `unpack`.
     payload: PathBuf,
     /// Held so the unpacked payload outlives this function.
@@ -377,6 +383,7 @@ pub fn prepare(
         provenance,
         link: req.link,
         interactive: req.interactive,
+        bin: req.bin.clone(),
         payload,
         unpack,
         started,
@@ -402,17 +409,25 @@ struct BinPick {
 /// choice is made once and by `bin_choice`'s fixed order rather than by the
 /// order this platform's discovery sorts files in (B64). `None` leaves
 /// placement to its usual rules: the manifest's `bin`, or every executable
-/// discovered when nothing competes for the name.
+/// discovered when nothing competes for the name. A `--bin` in `known` is
+/// checked either way, so a name that matches nothing is an error, not a
+/// silent no-op.
 fn pick_bin(
     cfg: &Config,
     platform: &dyn Platform,
     payload: &Path,
     manifest: Option<&crate::model::Manifest>,
     name: &str,
-    remembered: Option<&str>,
+    known: bin_choice::Known<'_>,
     interactive: bool,
 ) -> Result<Option<BinPick>> {
     if manifest.is_some_and(|m| !m.bin.is_empty()) {
+        if let Some(flag) = known.flag {
+            return Err(Error::msg(format!(
+                "--bin `{flag}`: the manifest for `{name}` already names the binaries it links; \
+                 change its `bin` instead"
+            )));
+        }
         return Ok(None);
     }
     let kind = manifest.map(|m| m.kind).unwrap_or_default();
@@ -428,6 +443,9 @@ fn pick_bin(
         .collect();
     let contenders = bin_choice::contenders(name, &files);
     if contenders.is_empty() {
+        if let Some(flag) = known.flag {
+            bin_choice::check_flag(flag, &files)?;
+        }
         return Ok(None);
     }
     let names: Vec<String> = contenders.iter().map(|&i| files[i].clone()).collect();
@@ -442,7 +460,7 @@ fn pick_bin(
             None
         }
     };
-    let (i, how) = bin_choice::choose(name, &names, remembered, &mut ask, &hint)?;
+    let (i, how) = bin_choice::choose(name, &names, known, &mut ask, &hint)?;
     let chosen = contenders[i];
     // The exact paths, not globs or bare names: a release can carry a
     // completion script or a man page with the same file name elsewhere.
@@ -561,6 +579,7 @@ pub fn commit(cfg: &Config, state: &mut State, prepared: Prepared) -> Result<Ins
         provenance,
         link,
         interactive,
+        bin,
         payload,
         unpack,
         started,
@@ -584,14 +603,18 @@ pub fn commit(cfg: &Config, state: &mut State, prepared: Prepared) -> Result<Ins
     let mut orphan = ScopedDir((!in_place).then(|| store_dir.clone()));
     let extras = extra_placements(platform.as_ref(), &manifest.extra_paths)?;
     let remembered = existing.as_ref().and_then(|p| p.bin_choice.as_deref());
-    let pick = if link {
+    let known = bin_choice::Known {
+        flag: bin.as_deref(),
+        remembered: remembered.as_slice(),
+    };
+    let pick = if link || known.flag.is_some() {
         pick_bin(
             cfg,
             platform.as_ref(),
             &payload,
             Some(&manifest),
             &manifest.name,
-            remembered,
+            known,
             interactive,
         )?
     } else {
@@ -815,7 +838,10 @@ pub fn relink(cfg: &Config, state: &mut State, name: &str) -> Result<()> {
         &pkg.prefix,
         manifest.as_ref(),
         &pkg.name,
-        remembered,
+        bin_choice::Known {
+            flag: None,
+            remembered: remembered.as_slice(),
+        },
         true,
     )?;
     let picked_specs = pick.as_ref().map(|p| p.specs.clone());
@@ -919,7 +945,10 @@ pub fn rollback(
             &target.prefix,
             manifest.as_ref(),
             &pkg.name,
-            remembered,
+            bin_choice::Known {
+                flag: None,
+                remembered: remembered.as_slice(),
+            },
             true,
         )?
     } else {

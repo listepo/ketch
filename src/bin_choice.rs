@@ -6,22 +6,34 @@
 //! nothing in the payload says which. Discovery order cannot say either: it is
 //! a sort over file names, and `rtok-hook.exe` sorts ahead of `rtok.exe`
 //! while `rtok` sorts ahead of `rtok-hook` (B64). So the decision lives here,
-//! once, with no knowledge of the OS: the exact package name, else the choice
-//! remembered from last time, else the user's answer, else an error that says
-//! how to name the binary in a manifest. Only the family members that lose
-//! are dropped; executables with other names are linked as they always were.
+//! once, with no knowledge of the OS: the binary `--bin` names, else the exact
+//! package name, else the choice remembered from last time, else the user's
+//! answer, else an error that says how to name
+//! the binary in a manifest. Only the family members that lose are dropped;
+//! executables with other names are linked as they always were.
 
 use crate::error::{Error, Result};
 
 /// How a binary came to be chosen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Picked {
+    /// `--bin` named it: the user's answer, given before the question.
+    Flag,
     /// Its name is the package's name.
     Exact,
     /// It was chosen for this package before, and state remembered it.
     Remembered,
     /// The user picked it just now.
     Asked,
+}
+
+/// What is known about a choice before anybody is asked.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Known<'a> {
+    /// `--bin`: the user's answer, given up front. Wins over everything.
+    pub flag: Option<&'a str>,
+    /// Earlier choices, most trusted first.
+    pub remembered: &'a [&'a str],
 }
 
 /// Compare-ready form of an executable's file name: lowercase, without the
@@ -82,23 +94,32 @@ pub fn contenders(package: &str, files: &[String]) -> Vec<usize> {
     }
 }
 
-/// Choose one of `candidates` for `package`, in the fixed order: the exact
-/// package name, the remembered choice, the answer `ask` returns (`None` when
-/// it cannot ask), and otherwise an error naming every candidate.
+/// Choose one of `candidates` for `package`, in the fixed order: the binary
+/// `--bin` names (an error when it names none of them), the exact package
+/// name, the first remembered choice still among the candidates, the answer
+/// `ask` returns (`None` when it cannot ask), and otherwise an error naming
+/// every candidate.
 ///
 /// `manifest_hint` is where the error tells the user to write `bin`.
 pub fn choose(
     package: &str,
     candidates: &[String],
-    remembered: Option<&str>,
+    known: Known<'_>,
     ask: &mut dyn FnMut(&[String]) -> Option<usize>,
     manifest_hint: &str,
 ) -> Result<(usize, Picked)> {
+    if let Some(flag) = known.flag {
+        let wanted = stem(flag);
+        return match candidates.iter().position(|c| stem(c) == wanted) {
+            Some(i) => Ok((i, Picked::Flag)),
+            None => Err(unknown_flag(flag, candidates)),
+        };
+    }
     let package_stem = package.to_ascii_lowercase();
     if let Some(i) = candidates.iter().position(|c| stem(c) == package_stem) {
         return Ok((i, Picked::Exact));
     }
-    if let Some(wanted) = remembered.map(stem) {
+    for wanted in known.remembered.iter().map(|r| stem(r)) {
         if let Some(i) = candidates.iter().position(|c| stem(c) == wanted) {
             return Ok((i, Picked::Remembered));
         }
@@ -109,14 +130,39 @@ pub fn choose(
     Err(ambiguous(package, candidates, manifest_hint))
 }
 
+/// Check a `--bin` that had nothing to choose between — no two binaries
+/// share the package's name — against every executable discovered, so a
+/// typo is reported rather than silently ignored.
+pub fn check_flag(flag: &str, discovered: &[String]) -> Result<()> {
+    let wanted = stem(flag);
+    if discovered.iter().any(|d| stem(d) == wanted) {
+        Ok(())
+    } else {
+        Err(unknown_flag(flag, discovered))
+    }
+}
+
+/// `--bin` named something that is not there.
+fn unknown_flag(flag: &str, candidates: &[String]) -> Error {
+    let listed = if candidates.is_empty() {
+        "none were found".to_string()
+    } else {
+        format!("the candidates are {}", candidates.join(", "))
+    };
+    Error::msg(format!(
+        "--bin `{flag}` names no binary in this release; {listed}"
+    ))
+}
+
 /// The error for a choice nobody could make: what the candidates are, and the
 /// two ways to make it — a terminal to answer in, or a `bin` entry.
 fn ambiguous(package: &str, candidates: &[String], manifest_hint: &str) -> Error {
     let first = candidates.first().map(|c| stem(c)).unwrap_or_default();
     Error::msg(format!(
         "`{package}` ships several binaries sharing its name ({}) and none is \
-         named `{package}`; run the command in a terminal to pick one, or name \
-         it in a manifest: `bin = [{{ name = \"{first}\" }}]` in {manifest_hint}",
+         named `{package}`; pass `--bin {first}`, run the command in a terminal \
+         to pick one, or name it in a manifest: `bin = [{{ name = \"{first}\" }}]` \
+         in {manifest_hint}",
         candidates.join(", ")
     ))
 }
@@ -134,39 +180,103 @@ mod tests {
         panic!("the prompt must not be reached")
     }
 
+    fn remembered<'a>(list: &'a [&'a str]) -> Known<'a> {
+        Known {
+            flag: None,
+            remembered: list,
+        }
+    }
+
+    fn flag(name: &str) -> Known<'_> {
+        Known {
+            flag: Some(name),
+            remembered: &[],
+        }
+    }
+
+    #[test]
+    fn the_flag_wins_over_the_exact_name_and_a_remembered_choice() {
+        let found = names(&["rtok", "rtok-hook"]);
+        let known = Known {
+            flag: Some("rtok-hook"),
+            remembered: &["rtok"],
+        };
+        let picked = choose("rtok", &found, known, &mut never, "m.toml").unwrap();
+        assert_eq!(picked, (1, Picked::Flag));
+    }
+
+    #[test]
+    fn the_flag_ignores_case_and_the_exe_extension() {
+        let found = names(&["rtok-cli.exe", "rtok-hook.exe"]);
+        let picked = choose("rtok", &found, flag("RTOK-CLI"), &mut never, "m.toml").unwrap();
+        assert_eq!(picked, (0, Picked::Flag));
+    }
+
+    #[test]
+    fn a_flag_naming_no_candidate_is_an_error_listing_them() {
+        let found = names(&["rtok-cli", "rtok-hook"]);
+        let err = choose("rtok", &found, flag("rtok-typo"), &mut never, "m.toml")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("--bin `rtok-typo`"), "{err}");
+        assert!(err.contains("rtok-cli, rtok-hook"), "{err}");
+    }
+
+    #[test]
+    fn a_flag_with_nothing_to_choose_must_still_name_a_binary() {
+        let found = names(&["rg", "rg-completions"]);
+        assert!(check_flag("RG.exe", &found).is_ok());
+        let err = check_flag("ripgrep", &found).unwrap_err().to_string();
+        assert!(err.contains("rg, rg-completions"), "{err}");
+    }
+
     #[test]
     fn the_exact_name_wins_in_windows_sort_order() {
         // B64: sorted, `rtok-hook.exe` comes first on Windows.
         let found = names(&["rtok-hook.exe", "rtok.exe"]);
-        let picked = choose("rtok", &found, None, &mut never, "m.toml").unwrap();
+        let picked = choose("rtok", &found, Known::default(), &mut never, "m.toml").unwrap();
         assert_eq!(picked, (1, Picked::Exact));
     }
 
     #[test]
     fn the_exact_name_wins_in_unix_sort_order() {
         let found = names(&["rtok", "rtok-hook"]);
-        let picked = choose("rtok", &found, None, &mut never, "m.toml").unwrap();
+        let picked = choose("rtok", &found, Known::default(), &mut never, "m.toml").unwrap();
         assert_eq!(picked, (0, Picked::Exact));
     }
 
     #[test]
     fn the_exact_name_ignores_case_and_the_exe_extension() {
         let found = names(&["Rtok-Hook.EXE", "RTOK.exe"]);
-        let picked = choose("rtok", &found, None, &mut never, "m.toml").unwrap();
+        let picked = choose("rtok", &found, Known::default(), &mut never, "m.toml").unwrap();
         assert_eq!(picked, (1, Picked::Exact));
     }
 
     #[test]
     fn the_exact_name_beats_a_remembered_choice() {
         let found = names(&["rtok", "rtok-hook"]);
-        let picked = choose("rtok", &found, Some("rtok-hook"), &mut never, "m.toml").unwrap();
+        let picked = choose(
+            "rtok",
+            &found,
+            remembered(&["rtok-hook"]),
+            &mut never,
+            "m.toml",
+        )
+        .unwrap();
         assert_eq!(picked, (0, Picked::Exact));
     }
 
     #[test]
     fn a_remembered_choice_is_reused_without_asking() {
         let found = names(&["rtok-cli.exe", "rtok-hook.exe"]);
-        let picked = choose("rtok", &found, Some("rtok-cli"), &mut never, "m.toml").unwrap();
+        let picked = choose(
+            "rtok",
+            &found,
+            remembered(&["rtok-cli"]),
+            &mut never,
+            "m.toml",
+        )
+        .unwrap();
         assert_eq!(picked, (0, Picked::Remembered));
     }
 
@@ -177,7 +287,7 @@ mod tests {
         let picked = choose(
             "rtok",
             &found,
-            Some("rtok-old"),
+            remembered(&["rtok-old"]),
             &mut |c: &[String]| {
                 offered = c.to_vec();
                 Some(1)
@@ -192,7 +302,13 @@ mod tests {
     #[test]
     fn an_answer_out_of_range_is_not_a_choice() {
         let found = names(&["rtok-cli", "rtok-hook"]);
-        let err = choose("rtok", &found, None, &mut |_: &[String]| Some(7), "m.toml");
+        let err = choose(
+            "rtok",
+            &found,
+            Known::default(),
+            &mut |_: &[String]| Some(7),
+            "m.toml",
+        );
         assert!(err.is_err());
     }
 
@@ -202,7 +318,7 @@ mod tests {
         let err = choose(
             "rtok",
             &found,
-            None,
+            Known::default(),
             &mut |_: &[String]| None,
             "~/m/rtok.toml",
         )

@@ -29,9 +29,11 @@ $ ketch install owner/rtok --yes
 error: `rtok` ships several binaries sharing its name (rtok-cli, rtok-hook) and none is named `rtok`; ...
 ```
 
-Either run the same command in a terminal without `--yes` and pick one from the
-list — the choice is remembered in `state.json` and reused on every upgrade —
-or name the binary in your own manifest, which wins over the registry:
+Pass `--bin` with the one you want — `ketch install owner/rtok --bin rtok-cli`,
+which needs no terminal — or run the same command in a terminal without `--yes`
+and pick one from the list. Either way the choice is remembered in `state.json`
+and reused on every upgrade. Or name the binary in your own
+manifest, which wins over the registry:
 
 ```toml
 # ~/.ketch/manifests/rtok.toml

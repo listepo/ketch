@@ -31,10 +31,18 @@ since the platform check is skipped); `-j/--jobs <N>` and `-y/--yes` control
 parallelism and prompts. Aliased as `ketch i`.
 
 When a release ships several binaries sharing the package's name and no
-manifest names one, the binary named exactly like the package is linked; failing
-that, a choice remembered from last time, or a numbered pick in a terminal. With
-`--yes` or without a terminal there is no pick, and the install fails with the
-candidates listed — see the `bin` section of [MANIFESTS.md](MANIFESTS.md).
+manifest names one, only one of them is linked: the one `--bin <NAME>` names;
+failing that, the binary named exactly like the package; failing that, a choice
+remembered from last time, or a numbered pick in a terminal. Binaries with other names are
+linked as usual. With `--yes` or without a terminal there is no pick, and the
+install fails with the candidates listed — see the `bin` section of
+[MANIFESTS.md](MANIFESTS.md).
+
+`--bin <NAME>` (single package) answers that question up front, so it works
+without a terminal: `ketch install owner/rtok --bin rtok-cli`. It is stored in
+`state.json` like a pick and reused on later upgrades. It fails when no binary in
+the release has that name, and when the package's manifest already has a `bin`
+(change that instead).
 
 ### `ketch uninstall <NAME>...`
 
@@ -60,8 +68,10 @@ ketch upgrade --dry-run    # show the plan, change nothing
 ```
 
 Options: `--pre` considers prereleases; `--force` upgrades pinned packages
-too; `-j/--jobs <N>`, `-y/--yes`. Pinned and `local:` packages are skipped
-unless forced.
+too; `--bin <NAME>` (exactly one package) picks which binary to link when the
+new release ships several sharing the package's name, as on `install`;
+`-j/--jobs <N>`, `-y/--yes`. Pinned and `local:` packages are skipped unless
+forced.
 
 ### `ketch rollback <PKG> [--to <VERSION>]`
 

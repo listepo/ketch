@@ -163,3 +163,49 @@ fn only_the_losing_family_members_are_dropped_and_other_binaries_stay_linked() {
     assert_eq!(run(&linked(&sandbox, "other-tool")), "other-tool 1.0.0");
     assert!(!linked(&sandbox, "rtok-hook").exists());
 }
+
+#[test]
+fn the_bin_flag_chooses_without_a_terminal_and_is_remembered() {
+    let sandbox = Sandbox::new();
+    publish(&sandbox, "1.0.0", &["rtok-cli", "rtok-hook"]);
+
+    sandbox.ok(&["install", "test:rtok@1.0.0", "--bin", "rtok-cli"]);
+
+    assert_eq!(run(&linked(&sandbox, "rtok-cli")), "rtok-cli 1.0.0");
+    assert!(!linked(&sandbox, "rtok-hook").exists());
+    let state = std::fs::read_to_string(sandbox.root().join("state.json")).unwrap();
+    assert!(state.contains(r#""bin_choice": "rtok-cli"#), "{state}");
+
+    publish(&sandbox, "2.0.0", &["rtok-cli", "rtok-hook"]);
+    sandbox.ok(&["upgrade", "--yes"]);
+    assert_eq!(run(&linked(&sandbox, "rtok-cli")), "rtok-cli 2.0.0");
+    assert!(!linked(&sandbox, "rtok-hook").exists());
+}
+
+#[test]
+fn the_bin_flag_wins_over_the_binary_named_like_the_package() {
+    let sandbox = Sandbox::new();
+    publish(&sandbox, "1.0.0", &["rtok", "rtok-hook"]);
+
+    sandbox.ok(&["install", "test:rtok@1.0.0", "--bin", "rtok-hook"]);
+
+    assert_eq!(run(&linked(&sandbox, "rtok-hook")), "rtok-hook 1.0.0");
+    assert!(!linked(&sandbox, "rtok").exists());
+}
+
+#[test]
+fn a_bin_flag_naming_no_binary_fails_and_lists_what_there_is() {
+    let sandbox = Sandbox::new();
+    publish(&sandbox, "1.0.0", &["rtok-cli", "rtok-hook"]);
+
+    let err = sandbox.fails(&["install", "test:rtok@1.0.0", "--bin", "rtok-typo"]);
+    assert!(err.contains("--bin `rtok-typo`"), "{err}");
+    assert!(err.contains("rtok-cli"), "{err}");
+    assert!(!linked(&sandbox, "rtok-cli").exists());
+
+    // Nothing to choose between is no excuse for a name that matches nothing.
+    publish(&sandbox, "2.0.0", &["rtok"]);
+    let err = sandbox.fails(&["install", "test:rtok@2.0.0", "--bin", "rtok-typo"]);
+    assert!(err.contains("--bin `rtok-typo`"), "{err}");
+    assert!(!linked(&sandbox, "rtok").exists());
+}
