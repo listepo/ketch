@@ -504,6 +504,14 @@ a crate.
 
 ## Contributing
 
+Contributions are welcome, from individuals and companies alike. Found a bug or
+an asset ketch picks wrong? [Open an issue](https://github.com/listepo/ketch/issues)
+with the command you ran and what `ketch why <pkg>` says. Discussion happens in
+the repository's issues, so that is also the place for ideas and questions
+before you start on something bigger. Pull requests are welcome for fixes, docs
+and features; the checklist below and [`CONTRIBUTING.md`](CONTRIBUTING.md) say
+what a change needs before it can be merged.
+
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the checklist.
 [AGENTS.md](AGENTS.md) documents layout, conventions, and trust boundaries —
 read it before changing anything. Repository prose (commits, PRs, docs,
