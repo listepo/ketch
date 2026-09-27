@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.6.1](https://github.com/listepo/ketch/releases/tag/v0.6.1) - 2026-09-27
+
+### Fixed
+
+- stop a self-update child that never finishes
+
+### Other
+
+- name the sources behind docs/site.md ([#147](https://github.com/listepo/ketch/pull/147))
+- add docs/site.md and sync it to the project site ([#144](https://github.com/listepo/ketch/pull/144))
 ## [0.6.0](https://github.com/listepo/ketch/releases/tag/v0.6.0) - 2026-09-26
 
 ### Fixed
