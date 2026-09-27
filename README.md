@@ -6,7 +6,7 @@
 
 **Install any CLI tool or app straight from its GitHub releases — no formula, checked against the published checksum, versioned, and cleanly removable.**
 
-[![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![license](https://img.shields.io/badge/license-GPLv3%20%7C%20royalty--free%20%7C%20commercial-blue.svg)](#license)
 ![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)
 [![release](https://img.shields.io/github/v/release/listepo/ketch?sort=semver)](https://github.com/listepo/ketch/releases/latest)
 [![ci](https://github.com/listepo/ketch/actions/workflows/ci.yml/badge.svg)](https://github.com/listepo/ketch/actions/workflows/ci.yml)
@@ -502,6 +502,50 @@ ketch is not on crates.io — it ships as a tarball on a GitHub release, so
 release-plz proposes the version and writes the changelog, and never publishes
 a crate.
 
+## Where to share
+
+Draft posts for announcing ketch, grouped by site. Add new posts as more bullets under the right site.
+
+### Hacker News
+
+- [Show HN draft](notes/hacker.news.md)
+
+### Reddit
+
+- [Community post](notes/reddit.com.md)
+
+### Dev.to
+
+- [Technical article](notes/dev.to.md)
+
+### Hashnode
+
+- [Design-decisions article](notes/hashnode.dev.md)
+
+### Medium
+
+- [Story for a broader audience](notes/medium.com.md)
+
+### Lobsters
+
+- [Submission with author comment](notes/lobste.rs.md)
+
+### Indie Hackers
+
+- [Progress and sustainability post](notes/indiehackers.com.md)
+
+### Product Hunt
+
+- [Launch page](notes/producthunt.com.md)
+
+### X / Twitter
+
+- [Launch thread](notes/x.com.md)
+
+### LinkedIn
+
+- [Release announcement](notes/linkedin.com.md)
+
 ## Contributing
 
 Contributions are welcome, from individuals and companies alike. Found a bug or
@@ -533,6 +577,10 @@ repository and run `ketch registry push`: it opens the pull request for you,
 through a fork if you cannot write to the registry. See
 [docs/REGISTRY.md](docs/REGISTRY.md).
 
-## Licence
+## License
 
-MIT — see [LICENSE](LICENSE).
+You can use this project under **any** of the following licenses, at your choice:
+
+1. [GNU GPLv3](LICENSE): free for open source applications on any platform, including embedded systems.
+2. [Royalty-free License](LICENSE-ROYALTY-FREE.md): free for proprietary desktop, mobile, and web applications, as long as you disclose that your application uses this project. Embedded systems are not covered.
+3. [Commercial license](PRICING.md): for proprietary applications, including embedded systems, without the attribution requirement.
