@@ -1,3 +1,15 @@
+### B61. `self update` swap fails on a transient Windows lock
+
+`replace_binary` retries a short antivirus lock. `io_retry` pauses 100, 150, 200, then 250 ms and gives up. It wraps the rename of the running binary aside, the copy of the new binary into place, and the restore rename/remove. Only `PermissionDenied` and Windows os errors 5 and 32 are retried; any other error returns on the first attempt. The success-path removal of the `.old` image is not retried: that file is the running image until this process exits, and B60 sweeps it on the next self command. Noted in `docs/TROUBLESHOOTING.md`.
+
+Tests: a `PermissionDenied` that clears on the third call, a `NotFound` that returns with no pause, a lock that never clears and stops after the four pauses, and raw errors 5 and 32 counting as transient. Verified on macOS: `cargo clippy --all-targets --locked -- -D warnings` clean, `cargo nextest run --locked --all-targets` 588 passed. The Windows-only probe cases run in CI.
+
+### B63. `self update` hangs forever when a spawned process never starts
+
+`process::run_bounded` runs the child off the caller's wait, because an antivirus filter can hold process creation itself. After 30s a process listing is stopped and warned about by program and pid. After 60s `ketch --version` is stopped, the error says so, and restore puts the previous binary back. A spawn that never returns has no pid; the message says the wait was ended, and the spawn thread stops the child if creation later succeeds.
+
+Tests: the stopped-probe wording, a command that outlives a short budget and is no longer alive, and on Windows `tree.com` (exit 0) / `where.exe` (exit 1). Verified on macOS with the same clippy and nextest run as B61. The `cfg(windows)` cases run in CI.
+
 ### F4. Self upgrade, in-use processes, auto-update
 
 `ketch self update` is now `ketch self upgrade` (same verb as client packages). `self update` remains a clap alias so the Homebrew cask and existing scripts keep working. `ketch upgrade` and `ketch self upgrade` list other processes running from a file about to be replaced, ask whether to stop them, and on yes TERM then KILL (taskkill /F on Windows); a decline leaves them running and replacement continues as before. The current ketch pid is never offered. `auto_update` in `config.toml` / `KETCH_AUTO_UPDATE` defaults to `true`: `install` and `upgrade` refresh the registry and print that auto-update is enabled; a failed fetch is a warning. `false` leaves previous behaviour. Offline e2e sets `KETCH_AUTO_UPDATE=false`.
