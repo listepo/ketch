@@ -1,0 +1,41 @@
+---
+source: tests/list.rs
+expression: all
+---
+{
+  "packages": [
+    {
+      "installed": "1.0.0",
+      "latest": "2.0.0",
+      "name": "alpha",
+      "pinned": false,
+      "source": "test:alpha",
+      "update_available": true
+    },
+    {
+      "installed": "1.0.0",
+      "latest": "1.0.0",
+      "name": "bravo",
+      "pinned": false,
+      "source": "test:bravo",
+      "update_available": false
+    },
+    {
+      "installed": "1.0.0",
+      "latest": "1.5.0",
+      "name": "charlie",
+      "pinned": true,
+      "source": "test:charlie",
+      "update_available": false
+    },
+    {
+      "installed": null,
+      "latest": "3.1.0",
+      "name": "delta",
+      "pinned": false,
+      "source": "test:delta",
+      "update_available": false
+    }
+  ],
+  "unreachable": []
+}

@@ -96,7 +96,7 @@ fn a_tool_is_downloaded_verified_linked_and_runnable() {
     );
     assert_eq!(run(&link), "testtool 1.0.0");
 
-    let listed = sandbox.ok(&["list", "--json"]);
+    let listed = sandbox.state();
     assert!(listed.contains(r#""name": "testtool""#), "{listed}");
     // The plugin published a digest, so this was verified rather than trusted
     // on first use.
@@ -148,8 +148,8 @@ fn an_upgrade_replaces_the_payload_and_the_link_still_works() {
 
     assert_eq!(run(&link), "testtool 2.0.0");
     assert!(sandbox
-        .ok(&["list", "--json"])
-        .contains(r#""version": "2.0.0""#));
+        .ok(&["list", "local", "--json"])
+        .contains(r#""installed": "2.0.0""#));
 }
 
 #[test]
@@ -171,7 +171,7 @@ fn rollback_restores_the_previous_prefix_without_redownloading() {
     sandbox.ok(&["rollback", "testtool"]);
     assert_eq!(run(&link), "testtool 1.0.0");
 
-    let listed = sandbox.ok(&["list"]);
+    let listed = sandbox.ok(&["list", "local"]);
     assert!(listed.contains("1.0.0"), "{listed}");
     assert!(listed.contains("retained"), "{listed}");
     let info = sandbox.ok(&["info", "testtool"]);
@@ -215,8 +215,8 @@ fn rollback_refuses_an_occupied_destination_and_keeps_the_current_version() {
         std::fs::read_to_string(&link).unwrap(),
         "#!/bin/sh\necho occupied\n"
     );
-    let listed = sandbox.ok(&["list", "--json"]);
-    assert!(listed.contains(r#""version": "2.0.0""#), "{listed}");
+    let listed = sandbox.ok(&["list", "local", "--json"]);
+    assert!(listed.contains(r#""installed": "2.0.0""#), "{listed}");
 }
 
 #[test]
@@ -245,7 +245,7 @@ fn uninstall_after_rollback_removes_every_retained_prefix() {
 
     assert!(!sandbox.bin().join("testtool").exists());
     assert!(!sandbox.store().join("testtool").exists());
-    assert!(sandbox.ok(&["list"]).contains("nothing installed"));
+    assert!(sandbox.ok(&["list", "local"]).contains("nothing installed"));
 }
 
 #[test]
@@ -280,7 +280,7 @@ fn a_download_that_does_not_match_its_checksum_installs_nothing() {
     // and nothing recorded.
     assert!(!sandbox.bin().join("testtool").exists());
     assert!(!sandbox.store().join("testtool").exists());
-    assert!(sandbox.ok(&["list"]).contains("nothing installed"));
+    assert!(sandbox.ok(&["list", "local"]).contains("nothing installed"));
 }
 
 #[test]
@@ -293,7 +293,7 @@ fn uninstall_removes_every_trace_of_a_tool() {
 
     assert!(!sandbox.bin().join("testtool").exists());
     assert!(!sandbox.store().join("testtool").exists());
-    assert!(sandbox.ok(&["list"]).contains("nothing installed"));
+    assert!(sandbox.ok(&["list", "local"]).contains("nothing installed"));
 }
 
 #[test]
@@ -716,7 +716,7 @@ fn upgrade_keeps_the_name_given_at_install() {
     publish_tool(&sandbox, "2.0.0");
     sandbox.ok(&["upgrade", "--yes"]);
 
-    assert_eq!(sandbox.ok(&["list", "--names-only"]).trim(), "tt");
+    assert_eq!(sandbox.ok(&["list", "local", "--names-only"]).trim(), "tt");
     assert_eq!(run(&sandbox.bin().join("testtool")), "testtool 2.0.0");
 }
 
@@ -734,7 +734,7 @@ fn sync_puts_a_renamed_package_back_under_its_name() {
     sandbox.ok(&["uninstall", "tt", "--yes"]);
 
     sandbox.ok(&["sync", "--file", &lock_arg]);
-    assert_eq!(sandbox.ok(&["list", "--names-only"]).trim(), "tt");
+    assert_eq!(sandbox.ok(&["list", "local", "--names-only"]).trim(), "tt");
     sandbox.ok(&["lock", "--check", "--file", &lock_arg]);
 }
 
@@ -856,7 +856,7 @@ fn a_batch_installs_every_package_and_reports_them_in_the_order_asked() {
     for name in names {
         assert_eq!(run(&sandbox.bin().join(name)), format!("{name} 1.0.0"));
     }
-    let listed = sandbox.ok(&["list", "--names-only"]);
+    let listed = sandbox.ok(&["list", "local", "--names-only"]);
     let mut installed: Vec<&str> = listed.lines().collect();
     installed.sort_unstable();
     assert_eq!(installed, ["alpha", "bravo", "charlie", "delta"]);
@@ -881,7 +881,10 @@ fn the_same_package_asked_for_two_ways_installs_cleanly() {
 
     sandbox.ok(&["install", "test:testtool", "test:testtool@1.0.0", "--yes"]);
     assert_eq!(run(&sandbox.bin().join("testtool")), "testtool 1.0.0");
-    assert_eq!(sandbox.ok(&["list", "--names-only"]).trim(), "testtool");
+    assert_eq!(
+        sandbox.ok(&["list", "local", "--names-only"]).trim(),
+        "testtool"
+    );
 }
 
 /// A batch is not all-or-nothing: the packages that resolved are installed and
@@ -901,7 +904,7 @@ fn one_bad_package_in_a_batch_does_not_lose_the_good_ones() {
     ]);
     assert!(err.contains("nothing-published-here"), "{err}");
 
-    let listed = sandbox.ok(&["list", "--names-only"]);
+    let listed = sandbox.ok(&["list", "local", "--names-only"]);
     let mut installed: Vec<&str> = listed.lines().collect();
     installed.sort_unstable();
     assert_eq!(installed, ["alpha", "bravo"], "good packages were lost");
@@ -958,7 +961,7 @@ fn every_run_is_logged_and_a_failure_says_where_the_log_is() {
 fn the_log_can_be_json_lines_instead() {
     let sandbox = Sandbox::new();
     sandbox.configure("log_format = \"json\"\nlog_level = \"debug\"\n");
-    sandbox.ok(&["list"]);
+    sandbox.ok(&["list", "local"]);
 
     let log = sandbox.log();
     let first = log.lines().next().expect("a record");
@@ -974,7 +977,7 @@ fn the_log_can_be_json_lines_instead() {
 fn an_unreadable_log_setting_is_refused_by_name() {
     let sandbox = Sandbox::new();
     sandbox.configure("log_level = \"chatty\"\n");
-    let err = sandbox.fails(&["list"]);
+    let err = sandbox.fails(&["list", "local"]);
     assert!(err.contains("chatty"), "{err}");
     assert!(err.contains("config.toml"), "{err}");
 }
@@ -1012,7 +1015,7 @@ fn history_records_an_install_an_upgrade_and_an_uninstall_newest_first() {
     );
 
     // `state.json` has forgotten the package entirely; the history has not.
-    assert!(sandbox.ok(&["list"]).contains("nothing installed"));
+    assert!(sandbox.ok(&["list", "local"]).contains("nothing installed"));
 }
 
 #[test]

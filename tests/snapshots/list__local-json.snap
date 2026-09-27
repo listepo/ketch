@@ -1,0 +1,27 @@
+---
+source: tests/list.rs
+expression: local
+---
+[
+  {
+    "installed": "1.0.0",
+    "name": "alpha",
+    "pinned": false,
+    "retained": [],
+    "source": "test:alpha"
+  },
+  {
+    "installed": "1.0.0",
+    "name": "bravo",
+    "pinned": false,
+    "retained": [],
+    "source": "test:bravo"
+  },
+  {
+    "installed": "1.0.0",
+    "name": "charlie",
+    "pinned": true,
+    "retained": [],
+    "source": "test:charlie"
+  }
+]

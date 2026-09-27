@@ -145,7 +145,7 @@ fn an_empty_root_is_reported_without_touching_the_callers_home() {
 
     Command::cargo_bin("ketch")
         .unwrap()
-        .args(["--root", root.path().to_str().unwrap(), "list"])
+        .args(["--root", root.path().to_str().unwrap(), "list", "local"])
         .env("NO_COLOR", "1")
         .assert()
         .success()
@@ -238,6 +238,7 @@ fn tui_request_falls_back_without_terminal_escape_sequences_in_ci() {
             "--root",
             temp.child("root").path().to_str().unwrap(),
             "list",
+            "local",
         ])
         .env("CI", "1")
         .env("NO_COLOR", "1")
@@ -290,7 +291,7 @@ stderr:
 
         Command::cargo_bin("ketch")
             .unwrap()
-            .args(["--root", root.path().to_str().unwrap(), "list"])
+            .args(["--root", root.path().to_str().unwrap(), "list", "local"])
             .env("NO_COLOR", "1")
             .assert()
             .success()

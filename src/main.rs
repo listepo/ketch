@@ -14,6 +14,7 @@ mod extra;
 mod extract;
 mod http;
 mod install;
+mod listing;
 mod lockfile;
 mod log;
 mod manifest;
