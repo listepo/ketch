@@ -5,8 +5,8 @@
 //! binary, then inference from the source reference itself. Inference is what
 //! lets `ketch install owner/repo` work for a repository nobody has curated.
 //!
-//! It is also the one place a user manifest is edited: [`write_bin`] records
-//! the binary a package links, and the only module that imports `toml_edit`.
+//! It is also the one place a user manifest is edited: [`write_bins`] records
+//! the binaries a package links, and the only module that imports `toml_edit`.
 
 use crate::config::Config;
 use crate::error::{Error, Result};
@@ -230,9 +230,10 @@ pub fn to_toml(manifest: &Manifest) -> Result<String> {
     toml::to_string_pretty(manifest).map_err(|e| Error::parse("manifest", e.to_string()))
 }
 
-/// Write `bin = [{ name = "<bin>" }]` for `package` into the user manifest at
-/// `path`, changing nothing else in the file. `false` when the package there
-/// already has a `bin`: a choice is only ever written where none was made.
+/// Write `bin = [{ name = "<a>" }, { name = "<b>" }, …]` for `package` into
+/// the user manifest at `path`, one entry per name in `bins`, changing nothing
+/// else in the file. `false` when the package there already has a `bin`: a
+/// choice is only ever written where none was made.
 ///
 /// The file is the user's, so what they wrote — comments, order, spacing —
 /// survives: `toml_edit` changes the one key and renders the rest back as it
@@ -240,7 +241,7 @@ pub fn to_toml(manifest: &Manifest) -> Result<String> {
 /// file, so a write that would leave it unloadable fails instead; and it
 /// replaces the file by renaming a finished copy over it, so an interrupted
 /// write leaves the old one whole.
-pub fn write_bin(path: &Path, package: &str, bin: &str) -> Result<bool> {
+pub fn write_bins(path: &Path, package: &str, bins: &[String]) -> Result<bool> {
     // A manifest linked in from a dotfiles repository is edited there, not
     // replaced by a copy that silently stops following the repository.
     let target = std::fs::canonicalize(path).map_err(|e| Error::io(path, e))?;
@@ -257,10 +258,12 @@ pub fn write_bin(path: &Path, package: &str, bin: &str) -> Result<bool> {
     if table.contains_key("bin") {
         return Ok(false);
     }
-    let mut entry = toml_edit::InlineTable::new();
-    entry.insert("name", bin.into());
     let mut list = toml_edit::Array::new();
-    list.push(entry);
+    for bin in bins {
+        let mut entry = toml_edit::InlineTable::new();
+        entry.insert("name", bin.as_str().into());
+        list.push(entry);
+    }
     table.insert("bin", toml_edit::value(list));
     let body = doc.to_string();
     parse_registry(&body, &label)?;
@@ -438,7 +441,7 @@ mod tests {
     }
 
     #[test]
-    fn write_bin_adds_the_entry_and_keeps_every_other_byte() {
+    fn write_bins_adds_the_entry_and_keeps_every_other_byte() {
         let body = concat!(
             "# my rtok, pinned to the fork\n",
             "name   = \"rtok\"   # spaced on purpose\n",
@@ -449,7 +452,7 @@ mod tests {
         );
         let (_dir, path) = user_file(body);
 
-        assert!(write_bin(&path, "rtok", "rtok-cli").unwrap());
+        assert!(write_bins(&path, "rtok", &one("rtok-cli")).unwrap());
 
         let written = std::fs::read_to_string(&path).unwrap();
         let expected = concat!(
@@ -466,16 +469,32 @@ mod tests {
         assert_eq!(parsed[0].bin[0].name.as_deref(), Some("rtok-cli"));
     }
 
+    fn one(bin: &str) -> Vec<String> {
+        vec![bin.to_string()]
+    }
+
     #[test]
-    fn write_bin_leaves_a_manifest_that_already_names_one_alone() {
+    fn write_bins_writes_one_entry_per_name_in_order() {
+        let (_dir, path) = user_file("name = \"rtok\"\nsource = \"github:me/rtok\"\n");
+        let bins = vec!["rtok".to_string(), "other-tool".to_string()];
+        assert!(write_bins(&path, "rtok", &bins).unwrap());
+        let written = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            written.ends_with("bin = [{ name = \"rtok\" }, { name = \"other-tool\" }]\n"),
+            "{written}"
+        );
+    }
+
+    #[test]
+    fn write_bins_leaves_a_manifest_that_already_names_one_alone() {
         let body = "name = \"rtok\"\nsource = \"github:me/rtok\"\nbin = [{ name = \"rtok\" }]\n";
         let (_dir, path) = user_file(body);
-        assert!(!write_bin(&path, "rtok", "rtok-cli").unwrap());
+        assert!(!write_bins(&path, "rtok", &one("rtok-cli")).unwrap());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), body);
     }
 
     #[test]
-    fn write_bin_finds_the_package_in_a_multi_package_file() {
+    fn write_bins_finds_the_package_in_a_multi_package_file() {
         let body = concat!(
             "[[package]]\n",
             "name = \"other\"\n",
@@ -486,7 +505,7 @@ mod tests {
             "source = \"github:me/rtok\"\n",
         );
         let (_dir, path) = user_file(body);
-        assert!(write_bin(&path, "rtok", "rtok-cli").unwrap());
+        assert!(write_bins(&path, "rtok", &one("rtok-cli")).unwrap());
         let parsed = parse_registry(&std::fs::read_to_string(&path).unwrap(), "t").unwrap();
         assert!(parsed[0].bin.is_empty());
         assert_eq!(parsed[1].bin[0].name.as_deref(), Some("rtok-cli"));
@@ -494,11 +513,11 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn write_bin_edits_the_target_of_a_symlinked_manifest() {
+    fn write_bins_edits_the_target_of_a_symlinked_manifest() {
         let (dir, target) = user_file("name = \"rtok\"\nsource = \"github:me/rtok\"\n");
         let link = dir.path().join("link.toml");
         std::os::unix::fs::symlink(&target, &link).unwrap();
-        assert!(write_bin(&link, "rtok", "rtok-cli").unwrap());
+        assert!(write_bins(&link, "rtok", &one("rtok-cli")).unwrap());
         assert!(std::fs::symlink_metadata(&link)
             .unwrap()
             .file_type()

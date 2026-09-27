@@ -131,7 +131,9 @@ sharing the package's name — `rtok` beside `rtok-hook`, say, where one is the
 command and the other a helper. A name shares the package's when it is the
 package name, or the package name followed by `-`, `_` or `.` (`gofmt` does not
 share `go`'s). Then ketch links exactly one of them, chosen the same way on
-every OS:
+every OS, and leaves the others in that family out; executables with other
+names — `other-tool` beside `rtok` and `rtok-hook` — are linked as always. The
+choice is:
 
 1. the one whose name is the package name — `rtok`, never `rtok-hook` — ignoring
    case and `.exe`;
@@ -143,8 +145,9 @@ every OS:
    entry that would settle it.
 
 When the manifest that answered is your own (`~/.ketch/manifests/<name>.toml`),
-the choice is written into it as `bin = [{ name = "..." }]`, leaving the rest of
-the file exactly as it was, and from then on the file names its binary. For a
+the choice is written into it as `bin = [{ name = "..." }, ...]` — the chosen
+binary and every other one linked — leaving the rest of the file exactly as it
+was, and from then on the file names its binaries. For a
 registry, built-in or inferred manifest the choice is kept in `state.json`
 instead, and the manifest keeps updating with the registry.
 

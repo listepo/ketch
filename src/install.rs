@@ -388,8 +388,10 @@ pub fn prepare(
 /// The binary chosen for a package whose manifest names none, out of several
 /// in its payload that share the package's name.
 struct BinPick {
-    /// What placement links in place of everything it would discover.
-    spec: BinSpec,
+    /// What placement links in place of everything it would discover: the
+    /// chosen binary and every executable outside its family, in discovery
+    /// order. Only the family members that lost are left out.
+    specs: Vec<BinSpec>,
     /// The chosen file's name, as state remembers it.
     file: String,
     how: Picked,
@@ -441,21 +443,27 @@ fn pick_bin(
         }
     };
     let (i, how) = bin_choice::choose(name, &names, remembered, &mut ask, &hint)?;
-    let chosen = &found[contenders[i]];
-    // The exact path, not a glob or a bare name: a release can carry a
+    let chosen = contenders[i];
+    // The exact paths, not globs or bare names: a release can carry a
     // completion script or a man page with the same file name elsewhere.
-    let rel = chosen
-        .strip_prefix(payload)
-        .unwrap_or(chosen)
-        .to_string_lossy()
-        .into_owned();
-    let file = names[i].clone();
-    Ok(Some(BinPick {
-        spec: BinSpec {
-            path: Some(rel),
+    let specs = found
+        .iter()
+        .zip(&files)
+        .enumerate()
+        .filter(|&(j, _)| j == chosen || !contenders.contains(&j))
+        .map(|(_, (path, file))| BinSpec {
+            path: Some(
+                path.strip_prefix(payload)
+                    .unwrap_or(path)
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
             name: Some(file.clone()),
-        },
-        file,
+        })
+        .collect();
+    Ok(Some(BinPick {
+        specs,
+        file: files[chosen].clone(),
         how,
     }))
 }
@@ -471,20 +479,34 @@ fn remembered_choice(pick: Option<&BinPick>, remembered: Option<&str>) -> Option
 }
 
 /// Write a pick into the user manifest it came from, so the file names its
-/// binary from now on. Best effort: the install has already succeeded, and
-/// state remembers the choice even when the file cannot be written.
+/// binaries from now on: the chosen one and every other it links. Best
+/// effort: the install has already succeeded, and state remembers the choice
+/// even when the file cannot be written.
 fn record_in_manifest(path: &Path, manifest: &mut crate::model::Manifest, pick: &BinPick) {
-    let command = bin_choice::command_name(&pick.file).to_string();
-    match crate::manifest::write_bin(path, &manifest.name, &command) {
+    let commands: Vec<String> = pick
+        .specs
+        .iter()
+        .filter_map(|s| s.name.as_deref())
+        .map(|n| bin_choice::command_name(n).to_string())
+        .collect();
+    match crate::manifest::write_bins(path, &manifest.name, &commands) {
         Ok(true) => {
+            let listed: Vec<String> = commands
+                .iter()
+                .map(|c| format!("{{ name = \"{c}\" }}"))
+                .collect();
             ui::note(&format!(
-                "{} now names its binary: bin = [{{ name = \"{command}\" }}]",
-                path.display()
+                "{} now names its binaries: bin = [{}]",
+                path.display(),
+                listed.join(", ")
             ));
-            manifest.bin = vec![BinSpec {
-                path: None,
-                name: Some(command),
-            }];
+            manifest.bin = commands
+                .into_iter()
+                .map(|c| BinSpec {
+                    path: None,
+                    name: Some(c),
+                })
+                .collect();
         }
         Ok(false) => {}
         Err(e) => ui::warn(&format!(
@@ -575,7 +597,7 @@ pub fn commit(cfg: &Config, state: &mut State, prepared: Prepared) -> Result<Ins
     } else {
         None
     };
-    let picked_specs = pick.as_ref().map(|p| vec![p.spec.clone()]);
+    let picked_specs = pick.as_ref().map(|p| p.specs.clone());
     let links = platform.place(&Placement {
         name: &manifest.name,
         version: &version,
@@ -796,7 +818,7 @@ pub fn relink(cfg: &Config, state: &mut State, name: &str) -> Result<()> {
         remembered,
         true,
     )?;
-    let picked_specs = pick.as_ref().map(|p| vec![p.spec.clone()]);
+    let picked_specs = pick.as_ref().map(|p| p.specs.clone());
     let links = platform.place(&Placement {
         name: &pkg.name,
         version: &version,
@@ -904,7 +926,7 @@ pub fn rollback(
         None
     };
     let bin_choice = remembered_choice(pick.as_ref(), remembered);
-    let picked_specs = pick.as_ref().map(|p| vec![p.spec.clone()]);
+    let picked_specs = pick.as_ref().map(|p| p.specs.clone());
     let links = platform.place(&Placement {
         name: &pkg.name,
         version: &version,

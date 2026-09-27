@@ -119,13 +119,13 @@ fn a_remembered_choice_is_reused_on_upgrade() {
     assert_eq!(run(&linked(&sandbox, "rtok-cli")), "rtok-cli 2.0.0");
     assert!(!linked(&sandbox, "rtok-hook").exists());
     let state = std::fs::read_to_string(sandbox.root().join("state.json")).unwrap();
-    assert!(state.contains(r#""bin_choice": "rtok-cli""#), "{state}");
+    assert!(state.contains(r#""bin_choice": "rtok-cli"#), "{state}");
 }
 
 #[test]
 fn a_user_manifest_gets_the_chosen_binary_written_into_it() {
     let sandbox = Sandbox::new();
-    publish(&sandbox, "1.0.0", &["rtok", "rtok-hook"]);
+    publish(&sandbox, "1.0.0", &["rtok", "rtok-hook", "other-tool"]);
     let manifests = sandbox.root().join("manifests");
     std::fs::create_dir_all(&manifests).unwrap();
     let file = manifests.join("rtok.toml");
@@ -135,18 +135,31 @@ fn a_user_manifest_gets_the_chosen_binary_written_into_it() {
     sandbox.ok(&["install", "rtok", "--yes"]);
 
     // Windows would link a bare name as `.exe`, so a script keeps its own.
-    let command = if cfg!(windows) { "rtok.cmd" } else { "rtok" };
+    let ext = if cfg!(windows) { ".cmd" } else { "" };
     let written = std::fs::read_to_string(&file).unwrap();
     assert_eq!(
         written,
-        format!("{original}bin = [{{ name = \"{command}\" }}]\n"),
+        format!("{original}bin = [{{ name = \"other-tool{ext}\" }}, {{ name = \"rtok{ext}\" }}]\n"),
         "everything but the new entry must be left as it was"
     );
     assert_eq!(run(&linked(&sandbox, "rtok")), "rtok 1.0.0");
+    assert_eq!(run(&linked(&sandbox, "other-tool")), "other-tool 1.0.0");
     assert!(!linked(&sandbox, "rtok-hook").exists());
 
-    // The file now names its binary, so a reinstall leaves it alone.
+    // The file now names its binaries, so a reinstall leaves it alone.
     sandbox.ok(&["install", "rtok", "--force", "--yes"]);
     assert_eq!(std::fs::read_to_string(&file).unwrap(), written);
     assert_eq!(run(&linked(&sandbox, "rtok")), "rtok 1.0.0");
+}
+
+#[test]
+fn only_the_losing_family_members_are_dropped_and_other_binaries_stay_linked() {
+    let sandbox = Sandbox::new();
+    publish(&sandbox, "1.0.0", &["rtok", "rtok-hook", "other-tool"]);
+
+    sandbox.ok(&["install", "test:rtok@1.0.0", "--yes"]);
+
+    assert_eq!(run(&linked(&sandbox, "rtok")), "rtok 1.0.0");
+    assert_eq!(run(&linked(&sandbox, "other-tool")), "other-tool 1.0.0");
+    assert!(!linked(&sandbox, "rtok-hook").exists());
 }

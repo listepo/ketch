@@ -8,7 +8,8 @@
 //! while `rtok` sorts ahead of `rtok-hook` (B64). So the decision lives here,
 //! once, with no knowledge of the OS: the exact package name, else the choice
 //! remembered from last time, else the user's answer, else an error that says
-//! how to name the binary in a manifest.
+//! how to name the binary in a manifest. Only the family members that lose
+//! are dropped; executables with other names are linked as they always were.
 
 use crate::error::{Error, Result};
 
