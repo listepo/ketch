@@ -18,7 +18,8 @@ and removed cleanly on uninstall.
 ketch stays free for individuals and everyday use. Companies and businesses
 will have a paid tier: support, services and features aimed at teams. The
 money goes into supporting and maintaining the project. The code remains under
-the MIT licence; the paid tier sits alongside it, not in place of it.
+the triple license (GPLv3, royalty-free or commercial); the paid tier sits
+alongside it, not in place of it.
 
 ## Governance
 

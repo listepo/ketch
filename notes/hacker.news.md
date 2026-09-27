@@ -1,4 +1,8 @@
-# Show HN draft
+# Hacker News
+
+Platform: https://news.ycombinator.com/submit (post as Show HN)
+
+## Show HN draft
 
 Title:
 Show HN: Ketch – install CLI tools straight from GitHub releases, no formulas
@@ -27,4 +31,6 @@ Quick try:
 
 v0.6.0 just shipped: https://github.com/listepo/ketch/releases/tag/v0.6.0
 
-It's MIT-licensed. I'd especially like feedback on how it picks assets for repos that name their files oddly.
+It's triple-licensed: GPLv3, a royalty-free license for proprietary desktop, mobile and web apps, or a commercial license. I'd especially like feedback on how it picks assets for repos that name their files oddly.
+
+github.com/listepo/ketch — drafted Show HN post for ketch v0.6.0, triple license noted
