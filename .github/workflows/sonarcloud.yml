@@ -44,8 +44,14 @@ jobs:
           # Full history: Sonar uses blame data for new-code detection.
           fetch-depth: 0
 
-      # Same as ci.yml: the runner's default stable toolchain.
-      - name: Rust toolchain
+      # Same as ci.yml: the Rust mise.toml pins. mise sets RUSTUP_TOOLCHAIN, so
+      # llvm-tools-preview is added to that toolchain.
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        if: env.SONAR_TOKEN != ''
+        with:
+          install_args: rust
+
+      - name: Rust coverage tools
         if: env.SONAR_TOKEN != ''
         run: rustup component add llvm-tools-preview
 

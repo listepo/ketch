@@ -134,6 +134,19 @@ jobs:
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
             echo "$HOME/.cargo/bin" >> $GITHUB_PATH
           fi
+      - name: "Install Rust from mise.toml"
+        uses: "jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c"
+        with:
+          "install_args": "rust"
+      - name: "Add the Rust targets this build needs"
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC2086
+          rustup target add $TARGETS
+          rustc --version
+        shell: "bash"
+        env:
+          "TARGETS": "${{ join(matrix.targets, ' ') }}"
       - name: "Cache Cargo build"
         uses: "Swatinem/rust-cache@v2"
         with:
