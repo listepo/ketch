@@ -1,7 +1,11 @@
-# Publishes docs/site.md (the project card for the listepo project site) to the public site
-# repository listepo/landing as content/projects/<this repo's name>.md on its main branch; a push
-# there deploys https://listepo.github.io/landing/ via GitHub Pages. The front matter follows
-# CONTENT_CONTRACT.md in listepo/landing.
+# Publishes this repo's docs/ to the public site repository listepo/landing on its main branch; a
+# push there deploys https://listepo.github.io/landing/ via GitHub Pages:
+#   - docs/site.md (the project card) -> content/projects/<this repo's name>.md; its front matter
+#     follows CONTENT_CONTRACT.md in listepo/landing.
+#   - every other docs/**/*.md -> content/docs/<this repo's name>/ (mirrored: files removed here are
+#     removed there), plus _source.json with the source repo, commit and ref. The site renders
+#     them as /landing/<name>/docs/<page>/ and links other relative paths back to this repo at
+#     that commit. Page order and titles live in src/data/docs-nav.json in listepo/landing.
 #
 # Auth is a write-enabled deploy key on listepo/landing only; its private half is this repo's
 # SITE_DEPLOY_KEY secret. GITHUB_TOKEN stays read-only. This workflow is independent of the
@@ -15,7 +19,7 @@ on:
   push:
     branches: [main]
     # Path filters are not evaluated for tag pushes, so every v* tag syncs.
-    paths: [docs/site.md]
+    paths: [docs/**, .github/workflows/sync-docs.yml]
     tags: ["v*"]
   # A tag pushed with GITHUB_TOKEN triggers no workflow, so also sync when a release is published
   # (its ref is the release tag, so the version below is set the same way); workflow_dispatch
@@ -75,6 +79,22 @@ jobs:
               open(path, "w", encoding="utf-8").write(text)
           PY
           fi
+      - name: Mirror the other docs/**/*.md into the site repository
+        env:
+          PROJECT: ${{ github.event.repository.name }}
+          SOURCE: ${{ github.repository }}
+          SOURCE_SHA: ${{ github.sha }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          dest="site/content/docs/${PROJECT}"
+          mkdir -p "$dest"
+          rsync -a --delete --delete-excluded --prune-empty-dirs \
+            --exclude='/site.md' \
+            --include='*/' --include='*.md' --exclude='*' \
+            source/docs/ "$dest/"
+          printf '{\n  "repo": "%s",\n  "sha": "%s",\n  "ref": "%s"\n}\n' \
+            "$SOURCE" "$SOURCE_SHA" "$REF_NAME" > "$dest/_source.json"
       - name: Commit and push if changed
         working-directory: site
         env:
@@ -84,9 +104,10 @@ jobs:
           REF_NAME: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          git add "content/projects/${PROJECT}.md"
-          if git diff --cached --quiet; then
-            echo "content/projects/${PROJECT}.md is already up to date"
+          git add "content/projects/${PROJECT}.md" "content/docs/${PROJECT}"
+          # _source.json alone changes on every run; only commit when content changed.
+          if git diff --cached --quiet -- . ":(exclude)content/docs/${PROJECT}/_source.json"; then
+            echo "content/projects/${PROJECT}.md and content/docs/${PROJECT}/ are already up to date"
             exit 0
           fi
           git config user.name "github-actions[bot]"
