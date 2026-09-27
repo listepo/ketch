@@ -10,10 +10,13 @@ install_alternatives:
   - 'mise use -g github:listepo/ketch'
 version: "0.6.0"
 accent: "#3DDCB0"
+accentLight: "#0F6F5C"
+order: 2
 ---
 
 <!-- Website copy for the listepo project site. The sync-docs workflow copies this file to
-listepo/shop-mvp as content/projects/ketch.md on every change to main and on every v* tag.
+listepo/landing (main) as content/projects/ketch.md on every change to main and on every v*
+tag; front matter follows CONTENT_CONTRACT.md in that repository.
 Sources (checked 2026-09-27): README.md and the clap CLI in src/cli.rs; version from the latest
 GitHub release (v0.6.0); accent is the dark-theme --accent in site/DESIGN.md. -->
 
@@ -121,4 +124,5 @@ ketch self uninstall
 - Commands reference: <https://listepo.github.io/ketch/docs/commands/>
 - Package registry: <https://github.com/listepo/ketch-registry>
 - Releases: <https://github.com/listepo/ketch/releases>
-- License: MIT (<https://github.com/listepo/ketch/blob/main/LICENSE>)
+- License: your choice of GNU GPLv3, a royalty-free license for proprietary desktop, mobile and web
+  apps (with attribution), or a commercial license (see <https://github.com/listepo/ketch#license>)

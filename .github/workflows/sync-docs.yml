@@ -1,8 +1,9 @@
-# Publishes docs/site.md (the project card for the listepo project site) to the private site
-# repository listepo/shop-mvp as content/projects/<this repo's name>.md, on that repository's
-# default branch.
+# Publishes docs/site.md (the project card for the listepo project site) to the public site
+# repository listepo/landing as content/projects/<this repo's name>.md on its main branch; a push
+# there deploys https://listepo.github.io/landing/ via GitHub Pages. The front matter follows
+# CONTENT_CONTRACT.md in listepo/landing.
 #
-# Auth is a write-enabled deploy key on listepo/shop-mvp only; its private half is this repo's
+# Auth is a write-enabled deploy key on listepo/landing only; its private half is this repo's
 # SITE_DEPLOY_KEY secret. GITHUB_TOKEN stays read-only. This workflow is independent of the
 # pipeline gate, releases and Pages: it never builds, tests or deploys this repository.
 #
@@ -18,8 +19,8 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
-# One sync at a time per source repo, never cancelled half-way; the push below rebases once
-# if another repo's sync landed first.
+# One sync at a time per source repo, never cancelled half-way; the push below fetches and
+# rebases (up to 5 attempts) when another repo's sync landed on listepo/landing first.
 concurrency:
   group: sync-docs
   cancel-in-progress: false
@@ -38,7 +39,8 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@v7
         with:
-          repository: listepo/shop-mvp
+          repository: listepo/landing
+          ref: main
           ssh-key: ${{ secrets.SITE_DEPLOY_KEY }}
           path: site
       - name: Copy docs/site.md into the site repository
@@ -85,9 +87,15 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "content: sync ${PROJECT} from ${SOURCE}@${SOURCE_SHA:0:7} (${REF_NAME})"
-          branch="$(git rev-parse --abbrev-ref HEAD)"
-          if ! git push origin "HEAD:${branch}"; then
-            git pull --rebase origin "$branch"
-            git push origin "HEAD:${branch}"
-          fi
-          echo "pushed $(git rev-parse HEAD) to listepo/shop-mvp ${branch}"
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:main; then
+              echo "pushed $(git rev-parse HEAD) to listepo/landing main"
+              exit 0
+            fi
+            echo "push rejected (attempt ${attempt}); rebasing onto the latest main"
+            sleep $((attempt * 3))
+            git fetch origin main
+            git rebase origin/main
+          done
+          echo "::error::could not push to listepo/landing main after 5 attempts"
+          exit 1
