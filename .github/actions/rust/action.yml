@@ -1,0 +1,28 @@
+name: rust from mise.toml
+description: >-
+  Install the Rust that mise.toml pins (the one Rust version for local work,
+  CI and release builds, with rustfmt and clippy) through jdx/mise-action,
+  make it the active toolchain for every later rustup/cargo call, and fail
+  when rustc is anything else, e.g. the runner image's own stable.
+inputs:
+  install-args:
+    description: Tools mise installs from mise.toml. Must include rust.
+    required: false
+    default: rust
+runs:
+  using: composite
+  steps:
+    - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      with:
+        install_args: ${{ inputs.install-args }}
+
+    - name: rustc is the mise.toml pin
+      shell: bash
+      run: |
+        set -euo pipefail
+        version="$(mise current rust)"
+        echo "RUSTUP_TOOLCHAIN=$version" >> "$GITHUB_ENV"
+        export RUSTUP_TOOLCHAIN="$version"
+        rustc --version
+        rustc --version | grep -q "^rustc $version " \
+          || { echo "rustc is not the mise.toml pin $version" >&2; exit 1; }

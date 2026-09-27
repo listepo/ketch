@@ -2630,7 +2630,7 @@ dependencies = [
 
 [[package]]
 name = "ketch"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "assert_cmd",
  "assert_fs",
@@ -2665,9 +2665,11 @@ dependencies = [
  "sigstore",
  "tar",
  "tempfile",
+ "terminal_size",
  "thiserror 2.0.20",
  "tokio",
  "toml 1.1.6+spec-1.1.0",
+ "toml_edit",
  "trycmd",
  "typed-path",
  "ureq",

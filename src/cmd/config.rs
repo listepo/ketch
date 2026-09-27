@@ -115,7 +115,7 @@ fn ask_everything() -> Result<Answers> {
         "",
     ));
     answers.notes = ask_text("notes to print after a successful install?");
-    answers.bin = ask_bins(&answers.name);
+    answers.bin = ask_bins(&answers.name, answers.kind);
     answers.extra_paths = wizard::split_list(&ui::prompt(
         "extra files to record, comma-separated (man pages, completions)?",
         "",
@@ -199,30 +199,57 @@ fn ask_strip_prefix() -> Option<usize> {
     }
 }
 
-/// `bin` entries until the user stops adding them. The link name defaults to
-/// the file the path glob points at, else the package name — the natural
-/// answer in both cases. An entry with neither a path nor a name says
-/// nothing, so it is re-asked rather than recorded.
-fn ask_bins(package: &str) -> Vec<BinSpec> {
+/// `bin` entries. A package that links binaries names the command it puts on
+/// PATH, so its first entry is asked outright rather than offered (B64); more
+/// follow until the user stops adding them. An `app` links none and is only
+/// offered them.
+fn ask_bins(package: &str, kind: PackageKind) -> Vec<BinSpec> {
     let mut bins = Vec::new();
-    while ui::question("add a `bin` entry?", false) {
-        let path = ask_text("path glob inside the payload?");
-        let link_default = path
-            .as_deref()
-            .map(last_segment)
-            .filter(|segment| !segment.is_empty())
-            .unwrap_or(package);
-        let name = ui::prompt("link name?", link_default);
-        if path.is_none() && name.is_empty() {
-            ui::warn("a `bin` entry needs a path, a name, or both");
-            continue;
+    if kind != PackageKind::App {
+        // The name defaults to something non-empty, so an empty answer or
+        // the end of piped input settles this on the first pass.
+        loop {
+            match ask_bin(package) {
+                Some(bin) if bin.name.is_some() => {
+                    bins.push(bin);
+                    break;
+                }
+                _ => ui::warn("the first `bin` entry names the binary users run"),
+            }
         }
-        bins.push(BinSpec {
-            path,
-            name: (!name.is_empty()).then_some(name),
-        });
+    }
+    let offer = if bins.is_empty() {
+        "add a `bin` entry?"
+    } else {
+        "add another `bin` entry?"
+    };
+    while ui::question(offer, false) {
+        if let Some(bin) = ask_bin(package) {
+            bins.push(bin);
+        }
     }
     bins
+}
+
+/// One `bin` entry. The binary name defaults to the file the path glob
+/// points at, else the package name — the natural answer in both cases. An
+/// entry with neither a path nor a name says nothing, so it is refused.
+fn ask_bin(package: &str) -> Option<BinSpec> {
+    let path = ask_text("path glob inside the payload?");
+    let link_default = path
+        .as_deref()
+        .map(last_segment)
+        .filter(|segment| !segment.is_empty())
+        .unwrap_or(package);
+    let name = ui::prompt("binary name, the command on PATH?", link_default);
+    if path.is_none() && name.is_empty() {
+        ui::warn("a `bin` entry needs a path, a name, or both");
+        return None;
+    }
+    Some(BinSpec {
+        path,
+        name: (!name.is_empty()).then_some(name),
+    })
 }
 
 /// The file a path glob points at, without the directories in front of it.

@@ -186,6 +186,27 @@ impl Sandbox {
         std::fs::read_to_string(self.root().join("logs").join("ketch.log")).unwrap_or_default()
     }
 
+    /// The install record, `state.json`, as written. What a test checks about
+    /// how a package was installed — its asset, its checksum, its local kind —
+    /// lives here and nowhere a command prints it whole.
+    pub fn state(&self) -> String {
+        std::fs::read_to_string(self.root().join("state.json")).unwrap_or_default()
+    }
+
+    /// Write a registry package, as `ketch update` would have fetched it.
+    pub fn registry_package(&self, name: &str, body: &str) {
+        let dir = self.root().join("registry").join(name);
+        std::fs::create_dir_all(&dir).expect("registry package dir");
+        std::fs::write(dir.join("ketch.toml"), body).expect("write registry manifest");
+    }
+
+    /// Stop serving `id`'s releases, so its source fails the way one that
+    /// cannot be reached does.
+    pub fn unpublish(&self, id: &str) {
+        std::fs::remove_file(self.assets().join(format!("{id}.releases.json")))
+            .expect("remove releases");
+    }
+
     /// Write `config.toml` for this root, for settings with no flag.
     pub fn configure(&self, toml: &str) {
         self.tmp

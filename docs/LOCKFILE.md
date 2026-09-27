@@ -41,7 +41,8 @@ pinned = true
 ```
 
 Packages are written sorted by name, so the file is stable and its diffs are
-readable. `pinned` is only written when it is true.
+readable. `pinned` is only written when it is true, and `bin` only when a
+choice was made.
 
 | Key | What it is |
 | --- | --- |
@@ -53,6 +54,7 @@ readable. `pinned` is only written when it is true.
 | `asset` | the release file that was taken **on that target** |
 | `sha256` | of that file |
 | `pinned` | whether the package was held at this version |
+| `bin` | the binary chosen when the release ships several sharing the package's name, as a file name (`rtok-cli`); `ketch sync` repeats that choice without asking — see the `bin` section of [MANIFESTS.md](MANIFESTS.md) |
 
 ## What is reproducible, and what is not
 
@@ -111,8 +113,10 @@ A lockfile is a file somebody else may have written; that is what sharing a
 dotfiles repository means. So nothing in it is allowed to choose a filesystem
 path. `sync` asks for a source at a tag, installs it under the recorded `name`
 — which must pass the first check below — and lets the ordinary manifest
-resolution decide the binaries and where they go. The lock pins *which
-release*, never *where it lands*.
+resolution decide the binaries and where they go; a recorded `bin` only settles
+which of several binaries sharing the package's name is linked, after any choice
+`state.json` already remembers. The lock pins *which release*, never *where it
+lands*.
 
 | Refused | Why |
 | --- | --- |
@@ -121,6 +125,7 @@ release*, never *where it lands*.
 | a `github:` source that is not a valid `owner/repo` | it becomes a URL |
 | any other source with an empty id | there is nothing to resolve |
 | a `sha256` that is not 64 hex characters | it is compared against a real digest |
+| a `bin` that is empty or not usable verbatim as one file name | it names a file in the release; a value with a path separator, `..` or control characters cannot |
 | an empty `tag` | there is nothing to resolve |
 | a `target` ketch does not recognise | it silently turns the entry into a cross-target one, so the recorded asset and hash stop applying and a hash that drifted under the tag reads as clean |
 | an unknown key | a misspelt key that is silently ignored locks something other than what you wrote |

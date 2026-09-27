@@ -1136,6 +1136,13 @@ pub struct InstalledPackage {
     /// and on packages installed before signatures were checked.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provenance: Option<Provenance>,
+    /// The file name of the binary picked when a release shipped several
+    /// sharing the package's name and no manifest named one (B64). Reused on
+    /// upgrade, reinstall, relink and rollback rather than asking again.
+    /// Absent on packages that never needed the choice, and on state written
+    /// before it existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bin_choice: Option<String>,
 }
 
 impl InstalledPackage {

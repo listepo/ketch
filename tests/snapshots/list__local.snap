@@ -1,0 +1,8 @@
+---
+source: tests/list.rs
+expression: "sandbox.ok(&[\"list\", \"local\"])"
+---
+package  installed       source
+alpha    1.0.0           test:alpha
+bravo    1.0.0           test:bravo
+charlie  1.0.0 (pinned)  test:charlie

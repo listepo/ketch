@@ -92,6 +92,15 @@ pub fn manifest(answers: &Answers) -> Result<Manifest> {
             .collect(),
         trust: None,
     };
+    // A config written from now on says which binary is the command rather
+    // than leaving it to discovery, whose order differs between platforms
+    // (B64). Only here: `Manifest::validate` does not ask, so every manifest
+    // written before the rule still loads.
+    if manifest.kind != PackageKind::App && !manifest.bin.iter().any(|b| b.name.is_some()) {
+        return Err(Error::msg(
+            "name the binary this package puts on PATH: a `bin` entry with a `name`",
+        ));
+    }
     manifest.validate()?;
     Ok(manifest)
 }
@@ -101,7 +110,8 @@ pub fn manifest(answers: &Answers) -> Result<Manifest> {
 ///
 /// Field order follows `docs/MANIFESTS.md`, and every empty or default field
 /// is omitted so the file says only what someone chose to say: the smallest
-/// answer set produces a file with `name` and `source` and nothing else.
+/// answer set produces a file with `name`, `source` and the one `bin` entry
+/// naming the command, and nothing else.
 pub fn render(manifest: &Manifest) -> String {
     let mut out = String::from("# Written by `ketch config create`. Schema: docs/MANIFESTS.md.\n");
     out.push_str("name = ");
@@ -327,6 +337,10 @@ mod tests {
         Answers {
             source: Some(source.to_string()),
             name: name.to_string(),
+            bin: vec![BinSpec {
+                path: None,
+                name: Some(name.to_string()),
+            }],
             ..Answers::default()
         }
     }
@@ -459,7 +473,7 @@ mod tests {
     }
 
     #[test]
-    fn defaults_are_omitted_and_the_smallest_file_names_only_name_and_source() {
+    fn defaults_are_omitted_and_the_smallest_file_names_name_source_and_binary() {
         // A bare `owner/repo` answer must come back out as the `scheme:id`
         // form, the way every other command would read it.
         let body = render(&manifest(&minimal_answers("ripgrep", "BurntSushi/ripgrep")).unwrap());
@@ -467,8 +481,27 @@ mod tests {
             "# Written by `ketch config create`. Schema: docs/MANIFESTS.md.\n",
             "name = \"ripgrep\"\n",
             "source = \"github:BurntSushi/ripgrep\"\n",
+            "\n",
+            "bin = [{ name = \"ripgrep\" }]\n",
         );
         assert_eq!(body, expected);
+    }
+
+    #[test]
+    fn a_package_that_links_binaries_must_name_one() {
+        let mut nameless = minimal_answers("tool", "github:acme/tool");
+        nameless.bin = Vec::new();
+        assert!(manifest(&nameless).is_err(), "no bin entry at all");
+        nameless.bin = vec![BinSpec {
+            path: Some("dist/tool*".into()),
+            name: None,
+        }];
+        assert!(manifest(&nameless).is_err(), "a glob is not a name");
+
+        let mut app = minimal_answers("tool", "github:acme/tool");
+        app.bin = Vec::new();
+        app.kind = PackageKind::App;
+        assert!(manifest(&app).is_ok(), "an app links no binary to name");
     }
 
     #[test]

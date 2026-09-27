@@ -6,11 +6,13 @@
 
 use crate::changelog::{self, Entry, Origin};
 use crate::cli::{
-    ChangelogArgs, HistoryArgs, InfoArgs, ListArgs, OutdatedArgs, SearchArgs, StatsArgs, WhyArgs,
+    ChangelogArgs, HistoryArgs, InfoArgs, ListArgs, ListMode, OutdatedArgs, SearchArgs, StatsArgs,
+    WhyArgs,
 };
 use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::install;
+use crate::listing::{self, Available, Local, Row};
 use crate::manifest::Resolver;
 use crate::model::{InstalledPackage, Manifest, ManifestOrigin, PackageSpec, Release, VersionSpec};
 use crate::source::{ListOpts, SourceRegistry};
@@ -20,61 +22,239 @@ use crate::ui;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
-/// Lists installed packages in JSON, name-only, or tabular format.
-///
-/// # Examples
-///
-/// ```no_run
-/// let cfg = Config::load(None)?;
-/// let args = ListArgs {
-///     json: false,
-///     names_only: false,
-/// };
-///
-/// list(&cfg, args)?;
-/// # Ok::<(), anyhow::Error>(())
-/// ```
-///
-/// Returns an error if the installed state cannot be loaded or JSON output
-/// cannot be serialized.
-pub fn list(cfg: &Config, args: ListArgs) -> Result<()> {
-    let state = State::load(cfg)?;
-    let packages: Vec<&InstalledPackage> = state.iter().collect();
+/// What `ketch list` prints when there is no registry to list.
+const EMPTY_REGISTRY: &str = "registry is empty; run ketch update";
 
+/// `ketch list [local|remote]`: installed packages, the registry, or both in
+/// one table with the latest version of each.
+///
+/// The merge, the lookups and their cache live in `listing`; this decides
+/// which of them a mode needs and prints the answer. Only the modes that show
+/// `latest` touch the network, and `--names-only` never does.
+pub fn list(cfg: &Config, args: ListArgs) -> Result<()> {
+    let mode = if args.installed {
+        ui::note("`--installed` is now `ketch list local`; the flag goes away in the next release");
+        Some(ListMode::Local)
+    } else {
+        args.mode
+    };
+    match mode {
+        Some(ListMode::Local) => list_local(cfg, &args),
+        Some(ListMode::Remote) => list_remote(cfg, &args),
+        None => list_all(cfg, &args),
+    }
+}
+
+fn installed_rows(cfg: &Config) -> Result<Vec<Row>> {
+    let state = State::load(cfg)?;
+    let locals = state
+        .iter()
+        .map(|p| Local::from_installed(cfg, p))
+        .collect();
+    Ok(listing::merge(locals, Vec::new()))
+}
+
+fn print_names(rows: &[Row]) {
+    for row in rows {
+        ui::out(&ui::printable(&row.name));
+    }
+}
+
+fn list_local(cfg: &Config, args: &ListArgs) -> Result<()> {
+    let rows = installed_rows(cfg)?;
     if args.json {
+        let packages: Vec<serde_json::Value> = rows
+            .iter()
+            .filter_map(|row| row.local.as_ref())
+            .map(|l| {
+                serde_json::json!({
+                    "name": ui::printable(&l.name),
+                    "installed": l.version.to_string(),
+                    "pinned": l.pinned,
+                    "retained": l.retained.iter().map(ToString::to_string).collect::<Vec<_>>(),
+                    "source": l.source.to_string(),
+                })
+            })
+            .collect();
         return print_json(&packages);
     }
     if args.names_only {
-        for pkg in &packages {
-            ui::out(&crate::changelog::sanitize(&pkg.name));
+        print_names(&rows);
+        return Ok(());
+    }
+    print_local_table(&rows);
+    Ok(())
+}
+
+fn print_local_table(rows: &[Row]) {
+    if rows.is_empty() {
+        ui::out("nothing installed");
+        return;
+    }
+    let cells: Vec<Vec<String>> = rows
+        .iter()
+        .filter_map(|row| row.local.as_ref())
+        .map(|l| vec![l.name.clone(), l.cell(), l.source.to_string()])
+        .collect();
+    ui::table(&["package", "installed", "source"], &cells);
+}
+
+fn list_remote(cfg: &Config, args: &ListArgs) -> Result<()> {
+    let resolver = Resolver::new(cfg)?;
+    let mut rows: Vec<Row> = resolver
+        .listed()
+        .into_iter()
+        .map(|m| Row::offered(Available::from_manifest(cfg, m)))
+        .collect();
+    if rows.is_empty() {
+        if args.json {
+            return print_json(&Vec::<serde_json::Value>::new());
+        }
+        if !args.names_only {
+            ui::out(EMPTY_REGISTRY);
         }
         return Ok(());
     }
-    if packages.is_empty() {
+    if args.names_only {
+        print_names(&rows);
+        return Ok(());
+    }
+    // Only the user's own manifests are left to list: worth saying why the
+    // registry's packages are missing from it.
+    if resolver.registry_is_empty() {
+        ui::note(EMPTY_REGISTRY);
+    }
+
+    let sources = SourceRegistry::load(cfg);
+    if listing::fill_latest(cfg, &sources, &mut rows).offline() {
+        return Err(Error::msg(
+            "could not reach any package source to check the latest versions; \
+             `ketch list local` works offline",
+        ));
+    }
+    if args.json {
+        let packages: Vec<serde_json::Value> = rows
+            .iter()
+            .map(|row| {
+                serde_json::json!({
+                    "name": ui::printable(&row.name),
+                    "latest": row.latest_version(),
+                    "description": json_prose(row.available.as_ref().and_then(|a| a.description.clone())),
+                    "source": row.source().map(ToString::to_string),
+                })
+            })
+            .collect();
+        return print_json(&packages);
+    }
+    ui::table(
+        &["package", "latest", "description"],
+        &listing::remote_cells(&rows, ui::stdout_width()),
+    );
+    if let Some(note) = listing::unreachable_note(&rows) {
+        ui::out(&note);
+    }
+    Ok(())
+}
+
+fn list_all(cfg: &Config, args: &ListArgs) -> Result<()> {
+    let state = State::load(cfg)?;
+    let resolver = Resolver::new(cfg)?;
+    let locals = state
+        .iter()
+        .map(|p| Local::from_installed(cfg, p))
+        .collect();
+    let offered = resolver
+        .listed()
+        .into_iter()
+        .map(|m| Available::from_manifest(cfg, m))
+        .collect();
+    let mut rows = listing::merge(locals, offered);
+    if args.names_only {
+        print_names(&rows);
+        return Ok(());
+    }
+    if rows.is_empty() && !args.json {
         ui::out("nothing installed");
+        ui::out(EMPTY_REGISTRY);
+        return Ok(());
+    }
+    if resolver.registry_is_empty() {
+        ui::note(EMPTY_REGISTRY);
+    }
+
+    let sources = SourceRegistry::load(cfg);
+    let offline = listing::fill_latest(cfg, &sources, &mut rows).offline();
+    // No source answered: the network is missing, not one package. What is
+    // installed is still known, so that much is the answer.
+    if offline {
+        rows.retain(|row| row.local.is_some());
+    }
+    if args.json {
+        let packages: Vec<serde_json::Value> = rows
+            .iter()
+            .map(|row| {
+                let local = row.local.as_ref();
+                serde_json::json!({
+                    "name": ui::printable(&row.name),
+                    "installed": local.map(|l| l.version.to_string()),
+                    "latest": row.latest_version(),
+                    "update_available": row.update_available(),
+                    "pinned": local.is_some_and(|l| l.pinned),
+                    "source": row.source().map(ToString::to_string),
+                })
+            })
+            .collect();
+        let unreachable: Vec<String> = listing::unreachable(&rows)
+            .iter()
+            .map(|name| ui::printable(name))
+            .collect();
+        return print_json(&serde_json::json!({
+            "packages": packages,
+            "unreachable": unreachable,
+        }));
+    }
+    if offline {
+        print_local_table(&rows);
+        ui::out("latest: offline");
         return Ok(());
     }
 
-    let rows: Vec<Vec<String>> = packages
+    let marker = if ui::color_enabled() { "●" } else { "*" };
+    let cells: Vec<Vec<String>> = rows
         .iter()
-        .map(|pkg| {
-            let retained = if pkg.retained.is_empty() {
-                String::new()
-            } else {
-                format!(" (+{} retained)", pkg.retained.len())
-            };
+        .map(|row| {
+            let local = row.local.as_ref();
             vec![
-                pkg.name.clone(),
-                format!(
-                    "{}{}{retained}",
-                    pkg.version,
-                    if pkg.pinned { " (pinned)" } else { "" }
-                ),
-                pkg.source.to_string(),
+                if local.is_some() { marker } else { "" }.to_string(),
+                row.name.clone(),
+                local.map(Local::cell).unwrap_or_default(),
+                row.latest_cell(),
+                row.source().map(ToString::to_string).unwrap_or_default(),
             ]
         })
         .collect();
-    ui::table(&["package", "version", "source"], &rows);
+    let paint = |r: usize, c: usize, text: &str| -> String {
+        let row = &rows[r];
+        match c {
+            1 if row.local.is_some() => ui::bold(text),
+            3 if row.update_available() => match text.strip_suffix(listing::UPDATE) {
+                Some(version) => format!("{version}{}", ui::yellow(listing::UPDATE)),
+                None => text.to_string(),
+            },
+            _ => text.to_string(),
+        }
+    };
+    ui::table_styled(
+        &["", "package", "installed", "latest", "source"],
+        &cells,
+        &paint,
+    );
+    if let Some(footer) = listing::update_footer(&rows) {
+        ui::out(&ui::printable(&footer));
+    }
+    if let Some(note) = listing::unreachable_note(&rows) {
+        ui::out(&ui::printable(&note));
+    }
     Ok(())
 }
 

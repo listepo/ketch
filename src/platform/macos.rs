@@ -306,6 +306,21 @@ impl Platform for MacOsPlatform {
         ]
     }
 
+    fn bin_candidates(&self, payload: &Path, kind: PackageKind) -> Vec<PathBuf> {
+        // The same rule `place` applies: an app bundle carries its own
+        // executables, so an `auto` payload holding one links none.
+        let want_binaries = match kind {
+            PackageKind::App => false,
+            PackageKind::Binary => true,
+            PackageKind::Auto => find_app_bundles(payload).is_empty(),
+        };
+        if want_binaries {
+            discover_executables(self, payload)
+        } else {
+            Vec::new()
+        }
+    }
+
     fn place(&self, plan: &Placement<'_>) -> Result<Vec<LinkRecord>> {
         let package_dir = plan.store_dir.parent().unwrap_or(plan.store_dir);
         if plan.link {
