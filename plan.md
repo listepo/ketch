@@ -10,8 +10,9 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | F5 | done (ketch side) | P1 | 3 | 100% | Cursor / grok 4.6 |
 | A2 | done | P1 | 2 | 100% | Muse Spark |
 | A3 | evaluated (already shipped) | P3 | 1 | 100% | Muse Spark |
-| B60 | todo | P3 | 1 | 90% | — |
-| B61 | todo | P2 | 2 | 85% | — |
+| B60 | in progress | P3 | 1 | 80% | Cursor / grok 4.7 |
+| B61 | in progress | P2 | 2 | 80% | Cursor / grok 4.7 |
+| B63 | in progress | P1 | 3 | 95% | Cursor / grok 4.7 |
 
 ### F1. Notarisation
 
@@ -95,8 +96,24 @@ Observed on Windows: `ketch self update` 0.4.4 → 0.5.1 succeeded, but the old 
 
 Plan: sweep the aside at the start of the self commands instead of at the end of the swap. `self update` and `self install` delete `<bin>/ketch.exe.old` before touching anything: by then any earlier updater process has exited, so the deletion works. Failure stays non-fatal. `doctor` gains a stale-`.old` note for the case where even that fails.
 
+Execution: `aside_candidates` names both leftovers (`ketch.exe.old` from `replace_binary`, `ketch.old` from `install_self` on Windows). `sweep_stale_asides` runs at the start of `update` (not on `--dry-run`) and `install_self`, and `replace_binary` sweeps its own destination again before the rename. A failure warns and continues. The end-of-swap delete stays a single best-effort try: on Windows this process is that image, so the delete cannot succeed until exit. `stale_aside_check` warns from `doctor` when a leftover is still in the bin dir. Tests cover the two names, a sweep that deletes and one that ignores a missing file, and the doctor note.
+
 ### B61. `self update` swap fails on a transient Windows lock
 
 Observed on Windows: `self update` downloaded and verified the release, then failed with `…in\ketch.exe: Access is denied. (os error 5)` during the swap; an identical retry minutes later updated cleanly, and the restore path left the running 0.4.4 working throughout. That error at exactly this moment is the signature of antivirus real-time protection (Defender) holding `ketch.exe` or the `.old` destination across the rename or copy — a lock that lasts milliseconds and is gone by the next attempt.
 
 Plan: a bounded retry with backoff around the filesystem operations in `replace_binary` — `rename(exe, backup)`, `copy(fresh, exe)` and the backup removal — retrying only `PermissionDenied` and sharing violations (Windows `os error 5` and `os error 32`), a few attempts 100–250 ms apart. The existing restore-on-failure stays the response once the retries run out. Unit tests drive the retry helper with a closure that fails N times before succeeding, and assert that other error kinds surface immediately.
+
+Execution: `io_retry` pauses 100, 150, 200, then 250 ms and gives up. It wraps the rename, the copy, and the restore rename/remove. The success-path removal of the backup is not retried: that file is the running image until this process exits, so every attempt fails the same way and would add about a second to every Windows upgrade. B60 sweeps it on the next self command. Tests: a `PermissionDenied` that clears on the third call, a `NotFound` that returns on the first call with no pause, and Windows raw errors 5 and 32 counting as transient.
+
+Implemented in `src/self_update.rs`, wired into `doctor` from `src/cmd/system.rs`, and noted in `docs/TROUBLESHOOTING.md`. `cargo fmt` is clean. `cargo test --locked --bin ketch -- process:: self_update::` passed (28, 0 failed) after an Avast folder exception. `cargo clippy --all-targets` and the full suite have not run.
+
+### B63. `self update` hangs forever when a spawned process never starts
+
+Observed on Windows with Avast running: `ketch self update` fetched the release, then the process never returned. A second run never logged `checking` either. Both were stuck before any ketch code ran, or inside a wait that has no deadline: `Get-CimInstance Win32_Process` in the in-use listing (`offer_to_stop`), and `ketch --version` after `replace_binary` copies the new image. Spawning the new unsigned `ketch.exe` creates a process that stays in `Initialized` with zero CPU and survives `Stop-Process -Force`. The previous binary, copied aside and renamed back to `.exe`, starts immediately. Defender real-time protection was off; Avast's services were up.
+
+Kimi Code (`session_12034d9b-d032-4fb3-92be-3154393b064f`) wrote the deadline and died on a compile error (`Command` is not `Default`). ZCode (`sess_64ed7f70-a5e3-465b-a237-76aa3320a65c`) fixed the by-value call sites; its `cargo test` produced a test binary that then hit the same loader stall and never executed.
+
+Plan: keep the deadlines already in the tree. `process::run_bounded` runs the child off the caller's wait: after 30s a process listing is stopped and warned about by program and pid; after 60s `ketch --version` is stopped and the error says so, then restore puts the previous binary back. A spawn that never returns has no pid; the message says the wait was ended, and the spawn thread stops the child if creation later succeeds. Tests: the stopped-probe wording, a command that outlives a short budget and is no longer alive, and on Windows `tree.com` (exit 0) / `where.exe` (exit 1).
+
+Verify: `cargo fmt` is clean, and `cargo test --locked --bin ketch -- process:: self_update::` passed (28, 0 failed), including the stopped-child cases. `cargo clippy --all-targets -- -D warnings` and the full suite have not run.

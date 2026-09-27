@@ -33,6 +33,9 @@ pub fn doctor(cfg: &Config, args: DoctorArgs) -> Result<()> {
     if let Some(check) = path_binary_check(cfg) {
         checks.push(check);
     }
+    if let Some(check) = self_update::stale_aside_check(cfg) {
+        checks.push(check);
+    }
 
     match platform::host() {
         Ok(host) => {

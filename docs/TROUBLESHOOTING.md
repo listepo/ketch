@@ -17,6 +17,25 @@ testtool 1.0.0 -> 2.0.0
 stop 1 process using testtool? [y/N]
 ```
 
+## `ketch.exe.old` is still in the bin dir
+
+Windows will not delete the file that backs a running image. `self upgrade`
+renames the running `ketch.exe` to `ketch.exe.old`, and the delete of that
+aside fails until this process exits. The next `ketch self upgrade` or
+`ketch self install` removes it. `ketch doctor` names the file when it is
+still there; delete it by hand once nothing is running from it.
+
+A swap that fails with `Access is denied (os error 5)` on `ketch.exe` itself
+is a short lock, usually antivirus scanning the new file. The rename and the
+copy are retried for under a second. A lock that outlasts those retries
+restores the previous binary.
+
+If the new binary or the process listing never finishes, ketch stops that
+process and says so, including its pid when the process had been created.
+A spawn that never returns has no pid to stop; the message says the wait
+was ended. When that happens to the version check after a swap, the previous
+binary is kept.
+
 ## `brew upgrade` does not upgrade ketch itself
 
 Homebrew keeps only the bootstrap binary; the ketch it installed is one ketch

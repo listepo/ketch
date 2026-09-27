@@ -1,0 +1,106 @@
+# Publishes docs/site.md (the project card for the listepo project site) to the public site
+# repository listepo/landing as content/projects/<this repo's name>.md on its main branch; a push
+# there deploys https://listepo.github.io/landing/ via GitHub Pages. The front matter follows
+# CONTENT_CONTRACT.md in listepo/landing.
+#
+# Auth is a write-enabled deploy key on listepo/landing only; its private half is this repo's
+# SITE_DEPLOY_KEY secret. GITHUB_TOKEN stays read-only. This workflow is independent of the
+# pipeline gate, releases and Pages: it never builds, tests or deploys this repository.
+#
+# On a v* tag or release the card's `version:` front matter is set from the tag (v1.2.3 ->
+# "1.2.3"), so the site shows the released version even before docs/site.md is bumped on main.
+name: sync-docs
+
+on:
+  push:
+    branches: [main]
+    # Path filters are not evaluated for tag pushes, so every v* tag syncs.
+    paths: [docs/site.md]
+    tags: ["v*"]
+  # A tag pushed with GITHUB_TOKEN triggers no workflow, so also sync when a release is published
+  # (its ref is the release tag, so the version below is set the same way); workflow_dispatch
+  # remains the manual fallback.
+  release:
+    types: [published]
+  workflow_dispatch:
+
+# One sync at a time per source repo, never cancelled half-way; the push below fetches and
+# rebases (up to 5 attempts) when another repo's sync landed on listepo/landing first.
+concurrency:
+  group: sync-docs
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: source
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          repository: listepo/landing
+          ref: main
+          ssh-key: ${{ secrets.SITE_DEPLOY_KEY }}
+          path: site
+      - name: Copy docs/site.md into the site repository
+        env:
+          PROJECT: ${{ github.event.repository.name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          dest="site/content/projects/${PROJECT}.md"
+          mkdir -p "$(dirname "$dest")"
+          cp source/docs/site.md "$dest"
+          if [ "$REF_TYPE" = "tag" ]; then
+            VERSION="${REF_NAME#v}" DEST="$dest" python3 - <<'PY'
+          import os, re
+          path, version = os.environ["DEST"], os.environ["VERSION"]
+          text = open(path, encoding="utf-8").read()
+          m = re.match(r"---\n(.*?\n)---\n", text, re.S)
+          if m:
+              fm = m.group(1)
+              line = f'version: "{version}"\n'
+              if re.search(r"^version:.*\n", fm, re.M):
+                  fm = re.sub(r"^version:.*\n", line, fm, count=1, flags=re.M)
+              else:
+                  fm += line
+              text = f"---\n{fm}---\n" + text[m.end():]
+              open(path, "w", encoding="utf-8").write(text)
+          PY
+          fi
+      - name: Commit and push if changed
+        working-directory: site
+        env:
+          PROJECT: ${{ github.event.repository.name }}
+          SOURCE: ${{ github.repository }}
+          SOURCE_SHA: ${{ github.sha }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          git add "content/projects/${PROJECT}.md"
+          if git diff --cached --quiet; then
+            echo "content/projects/${PROJECT}.md is already up to date"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "content: sync ${PROJECT} from ${SOURCE}@${SOURCE_SHA:0:7} (${REF_NAME})"
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:main; then
+              echo "pushed $(git rev-parse HEAD) to listepo/landing main"
+              exit 0
+            fi
+            echo "push rejected (attempt ${attempt}); rebasing onto the latest main"
+            sleep $((attempt * 3))
+            git fetch origin main
+            git rebase origin/main
+          done
+          echo "::error::could not push to listepo/landing main after 5 attempts"
+          exit 1

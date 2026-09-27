@@ -9,9 +9,17 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::mpsc;
 use std::time::Duration;
 
 use crate::ui;
+
+/// How long a listing subprocess may run before it is stopped. The listing
+/// is best-effort ("could not list" and "nobody" are the same answer), so a
+/// stuck WMI service or antivirus filter must not freeze the upgrade.
+/// Linux reads `/proc` and does not spawn a listing process.
+#[cfg(any(windows, target_os = "macos"))]
+const LIST_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// A process whose executable or command line names a file being replaced.
 pub struct Occupant {
@@ -90,6 +98,210 @@ fn path_key(p: &Path) -> String {
         p.to_string_lossy().into_owned()
     }
 }
+
+/// What [`run_bounded`] observed.
+#[derive(Debug)]
+pub(crate) enum Bounded {
+    /// The child exited within the deadline.
+    Done(std::process::Output),
+    /// The child could not be spawned.
+    Failed(std::io::Error),
+    /// The child did not finish in time. `pid` is set when the process had
+    /// been created and was asked to exit.
+    Stopped { program: String, pid: Option<u32> },
+}
+
+/// Sentence for a [`Bounded::Stopped`] outcome, naming the program and pid.
+pub(crate) fn stopped_detail(program: &str, pid: Option<u32>, timeout: Duration) -> String {
+    match pid {
+        Some(pid) => format!(
+            "{program} (pid {pid}) did not finish within {}s and was stopped",
+            timeout.as_secs()
+        ),
+        None => format!(
+            "{program} did not start within {}s; the wait was ended",
+            timeout.as_secs()
+        ),
+    }
+}
+
+/// Run `command` to completion, or stop it after `timeout`.
+///
+/// Spawning sits on another thread because an antivirus filter can hold
+/// process creation itself, past any deadline the waiting thread could
+/// enforce. When that happens the caller returns [`Bounded::Stopped`] with
+/// no pid, and the spawn thread stops the child if creation later succeeds.
+/// A child that is created but does not exit is stopped by pid, so a stuck
+/// `ketch --version` or process listing cannot keep the upgrade waiting and
+/// cannot keep holding the new binary.
+pub(crate) fn run_bounded(mut command: Command, timeout: Duration) -> Bounded {
+    let program = command.get_program().to_string_lossy().into_owned();
+    command
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    detach_from_console(&mut command);
+
+    let deadline = std::time::Instant::now() + timeout;
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let spawned = command.spawn();
+        if let Err(mpsc::SendError(Ok(mut child))) = tx.send(spawned) {
+            // The caller already gave up. Stop the child it will never see.
+            stop_child(&mut child);
+        }
+    });
+
+    let mut child =
+        match rx.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now())) {
+            Ok(Ok(child)) => child,
+            Ok(Err(err)) => return Bounded::Failed(err),
+            Err(_) => return Bounded::Stopped { program, pid: None },
+        };
+    let pid = child.id();
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+    let reading_out = std::thread::spawn(move || read_pipe(stdout));
+    let reading_err = std::thread::spawn(move || read_pipe(stderr));
+
+    let Some(status) = wait_child(&mut child, deadline) else {
+        stop_child(&mut child);
+        let _ = join_bounded(reading_out, Duration::from_millis(500));
+        let _ = join_bounded(reading_err, Duration::from_millis(500));
+        return Bounded::Stopped {
+            program,
+            pid: Some(pid),
+        };
+    };
+
+    let stdout = join_bounded(reading_out, Duration::from_secs(2)).unwrap_or_default();
+    let stderr = join_bounded(reading_err, Duration::from_secs(2)).unwrap_or_default();
+    Bounded::Done(std::process::Output {
+        status,
+        stdout,
+        stderr,
+    })
+}
+
+/// Run `command` to completion, or give up after `timeout`.
+///
+/// A listing is best-effort, so a child that does not finish is warned about,
+/// stopped, and reported as "no listing". Linux reads `/proc` instead.
+#[cfg(any(windows, target_os = "macos"))]
+fn output_bounded(command: Command, timeout: Duration) -> Option<std::process::Output> {
+    match run_bounded(command, timeout) {
+        Bounded::Done(out) => Some(out),
+        Bounded::Failed(_) => None,
+        Bounded::Stopped { program, pid } => {
+            ui::warn(&stopped_detail(&program, pid, timeout));
+            None
+        }
+    }
+}
+
+fn read_pipe<R: std::io::Read>(pipe: Option<R>) -> Vec<u8> {
+    let mut buf = Vec::new();
+    if let Some(mut pipe) = pipe {
+        let _ = std::io::Read::read_to_end(&mut pipe, &mut buf);
+    }
+    buf
+}
+
+fn wait_child(
+    child: &mut std::process::Child,
+    deadline: std::time::Instant,
+) -> Option<std::process::ExitStatus> {
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return Some(status),
+            Ok(None) if std::time::Instant::now() >= deadline => return None,
+            Ok(None) => std::thread::sleep(Duration::from_millis(20)),
+            Err(_) => return None,
+        }
+    }
+}
+
+fn join_bounded<T: Send + 'static>(
+    handle: std::thread::JoinHandle<T>,
+    timeout: Duration,
+) -> Option<T> {
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(handle.join());
+    });
+    match rx.recv_timeout(timeout) {
+        Ok(Ok(value)) => Some(value),
+        _ => None,
+    }
+}
+
+/// Ask `child` and its descendants to exit. A process stuck inside an
+/// antivirus filter may outlive the call; the caller has already stopped waiting.
+fn stop_child(child: &mut std::process::Child) {
+    let pid = child.id();
+    kill_tree(pid);
+    let _ = child.kill();
+    let give_up = std::time::Instant::now() + Duration::from_millis(500);
+    while std::time::Instant::now() < give_up {
+        match child.try_wait() {
+            Ok(Some(_)) | Err(_) => return,
+            Ok(None) => std::thread::sleep(Duration::from_millis(20)),
+        }
+    }
+}
+
+#[cfg(unix)]
+fn detach_from_console(command: &mut Command) {
+    use std::os::unix::process::CommandExt;
+    command.process_group(0);
+}
+
+#[cfg(windows)]
+fn detach_from_console(command: &mut Command) {
+    use std::os::windows::process::CommandExt;
+    // No console window, and a new group so a Ctrl+C aimed at ketch is not
+    // delivered to the child. CREATE_NO_WINDOW keeps the child off the parent
+    // console, which otherwise deadlocks under a pseudoconsole.
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+    command.creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP);
+}
+
+#[cfg(not(any(unix, windows)))]
+fn detach_from_console(_command: &mut Command) {}
+
+#[cfg(unix)]
+fn kill_tree(pid: u32) {
+    if pid == 0 {
+        return;
+    }
+    let group = format!("-{pid}");
+    let pid_s = pid.to_string();
+    for target in [group.as_str(), pid_s.as_str()] {
+        let _ = Command::new("kill")
+            .args(["-s", "KILL", "--", target])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+    }
+}
+
+#[cfg(windows)]
+fn kill_tree(pid: u32) {
+    if pid == 0 {
+        return;
+    }
+    let _ = Command::new("taskkill")
+        .args(["/PID", &pid.to_string(), "/T", "/F"])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+}
+
+#[cfg(not(any(unix, windows)))]
+fn kill_tree(_pid: u32) {}
 
 #[cfg(any(target_os = "linux", windows))]
 fn matches_exe(exe: &Path, candidate: &Path, key: &str) -> bool {
@@ -175,13 +387,13 @@ fn linux_fd_hits(proc_dir: &Path, candidate: &Path, key: &str) -> bool {
 fn list(keys: &[(PathBuf, String)]) -> Vec<Occupant> {
     let mut found = Vec::new();
     for (path, _) in keys {
-        let output = Command::new("lsof")
+        let mut command = Command::new("lsof");
+        command
             .args(["-t", "--"])
             .arg(path)
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
-            .output();
-        let Ok(out) = output else {
+            .stderr(std::process::Stdio::null());
+        let Some(out) = output_bounded(command, LIST_TIMEOUT) else {
             continue;
         };
         for line in String::from_utf8_lossy(&out.stdout).lines() {
@@ -206,7 +418,8 @@ fn powershell_exe() -> PathBuf {
 
 #[cfg(windows)]
 fn list(keys: &[(PathBuf, String)]) -> Vec<Occupant> {
-    let output = Command::new(powershell_exe())
+    let mut command = Command::new(powershell_exe());
+    command
         .args([
             "-NoProfile",
             "-NonInteractive",
@@ -214,9 +427,8 @@ fn list(keys: &[(PathBuf, String)]) -> Vec<Occupant> {
             "Get-CimInstance Win32_Process | ForEach-Object { '{0}\t{1}\t{2}' -f $_.ProcessId, $_.ExecutablePath, $_.CommandLine }",
         ])
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .output();
-    let Ok(out) = output else {
+        .stderr(std::process::Stdio::null());
+    let Some(out) = output_bounded(command, LIST_TIMEOUT) else {
         return Vec::new();
     };
     let mut found = Vec::new();
@@ -454,5 +666,40 @@ mod tests {
         let key = path_key(&path);
         let cmdline = r#"C:\WINDOWS\system32\cmd.exe /c "C:\Users\User\.ketch\bin\TOOL.CMD""#;
         assert!(cmd_hits(cmdline, &path, &key));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_listing_that_finishes_is_returned() {
+        let mut command = Command::new("cmd.exe");
+        command.args(["/c", "echo found"]);
+        let out = output_bounded(command, Duration::from_secs(10)).expect("cmd finishes");
+        assert!(String::from_utf8_lossy(&out.stdout).contains("found"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_command_that_outlives_the_timeout_is_stopped() {
+        let mut command = Command::new("cmd.exe");
+        command.args(["/c", "ping -n 30 127.0.0.1 >nul"]);
+        let start = std::time::Instant::now();
+        let pid = match run_bounded(command, Duration::from_millis(300)) {
+            Bounded::Stopped { pid: Some(pid), .. } => pid,
+            other => panic!("expected the child to be stopped, got {other:?}"),
+        };
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "the wait must stay bounded"
+        );
+        let detail = stopped_detail("cmd.exe", Some(pid), Duration::from_millis(300));
+        assert!(detail.contains("was stopped"), "{detail}");
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while crate::state::process_alive(pid) && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        assert!(
+            !crate::state::process_alive(pid),
+            "pid {pid} was not stopped"
+        );
     }
 }

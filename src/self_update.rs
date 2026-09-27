@@ -18,11 +18,13 @@ use crate::model::{
     AssetSelector, CompletionShell, LinkKind, LinkRecord, LinkRole, PackageSpec, Version,
     VersionSpec,
 };
+use crate::platform::DoctorCheck;
 use crate::source::{ListOpts, SourceRegistry};
 use crate::state::{Lock, State};
 use crate::{install, ui};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
 
 /// Outcome of a self-update attempt.
 #[derive(Debug, Clone)]
@@ -59,6 +61,11 @@ pub fn current_version() -> Version {
 /// package and `force` is off, like any other install.
 pub fn install_self(cfg: &Config, force: bool, link_dir: Option<&Path>) -> Result<Installed> {
     let _lock = Lock::acquire(cfg)?;
+    // A previous in-place swap or flat install leaves its aside here. This
+    // process is a new one, so the file is no longer the running image and
+    // the delete that failed at the end of that swap can succeed. A failure
+    // stays a warning: the install can still move the flat binary aside.
+    sweep_stale_asides(&cfg.bin_dir);
     let mut state = State::load(cfg)?;
     // Built-in sources only, as in `update`.
     let sources = SourceRegistry::builtin_only(cfg);
@@ -377,6 +384,9 @@ pub fn update(cfg: &Config, force: bool, dry_run: bool) -> Result<SelfUpdate> {
     let to = release.version.clone();
 
     if to <= from && !force {
+        if !dry_run {
+            sweep_stale_asides(&cfg.bin_dir);
+        }
         return Ok(SelfUpdate {
             from,
             to,
@@ -392,6 +402,7 @@ pub fn update(cfg: &Config, force: bool, dry_run: bool) -> Result<SelfUpdate> {
             notes: release.notes.clone(),
         });
     }
+    sweep_stale_asides(&cfg.bin_dir);
 
     if installed.is_some() {
         let sources = SourceRegistry::builtin_only(cfg);
@@ -458,20 +469,31 @@ pub fn update(cfg: &Config, force: bool, dry_run: bool) -> Result<SelfUpdate> {
     })
 }
 
+/// How long the freshly copied binary gets to prove it can start.
+///
+/// Antivirus software commonly inspects a new executable before allowing it
+/// to start; that pause is seconds, so a probe that outlives this means the
+/// binary cannot start and the previous one goes back, instead of the
+/// upgrade — and the terminal running it — waiting forever.
+const VERIFY_TIMEOUT: Duration = Duration::from_secs(60);
+
 /// Swap `fresh` into `exe`, keeping the old binary until the new one has shown
 /// it can run. A ketch that cannot start is a ketch that cannot fix itself.
 fn replace_binary(exe: &Path, fresh: &Path) -> Result<()> {
-    let backup = exe.with_file_name(format!(
-        "{}.old",
-        exe.file_name().and_then(|n| n.to_str()).unwrap_or("ketch")
-    ));
+    let backup = swap_backup(exe);
+    // The previous swap's aside is this rename's destination. On Windows that
+    // delete fails at the end of the swap, because this process is the image
+    // just renamed onto it; by the next swap that process has exited.
+    sweep_aside(&backup);
     // Rename rather than overwrite: the running image stays valid, and a failed
-    // copy leaves something to put back.
-    std::fs::rename(exe, &backup).map_err(|e| Error::io(exe, e))?;
+    // copy leaves something to put back. A short antivirus lock is retried;
+    // once those pauses are spent the error is returned as before.
+    io_retry(|| std::fs::rename(exe, &backup), std::thread::sleep)
+        .map_err(|e| Error::io(exe, e))?;
 
     let restore = |detail: Error| -> Error {
-        let _ = std::fs::remove_file(exe);
-        match std::fs::rename(&backup, exe) {
+        let _ = io_retry(|| std::fs::remove_file(exe), std::thread::sleep);
+        match io_retry(|| std::fs::rename(&backup, exe), std::thread::sleep) {
             Ok(()) => detail,
             Err(e) => Error::msg(format!(
                 "{detail}; could not restore the previous binary ({e}): move {} back to {} by hand",
@@ -483,7 +505,7 @@ fn replace_binary(exe: &Path, fresh: &Path) -> Result<()> {
 
     // Copy, not rename: the download lives in the cache dir, which may be on a
     // different filesystem.
-    if let Err(e) = std::fs::copy(fresh, exe) {
+    if let Err(e) = io_retry(|| std::fs::copy(fresh, exe).map(|_| ()), std::thread::sleep) {
         return Err(restore(Error::io(exe, e)));
     }
     #[cfg(unix)]
@@ -491,18 +513,169 @@ fn replace_binary(exe: &Path, fresh: &Path) -> Result<()> {
         return Err(restore(e));
     }
 
-    match Command::new(exe).arg("--version").output() {
-        Ok(out) if out.status.success() => {
+    match probe_runs(exe, VERIFY_TIMEOUT) {
+        Ok(()) => {
+            // Silent on purpose. On Windows this process is the image at
+            // `backup` until it exits, so this delete fails for the whole
+            // process and a warning here would fire on every successful
+            // upgrade. The next self command sweeps it, and warns only then.
             let _ = std::fs::remove_file(&backup);
             Ok(())
         }
-        Ok(out) => Err(restore(Error::Command {
-            cmd: format!("{} --version", exe.display()),
-            status: out.status.to_string(),
-            stderr: String::from_utf8_lossy(&out.stderr).to_string(),
-        })),
-        Err(e) => Err(restore(Error::io(exe, e))),
+        Err(e) => Err(restore(e)),
     }
+}
+
+/// Where `replace_binary` parks the running image (`ketch.exe` → `ketch.exe.old`).
+fn swap_backup(exe: &Path) -> PathBuf {
+    let name = exe
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("ketch");
+    exe.with_file_name(format!("{name}.old"))
+}
+
+/// Asides a self command may have left next to `binary`.
+///
+/// `replace_binary` appends `.old` to the whole file name. `install_self`
+/// uses `with_extension`, which on Windows turns `ketch.exe` into `ketch.old`.
+fn aside_candidates(binary: &Path) -> Vec<PathBuf> {
+    let mut paths = vec![swap_backup(binary)];
+    let flat = binary.with_extension("old");
+    if flat != paths[0] {
+        paths.push(flat);
+    }
+    paths
+}
+
+/// Delete one previous aside. Missing is the usual case and not an error.
+fn sweep_aside(path: &Path) {
+    match std::fs::remove_file(path) {
+        Ok(()) => {}
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => ui::warn(&format!(
+            "could not remove previous binary {} ({err}); the next self-update tries again",
+            path.display()
+        )),
+    }
+}
+
+/// Delete asides sitting in the bin dir before a self command changes anything.
+fn sweep_stale_asides(bin_dir: &Path) {
+    for path in aside_candidates(&bin_dir.join(bootstrap_binary_name())) {
+        sweep_aside(&path);
+    }
+}
+
+/// Warn when a previous self command's aside is still in the bin dir, or beside
+/// the running binary when that binary lives somewhere else.
+pub(crate) fn stale_aside_check(cfg: &Config) -> Option<DoctorCheck> {
+    stale_aside_from(&cfg.bin_dir, current_exe().ok().as_deref())
+}
+
+fn stale_aside_from(bin_dir: &Path, running: Option<&Path>) -> Option<DoctorCheck> {
+    let mut paths = aside_candidates(&bin_dir.join(bootstrap_binary_name()));
+    if let Some(running) = running {
+        for extra in aside_candidates(running) {
+            if !paths.contains(&extra) {
+                paths.push(extra);
+            }
+        }
+    }
+    let present: Vec<PathBuf> = paths.into_iter().filter(|path| path.is_file()).collect();
+    if present.is_empty() {
+        return None;
+    }
+    let listed = present
+        .iter()
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let detail = if present.len() == 1 {
+        format!("{listed} is a previous ketch left by self-update")
+    } else {
+        format!("{listed} are previous ketch binaries left by self-update")
+    };
+    Some(DoctorCheck::warn(
+        "backup",
+        detail,
+        "The next `ketch self upgrade` removes a previous binary after the process renamed onto it has exited. Delete whatever remains by hand.",
+    ))
+}
+
+/// How long to wait between attempts when a swap hits a transient file lock.
+const SWAP_PAUSES: [Duration; 4] = [
+    Duration::from_millis(100),
+    Duration::from_millis(150),
+    Duration::from_millis(200),
+    Duration::from_millis(250),
+];
+
+/// `PermissionDenied`, plus Windows `ERROR_ACCESS_DENIED` (5) and
+/// `ERROR_SHARING_VIOLATION` (32). Those two are what antivirus real-time
+/// protection returns while it holds a file for a few milliseconds.
+fn is_transient_lock(err: &std::io::Error) -> bool {
+    err.kind() == std::io::ErrorKind::PermissionDenied
+        || matches!(err.raw_os_error(), Some(5) | Some(32))
+}
+
+/// Run `op` again after each pause in [`SWAP_PAUSES`] when the error is a
+/// transient lock. Any other error is returned on the first attempt.
+fn io_retry<T>(
+    mut op: impl FnMut() -> std::io::Result<T>,
+    mut pause: impl FnMut(Duration),
+) -> std::io::Result<T> {
+    let mut pauses = SWAP_PAUSES.iter().copied();
+    loop {
+        match op() {
+            Ok(value) => return Ok(value),
+            Err(err) if is_transient_lock(&err) => match pauses.next() {
+                Some(delay) => pause(delay),
+                None => return Err(err),
+            },
+            Err(err) => return Err(err),
+        }
+    }
+}
+
+/// Run `exe --version`, stopping it after `timeout`.
+///
+/// Spawning can itself block past any timeout when an antivirus filter holds
+/// process creation. [`crate::process::run_bounded`] returns in that case with
+/// no pid, and stops the child if creation later succeeds. A child that starts
+/// and never exits is stopped by pid, so it cannot keep holding the new binary.
+fn probe_runs(exe: &Path, timeout: Duration) -> Result<()> {
+    let mut command = Command::new(exe);
+    command.arg("--version");
+    match crate::process::run_bounded(command, timeout) {
+        crate::process::Bounded::Done(out) => probe_finished(exe, out),
+        crate::process::Bounded::Failed(err) => Err(Error::io(exe, err)),
+        crate::process::Bounded::Stopped { program, pid } => {
+            Err(probe_stopped(&program, timeout, pid))
+        }
+    }
+}
+
+/// A clean answer and a started-but-failed run are different reports.
+fn probe_finished(exe: &Path, out: std::process::Output) -> Result<()> {
+    if out.status.success() {
+        return Ok(());
+    }
+    Err(Error::Command {
+        cmd: format!("{} --version", exe.display()),
+        status: out.status.to_string(),
+        stderr: String::from_utf8_lossy(&out.stderr).to_string(),
+    })
+}
+
+/// The probe did not finish. The child was stopped when it had a pid.
+fn probe_stopped(program: &str, timeout: Duration, pid: Option<u32>) -> Error {
+    Error::msg(format!(
+        "{}; the previous binary was kept. \
+         Antivirus software that inspects new executables before allowing them to start \
+         can cause this — exclude the ketch directory from it or try again",
+        crate::process::stopped_detail(program, pid, timeout),
+    ))
 }
 
 /// The one file in an unpacked ketch release that is ketch.
@@ -1180,5 +1353,148 @@ mod tests {
             "the installed binary must still be the binary, not a link to itself"
         );
         assert!(state.get(SELF_NAME).unwrap().links.is_empty());
+    }
+
+    #[test]
+    fn a_probe_that_never_answers_reports_that_it_was_stopped() {
+        let err = probe_stopped("ketch", Duration::from_secs(60), Some(42)).to_string();
+        assert!(err.contains("pid 42"), "{err}");
+        assert!(err.contains("was stopped"), "{err}");
+        assert!(err.contains("previous binary was kept"), "{err}");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn probe_accepts_a_binary_that_answers() {
+        // tree.com treats the argument as a path, finds nothing, and still
+        // exits 0 — a stand-in for a ketch that starts fine.
+        let ok = probe_runs(
+            Path::new(r"C:\Windows\System32\tree.com"),
+            Duration::from_secs(15),
+        );
+        assert!(ok.is_ok(), "{ok:?}");
+    }
+
+    #[test]
+    fn aside_names_cover_the_swap_and_the_flat_install() {
+        let exe = Path::new(if cfg!(windows) {
+            "bin/ketch.exe"
+        } else {
+            "bin/ketch"
+        });
+        let names: Vec<String> = aside_candidates(exe)
+            .iter()
+            .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        if cfg!(windows) {
+            assert!(names.contains(&"ketch.exe.old".to_string()), "{names:?}");
+            assert!(names.contains(&"ketch.old".to_string()), "{names:?}");
+        } else {
+            assert_eq!(names, vec!["ketch.old".to_string()]);
+        }
+    }
+
+    #[test]
+    fn a_previous_swap_backup_is_removed_and_a_missing_one_is_fine() {
+        let tmp = tempfile::tempdir().unwrap();
+        let exe = tmp.path().join(bootstrap_binary_name());
+        let backup = swap_backup(&exe);
+        std::fs::write(&backup, b"old").unwrap();
+        sweep_aside(&backup);
+        assert!(!backup.exists());
+        sweep_aside(&backup);
+    }
+
+    #[test]
+    fn doctor_notes_a_stale_aside_and_stays_quiet_without_one() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert!(stale_aside_from(tmp.path(), None).is_none());
+        let backup = swap_backup(&tmp.path().join(bootstrap_binary_name()));
+        std::fs::write(&backup, b"old").unwrap();
+        let check = stale_aside_from(tmp.path(), None).unwrap();
+        assert_eq!(check.name, "backup");
+        assert!(check.detail.contains(&backup.display().to_string()));
+        assert!(check.fix.is_some());
+    }
+
+    #[test]
+    fn a_transient_lock_is_retried_until_it_clears() {
+        let mut calls = 0;
+        let mut pauses = Vec::new();
+        let result = io_retry(
+            || {
+                calls += 1;
+                if calls < 3 {
+                    Err(std::io::Error::new(
+                        std::io::ErrorKind::PermissionDenied,
+                        "busy",
+                    ))
+                } else {
+                    Ok("done")
+                }
+            },
+            |delay| pauses.push(delay),
+        );
+        assert_eq!(result.unwrap(), "done");
+        assert_eq!(calls, 3);
+        assert_eq!(
+            pauses,
+            vec![Duration::from_millis(100), Duration::from_millis(150)]
+        );
+    }
+
+    #[test]
+    fn a_non_lock_error_is_returned_without_a_pause() {
+        let mut calls = 0;
+        let mut pauses = 0;
+        let err = io_retry(
+            || {
+                calls += 1;
+                Err::<(), _>(std::io::Error::new(std::io::ErrorKind::NotFound, "gone"))
+            },
+            |_| pauses += 1,
+        )
+        .unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
+        assert_eq!(calls, 1);
+        assert_eq!(pauses, 0);
+    }
+
+    #[test]
+    fn a_lock_that_never_clears_stops_after_the_pauses() {
+        let mut calls = 0;
+        let mut pauses = Vec::new();
+        let err = io_retry(
+            || {
+                calls += 1;
+                Err::<(), _>(std::io::Error::from_raw_os_error(32))
+            },
+            |delay| pauses.push(delay),
+        )
+        .unwrap_err();
+        assert_eq!(err.raw_os_error(), Some(32));
+        assert_eq!(calls, 1 + SWAP_PAUSES.len());
+        assert_eq!(pauses, SWAP_PAUSES);
+    }
+
+    #[test]
+    fn windows_sharing_violations_count_as_a_transient_lock() {
+        assert!(is_transient_lock(&std::io::Error::from_raw_os_error(5)));
+        assert!(is_transient_lock(&std::io::Error::from_raw_os_error(32)));
+        assert!(!is_transient_lock(&std::io::Error::from_raw_os_error(2)));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn probe_rejects_a_binary_that_fails() {
+        // where.com prints usage and exits 1 — the verification must not
+        // count that as "can run".
+        let err = probe_runs(
+            Path::new(r"C:\Windows\System32\where.exe"),
+            Duration::from_secs(15),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("--version"), "{err}");
     }
 }
