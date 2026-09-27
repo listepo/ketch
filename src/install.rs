@@ -10,8 +10,8 @@ use crate::config::{sanitize_component, Config};
 use crate::error::{Error, Result};
 use crate::manifest::Resolver;
 use crate::model::{
-    now_unix, AssetSelector, BinSpec, InstalledPackage, LinkRecord, LocalKind, PackageSpec,
-    Release, ReleaseAsset, RetainedVersion, TrustResult, Version, VersionSpec,
+    now_unix, AssetSelector, BinSpec, InstalledPackage, LinkRecord, LocalKind, PackageRef,
+    PackageSpec, Release, ReleaseAsset, RetainedVersion, TrustResult, Version, VersionSpec,
 };
 use crate::platform::{AssetScore, Placement, Platform, TrustVerdict};
 use crate::source::{ListOpts, SourceRegistry};
@@ -856,15 +856,31 @@ pub fn latest_release(
     pkg: &InstalledPackage,
     prerelease: bool,
 ) -> Result<Release> {
-    let source = sources.for_ref(&pkg.source)?;
+    latest_of(sources, &pkg.source, &installed_list_opts(pkg, prerelease))
+}
+
+/// The listing options `latest_release` asks an installed package's source
+/// with; `ketch list` needs them apart from the lookup, to key its cache.
+pub fn installed_list_opts(pkg: &InstalledPackage, prerelease: bool) -> ListOpts {
     // A manifest that asks for prereleases got one at install time; asking for
     // `latest` without it here would then report the package as up to date
     // forever, however many prereleases it has moved through since.
-    let opts = ListOpts {
+    ListOpts {
         include_prerelease: prerelease || pkg.manifest.as_ref().is_some_and(|m| m.prerelease),
         ..Default::default()
-    };
-    source.resolve(&pkg.source.id, &VersionSpec::Latest, &opts)
+    }
+}
+
+/// The newest release of `source` under `opts`: the one lookup behind
+/// `ketch outdated`, `ketch upgrade` and `ketch list`.
+pub fn latest_of(
+    sources: &SourceRegistry,
+    source: &PackageRef,
+    opts: &ListOpts,
+) -> Result<Release> {
+    sources
+        .for_ref(source)?
+        .resolve(&source.id, &VersionSpec::Latest, opts)
 }
 
 /// Rank a release's assets for this platform, best first. Assets the platform

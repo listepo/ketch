@@ -156,9 +156,10 @@ fn fold_line(text: &str) -> String {
 
 pub fn init(color: Option<bool>, quiet: bool, verbose: bool) {
     let enabled = color.unwrap_or_else(|| {
-        std::io::stderr().is_terminal()
-            && std::env::var_os("NO_COLOR").is_none()
-            && std::env::var("TERM").map(|t| t != "dumb").unwrap_or(true)
+        force_color()
+            || (std::io::stderr().is_terminal()
+                && std::env::var_os("NO_COLOR").is_none()
+                && std::env::var("TERM").map(|t| t != "dumb").unwrap_or(true))
     });
     COLOR.store(enabled, Ordering::Relaxed);
     LEVEL.store(
@@ -171,6 +172,15 @@ pub fn init(color: Option<bool>, quiet: bool, verbose: bool) {
         },
         Ordering::Relaxed,
     );
+}
+
+/// `CLICOLOR_FORCE` set to anything but `0`: colour even into a pipe.
+///
+/// The convention (<https://bixense.com/clicolors/>) is how a pager, a CI log
+/// or a test asks for colour it cannot get by being a terminal. It is an
+/// explicit request, so it outranks `NO_COLOR`; `--no-color` still outranks it.
+fn force_color() -> bool {
+    std::env::var("CLICOLOR_FORCE").is_ok_and(|v| !v.is_empty() && v != "0")
 }
 
 pub fn color_enabled() -> bool {
@@ -720,12 +730,85 @@ pub fn table(headers: &[&str], rows: &[Vec<String>]) {
     }
 }
 
+/// A cell painter for [`table_styled`]: row index, column index, the cell's
+/// filtered text; returns what to print in its place.
+pub type CellPaint<'a> = &'a dyn Fn(usize, usize, &str) -> String;
+
+/// [`table`], with colour. Cells are filtered and measured first and painted
+/// after, so the escape sequences the painter adds neither get filtered out
+/// nor count towards a column's width.
+pub fn table_styled(headers: &[&str], rows: &[Vec<String>], paint: CellPaint<'_>) {
+    for line in styled_table_lines(headers, rows, paint) {
+        out(&line);
+    }
+}
+
+/// Columns stdout can use before a line wraps, or `None` when it is not a
+/// terminal and nothing should be cut. `COLUMNS` wins when set, as it does for
+/// most tools, so a script or a test can ask for a width of its own.
+pub fn stdout_width() -> Option<usize> {
+    let columns = std::env::var("COLUMNS")
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .filter(|n| *n > 0);
+    if columns.is_some() {
+        return columns;
+    }
+    if !std::io::stdout().is_terminal() {
+        return None;
+    }
+    terminal_size::terminal_size().map(|(width, _)| usize::from(width.0))
+}
+
+/// Progress measured in things rather than bytes: `  checking 3/12 packages`
+/// on stderr. Hidden under `--quiet` and when stderr is not a terminal; the
+/// line is cleared when the counter is dropped.
+pub struct Counter {
+    bar: ProgressBar,
+}
+
+/// Start a [`Counter`] of `total` items, labelled like a status line.
+pub fn counter(verb: &str, total: u64, unit: &str) -> Counter {
+    #[cfg(feature = "tui")]
+    let hidden = tui_controller().is_some();
+    #[cfg(not(feature = "tui"))]
+    let hidden = false;
+    if hidden || is_quiet() || !std::io::stderr().is_terminal() {
+        return Counter {
+            bar: ProgressBar::hidden(),
+        };
+    }
+    let bar = ProgressBar::with_draw_target(Some(total), indicatif::ProgressDrawTarget::stderr());
+    let style = ProgressStyle::with_template(&format!("{{msg}} {{pos}}/{{len}} {unit}"))
+        .unwrap_or_else(|_| ProgressStyle::default_bar());
+    bar.set_style(style);
+    bar.set_message(blue(&format!("{verb:>10}")));
+    bar.enable_steady_tick(std::time::Duration::from_millis(120));
+    Counter { bar }
+}
+
+impl Counter {
+    /// One more item done.
+    pub fn inc(&self) {
+        self.bar.inc(1);
+    }
+}
+
+impl Drop for Counter {
+    fn drop(&mut self) {
+        self.bar.finish_and_clear();
+    }
+}
+
 /// The table's lines, built rather than printed so a test can read them.
-///
+fn table_lines(headers: &[&str], rows: &[Vec<String>]) -> Vec<String> {
+    styled_table_lines(headers, rows, &|_, _, cell| cell.to_string())
+}
+
 /// Cells carry client-app text — asset names, descriptions, package files — so
 /// they are filtered here, and measured after filtering: an escape sequence
 /// counted as printable width would push every later column out of line.
-fn table_lines(headers: &[&str], rows: &[Vec<String>]) -> Vec<String> {
+fn styled_table_lines(headers: &[&str], rows: &[Vec<String>], paint: CellPaint<'_>) -> Vec<String> {
     if rows.is_empty() {
         return Vec::new();
     }
@@ -746,18 +829,26 @@ fn table_lines(headers: &[&str], rows: &[Vec<String>]) -> Vec<String> {
         }
     }
 
-    let padded = |cells: &[String]| -> String {
+    let padded = |cells: &[String], paint: &dyn Fn(usize, &str) -> String| -> String {
         let line: Vec<String> = cells
             .iter()
             .enumerate()
-            .map(|(i, c)| format!("{:<width$}", c, width = widths[i]))
+            .map(|(i, c)| {
+                let pad = widths[i].saturating_sub(c.chars().count());
+                format!("{}{}", paint(i, c), " ".repeat(pad))
+            })
             .collect();
         line.join("  ").trim_end().to_string()
     };
 
     let header: Vec<String> = headers.iter().map(|h| h.to_string()).collect();
-    let mut lines = vec![bold(&padded(&header))];
-    lines.extend(cells.iter().map(|row| padded(row)));
+    let mut lines = vec![bold(&padded(&header, &|_, c| c.to_string()))];
+    lines.extend(
+        cells
+            .iter()
+            .enumerate()
+            .map(|(r, row)| padded(row, &|i, c| paint(r, i, c))),
+    );
     lines
 }
 
@@ -880,6 +971,34 @@ mod tests {
         // next column would start 15 characters too far right.
         let asset_width = "evil[2K[1;31mFAKE[0m.tar.gz".chars().count();
         assert_eq!(lines[1].find("12"), Some(asset_width + 2));
+    }
+
+    #[test]
+    fn painted_cells_keep_their_columns_aligned() {
+        init(Some(false), false, false);
+        let rows = vec![
+            vec!["a".to_string(), "x".to_string()],
+            vec!["longer".to_string(), "y".to_string()],
+        ];
+        let bold_first = |_: usize, c: usize, t: &str| {
+            if c == 0 {
+                format!("\u{1b}[1m{t}\u{1b}[0m")
+            } else {
+                t.to_string()
+            }
+        };
+        let lines = styled_table_lines(&["name", "v"], &rows, &bold_first);
+        assert!(
+            lines[1].starts_with("\u{1b}[1ma\u{1b}[0m"),
+            "{:?}",
+            lines[1]
+        );
+        let plain: Vec<String> = lines
+            .iter()
+            .map(|l| l.replace("\u{1b}[1m", "").replace("\u{1b}[0m", ""))
+            .collect();
+        assert_eq!(plain[1].find('x'), plain[2].find('y'), "{plain:?}");
+        assert_eq!(plain[1].find('x'), Some("longer".len() + 2));
     }
 
     #[test]

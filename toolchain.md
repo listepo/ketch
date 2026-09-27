@@ -52,6 +52,7 @@ Project programs and direct packages from manifests.
 | sha2 | local | https://crates.io/crates/sha2 | Rust dependency |
 | tar | local | https://crates.io/crates/tar | Rust dependency |
 | tempfile | local | https://crates.io/crates/tempfile | Rust dependency |
+| terminal_size | local | https://crates.io/crates/terminal_size | Terminal width for `ketch list remote` descriptions |
 | thiserror | local | https://crates.io/crates/thiserror | Errors |
 | tokio | local | https://crates.io/crates/tokio | Async runtime |
 | toml | local | https://crates.io/crates/toml | Config |

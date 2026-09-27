@@ -125,6 +125,30 @@ impl Resolver {
             .collect()
     }
 
+    /// What `ketch list remote` offers: the fetched registry and the user's own
+    /// manifests, one per name, the user's winning as it would at install.
+    ///
+    /// The built-in tier is left out on purpose. It is a bootstrap copy of a
+    /// few registry entries, and listing it would make a machine that never
+    /// ran `ketch update` look as if it had a registry.
+    pub fn listed(&self) -> Vec<&Manifest> {
+        let mut seen = std::collections::HashSet::new();
+        let mut out: Vec<&Manifest> = self
+            .user
+            .iter()
+            .chain(self.registry.iter())
+            .map(|(m, _)| m)
+            .filter(|m| seen.insert(normalize_name(&m.name)))
+            .collect();
+        out.sort_by_key(|m| normalize_name(&m.name));
+        out
+    }
+
+    /// True when `ketch update` has not fetched a registry that holds anything.
+    pub fn registry_is_empty(&self) -> bool {
+        self.registry.is_empty()
+    }
+
     /// Precedence order: user manifests shadow the registry, which shadows the
     /// built-ins. Everything that reads the tiers goes through this.
     fn manifests(&self) -> impl Iterator<Item = &Manifest> {
@@ -175,7 +199,7 @@ fn answers_to(manifest: &Manifest, alias: &str) -> bool {
 /// inference and quietly drops the curated `bin`, `provides` and asset rules.
 /// Every other scheme is compared exactly — a `local:` path, on Linux, can
 /// differ only by case and be a different file.
-fn same_source(a: &PackageRef, b: &PackageRef) -> bool {
+pub(crate) fn same_source(a: &PackageRef, b: &PackageRef) -> bool {
     if !a.scheme.eq_ignore_ascii_case(&b.scheme) {
         return false;
     }

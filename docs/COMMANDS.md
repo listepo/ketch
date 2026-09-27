@@ -100,17 +100,151 @@ ketch link ripgrep     # put it back
 ```
 ## Inspect
 
-### `ketch list [--json] [--names-only]`
+### `ketch list`
 
-Show installed packages as a `package / version / source` table.
+`ketch list [local|remote] [--json] [--names-only]`, aliased as `ketch ls`.
 
-```bash
-ketch list
-ketch list --names-only   # one name per line, for scripts
-ketch list --json         # JSON, for scripts
+Show what is installed, what the registry offers, or both in one table with
+the newest version of each.
+
+| Command | Shows | Network |
+| --- | --- | --- |
+| `ketch list local` | Installed packages, from the install record | Never |
+| `ketch list remote` | Packages the registry offers, with their latest version | Needed; fails without it |
+| `ketch list` | Both, one row per package, sorted by name | Used for `latest`; without it, the local part |
+
+"The registry" here is the local copy `ketch update` fetches, plus your own
+manifests in `~/.ketch/manifests` (yours win when a name is in both). The few
+packages compiled into ketch as a fallback are not listed; run `ketch update`
+to see the registry they come from.
+
+**Columns.**
+
+- `package` — the name to install, upgrade or uninstall it by.
+- `installed` — the installed version. `(pinned)` means `ketch pin` holds it;
+  `(+N retained)` means N earlier versions are kept for `ketch rollback`.
+  Empty for a package that is not installed.
+- `latest` — the newest release of the package's source. `(update available)`
+  follows it when that is an update for the installed version. `?` means the
+  source did not answer. Empty for a package installed from a local path,
+  which has no upstream to ask.
+- `source` — where the package comes from. For an installed package, that is
+  where it was installed from, and where its next version will come from.
+- `description` (`remote` only) — the registry's one-line summary, cut to the
+  terminal width (`COLUMNS` sets another width; nothing is cut when the output
+  is piped).
+
+**Markers.** In `ketch list`, an installed package has `*` in the first column.
+On a colour terminal the marker is `●`, the name is bold, and
+`(update available)` is yellow. `CLICOLOR_FORCE=1` asks for colour even into a
+pipe; `--no-color` and `NO_COLOR` turn it off.
+
+**Update available** is decided the way `ketch outdated` decides it. `latest` is
+the newest release the package's source reports, from the same lookup
+`ketch outdated` makes: stable releases only, unless `prerelease = true` is set
+in `config.toml` or in the package's manifest. That version is compared with
+the installed one, and only a strictly newer version counts; a release with
+the installed tag never does. A pinned package is never offered an update.
+
+**Pinned packages** are listed with both versions and `(pinned)`, get no
+`(update available)`, and are left out of the footer. `ketch unpin` lets them
+move again.
+
+**Packages from outside the registry** — installed from `owner/repo` or
+another `scheme:id` reference — are listed too, and their `latest` comes from
+their own source. One installed from a local path (`ketch install --path`) is
+listed with an empty `latest`.
+
+Under the table, `N updates available: ketch upgrade <names>` names every
+package with an update, as the command that takes them all.
+
+**Offline, and packages that do not answer.** Latest versions are looked up in
+parallel (`jobs` at a time, 4 by default), with a counter on stderr while they
+load. A source that fails — rate-limited, gone, unreachable — shows `?` in
+`latest`, and one line under the table names each such package; every other row
+is still printed and the command still succeeds. When no source answers at all,
+the network is taken to be missing: `ketch list` prints the `ketch list local`
+table followed by `latest: offline` and exits 0, while `ketch list remote`,
+which has nothing to show without it, exits non-zero.
+
+Answers are cached for 10 minutes in `~/.ketch/cache/latest.json`, per source
+and per prerelease setting, so listing twice in a row asks GitHub once. Only
+answers are cached, never failures. Delete the file to ask again sooner;
+`ketch outdated` and `ketch upgrade` never read it.
+
+**`--json`** prints, for each mode:
+
+- `local` — an array of `{"name", "installed", "pinned", "retained", "source"}`,
+  with `retained` the list of versions kept for rollback.
+- `remote` — an array of `{"name", "latest", "description", "source"}`, with
+  `latest` `null` for a source that did not answer.
+- no mode — `{"packages": [...], "unreachable": [...]}`. Each package is
+  `{"name", "installed", "latest", "update_available", "pinned", "source"}`;
+  `installed` is `null` when it is not installed and `latest` is `null` when
+  it is unknown. `unreachable` names the packages whose `latest` is unknown.
+  Offline, `packages` holds only installed packages.
+
+**`--names-only`** prints the names alone, one per line, for each mode; it never
+touches the network.
+
+**Changed in 0.7.** `ketch list` used to show installed packages only, and its
+`--json` was an array of install records; it now shows everything, in the
+shape above. Scripts that want the installed packages should call
+`ketch list local`. `ketch list --installed` is a hidden alias of
+`ketch list local`, kept for one release.
+
+```text
+$ ketch list local
+package  installed        source
+fd       v10.4.2          github:sharkdp/fd
+ripgrep  14.1.1           github:BurntSushi/ripgrep
+rtok     v0.9.0 (pinned)  github:listepo/rtok
 ```
 
-Aliased as `ketch ls`.
+```text
+$ ketch list remote
+package  latest   description
+cox      v0.1.0   Modular terminal coding agent
+dunnage  v0.1.0   Shrink Cargo target directories without slowing builds
+ketch    v0.6.1   Catch releases straight from GitHub
+ripgrep  15.2.0   Recursively search directories for a regex pattern
+rtok     v0.10.0  Reduce the context AI coding agents must carry
+runa     ?        Run AI models locally (GGUF via llama.cpp) or through the OpenAI and Anthropic APIs
+? means the latest release could not be checked: runa
+```
+
+```text
+$ ketch list
+   package  installed        latest                      source
+   cox                       v0.1.0                      github:listepo/cox
+   dunnage                   v0.1.0                      github:listepo/dunnage
+*  fd       v10.4.2          v10.5.0 (update available)  github:sharkdp/fd
+   ketch                     v0.6.1                      github:listepo/ketch
+*  ripgrep  14.1.1           15.2.0 (update available)   github:BurntSushi/ripgrep
+*  rtok     v0.9.0 (pinned)  v0.10.0                     github:listepo/rtok
+   runa                      ?                           github:listepo/runa
+2 updates available: ketch upgrade fd ripgrep
+? means the latest release could not be checked: runa
+```
+
+Without a network:
+
+```text
+$ ketch list
+package  installed        source
+fd       v10.4.2          github:sharkdp/fd
+ripgrep  14.1.1           github:BurntSushi/ripgrep
+rtok     v0.9.0 (pinned)  github:listepo/rtok
+latest: offline
+$ ketch list remote
+     error could not reach any package source to check the latest versions; `ketch list local` works offline
+```
+
+```bash
+ketch list local --json      # installed packages, for scripts
+ketch list --names-only      # every package name, one per line
+ketch list remote --json     # the registry with latest versions
+```
 
 ### `ketch outdated [--json] [--pre]`
 

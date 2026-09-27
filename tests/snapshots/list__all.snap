@@ -1,0 +1,10 @@
+---
+source: tests/list.rs
+expression: "sandbox.ok(&[\"list\"])"
+---
+   package  installed       latest                    source
+*  alpha    1.0.0           2.0.0 (update available)  test:alpha
+*  bravo    1.0.0           1.0.0                     test:bravo
+*  charlie  1.0.0 (pinned)  1.5.0                     test:charlie
+   delta                    3.1.0                     test:delta
+1 update available: ketch upgrade alpha
