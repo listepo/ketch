@@ -6,12 +6,13 @@
 //! Every step is expressed against the `Source`, `Platform` and `Extractor`
 //! traits, so this file contains no GitHub-specific and no macOS-specific code.
 
+use crate::bin_choice::{self, Picked};
 use crate::config::{sanitize_component, Config};
 use crate::error::{Error, Result};
 use crate::manifest::Resolver;
 use crate::model::{
-    now_unix, AssetSelector, BinSpec, InstalledPackage, LinkRecord, LocalKind, PackageSpec,
-    Release, ReleaseAsset, RetainedVersion, TrustResult, Version, VersionSpec,
+    now_unix, AssetSelector, BinSpec, InstalledPackage, LinkRecord, LocalKind, PackageRef,
+    PackageSpec, Release, ReleaseAsset, RetainedVersion, TrustResult, Version, VersionSpec,
 };
 use crate::platform::{AssetScore, Placement, Platform, TrustVerdict};
 use crate::source::{ListOpts, SourceRegistry};
@@ -39,6 +40,17 @@ pub struct InstallRequest {
     pub expected_sha256: Option<String>,
     /// Override the resolved package name (used by `ketch install --path --name`).
     pub name_override: Option<String>,
+    /// A person may be asked to decide what inference cannot — which of
+    /// several binaries sharing the package's name to link. False under
+    /// `--yes` and for installs no person started; the prompt itself still
+    /// needs a terminal on stdin and stderr.
+    pub interactive: bool,
+    /// `--bin`: which of several binaries sharing the package's name to
+    /// link, answered before anyone asks. Wins over every other rule.
+    pub bin: Option<String>,
+    /// The choice `ketch.lock` recorded, consulted after state's: a fresh
+    /// machine has no state, and no terminal to ask on during `ketch sync`.
+    pub locked_bin: Option<String>,
 }
 
 impl InstallRequest {
@@ -53,6 +65,9 @@ impl InstallRequest {
             asset_override: None,
             expected_sha256: None,
             name_override: None,
+            interactive: false,
+            bin: None,
+            locked_bin: None,
         }
     }
 }
@@ -91,6 +106,12 @@ pub struct Prepared {
     provenance: Option<crate::model::Provenance>,
     /// Carried from the request: `commit` is the only place that links.
     link: bool,
+    /// Carried from the request: `commit` is where a binary is chosen.
+    interactive: bool,
+    /// Carried from the request, like `interactive`.
+    bin: Option<String>,
+    /// Carried from the request, like `interactive`.
+    locked_bin: Option<String>,
     /// Root of the unpacked payload, inside `unpack`.
     payload: PathBuf,
     /// Held so the unpacked payload outlives this function.
@@ -220,7 +241,8 @@ pub fn prepare(
         "resolving",
         &format!("{} ({})", manifest.name, manifest.source),
     );
-    let release = source.resolve(&manifest.source.id, &req.spec.version, &opts)?;
+    let release = ui::activity(&format!("resolving {}", manifest.name), None)
+        .run(|_| source.resolve(&manifest.source.id, &req.spec.version, &opts))?;
 
     // Nothing is downloaded until we know the install is actually wanted.
     let existing = state.get(&manifest.name).cloned();
@@ -257,101 +279,101 @@ pub fn prepare(
 
     // Local `.app` bundles are directories: copy the tree into the unpack root
     // rather than pretending they are a downloadable archive.
-    let (sha256, asset_name, checksum_verified, provenance, payload) = if local_kind
-        == Some(LocalKind::App)
-    {
-        let app_path = local_path.as_ref().ok_or_else(|| {
-            Error::msg("internal error: local .app install without a recorded path")
-        })?;
-        ui::stage(&label, ui::ProgressStage::Downloading);
-        let dest_name = app_path
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "App.app".into());
-        let dest = unpack.path().join(&dest_name);
-        crate::source::local::copy_tree(app_path, &dest)?;
-        // The copy is hashed, not the original, so the digest describes exactly
-        // what gets placed. Like a local file, a bundle has no published
-        // checksum to require, but a lockfile's hash still holds it.
-        let sha256 = crate::source::local::sha256_tree(&dest)?;
-        progress.finish("copied");
-        ui::stage(&label, ui::ProgressStage::Verifying);
-        check_locked(req, &manifest.name, &dest_name, &sha256)?;
-        // A bundle on disk has no release to carry a signature, so a policy
-        // that requires one cannot be met.
-        let provenance = match &manifest.trust {
-            Some(policy) => crate::trust::refuse(
-                policy,
-                &dest_name,
-                "a local app bundle has no published signature",
-            )?,
-            None => None,
-        };
-        let payload = payload_root(unpack.path(), manifest.strip_prefix)?;
-        (sha256, dest_name, false, provenance, payload)
-    } else {
-        // --- download -------------------------------------------------------
-        ui::stage(&label, ui::ProgressStage::Downloading);
-        // A directory of its own, not a name under the cache. Two `prepare`s
-        // run side by side, and an alias and a repo path naming the same
-        // package would pick the same file name: they would overwrite each
-        // other's archive, extract whichever landed last, and delete it from
-        // under each other. The archive is staging, never a cache — it is
-        // deleted as soon as the payload is unpacked — so a unique directory
-        // costs nothing.
-        let staging =
-            tempfile::tempdir_in(&cfg.cache_dir).map_err(|e| Error::io(&cfg.cache_dir, e))?;
-        let download_path = staging.path().join(sanitize_component(&asset.name));
-        // For a local symlink, point the asset URL at the origin path so
-        // LocalSource::download follows it; classification already recorded
-        // that the user named a link.
-        let mut asset = asset;
-        if let Some(path) = &local_path {
-            asset.url = path.to_string_lossy().into_owned();
-        }
-        let sha256 = source.download(&asset, &download_path, progress)?;
-
-        // --- checksum -------------------------------------------------------
-        check_locked(req, &manifest.name, &asset.name, &sha256)?;
-
-        ui::stage(&label, ui::ProgressStage::Verifying);
-        // Local packages never publish a checksum; requiring one would make
-        // every `local:` install fail for a reason the user cannot fix.
-        let require = if local_kind.is_some() {
-            false
+    let (sha256, asset_name, checksum_verified, provenance, payload) =
+        if local_kind == Some(LocalKind::App) {
+            let app_path = local_path.as_ref().ok_or_else(|| {
+                Error::msg("internal error: local .app install without a recorded path")
+            })?;
+            ui::stage(&label, ui::ProgressStage::Downloading);
+            let dest_name = app_path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "App.app".into());
+            let dest = unpack.path().join(&dest_name);
+            crate::source::local::copy_tree(app_path, &dest)?;
+            // The copy is hashed, not the original, so the digest describes exactly
+            // what gets placed. Like a local file, a bundle has no published
+            // checksum to require, but a lockfile's hash still holds it.
+            let sha256 = crate::source::local::sha256_tree(&dest)?;
+            progress.finish("copied");
+            ui::stage(&label, ui::ProgressStage::Verifying);
+            check_locked(req, &manifest.name, &dest_name, &sha256)?;
+            // A bundle on disk has no release to carry a signature, so a policy
+            // that requires one cannot be met.
+            let provenance = match &manifest.trust {
+                Some(policy) => crate::trust::refuse(
+                    policy,
+                    &dest_name,
+                    "a local app bundle has no published signature",
+                )?,
+                None => None,
+            };
+            let payload = payload_root(unpack.path(), manifest.strip_prefix)?;
+            (sha256, dest_name, false, provenance, payload)
         } else {
-            req.require_checksum || cfg.require_checksums
+            // --- download -------------------------------------------------------
+            ui::stage(&label, ui::ProgressStage::Downloading);
+            // A directory of its own, not a name under the cache. Two `prepare`s
+            // run side by side, and an alias and a repo path naming the same
+            // package would pick the same file name: they would overwrite each
+            // other's archive, extract whichever landed last, and delete it from
+            // under each other. The archive is staging, never a cache — it is
+            // deleted as soon as the payload is unpacked — so a unique directory
+            // costs nothing.
+            let staging =
+                tempfile::tempdir_in(&cfg.cache_dir).map_err(|e| Error::io(&cfg.cache_dir, e))?;
+            let download_path = staging.path().join(sanitize_component(&asset.name));
+            // For a local symlink, point the asset URL at the origin path so
+            // LocalSource::download follows it; classification already recorded
+            // that the user named a link.
+            let mut asset = asset;
+            if let Some(path) = &local_path {
+                asset.url = path.to_string_lossy().into_owned();
+            }
+            let sha256 = source.download(&asset, &download_path, progress)?;
+
+            // --- checksum -------------------------------------------------------
+            check_locked(req, &manifest.name, &asset.name, &sha256)?;
+
+            ui::stage(&label, ui::ProgressStage::Verifying);
+            // Local packages never publish a checksum; requiring one would make
+            // every `local:` install fail for a reason the user cannot fix.
+            let require = if local_kind.is_some() {
+                false
+            } else {
+                req.require_checksum || cfg.require_checksums
+            };
+            let checksum_verified = verify_checksum(
+                source.as_ref(),
+                &manifest.source.id,
+                &release,
+                &asset,
+                &sha256,
+                require,
+            )?;
+
+            // --- signature ------------------------------------------------------
+            // Before extraction: the unpacker is the widest attack surface ketch
+            // has, and a file its publisher did not vouch for need not reach it.
+            let provenance = crate::trust::verify(
+                manifest.trust.as_ref(),
+                source.as_ref(),
+                &release,
+                &asset,
+                &download_path,
+                &sha256,
+                staging.path(),
+            )?;
+
+            // --- extract --------------------------------------------------------
+            ui::stage(&label, ui::ProgressStage::Extracting);
+            let format = ui::activity(&format!("extracting {}", asset.name), None).run(|_| {
+                crate::extract::extract_auto(&download_path, unpack.path(), &platform.extractors())
+            })?;
+            ui::debug(&format!("unpacked {} as {format}", asset.name));
+            let payload = payload_root(unpack.path(), manifest.strip_prefix)?;
+            (sha256, asset.name, checksum_verified, provenance, payload)
         };
-        let checksum_verified = verify_checksum(
-            source.as_ref(),
-            &manifest.source.id,
-            &release,
-            &asset,
-            &sha256,
-            require,
-        )?;
-
-        // --- signature ------------------------------------------------------
-        // Before extraction: the unpacker is the widest attack surface ketch
-        // has, and a file its publisher did not vouch for need not reach it.
-        let provenance = crate::trust::verify(
-            manifest.trust.as_ref(),
-            source.as_ref(),
-            &release,
-            &asset,
-            &download_path,
-            &sha256,
-            staging.path(),
-        )?;
-
-        // --- extract --------------------------------------------------------
-        ui::stage(&label, ui::ProgressStage::Extracting);
-        let format =
-            crate::extract::extract_auto(&download_path, unpack.path(), &platform.extractors())?;
-        ui::debug(&format!("unpacked {} as {format}", asset.name));
-        let payload = payload_root(unpack.path(), manifest.strip_prefix)?;
-        (sha256, asset.name, checksum_verified, provenance, payload)
-    };
 
     ui::stage(&label, ui::ProgressStage::Trusting);
     let trust = check_trust(platform.as_ref(), cfg, &payload, &manifest.name);
@@ -367,12 +389,157 @@ pub fn prepare(
         trust,
         provenance,
         link: req.link,
+        interactive: req.interactive,
+        bin: req.bin.clone(),
+        locked_bin: req.locked_bin.clone(),
         payload,
         unpack,
         started,
         local_kind,
         local_path,
     })
+}
+
+/// The binary chosen for a package whose manifest names none, out of several
+/// in its payload that share the package's name.
+struct BinPick {
+    /// What placement links in place of everything it would discover: the
+    /// chosen binary and every executable outside its family, in discovery
+    /// order. Only the family members that lost are left out.
+    specs: Vec<BinSpec>,
+    /// The chosen file's name, as state remembers it.
+    file: String,
+    how: Picked,
+}
+
+/// Decide which binary `payload` links when the manifest names none and more
+/// than one executable answers to `name` — before anything is placed, so the
+/// choice is made once and by `bin_choice`'s fixed order rather than by the
+/// order this platform's discovery sorts files in (B64). `None` leaves
+/// placement to its usual rules: the manifest's `bin`, or every executable
+/// discovered when nothing competes for the name. A `--bin` in `known` is
+/// checked either way, so a name that matches nothing is an error, not a
+/// silent no-op.
+fn pick_bin(
+    cfg: &Config,
+    platform: &dyn Platform,
+    payload: &Path,
+    manifest: Option<&crate::model::Manifest>,
+    name: &str,
+    known: bin_choice::Known<'_>,
+    interactive: bool,
+) -> Result<Option<BinPick>> {
+    if manifest.is_some_and(|m| !m.bin.is_empty()) {
+        if let Some(flag) = known.flag {
+            return Err(Error::msg(format!(
+                "--bin `{flag}`: the manifest for `{name}` already names the binaries it links; \
+                 change its `bin` instead"
+            )));
+        }
+        return Ok(None);
+    }
+    let kind = manifest.map(|m| m.kind).unwrap_or_default();
+    let found = platform.bin_candidates(payload, kind, name);
+    let files: Vec<String> = found
+        .iter()
+        .map(|p| {
+            p.file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    let contenders = bin_choice::contenders(name, &files);
+    if contenders.is_empty() {
+        if let Some(flag) = known.flag {
+            bin_choice::check_flag(flag, &files)?;
+        }
+        return Ok(None);
+    }
+    let names: Vec<String> = contenders.iter().map(|&i| files[i].clone()).collect();
+    let hint = crate::manifest::user_manifest_path(cfg, name)
+        .display()
+        .to_string();
+    let question = format!("{name} ships several binaries sharing its name; which one to link?");
+    let mut ask = |candidates: &[String]| {
+        if interactive {
+            ui::select(&question, candidates)
+        } else {
+            None
+        }
+    };
+    let (i, how) = bin_choice::choose(name, &names, known, &mut ask, &hint)?;
+    let chosen = contenders[i];
+    // The exact paths, not globs or bare names: a release can carry a
+    // completion script or a man page with the same file name elsewhere.
+    let specs = found
+        .iter()
+        .zip(&files)
+        .enumerate()
+        .filter(|&(j, _)| j == chosen || !contenders.contains(&j))
+        .map(|(_, (path, file))| BinSpec {
+            path: Some(
+                path.strip_prefix(payload)
+                    .unwrap_or(path)
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
+            name: Some(file.clone()),
+        })
+        .collect();
+    Ok(Some(BinPick {
+        specs,
+        file: files[chosen].clone(),
+        how,
+    }))
+}
+
+/// What state remembers after a pick: a choice somebody made — now or before —
+/// and otherwise whatever it remembered already, for the next release that
+/// needs it. An exact name match is not a choice and is not recorded.
+fn remembered_choice(pick: Option<&BinPick>, remembered: Option<&str>) -> Option<String> {
+    match pick {
+        Some(p) if p.how != Picked::Exact => Some(p.file.clone()),
+        _ => remembered.map(str::to_string),
+    }
+}
+
+/// Write a pick into the user manifest it came from, so the file names its
+/// binaries from now on: the chosen one and every other it links. Best
+/// effort: the install has already succeeded, and state remembers the choice
+/// even when the file cannot be written.
+fn record_in_manifest(path: &Path, manifest: &mut crate::model::Manifest, pick: &BinPick) {
+    let commands: Vec<String> = pick
+        .specs
+        .iter()
+        .filter_map(|s| s.name.as_deref())
+        .map(|n| bin_choice::command_name(n).to_string())
+        .collect();
+    match crate::manifest::write_bins(path, &manifest.name, &commands) {
+        Ok(true) => {
+            let listed: Vec<String> = commands
+                .iter()
+                .map(|c| format!("{{ name = \"{c}\" }}"))
+                .collect();
+            ui::note(&format!(
+                "{} now names its binaries: bin = [{}]",
+                path.display(),
+                listed.join(", ")
+            ));
+            manifest.bin = commands
+                .into_iter()
+                .map(|c| BinSpec {
+                    path: None,
+                    name: Some(c),
+                })
+                .collect();
+        }
+        Ok(false) => {}
+        Err(e) => ui::warn(&format!(
+            "could not record the chosen binary in {}: {e}",
+            path.display()
+        )),
+    }
 }
 
 fn extra_placements(
@@ -419,12 +586,16 @@ pub fn commit(cfg: &Config, state: &mut State, prepared: Prepared) -> Result<Ins
         trust,
         provenance,
         link,
+        interactive,
+        bin,
+        locked_bin,
         payload,
         unpack,
         started,
         local_kind,
         local_path,
     } = prepared;
+    let mut manifest = manifest;
     let platform = crate::platform::host()?;
     ui::stage(&label, ui::ProgressStage::Installing);
 
@@ -440,6 +611,29 @@ pub fn commit(cfg: &Config, state: &mut State, prepared: Prepared) -> Result<Ins
     let in_place = existing.as_ref().is_some_and(|p| p.prefix == store_dir);
     let mut orphan = ScopedDir((!in_place).then(|| store_dir.clone()));
     let extras = extra_placements(platform.as_ref(), &manifest.extra_paths)?;
+    let remembered = existing.as_ref().and_then(|p| p.bin_choice.as_deref());
+    let earlier: Vec<&str> = remembered
+        .into_iter()
+        .chain(locked_bin.as_deref())
+        .collect();
+    let known = bin_choice::Known {
+        flag: bin.as_deref(),
+        remembered: &earlier,
+    };
+    let pick = if link || known.flag.is_some() {
+        pick_bin(
+            cfg,
+            platform.as_ref(),
+            &payload,
+            Some(&manifest),
+            &manifest.name,
+            known,
+            interactive,
+        )?
+    } else {
+        None
+    };
+    let picked_specs = pick.as_ref().map(|p| p.specs.clone());
     let links = platform.place(&Placement {
         name: &manifest.name,
         version: &version,
@@ -448,7 +642,7 @@ pub fn commit(cfg: &Config, state: &mut State, prepared: Prepared) -> Result<Ins
         bin_dir: &cfg.bin_dir,
         apps_dir: &cfg.apps_dir,
         kind: manifest.kind,
-        bin_specs: &manifest.bin,
+        bin_specs: picked_specs.as_deref().unwrap_or(&manifest.bin),
         replacing: existing.as_ref().map(|p| p.links.as_slice()).unwrap_or(&[]),
         link_apps: cfg.link_apps,
         link,
@@ -476,6 +670,11 @@ pub fn commit(cfg: &Config, state: &mut State, prepared: Prepared) -> Result<Ins
         retain_replaced(cfg, old, &store_dir, &mut retained);
     }
 
+    if let (Some(pick), crate::model::ManifestOrigin::User(path)) = (&pick, &origin) {
+        record_in_manifest(path, &mut manifest, pick);
+    }
+    let bin_choice = remembered_choice(pick.as_ref(), remembered);
+
     let package = InstalledPackage {
         name: manifest.name.clone(),
         version: release.version.clone(),
@@ -496,6 +695,7 @@ pub fn commit(cfg: &Config, state: &mut State, prepared: Prepared) -> Result<Ins
         trust,
         retained,
         provenance,
+        bin_choice,
     };
     state.insert(package.clone());
     orphan.keep();
@@ -644,6 +844,20 @@ pub fn relink(cfg: &Config, state: &mut State, name: &str) -> Result<()> {
             .map(|m| m.extra_paths.as_slice())
             .unwrap_or(&[]),
     )?;
+    let remembered = pkg.bin_choice.as_deref();
+    let pick = pick_bin(
+        cfg,
+        platform.as_ref(),
+        &pkg.prefix,
+        manifest.as_ref(),
+        &pkg.name,
+        bin_choice::Known {
+            flag: None,
+            remembered: remembered.as_slice(),
+        },
+        true,
+    )?;
+    let picked_specs = pick.as_ref().map(|p| p.specs.clone());
     let links = platform.place(&Placement {
         name: &pkg.name,
         version: &version,
@@ -653,7 +867,10 @@ pub fn relink(cfg: &Config, state: &mut State, name: &str) -> Result<()> {
         bin_dir: &cfg.bin_dir,
         apps_dir: &cfg.apps_dir,
         kind: manifest.as_ref().map(|m| m.kind).unwrap_or_default(),
-        bin_specs: manifest.as_ref().map(|m| m.bin.as_slice()).unwrap_or(&[]),
+        bin_specs: picked_specs
+            .as_deref()
+            .or_else(|| manifest.as_ref().map(|m| m.bin.as_slice()))
+            .unwrap_or(&[]),
         replacing: &pkg.links,
         link_apps: cfg.link_apps,
         link: true,
@@ -672,6 +889,7 @@ pub fn relink(cfg: &Config, state: &mut State, name: &str) -> Result<()> {
 
     if let Some(entry) = state.get_mut(&pkg.name) {
         entry.links = links;
+        entry.bin_choice = remembered_choice(pick.as_ref(), remembered);
     }
     Ok(())
 }
@@ -732,6 +950,25 @@ pub fn rollback(
             .map(|m| m.extra_paths.as_slice())
             .unwrap_or(&[]),
     )?;
+    let remembered = pkg.bin_choice.as_deref();
+    let pick = if linked {
+        pick_bin(
+            cfg,
+            platform.as_ref(),
+            &target.prefix,
+            manifest.as_ref(),
+            &pkg.name,
+            bin_choice::Known {
+                flag: None,
+                remembered: remembered.as_slice(),
+            },
+            true,
+        )?
+    } else {
+        None
+    };
+    let bin_choice = remembered_choice(pick.as_ref(), remembered);
+    let picked_specs = pick.as_ref().map(|p| p.specs.clone());
     let links = platform.place(&Placement {
         name: &pkg.name,
         version: &version,
@@ -740,7 +977,10 @@ pub fn rollback(
         bin_dir: &cfg.bin_dir,
         apps_dir: &cfg.apps_dir,
         kind: manifest.as_ref().map(|m| m.kind).unwrap_or_default(),
-        bin_specs: manifest.as_ref().map(|m| m.bin.as_slice()).unwrap_or(&[]),
+        bin_specs: picked_specs
+            .as_deref()
+            .or_else(|| manifest.as_ref().map(|m| m.bin.as_slice()))
+            .unwrap_or(&[]),
         replacing: &pkg.links,
         link_apps: cfg.link_apps,
         link: linked,
@@ -778,6 +1018,7 @@ pub fn rollback(
     package.asset_name = target.asset_name;
     package.installed_at = now_unix();
     package.retained = retained;
+    package.bin_choice = bin_choice;
     state.insert(package.clone());
 
     let previous = replaced.to_string();
@@ -856,15 +1097,31 @@ pub fn latest_release(
     pkg: &InstalledPackage,
     prerelease: bool,
 ) -> Result<Release> {
-    let source = sources.for_ref(&pkg.source)?;
+    latest_of(sources, &pkg.source, &installed_list_opts(pkg, prerelease))
+}
+
+/// The listing options `latest_release` asks an installed package's source
+/// with; `ketch list` needs them apart from the lookup, to key its cache.
+pub fn installed_list_opts(pkg: &InstalledPackage, prerelease: bool) -> ListOpts {
     // A manifest that asks for prereleases got one at install time; asking for
     // `latest` without it here would then report the package as up to date
     // forever, however many prereleases it has moved through since.
-    let opts = ListOpts {
+    ListOpts {
         include_prerelease: prerelease || pkg.manifest.as_ref().is_some_and(|m| m.prerelease),
         ..Default::default()
-    };
-    source.resolve(&pkg.source.id, &VersionSpec::Latest, &opts)
+    }
+}
+
+/// The newest release of `source` under `opts`: the one lookup behind
+/// `ketch outdated`, `ketch upgrade` and `ketch list`.
+pub fn latest_of(
+    sources: &SourceRegistry,
+    source: &PackageRef,
+    opts: &ListOpts,
+) -> Result<Release> {
+    sources
+        .for_ref(source)?
+        .resolve(&source.id, &VersionSpec::Latest, opts)
 }
 
 /// Rank a release's assets for this platform, best first. Assets the platform
@@ -1410,6 +1667,7 @@ mod tests {
             trust: TrustResult::default(),
             retained: Vec::new(),
             provenance: None,
+            bin_choice: None,
         }
     }
 

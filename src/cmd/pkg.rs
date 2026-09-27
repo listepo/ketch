@@ -36,6 +36,11 @@ pub fn install(cfg: &Config, args: InstallArgs) -> Result<()> {
             "--name needs exactly one package (or use it with --path)",
         ));
     }
+    if args.bin.is_some() && args.path.is_none() && args.packages.len() != 1 {
+        return Err(Error::msg(
+            "--bin needs exactly one package (or use it with --path)",
+        ));
+    }
     if args.path.is_some() && !args.packages.is_empty() {
         return Err(Error::msg(
             "--path already names the package; do not also pass a PKG argument",
@@ -74,6 +79,9 @@ pub fn install(cfg: &Config, args: InstallArgs) -> Result<()> {
             expected_sha256: None,
             // --name applies to the single package being installed.
             name_override: if i == 0 { name_override.clone() } else { None },
+            interactive: !args.yes,
+            bin: args.bin.clone(),
+            locked_bin: None,
         })
         .collect();
 
@@ -165,6 +173,9 @@ pub fn uninstall(cfg: &Config, args: UninstallArgs) -> Result<()> {
 
 pub fn upgrade(cfg: &Config, args: UpgradeArgs) -> Result<()> {
     super::system::maybe_auto_update(cfg);
+    if args.bin.is_some() && args.names.len() != 1 {
+        return Err(Error::msg("--bin needs exactly one package name"));
+    }
     let _lock = Lock::acquire(cfg)?;
     let sources = SourceRegistry::load(cfg);
     let mut state = State::load(cfg)?;
@@ -178,17 +189,28 @@ pub fn upgrade(cfg: &Config, args: UpgradeArgs) -> Result<()> {
     let prerelease = args.prerelease || cfg.prerelease;
     let mut plan = Vec::new();
     let (mut checked, mut unreachable) = (0usize, 0usize);
+    // One bar for the whole check: the count of names is known up front.
+    // `outdated` checks in parallel and stays on its own step lines. The bar
+    // ends with this block so a later install batch can take the terminal.
+    let total = u64::try_from(names.len()).unwrap_or(u64::MAX);
+    let progress = ui::activity("checking", Some(total));
     for name in &names {
+        progress.set_message(name);
         let pkg = match state.get(name) {
             Some(p) => p.clone(),
-            None => continue,
+            None => {
+                progress.inc(1);
+                continue;
+            }
         };
         if pkg.pinned && !args.force {
             ui::debug(&format!("{} is pinned at {}", pkg.name, pkg.version));
+            progress.inc(1);
             continue;
         }
         if pkg.source.scheme == "local" {
             ui::debug(&format!("{} is local; upgrade is not applicable", pkg.name));
+            progress.inc(1);
             continue;
         }
         ui::step("checking", &pkg.name);
@@ -198,6 +220,7 @@ pub fn upgrade(cfg: &Config, args: UpgradeArgs) -> Result<()> {
             Err(e) => {
                 ui::warn(&format!("{}: {e}", pkg.name));
                 unreachable += 1;
+                progress.inc(1);
                 continue;
             }
         };
@@ -205,10 +228,13 @@ pub fn upgrade(cfg: &Config, args: UpgradeArgs) -> Result<()> {
         // Compare versions, not tags: a retagged release is not an upgrade,
         // and neither is a source that briefly reports an older one.
         if release.tag == pkg.tag || release.version <= pkg.version {
+            progress.inc(1);
             continue;
         }
         plan.push((pkg, release));
+        progress.inc(1);
     }
+    drop(progress);
 
     if plan.is_empty() {
         // "Up to date" is a claim about versions we actually saw. With nothing
@@ -281,6 +307,9 @@ pub fn upgrade(cfg: &Config, args: UpgradeArgs) -> Result<()> {
             // The installed name, which `--name` may have chosen. Resolving
             // the source alone would infer another and install a second copy.
             name_override: Some(pkg.name.clone()),
+            interactive: !args.yes,
+            bin: args.bin.clone(),
+            locked_bin: None,
         })
         .collect();
 

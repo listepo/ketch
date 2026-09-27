@@ -39,7 +39,7 @@ ketch why rg                         # how it was resolved, and which asset won
 
 On Windows, install ketch with
 `irm https://raw.githubusercontent.com/listepo/ketch/main/install.ps1 | iex`;
-the other commands are the same. `ketch list` shows what you have.
+the other commands are the same. `ketch list local` shows what you have.
 
 A package can be named several ways:
 
@@ -192,7 +192,9 @@ ketch uninstall bat                  # remove it, links and all
 ```bash
 ketch install <pkg>...     # install; concurrent by default, --jobs N to change
 ketch install --path PATH  # install a local archive, binary, symlink, or .app
-ketch list                 # what is installed
+ketch list                 # installed and available, with latest versions
+ketch list local           # what is installed; no network
+ketch list remote          # what the registry offers
 ketch outdated             # what has a newer release
 ketch upgrade              # bring everything unpinned up to date
 ketch rollback <pkg>       # restore the previous retained version (`--to` for an older one)
@@ -221,7 +223,9 @@ ketch self upgrade         # upgrade ketch itself
 ketch self uninstall       # remove ketch and everything it installed
 ```
 
-[docs/COMMANDS.md](docs/COMMANDS.md) has every command with a working example.
+[docs/COMMANDS.md](docs/COMMANDS.md) has every command with a working example;
+[ketch list](docs/COMMANDS.md#ketch-list) explains its three modes, the
+`update available` and `?` markers, and the JSON each mode prints.
 
 ## The store and rollback
 

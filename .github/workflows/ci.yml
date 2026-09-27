@@ -25,26 +25,43 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  check:
+  # The shared listepo/infra workflow, pinned by commit, with Rust from
+  # mise.toml and a check that rustc is that pin: fmt once, then per target of
+  # its shared matrix clippy (--all-targets --all-features, so the tui feature
+  # is linted too), check, and the tests where the runner executes the target
+  # (Linux x86_64 and aarch64, macOS aarch64, Windows x86_64) or a build where
+  # it does not (macOS x86_64). The tests are the unit tests and the offline
+  # end-to-end suite in tests/ (install_linux.rs, install_windows.rs and the
+  # macOS ones are cfg-gated to their platform), default build and the
+  # optional TUI feature, which is not in the release tarball but must still
+  # compile and pass.
+  rust:
     # Draft PRs are skipped here and reported green: review happens when the PR
     # is marked ready, and a draft must not look broken meanwhile.
     if: github.event.pull_request.draft != true
-    # macOS gate: unit tests plus macos e2e. Linux e2e is check-linux;
-    # Windows e2e is check-windows.
-    runs-on: macos-latest
+    uses: listepo/infra/.github/workflows/ci-rust.yml@059c0c578f31c53a093aec1260b56ba4fcbc810c
+    with:
+      clippy-args: --locked
+      tools: nextest
+      test-command: |
+        cargo nextest run --all-targets --locked
+        cargo nextest run --all-targets --locked --features tui
+      build-command: cargo build --all-targets --all-features --locked --target "$TARGET"
+
+  # Commits pushed from anywhere but this machine never met the local
+  # commit-msg hook, so a pull request's messages are linted here too.
+  # Pushes to main skip this: every commit there arrived through a pull
+  # request that already passed it.
+  commits:
+    if: github.event.pull_request.draft != true && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
     steps:
-      # Full history: the commit-message check below ranges from the pull
-      # request's base branch to HEAD. rust-cache keys on the manifests, not
-      # on how much history is present, so the Rust steps are unaffected.
+      # Full history: the commit-message check ranges from the pull request's
+      # base branch to HEAD.
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      # Commits pushed from anywhere but this machine never met the local
-      # commit-msg hook, so a pull request's messages are linted here too,
-      # before the Rust build — a bad subject fails in seconds, not minutes.
-      # Pushes to main skip this: every commit there arrived through a pull
-      # request that already passed it.
       - name: Read the Node pin from mise.toml
         if: github.event_name == 'pull_request'
         id: node_pin
@@ -94,85 +111,12 @@ jobs:
           done
           exit $bad
 
-      # The Rust mise.toml pins (with rustfmt and clippy), the one version
-      # local work, verify.yml and the release build use too. Only rust: Node
-      # comes from setup-node above, and nothing else here needs mise.
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
-        with:
-          install_args: rust
-
-      - uses: Swatinem/rust-cache@v2
-
-      - uses: taiki-e/install-action@nextest
-
-      - name: Format
-        run: cargo fmt --all -- --check
-
-      - name: Lint
-        run: cargo clippy --all-targets --locked -- -D warnings
-
-      # Unit tests and the end-to-end suite in tests/, which drives the real
-      # binary against a throwaway root. Both are offline.
-      - name: Test
-        run: cargo nextest run --all-targets --locked
-
-      # The optional TUI feature is not in the default build or release
-      # tarball, but it must still compile and pass its tests.
-      - name: Test (tui)
-        run: cargo nextest run --all-targets --locked --features tui
-
-  # Linux compile, unit tests, and tests/install_linux.rs (cfg linux).
-  check-linux:
-    if: github.event.pull_request.draft != true
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      # The Rust mise.toml pins, as in the check job.
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
-        with:
-          install_args: rust
-
-      - uses: Swatinem/rust-cache@v2
-
-      - uses: taiki-e/install-action@nextest
-
-      - name: Lint
-        run: cargo clippy --all-targets --locked -- -D warnings
-
-      - name: Test
-        run: cargo nextest run --all-targets --locked
-
-      - name: Test (tui)
-        run: cargo nextest run --all-targets --locked --features tui
-
-  # Windows compile, unit tests, and tests/install_windows.rs (cfg windows).
-  check-windows:
+  # install.ps1 parses and runs; the Rust side of Windows is the `rust` job.
+  powershell:
     if: github.event.pull_request.draft != true
     runs-on: windows-latest
-    defaults:
-      run:
-        shell: bash
     steps:
       - uses: actions/checkout@v7
-
-      # The Rust mise.toml pins, as in the check job.
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
-        with:
-          install_args: rust
-
-      - uses: Swatinem/rust-cache@v2
-
-      - uses: taiki-e/install-action@nextest
-
-      - name: Lint
-        run: cargo clippy --all-targets --locked -- -D warnings
-
-      - name: Test
-        run: cargo nextest run --all-targets --locked
-
-      - name: Test (tui)
-        run: cargo nextest run --all-targets --locked --features tui
 
       - name: PowerShell syntax
         shell: pwsh
@@ -210,9 +154,9 @@ jobs:
       # release.yml installs; git-cliff is what tests/release-sh.sh runs
       # scripts/release.sh against. All three at the versions mise.toml pins.
       # Before rust-cache, so the cache keys on this rustc.
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      - uses: ./.github/actions/rust
         with:
-          install_args: rust cargo-dist git-cliff
+          install-args: rust cargo-dist git-cliff
 
       - uses: Swatinem/rust-cache@v2
 

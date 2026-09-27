@@ -8,7 +8,7 @@ Usage: ketch[EXE] [OPTIONS] <COMMAND>
 Commands:
   install      Install one or more packages [alias: i]
   uninstall    Remove installed packages [aliases: remove, rm]
-  list         Show installed packages [alias: ls]
+  list         Show installed and available packages [alias: ls]
   outdated     Show installed packages that have a newer release
   info         Show details about a package, installed or not [alias: show]
   why          Explain how a package would be resolved, without installing it

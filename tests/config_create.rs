@@ -16,20 +16,24 @@ use std::path::Path;
 
 /// The file the all-defaults questionnaire writes in a project directory
 /// named `Fancy-Tool` for the source `github:acme/fancy-tool`: the header it
-/// always adds, then the only two fields every manifest carries — every
-/// defaulted field is omitted.
+/// always adds, the two fields every manifest carries, and the `bin` entry
+/// naming the command, which a new config must have — every defaulted field
+/// is omitted.
 const MINIMAL_FILE: &str = concat!(
     "# Written by `ketch config create`. Schema: docs/MANIFESTS.md.\n",
     "name = \"fancy-tool\"\n",
     "source = \"github:acme/fancy-tool\"\n",
+    "\n",
+    "bin = [{ name = \"fancy-tool\" }]\n",
 );
 
 /// The empty answers that leave every question after `source` at its
 /// default: name, description, homepage, kind, prereleases, strip prefix,
-/// aliases, notes, the `bin` loop, extra paths, asset include, asset exclude,
-/// and the asset-target loop terminator each consume one empty line.
+/// aliases, notes, the first `bin` entry's path and name, the offer of
+/// another, extra paths, asset include, asset exclude, and the asset-target
+/// loop terminator each consume one empty line.
 fn empty_answers_for_the_rest() -> String {
-    "\n".repeat(13)
+    "\n".repeat(15)
 }
 
 /// The command under test: the questionnaire run inside `project`, with the
@@ -114,6 +118,8 @@ fn answers_fill_in_the_optional_fields() {
         "source = \"github:acme/fancy-tool\"\n",
         "description = \"Searches files for a pattern\"\n",
         "homepage = \"https://acme.example/fancy-tool\"\n",
+        "\n",
+        "bin = [{ name = \"fancy-tool\" }]\n",
     );
     project
         .child("ketch.toml")
@@ -136,7 +142,6 @@ fn piped_boolean_answers_are_consumed_by_their_questions() {
         "",
         "",
         "",
-        "yes",
         "dist/fancy-tool",
         "",
         "no",

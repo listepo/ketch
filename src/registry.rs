@@ -65,7 +65,10 @@ pub fn update(cfg: &Config) -> Result<usize> {
     let unpacked = staging.path().join("tree");
     std::fs::create_dir_all(&unpacked).map_err(|e| Error::io(&unpacked, e))?;
     crate::ui::stage("registry", crate::ui::ProgressStage::Extracting);
-    TarGzExtractor.extract(&tarball, &unpacked)?;
+    // The tarball download already drew a byte bar. Unpacking has no member
+    // count ahead of time, so this is a spinner rather than a second bar.
+    crate::ui::activity("extracting registry", None)
+        .run(|_| TarGzExtractor.extract(&tarball, &unpacked))?;
     // GitHub wraps the tree in one `owner-repo-<sha>` directory.
     let root = unwrap_single_dir(&unpacked)?;
 

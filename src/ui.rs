@@ -1,8 +1,10 @@
 //! Terminal output.
 //!
-//! Kept dependency-light on purpose: sources and platforms report progress
-//! through the `ProgressSink` trait, so nothing below this module needs to know
-//! whether a human, a pipe, or a test is watching.
+//! Kept dependency-light on purpose: sources and platforms report download
+//! progress through the `ProgressSink` trait, so nothing below this module needs
+//! to know whether a human, a pipe, or a test is watching. Other long work
+//! reports through [`activity`]: a bar when the total is known, a spinner
+//! otherwise.
 
 use crate::log;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
@@ -156,9 +158,10 @@ fn fold_line(text: &str) -> String {
 
 pub fn init(color: Option<bool>, quiet: bool, verbose: bool) {
     let enabled = color.unwrap_or_else(|| {
-        std::io::stderr().is_terminal()
-            && std::env::var_os("NO_COLOR").is_none()
-            && std::env::var("TERM").map(|t| t != "dumb").unwrap_or(true)
+        force_color()
+            || (std::io::stderr().is_terminal()
+                && std::env::var_os("NO_COLOR").is_none()
+                && std::env::var("TERM").map(|t| t != "dumb").unwrap_or(true))
     });
     COLOR.store(enabled, Ordering::Relaxed);
     LEVEL.store(
@@ -171,6 +174,15 @@ pub fn init(color: Option<bool>, quiet: bool, verbose: bool) {
         },
         Ordering::Relaxed,
     );
+}
+
+/// `CLICOLOR_FORCE` set to anything but `0`: colour even into a pipe.
+///
+/// The convention (<https://bixense.com/clicolors/>) is how a pager, a CI log
+/// or a test asks for colour it cannot get by being a terminal. It is an
+/// explicit request, so it outranks `NO_COLOR`; `--no-color` still outranks it.
+fn force_color() -> bool {
+    std::env::var("CLICOLOR_FORCE").is_ok_and(|v| !v.is_empty() && v != "0")
 }
 
 pub fn color_enabled() -> bool {
@@ -463,6 +475,42 @@ pub fn prompt_required(question: &str) -> crate::error::Result<String> {
     })
 }
 
+/// Ask the user to pick one of `options` by number; the index of the pick.
+///
+/// `None` when nobody can answer: stdin or stderr is not a terminal, or the
+/// input ended. Unlike [`prompt`], a pipe does not answer this: a number read
+/// from a script picks by position, and position is the very thing that
+/// differs between platforms. The options come from a client app's payload,
+/// so they are printed through [`printable`].
+pub fn select(question: &str, options: &[String]) -> Option<usize> {
+    with_tui_input_paused(|| {
+        if !std::io::stdin().is_terminal() || !std::io::stderr().is_terminal() {
+            return None;
+        }
+        eprintln!("{} {question}", cyan(&format!("{:>10}", "choose")));
+        for (i, option) in options.iter().enumerate() {
+            eprintln!("{:>11} {}", format!("{})", i + 1), printable(option));
+        }
+        loop {
+            eprint!(
+                "{} number, 1 to {}: ",
+                cyan(&format!("{:>10}", "answer")),
+                options.len()
+            );
+            let _ = std::io::stderr().flush();
+            let mut answer = String::new();
+            match std::io::stdin().read_line(&mut answer) {
+                Ok(0) | Err(_) => return None,
+                Ok(_) => {}
+            }
+            match answer.trim().parse::<usize>() {
+                Ok(n) if (1..=options.len()).contains(&n) => return Some(n - 1),
+                _ => warn(&format!("answer with a number from 1 to {}", options.len())),
+            }
+        }
+    })
+}
+
 /// Human-readable byte count.
 pub fn bytes(n: u64) -> String {
     const UNITS: [&str; 5] = ["B", "KiB", "MiB", "GiB", "TiB"];
@@ -676,6 +724,184 @@ pub fn progress_for(label: &str) -> Box<dyn ProgressSink> {
     }
 }
 
+/// Whether [`activity`] draws a bar or a spinner.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActivityKind {
+    /// `total` was `Some`: a bar of that many units.
+    Bar,
+    /// `total` was `None`: a spinner with no length.
+    Spinner,
+}
+
+/// A stderr bar, or a spinner when the length of the work is unknown.
+///
+/// Silent when stderr is not a terminal, under `--quiet`, and while the
+/// full-screen renderer owns the terminal. Dropping the value clears the line,
+/// including when the work returns early.
+pub struct Activity {
+    bar: ProgressBar,
+    kind: ActivityKind,
+    /// The batch group this bar was added to. Finish removes it from that
+    /// group only: removing a bar from a different group asserts.
+    group: Option<MultiProgress>,
+    /// Set when this activity installed [`BARS`]. Finish takes that slot back.
+    /// A bar joined to a batch's existing group leaves the slot alone.
+    owns_group: bool,
+}
+
+impl Activity {
+    /// Which mode this was started in.
+    ///
+    /// Read by unit tests. `ketch list` does not need it.
+    #[cfg_attr(not(test), expect(dead_code))]
+    pub fn kind(&self) -> ActivityKind {
+        self.kind
+    }
+
+    /// Move the bar forward by `delta` units.
+    ///
+    /// A spinner keeps the count internally. Its template has no position, so
+    /// the count is not drawn; pass `Some(total)` when the units should show.
+    pub fn inc(&self, delta: u64) {
+        self.bar.inc(delta);
+    }
+
+    /// Set the absolute position, for a caller that knows `n` of `total`.
+    ///
+    /// `ketch list` will use this for `N/M packages`. Nothing in this binary
+    /// has that shape yet.
+    #[cfg_attr(not(test), expect(dead_code))]
+    pub fn set_position(&self, position: u64) {
+        self.bar.set_position(position);
+    }
+
+    /// Replace the message. Client-app text is filtered the same way a status
+    /// line is.
+    pub fn set_message(&self, message: &str) {
+        self.bar.set_message(activity_message(message, self.kind));
+    }
+
+    /// Clear the line. Also runs on drop.
+    pub fn finish(&self) {
+        self.bar.disable_steady_tick();
+        // Take the global before touching the bar. `emit` holds that lock and
+        // then suspends the group; grabbing the group first and the lock
+        // second deadlocks a status line printed while this finishes.
+        if self.owns_group {
+            held().take();
+        }
+        self.bar.finish_and_clear();
+        if let Some(group) = &self.group {
+            group.remove(&self.bar);
+            if self.owns_group {
+                group.clear().ok();
+            }
+        }
+    }
+
+    /// Run `work` and clear the line before returning its value.
+    pub fn run<T>(self, work: impl FnOnce(&Self) -> T) -> T {
+        let out = work(&self);
+        self.finish();
+        out
+    }
+}
+
+impl Drop for Activity {
+    fn drop(&mut self) {
+        self.finish();
+    }
+}
+
+/// Start a bar when `total` is known and a spinner otherwise.
+///
+/// The spinner follows rtok's loader: `{spinner:.cyan} {msg}` on stderr,
+/// ticking every 120ms, and indicatif draws nothing when stderr is not a
+/// terminal. A known total uses the download bar's glyphs, counted in units
+/// rather than bytes. Hold the returned value for the length of the work, or
+/// pass the work to [`Activity::run`].
+#[must_use = "the bar clears when dropped; hold it or call run"]
+pub fn activity(message: &str, total: Option<u64>) -> Activity {
+    let kind = match total {
+        Some(_) => ActivityKind::Bar,
+        None => ActivityKind::Spinner,
+    };
+    // Hidden first so a pipe, `--quiet`, and tests still record the mode in
+    // the bar's length without drawing or starting a tick thread.
+    let bar = ProgressBar::hidden();
+    if let Some(total) = total {
+        bar.set_length(total);
+    }
+    let visible = activity_visible();
+    // A batch already owns the terminal through one `MultiProgress`. Joining
+    // it keeps concurrent prepares from overwriting each other. With no batch,
+    // this activity installs the slot itself so a status line printed mid-work
+    // is suspended above the bar instead of landing in the middle of it.
+    let existing = if visible {
+        held().as_ref().cloned()
+    } else {
+        None
+    };
+    let (group, owns_group) = if let Some(group) = existing {
+        group.add(bar.clone());
+        (Some(group), false)
+    } else if visible {
+        let group = MultiProgress::new();
+        group.add(bar.clone());
+        *held() = Some(group.clone());
+        (Some(group), true)
+    } else {
+        (None, false)
+    };
+    if visible {
+        // Style after the draw target is attached: indicatif only points
+        // `{spinner:.cyan}` at stderr once it knows the bar is drawing there.
+        bar.set_style(activity_style(kind));
+        if kind == ActivityKind::Spinner {
+            bar.enable_steady_tick(std::time::Duration::from_millis(120));
+        }
+    }
+    bar.set_message(activity_message(message, kind));
+    Activity {
+        bar,
+        kind,
+        group,
+        owns_group,
+    }
+}
+
+fn activity_visible() -> bool {
+    // The full-screen renderer already receives stage events; a bar beside it
+    // would fight for the same terminal.
+    #[cfg(feature = "tui")]
+    if tui_controller().is_some() {
+        return false;
+    }
+    !is_quiet() && std::io::stderr().is_terminal()
+}
+
+fn activity_style(kind: ActivityKind) -> ProgressStyle {
+    match kind {
+        ActivityKind::Bar => {
+            ProgressStyle::with_template("  {msg:<28} [{bar:24.cyan/blue}] {pos}/{len}")
+                .unwrap_or_else(|_| ProgressStyle::default_bar())
+                .progress_chars("=> ")
+        }
+        ActivityKind::Spinner => ProgressStyle::with_template("{spinner:.cyan} {msg}")
+            .unwrap_or_else(|_| ProgressStyle::default_spinner()),
+    }
+}
+
+fn activity_message(message: &str, kind: ActivityKind) -> String {
+    let message = printable(message);
+    match kind {
+        // Download bars cap the label so a batch stays aligned. A spinner's
+        // message is the whole line, as in rtok's loader.
+        ActivityKind::Bar => truncate(&message, 28),
+        ActivityKind::Spinner => message,
+    }
+}
+
 /// Report an install pipeline stage to the optional interactive renderer.
 pub fn stage(package: &str, stage: ProgressStage) {
     #[cfg(not(feature = "tui"))]
@@ -720,12 +946,85 @@ pub fn table(headers: &[&str], rows: &[Vec<String>]) {
     }
 }
 
+/// A cell painter for [`table_styled`]: row index, column index, the cell's
+/// filtered text; returns what to print in its place.
+pub type CellPaint<'a> = &'a dyn Fn(usize, usize, &str) -> String;
+
+/// [`table`], with colour. Cells are filtered and measured first and painted
+/// after, so the escape sequences the painter adds neither get filtered out
+/// nor count towards a column's width.
+pub fn table_styled(headers: &[&str], rows: &[Vec<String>], paint: CellPaint<'_>) {
+    for line in styled_table_lines(headers, rows, paint) {
+        out(&line);
+    }
+}
+
+/// Columns stdout can use before a line wraps, or `None` when it is not a
+/// terminal and nothing should be cut. `COLUMNS` wins when set, as it does for
+/// most tools, so a script or a test can ask for a width of its own.
+pub fn stdout_width() -> Option<usize> {
+    let columns = std::env::var("COLUMNS")
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .filter(|n| *n > 0);
+    if columns.is_some() {
+        return columns;
+    }
+    if !std::io::stdout().is_terminal() {
+        return None;
+    }
+    terminal_size::terminal_size().map(|(width, _)| usize::from(width.0))
+}
+
+/// Progress measured in things rather than bytes: `  checking 3/12 packages`
+/// on stderr. Hidden under `--quiet` and when stderr is not a terminal; the
+/// line is cleared when the counter is dropped.
+pub struct Counter {
+    bar: ProgressBar,
+}
+
+/// Start a [`Counter`] of `total` items, labelled like a status line.
+pub fn counter(verb: &str, total: u64, unit: &str) -> Counter {
+    #[cfg(feature = "tui")]
+    let hidden = tui_controller().is_some();
+    #[cfg(not(feature = "tui"))]
+    let hidden = false;
+    if hidden || is_quiet() || !std::io::stderr().is_terminal() {
+        return Counter {
+            bar: ProgressBar::hidden(),
+        };
+    }
+    let bar = ProgressBar::with_draw_target(Some(total), indicatif::ProgressDrawTarget::stderr());
+    let style = ProgressStyle::with_template(&format!("{{msg}} {{pos}}/{{len}} {unit}"))
+        .unwrap_or_else(|_| ProgressStyle::default_bar());
+    bar.set_style(style);
+    bar.set_message(blue(&format!("{verb:>10}")));
+    bar.enable_steady_tick(std::time::Duration::from_millis(120));
+    Counter { bar }
+}
+
+impl Counter {
+    /// One more item done.
+    pub fn inc(&self) {
+        self.bar.inc(1);
+    }
+}
+
+impl Drop for Counter {
+    fn drop(&mut self) {
+        self.bar.finish_and_clear();
+    }
+}
+
 /// The table's lines, built rather than printed so a test can read them.
-///
+fn table_lines(headers: &[&str], rows: &[Vec<String>]) -> Vec<String> {
+    styled_table_lines(headers, rows, &|_, _, cell| cell.to_string())
+}
+
 /// Cells carry client-app text — asset names, descriptions, package files — so
 /// they are filtered here, and measured after filtering: an escape sequence
 /// counted as printable width would push every later column out of line.
-fn table_lines(headers: &[&str], rows: &[Vec<String>]) -> Vec<String> {
+fn styled_table_lines(headers: &[&str], rows: &[Vec<String>], paint: CellPaint<'_>) -> Vec<String> {
     if rows.is_empty() {
         return Vec::new();
     }
@@ -746,18 +1045,26 @@ fn table_lines(headers: &[&str], rows: &[Vec<String>]) -> Vec<String> {
         }
     }
 
-    let padded = |cells: &[String]| -> String {
+    let padded = |cells: &[String], paint: &dyn Fn(usize, &str) -> String| -> String {
         let line: Vec<String> = cells
             .iter()
             .enumerate()
-            .map(|(i, c)| format!("{:<width$}", c, width = widths[i]))
+            .map(|(i, c)| {
+                let pad = widths[i].saturating_sub(c.chars().count());
+                format!("{}{}", paint(i, c), " ".repeat(pad))
+            })
             .collect();
         line.join("  ").trim_end().to_string()
     };
 
     let header: Vec<String> = headers.iter().map(|h| h.to_string()).collect();
-    let mut lines = vec![bold(&padded(&header))];
-    lines.extend(cells.iter().map(|row| padded(row)));
+    let mut lines = vec![bold(&padded(&header, &|_, c| c.to_string()))];
+    lines.extend(
+        cells
+            .iter()
+            .enumerate()
+            .map(|(r, row)| padded(row, &|i, c| paint(r, i, c))),
+    );
     lines
 }
 
@@ -883,11 +1190,81 @@ mod tests {
     }
 
     #[test]
+    fn painted_cells_keep_their_columns_aligned() {
+        init(Some(false), false, false);
+        let rows = vec![
+            vec!["a".to_string(), "x".to_string()],
+            vec!["longer".to_string(), "y".to_string()],
+        ];
+        let bold_first = |_: usize, c: usize, t: &str| {
+            if c == 0 {
+                format!("\u{1b}[1m{t}\u{1b}[0m")
+            } else {
+                t.to_string()
+            }
+        };
+        let lines = styled_table_lines(&["name", "v"], &rows, &bold_first);
+        assert!(
+            lines[1].starts_with("\u{1b}[1ma\u{1b}[0m"),
+            "{:?}",
+            lines[1]
+        );
+        let plain: Vec<String> = lines
+            .iter()
+            .map(|l| l.replace("\u{1b}[1m", "").replace("\u{1b}[0m", ""))
+            .collect();
+        assert_eq!(plain[1].find('x'), plain[2].find('y'), "{plain:?}");
+        assert_eq!(plain[1].find('x'), Some("longer".len() + 2));
+    }
+
+    #[test]
     fn truncates_on_char_boundaries() {
         assert_eq!(truncate("abcdef", 10), "abcdef");
         assert_eq!(truncate("abcdef", 4), "abc…");
         // Multi-byte input must not panic or split a character.
         assert_eq!(truncate("ünïcödé-package", 6), "ünïcö…");
+    }
+
+    #[test]
+    fn a_known_total_is_a_bar() {
+        for total in [0, 4] {
+            let activity = activity("packages", Some(total));
+            assert_eq!(activity.kind(), ActivityKind::Bar);
+            assert_eq!(activity.bar.length(), Some(total));
+        }
+    }
+
+    #[test]
+    fn an_unknown_total_is_a_spinner() {
+        let activity = activity("resolving", None);
+        assert_eq!(activity.kind(), ActivityKind::Spinner);
+        assert_eq!(activity.bar.length(), None);
+    }
+
+    #[test]
+    fn a_bar_advances_when_work_advances() {
+        let activity = activity("packages", Some(3));
+        activity.inc(2);
+        assert_eq!(activity.bar.position(), 2);
+        activity.set_position(3);
+        assert_eq!(activity.bar.position(), 3);
+    }
+
+    #[test]
+    fn an_activity_message_cannot_redraw_the_terminal() {
+        let activity = activity(HOSTILE, None);
+        let message = activity.bar.message();
+        assert!(!message.contains('\u{1b}'), "{message:?}");
+        assert!(message.contains(FILTERED), "{message:?}");
+    }
+
+    #[test]
+    fn a_replaced_activity_message_cannot_redraw_the_terminal() {
+        let activity = activity("packages", Some(1));
+        activity.set_message(HOSTILE);
+        let message = activity.bar.message();
+        assert!(!message.contains('\u{1b}'), "{message:?}");
+        assert!(message.contains(FILTERED), "{message:?}");
     }
 
     #[cfg(feature = "tui")]

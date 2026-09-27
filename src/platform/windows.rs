@@ -260,7 +260,7 @@ fn payload_executable_entry(entry: &walkdir::DirEntry, root: &Path) -> Option<Pa
         .map(|_| path.to_path_buf())
 }
 
-fn discover_executables(platform: &WindowsPlatform, root: &Path) -> Vec<PathBuf> {
+fn discover_executables(platform: &WindowsPlatform, root: &Path, package: &str) -> Vec<PathBuf> {
     let mut found: Vec<PathBuf> = walkdir::WalkDir::new(root)
         .max_depth(4)
         .follow_links(false)
@@ -285,7 +285,7 @@ fn discover_executables(platform: &WindowsPlatform, root: &Path) -> Vec<PathBuf>
     if !in_bin.is_empty() {
         found = in_bin;
     }
-    found.sort();
+    super::order_discovered_executables(&mut found, package);
     found
 }
 
@@ -361,7 +361,7 @@ fn cli_targets(
         return Ok(Vec::new());
     }
     if plan.bin_specs.is_empty() {
-        let found = discover_executables(platform, root);
+        let found = discover_executables(platform, root, plan.name);
         let sole = found.len() == 1;
         Ok(found
             .into_iter()
@@ -458,6 +458,13 @@ impl Platform for WindowsPlatform {
             Box::new(GzFileExtractor),
             Box::new(RawBinaryExtractor),
         ]
+    }
+
+    fn bin_candidates(&self, payload: &Path, kind: PackageKind, package: &str) -> Vec<PathBuf> {
+        if kind == PackageKind::App {
+            return Vec::new();
+        }
+        discover_executables(self, payload, package)
     }
 
     fn place(&self, plan: &Placement<'_>) -> Result<Vec<LinkRecord>> {

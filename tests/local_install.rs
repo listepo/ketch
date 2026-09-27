@@ -56,7 +56,7 @@ fn sync_refuses_a_local_app_that_changed_since_the_lock() {
 
     let said = sandbox.fails(&["sync", "--file", &lock_arg]);
     assert!(said.contains("does not match the lockfile"), "{said}");
-    assert!(sandbox.ok(&["list"]).contains("nothing installed"));
+    assert!(sandbox.ok(&["list", "local"]).contains("nothing installed"));
 }
 
 /// A local path has no published checksum to require; the policy has to treat
@@ -103,7 +103,7 @@ fn local_binary_install_appears_in_list_and_info_json() {
         "-y",
     ]);
 
-    let list = sandbox.ok(&["list", "--json"]);
+    let list = sandbox.state();
     assert!(
         list.contains("\"name\": \"localtool\""),
         "list json missing name: {list}"
@@ -159,7 +159,7 @@ fn local_archive_install_via_local_scheme() {
     let pkg = format!("local:{}", archive_path.display());
     sandbox.ok(&["install", &pkg, "--name", "tinytool", "-y"]);
 
-    let list = sandbox.ok(&["list", "--json"]);
+    let list = sandbox.state();
     assert!(list.contains("\"local_kind\": \"archive\""), "{list}");
     assert!(list.contains("tinytool"), "{list}");
 
@@ -187,7 +187,7 @@ fn local_symlink_to_binary_records_symlink_kind() {
         "-y",
     ]);
 
-    let list = sandbox.ok(&["list", "--json"]);
+    let list = sandbox.state();
     assert!(
         list.contains("\"local_kind\": \"symlink\""),
         "expected symlink kind: {list}"
@@ -241,7 +241,7 @@ fn uninstall_local_binary_clears_links_and_keeps_source() {
 
     assert!(!sandbox.bin().join("localtool").exists());
     assert!(!sandbox.store().join("localtool").exists());
-    assert!(sandbox.ok(&["list"]).contains("nothing installed"));
+    assert!(sandbox.ok(&["list", "local"]).contains("nothing installed"));
     assert!(
         fixture.exists(),
         "uninstall must not delete the user's original binary"
@@ -278,7 +278,7 @@ fn uninstall_local_symlink_clears_links_and_keeps_origin() {
 
     assert!(!sandbox.bin().join("linktool").exists());
     assert!(!sandbox.store().join("linktool").exists());
-    assert!(sandbox.ok(&["list"]).contains("nothing installed"));
+    assert!(sandbox.ok(&["list", "local"]).contains("nothing installed"));
     assert!(target.exists(), "uninstall must keep the symlink target");
     assert!(
         link.symlink_metadata().is_ok(),
@@ -309,7 +309,7 @@ fn uninstall_local_archive_clears_links() {
 
     assert!(!sandbox.bin().join("tinytool").exists());
     assert!(!sandbox.store().join("tinytool").exists());
-    assert!(sandbox.ok(&["list"]).contains("nothing installed"));
+    assert!(sandbox.ok(&["list", "local"]).contains("nothing installed"));
     assert!(
         archive_path.exists(),
         "uninstall must not delete the user's archive"

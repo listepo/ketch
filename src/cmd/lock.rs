@@ -160,6 +160,9 @@ fn request_for(cfg: &Config, entry: &LockedPackage, target: &str) -> Result<Inst
     // Same tag with a different hash is still "already installed" to prepare
     // unless we say otherwise; sync has to replace the drifted payload.
     req.force = true;
+    // Sync runs where nobody may be at a terminal, and a fresh machine has no
+    // state to remember a choice in: the lockfile's is the one to repeat.
+    req.locked_bin = entry.bin.clone();
     // The recorded hash describes an asset for the machine that wrote the
     // lock. Somewhere else it names a file this host cannot even run, so
     // holding the download to it would fail every cross-platform sync.

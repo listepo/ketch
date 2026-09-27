@@ -11,12 +11,10 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | A2 | done | P1 | 2 | 100% | Muse Spark |
 | A3 | evaluated (already shipped) | P3 | 1 | 100% | Muse Spark |
 | B60 | in progress | P3 | 1 | 80% | Cursor / grok 4.7 |
-| B61 | in progress | P2 | 2 | 80% | Cursor / grok 4.7 |
-| B63 | in progress | P1 | 3 | 95% | Cursor / grok 4.7 |
 | B64 | in progress | P0 | 4 | 70% | Claude Code / opus-5.5 |
-| B65 | in progress | P0 | 2 | 90% | Claude Code / opus-5.5 |
+| B65 | in progress | P0 | 2 | 0% | Cursor / grok 4.7 high |
 | R3 | in progress | P1 | 3 | 67% | Cursor / grok 4.7 high |
-| F8 | todo | P2 | 3 | 0% | |
+| F8 | in progress | P2 | 3 | 0% | Cursor / grok 4.7 high |
 | M9 | in progress | P2 | 5 | 90% | Claude Code / opus-5.5 |
 
 ### F1. Notarisation
@@ -103,26 +101,6 @@ Plan: sweep the aside at the start of the self commands instead of at the end of
 
 Execution: `aside_candidates` names both leftovers (`ketch.exe.old` from `replace_binary`, `ketch.old` from `install_self` on Windows). `sweep_stale_asides` runs at the start of `update` (not on `--dry-run`) and `install_self`, and `replace_binary` sweeps its own destination again before the rename. A failure warns and continues. The end-of-swap delete stays a single best-effort try: on Windows this process is that image, so the delete cannot succeed until exit. `stale_aside_check` warns from `doctor` when a leftover is still in the bin dir. Tests cover the two names, a sweep that deletes and one that ignores a missing file, and the doctor note.
 
-### B61. `self update` swap fails on a transient Windows lock
-
-Observed on Windows: `self update` downloaded and verified the release, then failed with `…in\ketch.exe: Access is denied. (os error 5)` during the swap; an identical retry minutes later updated cleanly, and the restore path left the running 0.4.4 working throughout. That error at exactly this moment is the signature of antivirus real-time protection (Defender) holding `ketch.exe` or the `.old` destination across the rename or copy — a lock that lasts milliseconds and is gone by the next attempt.
-
-Plan: a bounded retry with backoff around the filesystem operations in `replace_binary` — `rename(exe, backup)`, `copy(fresh, exe)` and the backup removal — retrying only `PermissionDenied` and sharing violations (Windows `os error 5` and `os error 32`), a few attempts 100–250 ms apart. The existing restore-on-failure stays the response once the retries run out. Unit tests drive the retry helper with a closure that fails N times before succeeding, and assert that other error kinds surface immediately.
-
-Execution: `io_retry` pauses 100, 150, 200, then 250 ms and gives up. It wraps the rename, the copy, and the restore rename/remove. The success-path removal of the backup is not retried: that file is the running image until this process exits, so every attempt fails the same way and would add about a second to every Windows upgrade. B60 sweeps it on the next self command. Tests: a `PermissionDenied` that clears on the third call, a `NotFound` that returns on the first call with no pause, and Windows raw errors 5 and 32 counting as transient.
-
-Implemented in `src/self_update.rs`, wired into `doctor` from `src/cmd/system.rs`, and noted in `docs/TROUBLESHOOTING.md`. `cargo fmt` is clean. `cargo test --locked --bin ketch -- process:: self_update::` passed (28, 0 failed) after an Avast folder exception. `cargo clippy --all-targets` and the full suite have not run.
-
-### B63. `self update` hangs forever when a spawned process never starts
-
-Observed on Windows with Avast running: `ketch self update` fetched the release, then the process never returned. A second run never logged `checking` either. Both were stuck before any ketch code ran, or inside a wait that has no deadline: `Get-CimInstance Win32_Process` in the in-use listing (`offer_to_stop`), and `ketch --version` after `replace_binary` copies the new image. Spawning the new unsigned `ketch.exe` creates a process that stays in `Initialized` with zero CPU and survives `Stop-Process -Force`. The previous binary, copied aside and renamed back to `.exe`, starts immediately. Defender real-time protection was off; Avast's services were up.
-
-Kimi Code (`session_12034d9b-d032-4fb3-92be-3154393b064f`) wrote the deadline and died on a compile error (`Command` is not `Default`). ZCode (`sess_64ed7f70-a5e3-465b-a237-76aa3320a65c`) fixed the by-value call sites; its `cargo test` produced a test binary that then hit the same loader stall and never executed.
-
-Plan: keep the deadlines already in the tree. `process::run_bounded` runs the child off the caller's wait: after 30s a process listing is stopped and warned about by program and pid; after 60s `ketch --version` is stopped and the error says so, then restore puts the previous binary back. A spawn that never returns has no pid; the message says the wait was ended, and the spawn thread stops the child if creation later succeeds. Tests: the stopped-probe wording, a command that outlives a short budget and is no longer alive, and on Windows `tree.com` (exit 0) / `where.exe` (exit 1).
-
-Verify: `cargo fmt` is clean, and `cargo test --locked --bin ketch -- process:: self_update::` passed (28, 0 failed), including the stopped-child cases. `cargo clippy --all-targets -- -D warnings` and the full suite have not run.
-
 ## Plan 2026-09-27 (drafting with Ivan)
 
 ### Goals
@@ -159,7 +137,7 @@ Follow-up decisions (creator, 2026-09-27):
 - A choice drops only the losing binaries that share the package name; every other executable in the release is linked as before.
 - `ketch.lock` records the choice (new optional field, validated, `docs/LOCKFILE.md` row); `ketch sync` reuses it, so a fresh machine without a TTY does not stop on the ambiguity.
 - `ketch install --bin <name>` makes the choice without a TTY and wins over every other rule; it is stored in state like a prompt answer.
-- B65 closes with B64: `tests/bin_choice.rs` checks `rtok` against `rtok-hook` on every OS in CI.
+- B65 stays with its own owner (creator, 2026-09-27). B64's branch already has `tests/bin_choice.rs` (`rtok` against `rtok-hook`, not gated by OS); B65 builds on it rather than adding a second fixture.
 - The same directory-order fallback in `glob_preferred` is recorded in `ideas.md`, not fixed here.
 
 ### F8. Spinner and progress bar
@@ -193,7 +171,7 @@ Item 2 stays with B64. Item 1 is B65, which closes with B64's `tests/bin_choice.
 
 Add a fixture with two similarly named binaries (for example `rtok` and `rtok-hook`) and assert the intended one is chosen on every OS: macOS, Windows and Linux. This is the test that would have caught the Windows alphabetical-sort bug, where `rtok hook` was selected instead of the intended binary.
 
-Covered by B64's `tests/bin_choice.rs` (not gated by OS); closes together with B64.
+Note for the owner: B64's branch `b64-bin-name` already adds `tests/bin_choice.rs` with `rtok`, `rtok-hook` and `other-tool` fixtures, not gated by OS. Reuse or extend it once B64 merges instead of writing a second fixture.
 
 ### M9. `ketch list` refactor: `local`, `remote`, and both by default
 

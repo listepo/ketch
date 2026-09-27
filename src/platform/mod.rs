@@ -177,6 +177,15 @@ pub trait Platform: Send + Sync {
     /// Move the payload into the store and create user-visible links.
     fn place(&self, plan: &Placement<'_>) -> Result<Vec<LinkRecord>>;
 
+    /// The executables `place` would discover and link in `payload` when the
+    /// manifest names none, in discovery order. The file named `package` leads.
+    /// Install asks before placing, so that a choice between them is made once,
+    /// by `bin_choice`, and not by whichever order this platform happens to
+    /// sort them in.
+    fn bin_candidates(&self, _payload: &Path, _kind: PackageKind, _package: &str) -> Vec<PathBuf> {
+        Vec::new()
+    }
+
     /// Undo `place`. Must tolerate links that are already gone.
     fn unplace(&self, links: &[LinkRecord]) -> Result<()>;
 
@@ -480,9 +489,138 @@ pub fn is_sidecar(name: &str) -> bool {
     SIDECAR_SUFFIXES.iter().any(|s| lower.ends_with(s))
 }
 
+/// File name compared as a package binary: a trailing `.exe` folded away, ASCII
+/// case folded.
+///
+/// Only `.exe`. That suffix is what puts `rtok-hook.exe` ahead of `rtok.exe`
+/// in a plain sort. Stripping every extension would also treat `rtok.cmd` as
+/// the package binary.
+fn executable_name_key(name: &std::ffi::OsStr) -> String {
+    let lower = name.to_string_lossy().to_ascii_lowercase();
+    lower.strip_suffix(".exe").unwrap_or(&lower).to_string()
+}
+
+/// Order discovered executables so the package's own binary comes first.
+///
+/// A plain sort is not that order. `rtok` sorts before `rtok-hook`, but
+/// `rtok-hook.exe` sorts before `rtok.exe` (`-` before `.`), so Windows
+/// handed the hook to whoever took the first name. The binary whose name
+/// equals the package name wins (`.exe` ignored, ASCII case folded). Everything
+/// else keeps alphabetical order, so the result does not depend on directory
+/// listing order.
+pub(crate) fn order_discovered_executables(found: &mut [PathBuf], package: &str) {
+    let want = executable_name_key(std::ffi::OsStr::new(package));
+    found.sort_by(|a, b| {
+        let exact = |path: &Path| {
+            path.file_name()
+                .is_some_and(|name| executable_name_key(name) == want)
+        };
+        // `true` sorts after `false`; compare the other way so the match leads.
+        exact(b).cmp(&exact(a)).then_with(|| a.cmp(b))
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn write_executable(dir: &Path, name: &str) {
+        let path = dir.join(name);
+        // A shebang counts as a program on Unix; the `.exe` suffix is enough
+        // on Windows. The same bytes work for both.
+        std::fs::write(&path, b"#!/bin/sh\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+    }
+
+    #[test]
+    fn a_windows_style_exe_pair_chooses_the_package_name_over_the_hook() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Written hook-first. Alphabetical order still picks the hook, because
+        // `-` sorts before `.` in `rtok-hook.exe` / `rtok.exe`.
+        std::fs::write(tmp.path().join("rtok-hook.exe"), b"hook").unwrap();
+        std::fs::write(tmp.path().join("rtok.exe"), b"main").unwrap();
+        let mut found: Vec<PathBuf> = std::fs::read_dir(tmp.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect();
+        order_discovered_executables(&mut found, "rtok");
+        assert_eq!(found[0].file_name().unwrap(), "rtok.exe", "{found:?}");
+    }
+
+    #[test]
+    fn an_unsuffixed_pair_chooses_the_package_name_over_the_hook() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("rtok-hook"), b"hook").unwrap();
+        std::fs::write(tmp.path().join("rtok"), b"main").unwrap();
+        let mut found: Vec<PathBuf> = std::fs::read_dir(tmp.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect();
+        order_discovered_executables(&mut found, "rtok");
+        assert_eq!(found[0].file_name().unwrap(), "rtok", "{found:?}");
+    }
+
+    #[test]
+    fn the_package_name_match_ignores_exe_and_ascii_case() {
+        // Upper case sorts first, so a plain sort selects the hook.
+        let mut found = vec![
+            PathBuf::from("payload/rtok.exe"),
+            PathBuf::from("payload/RTOK-HOOK.EXE"),
+        ];
+        order_discovered_executables(&mut found, "Rtok");
+        assert_eq!(found[0], PathBuf::from("payload/rtok.exe"));
+    }
+
+    #[test]
+    fn place_chooses_the_package_named_binary_over_a_similarly_named_hook() {
+        let tmp = tempfile::tempdir().unwrap();
+        let payload = tmp.path().join("payload");
+        let shipped = payload.join("bin");
+        std::fs::create_dir_all(&shipped).unwrap();
+        // The Windows spelling of `rtok` and `rtok-hook`. On every OS a plain
+        // sort of these two names selects the hook.
+        write_executable(&shipped, "rtok-hook.exe");
+        write_executable(&shipped, "rtok.exe");
+        let store = tmp.path().join("store/rtok/1.0");
+        let bin = tmp.path().join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let plan = Placement {
+            name: "rtok",
+            version: "1.0",
+            payload_dir: &payload,
+            store_dir: &store,
+            bin_dir: &bin,
+            apps_dir: tmp.path(),
+            kind: PackageKind::Binary,
+            bin_specs: &[],
+            replacing: &[],
+            link_apps: false,
+            link: true,
+            extras: &[],
+        };
+        let links = host().unwrap().place(&plan).unwrap();
+        let binaries: Vec<_> = links
+            .iter()
+            .filter(|link| link.role == crate::model::LinkRole::Binary)
+            .collect();
+        assert_eq!(binaries.len(), 2, "{links:?}");
+        assert_eq!(
+            binaries[0].target.file_name().unwrap(),
+            "rtok.exe",
+            "{binaries:?}"
+        );
+        assert!(
+            binaries.iter().any(|link| link
+                .target
+                .file_name()
+                .is_some_and(|n| n == "rtok-hook.exe")),
+            "{binaries:?}"
+        );
+    }
 
     #[test]
     fn detects_sidecars() {

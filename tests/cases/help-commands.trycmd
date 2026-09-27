@@ -12,6 +12,8 @@ Options:
                           `local:<PATH>`)
       --name <NAME>       Installed name for a single package (with `--path`, defaults to the file
                           basename)
+      --bin <NAME>        Which binary to link when several share the package's name (single
+                          package)
   -f, --force             Reinstall even when the requested version is already present
       --pre               Consider prereleases when resolving `latest`
       --no-link           Unpack and record the package without putting it on PATH
@@ -41,6 +43,7 @@ Options:
       --dry-run     Report what would change without touching anything
       --pre         Consider prereleases
       --force       Upgrade pinned packages too
+      --bin <NAME>  Which binary to link when several share the package's name (single package)
   -j, --jobs <N>    Packages to work on at once (default: 4, or `jobs` in config.toml)
   -y, --yes         Answer yes to every prompt
       --root <DIR>  ketch root directory (default: ~/.ketch)
