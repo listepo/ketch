@@ -1,6 +1,6 @@
 [package]
 name = "ketch"
-version = "0.6.1"
+version = "0.6.2"
 edition = "2021"
 # Raised from 1.82 by Diesel 2.3, which is the floor for the statistics
 # database. Nothing else in the tree needs it.
@@ -27,6 +27,9 @@ clap_complete = "4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "1.1"
+# Writing a chosen `bin` back into a user manifest without touching the rest
+# of the file, comments and layout included; `toml` alone would re-render it.
+toml_edit = "0.25"
 ureq = { version = "2", features = ["json", "proxy-from-env"] }
 sha2 = "0.11"
 hex = "0.4"
@@ -47,6 +50,9 @@ pathdiff = "0.2"
 typed-path = "0.12"
 thiserror = "2"
 indicatif = "0.18"
+# The terminal width `ketch list remote` fits descriptions to. Already in the
+# tree through clap's `wrap_help`, so it costs the binary nothing.
+terminal_size = "0.4"
 crossterm = { version = "0.29", optional = true }
 ratatui = { version = "0.30", optional = true }
 diesel = { version = "2.3", features = ["sqlite", "returning_clauses_for_sqlite_3_35"] }

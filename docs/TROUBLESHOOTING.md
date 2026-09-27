@@ -3,6 +3,25 @@
 Failures ketch already explains, collected in one place so the fix does not
 have to be searched out of the command that reported it.
 
+## `ketch list` shows `?` or `latest: offline`
+
+`latest` is looked up from each package's source. `?` means that one source
+did not answer — GitHub's unauthenticated rate limit (60 requests an hour) is
+the usual cause, a repository with no releases or one that was renamed or
+removed is the next — and the line under the table names every such package.
+The rest of the list is still right. `ketch list -v` shows each failure; set
+`GITHUB_TOKEN` (`export GITHUB_TOKEN=$(gh auth token)` works) to raise the
+rate limit.
+
+`latest: offline` under the installed packages means no source answered at all,
+so ketch showed what it knows without the network. `ketch list remote` fails
+instead, since it has nothing to show without one.
+
+Answers are cached for 10 minutes in `~/.ketch/cache/latest.json`, and only
+answers: a `?` is asked again on the next run, while a version found a minute
+ago is not. Delete the file to look everything up again now. The `ketch list`
+section of [the command reference](COMMANDS.md) has the details.
+
 ## A Windows executable is locked mid-upgrade
 
 Another process is running from a file ketch is about to replace. ketch lists
@@ -16,6 +35,35 @@ $ ketch upgrade
 testtool 1.0.0 -> 2.0.0
 stop 1 process using testtool? [y/N]
 ```
+
+## An install stops at "ships several binaries sharing its name"
+
+The release holds more than one executable that answers to the package's name
+(`rtok-cli` and `rtok-hook` for a package called `rtok`), none of them is named
+exactly like the package, the manifest has no `bin` entry, and there was no
+terminal to ask in — piped, in CI, or run with `--yes`. Nothing is installed.
+
+```text
+$ ketch install owner/rtok --yes
+error: `rtok` ships several binaries sharing its name (rtok-cli, rtok-hook) and none is named `rtok`; ...
+```
+
+Pass `--bin` with the one you want — `ketch install owner/rtok --bin rtok-cli`,
+which needs no terminal — or run the same command in a terminal without `--yes`
+and pick one from the list. Either way the choice is remembered in `state.json`,
+reused on every upgrade, and copied into `ketch.lock` by `ketch lock`, so
+`ketch sync` repeats it on another machine. Or name the binary in your own
+manifest, which wins over the registry:
+
+```toml
+# ~/.ketch/manifests/rtok.toml
+name = "rtok"
+source = "github:owner/rtok"
+bin = [{ name = "rtok-cli" }]
+```
+
+The same choice is made on macOS, Linux and Windows; see the `bin` section of
+[MANIFESTS.md](MANIFESTS.md) for the order.
 
 ## `ketch.exe.old` is still in the bin dir
 

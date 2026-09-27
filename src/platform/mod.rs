@@ -177,6 +177,14 @@ pub trait Platform: Send + Sync {
     /// Move the payload into the store and create user-visible links.
     fn place(&self, plan: &Placement<'_>) -> Result<Vec<LinkRecord>>;
 
+    /// The executables `place` would discover and link in `payload` when the
+    /// manifest names none, in discovery order. Install asks before placing,
+    /// so that a choice between them is made once, by `bin_choice`, and not
+    /// by whichever order this platform happens to sort them in.
+    fn bin_candidates(&self, _payload: &Path, _kind: PackageKind) -> Vec<PathBuf> {
+        Vec::new()
+    }
+
     /// Undo `place`. Must tolerate links that are already gone.
     fn unplace(&self, links: &[LinkRecord]) -> Result<()>;
 

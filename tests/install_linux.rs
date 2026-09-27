@@ -52,7 +52,7 @@ fn a_tool_is_downloaded_verified_linked_and_runnable() {
     );
     assert_eq!(run(&link), "testtool 1.0.0");
 
-    let listed = sandbox.ok(&["list", "--json"]);
+    let listed = sandbox.state();
     assert!(listed.contains(r#""name": "testtool""#), "{listed}");
     assert!(listed.contains(r#""checksum_verified": true"#), "{listed}");
     assert!(
@@ -173,7 +173,7 @@ fn uninstall_removes_every_trace_of_a_tool() {
     sandbox.ok(&["install", "test:testtool", "--yes"]);
     sandbox.ok(&["uninstall", "testtool", "--yes"]);
     assert!(!sandbox.bin().join("testtool").exists());
-    assert!(sandbox.ok(&["list"]).contains("nothing installed"));
+    assert!(sandbox.ok(&["list", "local"]).contains("nothing installed"));
 }
 
 #[test]

@@ -3,15 +3,15 @@
 //! Asset scoring understands GNU/musl triples; placement is bin-dir symlinks
 //! only. There is no `.app` equivalent and no quarantine to clear.
 
-use super::unix::{place_cli, unplace, writable};
+use super::unix::{discover_executables, place_cli, unplace, writable};
 use super::{AssetScore, DoctorCheck, Placement, Platform};
 use crate::config::Config;
 use crate::error::Result;
 use crate::extract::archive::is_program_head;
 use crate::extract::Extractor;
-use crate::model::{LinkRecord, TargetSpec};
+use crate::model::{LinkRecord, PackageKind, TargetSpec};
 use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Native Linux CLI releases: tar/zip assets, bin-dir symlinks, no macOS
 /// trust or app-bundle behaviour.
@@ -66,6 +66,13 @@ impl Platform for LinuxPlatform {
 
     fn place(&self, plan: &Placement<'_>) -> Result<Vec<LinkRecord>> {
         place_cli(self, plan)
+    }
+
+    fn bin_candidates(&self, payload: &Path, kind: PackageKind) -> Vec<PathBuf> {
+        if kind == PackageKind::App {
+            return Vec::new();
+        }
+        discover_executables(self, payload)
     }
 
     fn unplace(&self, links: &[LinkRecord]) -> Result<()> {
