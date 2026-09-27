@@ -7,3 +7,8 @@ Empty: F1/F2/M3/F5 and the 2026-09-20 audit follow-ups (A2) are in `done.md`; th
 - B60. Windows self-update leaves `ketch.exe.old` behind
 - B61. `self update` swap fails on a transient Windows lock
 - B63. `self update` hangs forever when a spawned process never starts
+- B64. Binary name must be an explicit config parameter
+- B65. Binary selection regression test
+- R3. Cross-platform CI
+- F8. Spinner and progress bar
+- M9. `ketch list` refactor: `local`, `remote`, and both by default

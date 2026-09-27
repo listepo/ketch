@@ -13,6 +13,11 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | B60 | in progress | P3 | 1 | 80% | Cursor / grok 4.7 |
 | B61 | in progress | P2 | 2 | 80% | Cursor / grok 4.7 |
 | B63 | in progress | P1 | 3 | 95% | Cursor / grok 4.7 |
+| B64 | in progress | P0 | 4 | 0% | Claude Code / opus-5.5 |
+| B65 | todo | P0 | 2 | 0% | |
+| R3 | todo | P1 | 3 | 0% | |
+| F8 | todo | P2 | 3 | 0% | |
+| M9 | in progress | P2 | 5 | 0% | Claude Code / opus-5.5 |
 
 ### F1. Notarisation
 
@@ -124,7 +129,7 @@ Verify: `cargo fmt` is clean, and `cargo test --locked --bin ketch -- process:: 
 
 ### Tasks
 
-#### Binary name must be an explicit config parameter (bug + fix)
+### B64. Binary name must be an explicit config parameter (bug + fix)
 
 Bug: when several binaries in a release share the same name prefix, selection differs per OS. On macOS and Linux the intended binary is picked (first in the list). On Windows, alphabetical sorting picks `rtok hook` instead of the intended binary, so the wrong CLI runs.
 
@@ -135,27 +140,39 @@ Fix:
 3. For configs that already exist it stays optional (backward compatible).
 4. If it is missing and more than one binary matches the expected name, prompt the user in select mode listing all candidate binaries. Write the chosen binary into the config and use it on subsequent runs.
 
-#### Spinner and progress bar
+Decisions (creator, 2026-09-27): a choice made for a registry or inferred (`owner/repo`) package is stored in the package's state record and reused on upgrade and reinstall; the registry manifest keeps updating. A local project `ketch.toml` gets the choice written into the file itself. Without a prompt (no TTY or `--yes`), the binary whose name equals the package name wins (`rtok` over `rtok-hook`, `.exe` ignored, case-insensitive); if that still leaves more than one, it is an error listing the candidates and how to set `bin`.
+
+Execution plan:
+
+1. Reproduce: find where inference picks the binary when `bin` is empty (`discover_executables` + its caller in `src/platform/unix.rs` and `src/platform/windows.rs`) and why Windows differs (executable filter, sort order). Write the failing unit test first.
+2. One OS-independent selection function (not duplicated per platform): exact package-name match → remembered choice from state → TTY select prompt through `ui::` → error with candidates.
+3. State: an optional field on `InstalledPackage` for the chosen binary, old state files load unchanged (serde default + a state test).
+4. Local `ketch.toml`: write the chosen `bin` entry back, leaving the rest of the file byte-for-byte (`toml_edit`), through the module that owns manifest editing.
+5. Creation: the `ketch config` wizard (`src/cmd/config.rs::ask_bins`, `src/wizard.rs`) requires a binary name; `Manifest::validate` stays lenient for existing files.
+6. Tests: unit tests for the selection order; e2e in `tests/` with a fixture holding `rtok` and `rtok-hook` (non-TTY exact match, non-TTY ambiguity error, remembered choice on upgrade, local file write-back). Docs: `docs/MANIFESTS.md`, `docs/TROUBLESHOOTING.md`.
+7. Verify: `just check` clean; run the binary against a `KETCH_ROOT` scratch tree.
+
+### F8. Spinner and progress bar
 
 Show a spinner while a command is running so the user sees that it started. Use a progress bar where measurable progress is available, and a spinner elsewhere. Match the behavior in rtok.
 
-#### Cross-platform CI
+### R3. Cross-platform CI
 
-Run verification on macOS, Windows and Linux. A ketch config is either a local file in the project or pushed to a registry; keep that model. The cross-platform check must catch OS-specific binary selection bugs like the one in the binary-name task above.
+Run verification on macOS, Windows and Linux. A ketch config is either a local file in the project or pushed to a registry; keep that model. The cross-platform check must catch OS-specific binary selection bugs like the one in B64.
 
 Current state: `ci.yml` has separate jobs on macOS, Linux and Windows running lint, the full nextest suite and the `tui`-feature tests on all three. Formatting and commit-message checks run on macOS only, PowerShell syntax on Windows only. The packaging matrix runs on all three OSes. `Swatinem/rust-cache` is already in every job. `verify.yml` mirrors the same three-OS checks before a release.
 
 To add:
 
-1. Binary selection regression test: see the task "Binary selection regression test" below.
+1. Binary selection regression test: see B65 below.
 2. Both config paths, local file and registry: cover the select-mode prompt when the binary name is missing and several candidates match, and assert the chosen binary is written back into the config.
 3. Caching: rust-cache is already in place. Also evaluate caching the mise toolchain and the target directories on all three OSes. Do this in any case, and base the decision on the before/after build-time numbers from the cox and ketch infra-template PRs.
 
-#### Binary selection regression test
+### B65. Binary selection regression test
 
 Add a fixture with two similarly named binaries (for example `rtok` and `rtok-hook`) and assert the intended one is chosen on every OS: macOS, Windows and Linux. This is the test that would have caught the Windows alphabetical-sort bug, where `rtok hook` was selected instead of the intended binary.
 
-#### `ketch list` refactor: `local`, `remote`, and both by default
+### M9. `ketch list` refactor: `local`, `remote`, and both by default
 
 Today `ketch list` (`cmd/query.rs:40`) prints only installed packages from the state file (package, version with `(pinned)` / `(+N retained)`, source), with `--json` and `--names-only`. The registry is visible only through `ketch search`, and newer versions only through `ketch outdated`.
 
@@ -168,7 +185,7 @@ New syntax: `ketch list [local|remote] [--json] [--names-only]`.
    - Packages not installed show only `latest`, with `installed` empty.
    - Installed packages that are not in the registry (installed from `owner/repo` or a local config) are still listed, with `latest` from their own source.
 
-Where `latest` comes from: the registry manifests (`manifest.rs`) carry no version, so `latest` is the newest release of each package's source, from the same lookup `ketch outdated` uses (`cmd/query.rs:87`, prerelease rules from `resolve::list_opts`). Requests run in parallel with a small limit, results are cached with a short TTL (reuse the existing cache directory), and a rate-limited or unreachable package shows `?` in `latest` with a one-line note under the table instead of failing the whole list. `ketch list` with no network prints the local part plus `latest: offline` and exits 0; `ketch list remote` with no network is an error. A spinner or progress bar (`N/M packages`) runs while versions load, per the spinner task above.
+Where `latest` comes from: the registry manifests (`manifest.rs`) carry no version, so `latest` is the newest release of each package's source, from the same lookup `ketch outdated` uses (`cmd/query.rs:87`, prerelease rules from `resolve::list_opts`). Requests run in parallel with a small limit, results are cached with a short TTL (reuse the existing cache directory), and a rate-limited or unreachable package shows `?` in `latest` with a one-line note under the table instead of failing the whole list. `ketch list` with no network prints the local part plus `latest: offline` and exits 0; `ketch list remote` with no network is an error. A spinner or progress bar (`N/M packages`) runs while versions load, per F8.
 
 Output: a compact table through the existing `ui::table`, one row per package, no blank lines; `ketch list local` with nothing installed prints `nothing installed`; `ketch list remote` with an empty registry prints `registry is empty; run ketch update`.
 
@@ -193,6 +210,15 @@ Documentation (required; the task is not done without it):
 - Each mode gets a command example with real output copied from a run (not invented), including one row with `update available` and one pinned row.
 - Links: README's command overview links the section (`[ketch list](docs/COMMANDS.md#ketch-list)`); `docs/TROUBLESHOOTING.md` gets an entry for `?` / `latest: offline`; `CHANGELOG.md` names the breaking change and links the section. The landing site picks the docs up through the existing docs sync (not edited by this task).
 
+Execution plan:
+
+1. CLI: `ListMode { Local, Remote }` positional in `src/cli.rs`, hidden `--installed` alias of `local`; body stays thin in `src/cmd/query.rs`.
+2. Merge logic (state + registry tiers + per-package `latest`) in its own module with the unit tests listed below; `latest` reuses the `ketch outdated` lookup and `resolve::list_opts`, parallel with a small limit, cached with a short TTL in the existing cache directory.
+3. Output through `ui::table` and the existing `indicatif` progress in `src/ui.rs` (`N/M packages`); F8 is not a blocker, it generalises the same helper later.
+4. `--json` and `--names-only` for all three modes; offline and unreachable handling as specified.
+5. Tests as listed, snapshots with `insta`/`trycmd`, colour off; `docs/COMMANDS.md`, README link, `docs/TROUBLESHOOTING.md`, breaking-change commit (`feat!:`), examples copied from a real run against a scratch `KETCH_ROOT`.
+6. Verify: `just check` clean.
+
 Tests (required; all must pass in `just check` and CI on macOS, Linux and Windows):
 - Unit:
   - merging state and registry: installed only, available only, both, installed but not in the registry, pinned;
@@ -211,3 +237,5 @@ Tests (required; all must pass in `just check` and CI on macOS, Linux and Window
   - empty cases: `nothing installed` for `local`, `registry is empty; run ketch update` for `remote`.
 
 ### Priorities
+
+Set in the task table above (creator, 2026-09-27).
