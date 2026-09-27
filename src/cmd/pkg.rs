@@ -81,6 +81,7 @@ pub fn install(cfg: &Config, args: InstallArgs) -> Result<()> {
             name_override: if i == 0 { name_override.clone() } else { None },
             interactive: !args.yes,
             bin: args.bin.clone(),
+            locked_bin: None,
         })
         .collect();
 
@@ -293,6 +294,7 @@ pub fn upgrade(cfg: &Config, args: UpgradeArgs) -> Result<()> {
             name_override: Some(pkg.name.clone()),
             interactive: !args.yes,
             bin: args.bin.clone(),
+            locked_bin: None,
         })
         .collect();
 

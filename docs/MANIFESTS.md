@@ -140,7 +140,9 @@ choice is:
 2. otherwise the one whose name is the package name — `rtok`, never
    `rtok-hook` — ignoring case and `.exe`;
 3. otherwise the one chosen for this package before, which `state.json`
-   remembers across upgrades, reinstalls, `ketch link` and `ketch rollback`;
+   remembers across upgrades, reinstalls, `ketch link` and `ketch rollback`,
+   and which `ketch sync` also reads from the `bin` key in `ketch.lock` (state
+   first, then the lockfile);
 4. otherwise the one you pick from a numbered list, when ketch runs in a
    terminal and `--yes` was not passed;
 5. otherwise nothing: the install fails, listing the candidates and the `bin`
@@ -150,8 +152,9 @@ When the manifest that answered is your own (`~/.ketch/manifests/<name>.toml`),
 the choice is written into it as `bin = [{ name = "..." }, ...]` — the chosen
 binary and every other one linked — leaving the rest of the file exactly as it
 was, and from then on the file names its binaries. For a registry, built-in or
-inferred manifest the choice is kept in `state.json` instead, and the manifest
-keeps updating with the registry.
+inferred manifest the choice is kept in `state.json` (and `ketch lock` copies it
+into `ketch.lock`) instead, and the manifest keeps updating with the
+registry.
 
 `ketch config create` always asks for the binary's name, so a package file it
 writes has a `bin` entry. A manifest without one still loads.

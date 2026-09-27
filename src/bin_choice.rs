@@ -7,8 +7,8 @@
 //! a sort over file names, and `rtok-hook.exe` sorts ahead of `rtok.exe`
 //! while `rtok` sorts ahead of `rtok-hook` (B64). So the decision lives here,
 //! once, with no knowledge of the OS: the binary `--bin` names, else the exact
-//! package name, else the choice remembered from last time, else the user's
-//! answer, else an error that says how to name
+//! package name, else the choice remembered from last time (state's, then the
+//! lockfile's), else the user's answer, else an error that says how to name
 //! the binary in a manifest. Only the family members that lose are dropped;
 //! executables with other names are linked as they always were.
 
@@ -21,7 +21,8 @@ pub enum Picked {
     Flag,
     /// Its name is the package's name.
     Exact,
-    /// It was chosen for this package before, and state remembered it.
+    /// It was chosen for this package before, and state or the lockfile
+    /// remembered it.
     Remembered,
     /// The user picked it just now.
     Asked,
@@ -32,7 +33,7 @@ pub enum Picked {
 pub struct Known<'a> {
     /// `--bin`: the user's answer, given up front. Wins over everything.
     pub flag: Option<&'a str>,
-    /// Earlier choices, most trusted first.
+    /// Earlier choices, most trusted first: state's, then the lockfile's.
     pub remembered: &'a [&'a str],
 }
 
@@ -220,6 +221,17 @@ mod tests {
             .to_string();
         assert!(err.contains("--bin `rtok-typo`"), "{err}");
         assert!(err.contains("rtok-cli, rtok-hook"), "{err}");
+    }
+
+    #[test]
+    fn state_is_trusted_before_the_lockfile() {
+        let found = names(&["rtok-cli", "rtok-hook"]);
+        let both = remembered(&["rtok-hook", "rtok-cli"]);
+        let picked = choose("rtok", &found, both, &mut never, "m.toml").unwrap();
+        assert_eq!(picked, (1, Picked::Remembered));
+        let lock_only = remembered(&["rtok-gone", "rtok-cli"]);
+        let picked = choose("rtok", &found, lock_only, &mut never, "m.toml").unwrap();
+        assert_eq!(picked, (0, Picked::Remembered));
     }
 
     #[test]

@@ -48,6 +48,9 @@ pub struct InstallRequest {
     /// `--bin`: which of several binaries sharing the package's name to
     /// link, answered before anyone asks. Wins over every other rule.
     pub bin: Option<String>,
+    /// The choice `ketch.lock` recorded, consulted after state's: a fresh
+    /// machine has no state, and no terminal to ask on during `ketch sync`.
+    pub locked_bin: Option<String>,
 }
 
 impl InstallRequest {
@@ -64,6 +67,7 @@ impl InstallRequest {
             name_override: None,
             interactive: false,
             bin: None,
+            locked_bin: None,
         }
     }
 }
@@ -106,6 +110,8 @@ pub struct Prepared {
     interactive: bool,
     /// Carried from the request, like `interactive`.
     bin: Option<String>,
+    /// Carried from the request, like `interactive`.
+    locked_bin: Option<String>,
     /// Root of the unpacked payload, inside `unpack`.
     payload: PathBuf,
     /// Held so the unpacked payload outlives this function.
@@ -384,6 +390,7 @@ pub fn prepare(
         link: req.link,
         interactive: req.interactive,
         bin: req.bin.clone(),
+        locked_bin: req.locked_bin.clone(),
         payload,
         unpack,
         started,
@@ -580,6 +587,7 @@ pub fn commit(cfg: &Config, state: &mut State, prepared: Prepared) -> Result<Ins
         link,
         interactive,
         bin,
+        locked_bin,
         payload,
         unpack,
         started,
@@ -603,9 +611,13 @@ pub fn commit(cfg: &Config, state: &mut State, prepared: Prepared) -> Result<Ins
     let mut orphan = ScopedDir((!in_place).then(|| store_dir.clone()));
     let extras = extra_placements(platform.as_ref(), &manifest.extra_paths)?;
     let remembered = existing.as_ref().and_then(|p| p.bin_choice.as_deref());
+    let earlier: Vec<&str> = remembered
+        .into_iter()
+        .chain(locked_bin.as_deref())
+        .collect();
     let known = bin_choice::Known {
         flag: bin.as_deref(),
-        remembered: remembered.as_slice(),
+        remembered: &earlier,
     };
     let pick = if link || known.flag.is_some() {
         pick_bin(

@@ -66,6 +66,12 @@ pub struct LockedPackage {
     pub sha256: String,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub pinned: bool,
+    /// Which of several binaries sharing the package's name was chosen, as a
+    /// file name. Absent when there was nothing to choose; `ketch sync` feeds
+    /// it to the choice so a machine without state or a terminal makes the
+    /// same one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bin: Option<String>,
 }
 
 impl LockedPackage {
@@ -79,6 +85,7 @@ impl LockedPackage {
             asset: pkg.asset_name.clone(),
             sha256: pkg.sha256.clone(),
             pinned: pkg.pinned,
+            bin: pkg.bin_choice.clone(),
         }
     }
 
@@ -193,6 +200,16 @@ impl Lockfile {
                     "{named} has `{}` where a sha256 belongs",
                     pkg.sha256
                 )));
+            }
+            // A binary's file name: one path component, as written. It is only
+            // ever matched against files the release ships, but a value that
+            // would need rewriting to be a file name cannot name one.
+            if let Some(bin) = &pkg.bin {
+                if bin.trim().is_empty() || sanitize_component(bin) != *bin {
+                    return Err(Error::msg(format!(
+                        "{named} has `{bin}` where a binary's file name belongs"
+                    )));
+                }
             }
         }
         Ok(())
@@ -523,6 +540,34 @@ mod tests {
     }
 
     #[test]
+    fn a_chosen_binary_round_trips_and_stays_out_of_entries_without_one() {
+        let mut chosen = installed("rtok", "me/rtok", "v1.0.0");
+        chosen.bin_choice = Some("rtok-cli".to_string());
+        let state = state_with(vec![chosen, installed("fd", "sharkdp/fd", "v10.2.0")]);
+        let text = lock_of(&state).to_toml().expect("render");
+        assert_eq!(text.matches("bin = ").count(), 1, "{text}");
+        let parsed = parse_checked(&text).expect("parse");
+        assert_eq!(parsed.packages, lock_of(&state).packages);
+        let rtok = parsed.packages.iter().find(|p| p.name == "rtok");
+        assert_eq!(rtok.and_then(|p| p.bin.as_deref()), Some("rtok-cli"));
+    }
+
+    #[test]
+    fn a_lockfile_written_before_bin_existed_still_loads() {
+        let lock = parse_checked(&entry("")).expect("parse");
+        assert!(lock.packages[0].bin.is_none());
+    }
+
+    #[test]
+    fn a_bin_that_is_not_one_file_name_is_refused() {
+        for bad in ["../../bin/sh", "sub/rtok", "..", "", "rtok\u{202e}"] {
+            let text = entry(&format!("bin = {}\n", toml::Value::from(bad)));
+            assert!(parse_checked(&text).is_err(), "{bad:?} was accepted");
+        }
+        assert!(parse_checked(&entry("bin = \"rtok-cli.exe\"\n")).is_ok());
+    }
+
+    #[test]
     fn an_unknown_key_is_refused_rather_than_ignored() {
         assert!(parse_checked(&entry("surprise = true\n")).is_err());
     }
@@ -562,6 +607,7 @@ mod tests {
                     asset: "fd.tar.gz".to_string(),
                     sha256: "a".repeat(64),
                     pinned: false,
+                    bin: None,
                 },
                 LockedPackage {
                     name: "ripgrep".to_string(),
@@ -572,6 +618,7 @@ mod tests {
                     asset: "ripgrep.tar.gz".to_string(),
                     sha256: "b".repeat(64),
                     pinned: true,
+                    bin: None,
                 },
             ],
         };
@@ -616,6 +663,7 @@ mod tests {
                     asset: "tool.tar.gz".to_string(),
                     sha256,
                     pinned,
+                    bin: None,
                 });
             }
             let mut packages: Vec<LockedPackage> = by_name.into_values().collect();

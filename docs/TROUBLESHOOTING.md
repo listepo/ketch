@@ -31,8 +31,9 @@ error: `rtok` ships several binaries sharing its name (rtok-cli, rtok-hook) and 
 
 Pass `--bin` with the one you want — `ketch install owner/rtok --bin rtok-cli`,
 which needs no terminal — or run the same command in a terminal without `--yes`
-and pick one from the list. Either way the choice is remembered in `state.json`
-and reused on every upgrade. Or name the binary in your own
+and pick one from the list. Either way the choice is remembered in `state.json`,
+reused on every upgrade, and copied into `ketch.lock` by `ketch lock`, so
+`ketch sync` repeats it on another machine. Or name the binary in your own
 manifest, which wins over the registry:
 
 ```toml

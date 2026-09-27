@@ -33,7 +33,8 @@ parallelism and prompts. Aliased as `ketch i`.
 When a release ships several binaries sharing the package's name and no
 manifest names one, only one of them is linked: the one `--bin <NAME>` names;
 failing that, the binary named exactly like the package; failing that, a choice
-remembered from last time, or a numbered pick in a terminal. Binaries with other names are
+remembered from last time (in `state.json`, or during `ketch sync` in
+`ketch.lock`), or a numbered pick in a terminal. Binaries with other names are
 linked as usual. With `--yes` or without a terminal there is no pick, and the
 install fails with the candidates listed — see the `bin` section of
 [MANIFESTS.md](MANIFESTS.md).

@@ -209,3 +209,32 @@ fn a_bin_flag_naming_no_binary_fails_and_lists_what_there_is() {
     assert!(err.contains("--bin `rtok-typo`"), "{err}");
     assert!(!linked(&sandbox, "rtok").exists());
 }
+
+#[test]
+fn sync_repeats_the_choice_the_lockfile_recorded_without_a_terminal() {
+    let sandbox = Sandbox::new();
+    publish(&sandbox, "1.0.0", &["rtok-cli", "rtok-hook"]);
+    let lock = sandbox.home().join("ketch.lock");
+    let lock_arg = lock.display().to_string();
+
+    sandbox.ok(&["install", "test:rtok@1.0.0", "--bin", "rtok-cli"]);
+    sandbox.ok(&["lock", "--file", &lock_arg]);
+    sandbox.ok(&["uninstall", "rtok", "--yes"]);
+    let text = std::fs::read_to_string(&lock).expect("read lockfile");
+    assert!(text.contains("bin = \"rtok-cli"), "{text}");
+
+    // Without the recorded choice a machine with no state has nothing to go by.
+    let bare = sandbox.home().join("bare.lock");
+    let without: String = text
+        .lines()
+        .filter(|l| !l.starts_with("bin = "))
+        .map(|l| format!("{l}\n"))
+        .collect();
+    std::fs::write(&bare, without).expect("write lockfile");
+    let err = sandbox.fails(&["sync", "--file", &bare.display().to_string()]);
+    assert!(err.contains("rtok-hook"), "{err}");
+
+    sandbox.ok(&["sync", "--file", &lock_arg]);
+    assert_eq!(run(&linked(&sandbox, "rtok-cli")), "rtok-cli 1.0.0");
+    assert!(!linked(&sandbox, "rtok-hook").exists());
+}
