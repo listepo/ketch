@@ -13,7 +13,9 @@ accent: "#3DDCB0"
 ---
 
 <!-- Website copy for the listepo project site. The sync-docs workflow copies this file to
-listepo/shop-mvp as content/projects/ketch.md on every change to main and on every v* tag. -->
+listepo/shop-mvp as content/projects/ketch.md on every change to main and on every v* tag.
+Sources (checked 2026-09-27): README.md and the clap CLI in src/cli.rs; version from the latest
+GitHub release (v0.6.0); accent is the dark-theme --accent in site/DESIGN.md. -->
 
 ## Overview
 
