@@ -13,9 +13,9 @@ name: verify
 # stop one. Here a red gate means no dispatch, no tag, and nothing on the
 # releases page.
 #
-# Same runners and same steps as ci.yml's check jobs, deliberately: a gate that
-# tests something narrower than the one every pull request passed lets through
-# what that one caught.
+# The checks of ci.yml's `rust` job (listepo/infra ci-rust.yml) on its three
+# native operating systems, deliberately: a gate that tests something narrower
+# than the one every pull request passed lets through what that one caught.
 on:
   workflow_call:
 
@@ -36,10 +36,8 @@ jobs:
       - uses: actions/checkout@v7
 
       # The Rust mise.toml pins, with rustfmt and clippy: the same one ci.yml
-      # tests and release.yml builds with.
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
-        with:
-          install_args: rust
+      # tests and release.yml builds with, checked by .github/actions/rust.
+      - uses: ./.github/actions/rust
 
       - uses: Swatinem/rust-cache@v2
 
@@ -49,8 +47,9 @@ jobs:
         if: runner.os == 'macOS'
         run: cargo fmt --all -- --check
 
+      # --all-features, as ci.yml's `rust` job (listepo/infra ci-rust.yml) lints.
       - name: Lint
-        run: cargo clippy --all-targets --locked -- -D warnings
+        run: cargo clippy --all-targets --all-features --locked -- -D warnings
 
       - name: Test
         run: cargo nextest run --all-targets --locked
