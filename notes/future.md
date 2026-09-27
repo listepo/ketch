@@ -13,6 +13,18 @@ installs macOS `.app` bundles into `/Applications`; the goal is the same for
 Windows and Linux desktop apps, each installed the way that platform expects
 and removed cleanly on uninstall.
 
+## Paying for it
+
+ketch stays free for individuals and everyday use. Companies and businesses
+will have a paid tier: support, services and features aimed at teams. The
+money goes into supporting and maintaining the project. The code remains under
+the MIT licence; the paid tier sits alongside it, not in place of it.
+
+## Governance
+
+One tentative idea, not a commitment: the project may one day move into a
+foundation.
+
 ## What stays the same
 
 The limits in [ROADMAP.md](../ROADMAP.md) still hold: ketch installs what a
