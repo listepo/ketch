@@ -150,6 +150,41 @@ Good as a prototype; poor as the long-term design.
 Steps 1–3 help the CLI and the TUI on their own (testable core, no stdin in
 the pipeline), so they are worth doing even if the desktop app is postponed.
 
+## macOS app project generator (F12, checked 2026-10-01)
+
+F12 wants the app target described in a text file so it is reviewable in
+diffs, with the generated `.xcodeproj` left out of git.
+
+| | XcodeGen | Tuist | Plain SwiftPM |
+| --- | --- | --- | --- |
+| Latest release | 2.46.0, 2026-07-16 ([release](https://github.com/yonaskolb/XcodeGen/releases/tag/2.46.0)) | 4.210.0, 2026-09-28 ([release](https://github.com/tuist/tuist/releases/tag/4.210.0)), with canary builds several times a day | ships with Xcode (Swift 6.4 in Xcode 27.0 here) |
+| Licence | MIT ([repository](https://github.com/yonaskolb/XcodeGen)) | MIT, except `server/`, `kura/`, `atlas/` under MPL-2.0 ([LICENSE.md](https://github.com/tuist/tuist/blob/main/LICENSE.md)) | Apache-2.0 ([repository](https://github.com/swiftlang/swift-package-manager)) |
+| Spec format | one YAML file ([ProjectSpec.md](https://github.com/yonaskolb/XcodeGen/blob/master/Docs/ProjectSpec.md)) | Swift manifests (`Project.swift`, `Tuist.swift`), compiled before generation | `Package.swift` |
+| Scope | generates the project, nothing else | project generation plus a build cache, a server and hosted services ([README](https://github.com/tuist/tuist)) | builds packages, not app bundles |
+| Install through mise | `aqua:yonaskolb/XcodeGen` (`mise registry xcodegen`) | `aqua:tuist/tuist` (`mise registry tuist`) | — |
+
+Plain SwiftPM is out: `swift build` produces a bare executable, not a `.app`
+bundle with an Info.plist, a login item (`SMAppService.mainApp` registers the
+bundle) or the hosted unit and UI test bundles F12's tests need; getting there
+means hand-assembling the bundle in a script, which is the project file again
+without the tooling.
+
+Tuist does more than F12 needs, and its manifests are Swift that has to
+compile before the project exists; the last 100 GitHub releases span only
+days and are almost all canaries (API, 2026-10-01), a fast-moving target for
+a one-app repository.
+
+**Choice: XcodeGen 2.46.0**, pinned in `mise.toml` as `xcodegen`: one YAML
+file (`desktop/macos/project.yml`), a single-purpose tool, MIT, maintained
+(release 2026-07-16, pushes on 2026-09-13 per the GitHub API). Recorded in
+`toolchain.md`.
+
+Toolchain checked on the development machine: Xcode 27.0 (27A266a), macOS
+SDK 27.0, Swift 6.4, `xcodebuild -version`. The deployment target is macOS
+26.0. GitHub's `macos-26` arm64 runner defaults to Xcode 26.6 (image
+20260907.0351.1, [runner-images](https://github.com/actions/runner-images/blob/main/images/macos/macos-26-arm64-Readme.md)),
+which CI uses.
+
 ## Unverified
 
 - Tauri's macOS notarization flow: the page
