@@ -1,13 +1,13 @@
-# Publishes this repo's docs/ to the public site repository listepo/landing on its main branch; a
-# push there deploys https://listepo.github.io/landing/ via GitHub Pages:
+# Publishes this repo's docs/ to the public site repository pyrlyn/landing on its main branch; a
+# push there deploys https://pyrlyn.github.io/landing/ via GitHub Pages:
 #   - docs/site.md (the project card) -> content/projects/<this repo's name>.md; its front matter
-#     follows CONTENT_CONTRACT.md in listepo/landing.
+#     follows CONTENT_CONTRACT.md in pyrlyn/landing.
 #   - every other docs/**/*.md -> content/docs/<this repo's name>/ (mirrored: files removed here are
 #     removed there), plus _source.json with the source repo, commit and ref. The site renders
 #     them as /landing/<name>/docs/<page>/ and links other relative paths back to this repo at
-#     that commit. Page order and titles live in src/data/docs-nav.json in listepo/landing.
+#     that commit. Page order and titles live in src/data/docs-nav.json in pyrlyn/landing.
 #
-# Auth is a write-enabled deploy key on listepo/landing only; its private half is this repo's
+# Auth is a write-enabled deploy key on pyrlyn/landing only; its private half is this repo's
 # SITE_DEPLOY_KEY secret. GITHUB_TOKEN stays read-only. This workflow is independent of the
 # pipeline gate, releases and Pages: it never builds, tests or deploys this repository.
 #
@@ -29,7 +29,7 @@ on:
   workflow_dispatch:
 
 # One sync at a time per source repo, never cancelled half-way; the push below fetches and
-# rebases (up to 5 attempts) when another repo's sync landed on listepo/landing first.
+# rebases (up to 5 attempts) when another repo's sync landed on pyrlyn/landing first.
 concurrency:
   group: sync-docs
   cancel-in-progress: false
@@ -48,7 +48,7 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@v7
         with:
-          repository: listepo/landing
+          repository: pyrlyn/landing
           ref: main
           ssh-key: ${{ secrets.SITE_DEPLOY_KEY }}
           path: site
@@ -115,7 +115,7 @@ jobs:
           git commit -m "content: sync ${PROJECT} from ${SOURCE}@${SOURCE_SHA:0:7} (${REF_NAME})"
           for attempt in 1 2 3 4 5; do
             if git push origin HEAD:main; then
-              echo "pushed $(git rev-parse HEAD) to listepo/landing main"
+              echo "pushed $(git rev-parse HEAD) to pyrlyn/landing main"
               exit 0
             fi
             echo "push rejected (attempt ${attempt}); rebasing onto the latest main"
@@ -123,5 +123,5 @@ jobs:
             git fetch origin main
             git rebase origin/main
           done
-          echo "::error::could not push to listepo/landing main after 5 attempts"
+          echo "::error::could not push to pyrlyn/landing main after 5 attempts"
           exit 1
