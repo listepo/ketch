@@ -136,7 +136,7 @@ fn install_adds_the_doskey_line_and_profile_blocks_and_self_uninstall_restores_t
         powershell(
             &sandbox,
             "powershell",
-            "[Console]::Out.Write([Environment]::GetFolderPath('MyDocuments'))",
+            "[Console]::Out.Write([Environment]::GetFolderPath('MyDocuments', 'DoNotVerify'))",
         )
         .trim(),
     );
@@ -167,7 +167,13 @@ fn install_adds_the_doskey_line_and_profile_blocks_and_self_uninstall_restores_t
         "ketch",
         "-y",
     ]);
-    sandbox.ok(&["completions", "powershell", "--install"]);
+    let out = sandbox.ketch(&["completions", "powershell", "--install"]);
+    let installed = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(out.status.success(), "{installed}");
 
     let doskey = sandbox
         .root()
@@ -176,7 +182,7 @@ fn install_adds_the_doskey_line_and_profile_blocks_and_self_uninstall_restores_t
         .join("ketch.doskey");
     let macros = std::fs::read_to_string(&doskey).expect("the macro file");
     assert!(macros.contains("ki=ketch install $*"), "{macros}");
-    let (kind, value) = read_autorun(&sandbox).expect("AutoRun is set");
+    let (kind, value) = read_autorun(&sandbox).expect(&installed);
     assert_eq!(kind, "String");
     // The root may be spelled differently in the value (a short 8.3 name),
     // so the ends are checked rather than the whole path.
@@ -210,8 +216,11 @@ fn install_adds_the_doskey_line_and_profile_blocks_and_self_uninstall_restores_t
     let runs_scripts = ["Unrestricted", "RemoteSigned", "Bypass"].contains(&policy.trim());
     let desktop = std::fs::read_to_string(&profiles[1]).unwrap_or_default();
     if runs_scripts || before[1].is_some() {
-        assert!(desktop.contains("# >>> ketch >>>"), "{desktop}");
-        assert!(desktop.contains("ketch.ps1"), "{desktop}");
+        assert!(
+            desktop.contains("# >>> ketch >>>") && desktop.contains("ketch.ps1"),
+            "{} holds:\n{desktop}\n--- completions --install said ---\n{installed}",
+            profiles[1].display()
+        );
     }
 
     sandbox.ok(&["self", "uninstall", "--yes"]);

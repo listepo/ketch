@@ -737,12 +737,13 @@ fn execution_policy(shell: PowerShell) -> Option<String> {
 ///
 /// Asked of the shell rather than built from the home directory: OneDrive
 /// and group policy move Documents, and the profile PowerShell reads is under
-/// wherever it went.
+/// wherever it went. `DoNotVerify`, because without it Windows PowerShell
+/// answers an empty string for a Documents folder not created yet.
 #[cfg(windows)]
 fn documents_dir() -> Result<PathBuf> {
     let asked = powershell(
         PowerShell::Desktop.exe(),
-        "[Console]::Out.Write([Environment]::GetFolderPath('MyDocuments'))",
+        "[Console]::Out.Write([Environment]::GetFolderPath('MyDocuments', 'DoNotVerify'))",
         &[],
     )
     .ok()
