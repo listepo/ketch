@@ -66,6 +66,11 @@ Aliased as `ketch remove` and `ketch rm`.
 Upgrade installed packages to their latest release. Empty means every
 unpinned package. Shows a `from -> to` table, asks, then installs.
 
+Each version is unpacked into a fresh folder of its own, so nothing the old
+version shipped can linger in the new one, and a leftover from an interrupted
+upgrade is removed first — or the upgrade stops, naming it. The previous
+version's folder is kept beside it for `ketch rollback` until `ketch prune`.
+
 ```bash
 ketch upgrade              # everything unpinned
 ketch upgrade ripgrep fd   # just these
