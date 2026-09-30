@@ -18,5 +18,4 @@ Empty: F1/F2/M3/F5 and the 2026-09-20 audit follow-ups (A2) are in `done.md`; th
 - M10. Man pages in roff for every command
 - M11. Bash completion for every command
 - M12. Windows completion: PowerShell `Register-ArgumentCompleter` and doskey macros for cmd
-- F11. Emoji icons per operation, `emoji` config key (default true)
 - R4. Fuzz testing with cargo-fuzz / libFuzzer

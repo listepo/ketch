@@ -42,6 +42,10 @@ pub struct GlobalArgs {
     #[arg(long, global = true)]
     pub no_color: bool,
 
+    /// Never put an emoji icon in front of a status line
+    #[arg(long, global = true)]
+    pub no_emoji: bool,
+
     /// Show interactive progress in a full-screen terminal UI when available
     #[cfg(feature = "tui")]
     #[arg(long, global = true, conflicts_with = "quiet")]
