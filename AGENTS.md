@@ -215,7 +215,7 @@ conditional, multi-stage Rust automation.
 | `src/source/` | where releases come from: GitHub built in, plugins external |
 | `src/extract/` | archive formats, selected by sniffing content not file names |
 | `src/platform/` | OS-specific placement, linking, trust checks (`macos.rs`, `linux.rs`, `windows.rs`) |
-| `src/shell.rs` | putting the bin dir on PATH in bash, zsh and fish, and on Windows the user environment |
+| `src/shell.rs` | putting the bin dir on PATH in bash, zsh and fish, and on Windows the user environment; on Windows also the PowerShell profile blocks and cmd AutoRun that switch completion on |
 | `src/registry.rs` | the fetched package registry (see `docs/REGISTRY.md`) |
 | `src/manifest.rs` | resolving a name to a `Manifest` across four tiers |
 | `src/model.rs` | every type that crosses a module boundary |
@@ -260,7 +260,9 @@ can take them back. `src/shell.rs` edits shell startup files and the user PATH
 only when asked: `ketch path install`, `ketch doctor --fix` and `ketch self
 uninstall`, which takes the block back out of every startup file that has one
 rather than only the shell running now, and on Windows takes the bin dir out of
-the user PATH. It edits a shell startup file between two
+the user PATH. On Windows, `self install` and `completions --install` also
+put a completion block in the PowerShell profiles and append ketch's doskey
+line to cmd's `AutoRun`; `self uninstall` takes back exactly those. It edits a shell startup file between two
 markers, so the block can be found again, rewritten when the root moves, and
 removed without guessing which line was ketch's. It follows a symlinked
 startup file to its target before writing, because that file is very often a

@@ -591,6 +591,9 @@ fn plan_lines(plan: &self_update::UninstallPlan) -> Vec<String> {
     for entry in &plan.registry {
         lines.push(entry.describe().to_string());
     }
+    for file in &plan.powershell_profiles {
+        lines.push(format!("the completion block in {}", file.display()));
+    }
     if plan.cask.is_some() {
         lines.push("the Homebrew cask".to_string());
     }
