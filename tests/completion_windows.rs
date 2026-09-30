@@ -11,6 +11,7 @@
 
 mod support;
 
+use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use support::Sandbox;
 
@@ -186,8 +187,23 @@ fn install_adds_the_doskey_line_and_profile_blocks_and_self_uninstall_restores_t
     );
 
     // A new cmd runs AutoRun, so the macros are there without anything else.
-    let listed = sandbox.ketch_from(Path::new("cmd"), &["/c", "doskey", "/macros"], exe_dir());
-    let listed = String::from_utf8_lossy(&listed.stdout);
+    // doskey keeps macros per console, and a test has none of its own: the
+    // cmd gets a hidden one.
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let listed = std::process::Command::new("cmd")
+        .args(["/c", "doskey /macros & echo autorun=%KETCH_TEST_AUTORUN%"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .expect("run cmd");
+    let listed = format!(
+        "{}{}",
+        String::from_utf8_lossy(&listed.stdout),
+        String::from_utf8_lossy(&listed.stderr)
+    );
+    assert!(
+        listed.contains("autorun=1"),
+        "AutoRun did not run:\n{listed}"
+    );
     assert!(listed.contains("ki=ketch install $*"), "{listed}");
 
     let policy = powershell(&sandbox, "powershell", "Get-ExecutionPolicy");
