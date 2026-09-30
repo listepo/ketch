@@ -17,7 +17,6 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | F8 | in progress | P2 | 3 | 0% | Cursor / grok 4.7 high |
 | M9 | in progress | P2 | 5 | 90% | Claude Code / opus-5.5 |
 | B66 | todo | P1 | 2 | 0% | |
-| B67 | todo | P1 | 2 | 0% | |
 | B68 | todo | P1 | 3 | 0% | |
 | F9 | todo | P2 | 2 | 0% | |
 | B69 | todo | P2 | 1 | 0% | |
@@ -290,20 +289,6 @@ Plan:
 4. Ask Ivan whether he also expects an Apps & Features entry. That would be new (register at `self install`, remove at uninstall), not a fix.
 
 Check: Windows e2e (`tests/install_windows.rs` or `tests/install_ps1.rs`): after `install.ps1` + `ketch self uninstall --yes`, the user Path holds no entry for the ketch bin dir, with and without `-InstallDir`; `just check` green on all three OSes.
-
-### B67. Uninstall deletes the package's install folder
-
-Ivan: uninstall must delete the program's folder (for example the `ketch` folder).
-
-Today `install::uninstall` removes the current prefix and every retained prefix with `remove_store_dir`, which then calls `remove_dir(store/<name>)`. That call only succeeds when the directory is empty, so any leftover keeps `store/<name>/` in place. Leftovers include `<version>.incoming` or `<version>.old` siblings from `move_into_store` (removed best-effort with `let _ = remove_any`), or a file Windows kept locked. For ketch itself, `self_update::remove_root_at` wipes the named directories and then `remove_dir(root)`. The root stays when anything else is in it. On Windows the running `ketch.exe` cannot delete its own image, so `~/.ketch` survives the uninstall. This is the same cause as B60.
-
-Plan:
-1. Package uninstall: after the prefixes are gone, remove `store/<name>/` whole (`remove_dir_all`). Guard it with `is_inside_store`, and only for a direct child of the store named exactly like the package. On failure, warn and name the path.
-2. One helper sweeps stale `.incoming` / `.old` siblings. B68 reuses it.
-3. Self uninstall on Windows: finish the root removal after the process exits, with a detached `cmd /c` that waits for the PID and then removes the root. `unsafe_code = "forbid"` rules out calling the Win32 API directly. The home-directory safety rule in `remove_root_at` stays: a root equal to `$HOME` is never wiped.
-4. `ketch doctor` notes a `store/<name>/` that has no state record.
-
-Check: e2e: install, uninstall, then `store/<name>` does not exist, including with a planted `1.0.0.old` sibling; Windows e2e: `self uninstall` leaves no `~/.ketch` after the process exits; `just check`.
 
 ### B68. Update installs into a fresh folder so stale files cannot interfere
 
