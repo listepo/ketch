@@ -537,6 +537,21 @@ Model: ZCode / glm-5.3
 
 Status: done 2026-09-27 (PR #150)
 
+### M10. Man pages in roff for every command
+
+Today `extra::render_manpage` writes one hand-rolled `ketch.1`, listing top-level commands with no options and no nested subcommands. `write_ketch_docs` places it under `share/man/man1/` at `self install`.
+
+Plan:
+1. Add `clap_mangen` (rtok already uses it for `rtok man`, a working reference). Generate `ketch.1` plus `ketch-<cmd>.1` for every visible subcommand, recursively (`ketch-config-create.1`, `ketch-self-uninstall.1`, …), with options, defaults, env vars and examples from the clap definitions. Replace `render_manpage`.
+2. Write every page through `write_ketch_docs` as `ExtraPath` records, so uninstall and relink remove them with the same ownership proof as today's page.
+3. A hidden `ketch man --out <dir>` (or a `just man` recipe) for packaging; the Homebrew cask may ship them.
+
+Check: a test walks `Cli::command()` and asserts one page per visible command; `mandoc -Tlint` clean on macOS and Linux CI; `man ketch-install` works after `self install` in a scratch root; `just check`.
+
+Execution: `src/man.rs` renders every page with `clap_mangen` 0.3 (`env` feature) from `Cli::command()`: `ketch.1`, then `ketch-<cmd>[-<sub>…].1` depth first for each subcommand that is not hidden and not clap's generated `help`. Titles are upper case, the source is `ketch <version>`, the date is `SOURCE_DATE_EPOCH` when set (reproducible packaging) or today. Two clap_mangen layouts that `mandoc -Tlint` warns about (a break beside a blank line before "Possible values") are tidied into one `.sp`. `extra::write_ketch_docs` writes every page under `share/man/man1/` of the store prefix and records each as an `ExtraPath`; `extra::render_manpage` is gone. A hidden `ketch man --out <DIR>` writes the same pages without a ketch root, for packaging. `just lint-man` (part of `just check`) runs `mandoc -Tlint -Wwarning` on them when mandoc is present and says it skipped otherwise; the Linux CI job does not install mandoc.
+
+Tests: `src/man.rs` walks `Cli::command()` and asserts one page per visible command in order, nested pages exist (`ketch-self-uninstall.1`), hidden commands and `help` get none, a subcommand page names its full invocation and options, the tidy step, and `write_to`. `src/extra.rs` asserts every page is written into the prefix and recorded as a man extra. Verified by hand: `mandoc -Tlint -Wwarning` clean on all 42 pages on macOS; `self install` in a scratch root (KETCH_ROOT, HOME and XDG_* under `target/`, a local mock of the GitHub API serving the built binary) linked 42 pages into `$XDG_DATA_HOME/man/man1`, `man ketch-install` rendered, and `self uninstall` removed them all.
+
 ### B67. Uninstall deletes the package's install folder
 
 Ivan: uninstall must delete the program's folder (for example the `ketch` folder).
@@ -576,6 +591,24 @@ Execution plan (done):
 5. `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, `cargo nextest run`.
 
 Result: `ui::Tone` names the meaning of status text (step, success, warning, error, note, hint) and is the one place a meaning picks its colour. Success lines are green end to end, warnings yellow, error headlines red; details stay dim and the hint cyan. Prompts (`confirm`, `answer`, `choose`, `cancelled`), the `fetched` line, the counter label, `list`'s update marker, `doctor`'s ok/warn/fail and `lock`'s +/~/- markers go through the same helpers; the log-open warning no longer bypasses `ui`. On Windows `console` switches on virtual terminal processing, and colour falls back to plain text when it cannot. `completed` prints nothing outside the TUI, whose status colours already honour `--no-color`, so it was left as is.
+
+### B66. Windows self-uninstall removes the registry entries ketch wrote at install
+
+Ivan: uninstalling ketch on Windows must remove the registry entry that was added at install.
+
+What ketch writes to the registry today: only `HKCU\Environment\Path`. `install.ps1` adds the bin dir there, and so does `ketch path install` (`shell::install_user`, through `[Environment]::SetEnvironmentVariable(..., 'User')`). There is no Apps & Features (`...\CurrentVersion\Uninstall\ketch`) key, because `dist-workspace.toml` sets `installers = []`. `self uninstall` removes the Path entry only when `UninstallPlan.user_path` is true (`shell::user_path_configured(cfg)`). That is false under `--keep-packages`, and it may miss an entry written by `install.ps1 -InstallDir <dir>` for a bin dir that is not `cfg.bin_dir`.
+
+Plan:
+1. Reproduce on a Windows runner: `install.ps1` (default and with `-InstallDir`), then `ketch self uninstall --yes`, then read `HKCU\Environment\Path` and list what is left.
+2. Keep one inventory of every registry value ketch writes (a function in `src/shell.rs`, for example `registry_entries(cfg)`): the user Path entry today, and M12's `HKCU\Software\Microsoft\Command Processor\AutoRun` addition later. `self uninstall` removes each entry it finds, matching Path entries the way `install.ps1`'s `Normalize-PathKey` does (quotes, slashes, trailing separator, case).
+3. `ketch doctor` warns when an inventory entry points into a ketch root that no longer exists.
+4. Ask Ivan whether he also expects an Apps & Features entry. That would be new (register at `self install`, remove at uninstall), not a fix.
+
+Check: Windows e2e (`tests/install_windows.rs` or `tests/install_ps1.rs`): after `install.ps1` + `ketch self uninstall --yes`, the user Path holds no entry for the ketch bin dir, with and without `-InstallDir`; `just check` green on all three OSes.
+
+Decisions (Ivan): no Apps & Features entry; only clean up what ketch writes.
+
+Result: `shell::registry_entries(cfg)` is the one inventory of registry values ketch writes (`RegistryEntry::UserPath` today; M12's AutoRun joins it), and `self uninstall` removes each one through `shell::remove_registry_entry`, before the root so the bin dir can still be resolved. A Path entry now matches the bin dir by spelling (case, quotes, slashes, trailing separator — as `install.ps1`'s `Normalize-PathKey`) or, while the folder exists, by resolving both paths, which covers 8.3 short names. `install.ps1 -InstallDir` never puts that dir on the user PATH — it always adds `<root>\bin` — so there was no second entry to chase. `--keep-packages` keeps the entry, like the shell blocks, because the packages left in the bin dir still need it. `ketch doctor` warns about user PATH entries that name a ketch bin dir whose folder is gone. Tests: unit tests for resolution matching, stale detection and the empty inventory off Windows; `tests/install_windows.rs` writes a quoted, upper-case, trailing-backslash entry for the sandbox bin dir and checks `self uninstall --yes` removes it. The Windows parts were verified only in CI.
 
 ### M11. Bash completion for every command
 
