@@ -204,6 +204,7 @@ conditional, multi-stage Rust automation.
 | Path | Owns |
 | --- | --- |
 | `src/main.rs` | argument parsing, config construction, dispatch — nothing else |
+| `src/lib.rs` | empty except under `cfg(fuzzing)`: the same modules again, and the entry points `fuzz/` drives |
 | `src/cli.rs` | the clap surface, kept separate so `cmd/` takes its args directly |
 | `src/cmd/` | thin command bodies: arguments, output, confirmations |
 | `src/install.rs` | the install/uninstall/relink pipeline every command shares |
@@ -228,6 +229,7 @@ conditional, multi-stage Rust automation.
 | `ketch.toml` | the host's own package file, what `ketch registry push` sends |
 | `src/ui.rs` | all terminal output |
 | `tests/` | end-to-end tests that drive the real binary |
+| `fuzz/` | cargo-fuzz targets, its own workspace on nightly; `just fuzz`, see `fuzz/README.md` |
 | `dist-workspace.toml` | what cargo-dist builds, signs and publishes; the source of `release.yml` |
 | `scripts/dist-generate.sh` | `dist generate` plus the patches to `release.yml` dist has no setting for |
 | `.github/build-setup.yml`, `.github/build-check.yml` | steps dist splices into each release build: before it, and before upload |

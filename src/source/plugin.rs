@@ -442,6 +442,23 @@ fn parse<T: serde::de::DeserializeOwned>(path: &Path, body: &str) -> Result<T> {
     })
 }
 
+/// Every reply shape a plugin can send, through the same `parse` and the same
+/// filtering `list_releases` applies, for the `plugin_protocol` fuzz target
+/// (`src/lib.rs`).
+#[cfg(fuzzing)]
+pub(crate) fn fuzz_parse(body: &str) {
+    let path = Path::new("ketch-source-fuzz");
+    let _ = parse::<Capabilities>(path, body);
+    let _ = parse::<Option<SourceInfo>>(path, body);
+    let _ = parse::<Vec<SourceInfo>>(path, body);
+    if let Ok(mut releases) = parse::<Vec<Release>>(path, body) {
+        releases.retain(|r| !r.draft);
+        if releases.iter().any(|r| !r.prerelease) {
+            releases.retain(|r| !r.prerelease);
+        }
+    }
+}
+
 #[cfg(test)]
 #[cfg(unix)]
 mod tests {

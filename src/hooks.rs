@@ -167,6 +167,12 @@ fn shell(script: &str) -> Command {
     }
 }
 
+/// `shell` for the `hook_line` fuzz target (`src/lib.rs`).
+#[cfg(fuzzing)]
+pub(crate) fn fuzz_shell(script: &str) -> Command {
+    shell(script)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

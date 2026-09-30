@@ -101,6 +101,7 @@ lint-shell:
     bash -n install.sh
     bash -n scripts/release.sh
     bash -n scripts/dist-generate.sh
+    bash -n fuzz/seed.sh
     sh tests/crate-version.sh
     sh tests/release-sh.sh
     sh tests/release-workflows.sh
@@ -188,3 +189,16 @@ dunnage:
     command -v dunnage >/dev/null || { echo "dunnage not found; install it with: ketch install dunnage"; exit 0; }
     [ -d target ] || exit 0
     dunnage run target || test $? -eq 2
+
+# libFuzzer targets in fuzz/ (fuzz/README.md), on nightly and never part of `check`.
+# `just fuzz` lists them, `just fuzz <target> [secs]` runs one, `just fuzz all [secs]` each in turn.
+fuzz target="" secs="60":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -z "{{target}}" ]; then exec cargo +nightly fuzz list; fi
+    fuzz/seed.sh
+    targets="{{target}}"
+    if [ "$targets" = all ]; then targets=$(cargo +nightly fuzz list); fi
+    for t in $targets; do
+        cargo +nightly fuzz run "$t" -- -max_total_time={{secs}} -max_len=16384 -rss_limit_mb=4096
+    done
