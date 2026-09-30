@@ -101,6 +101,11 @@ pub enum Error {
 
     #[error("another ketch process holds the lock ({0})")]
     Locked(String),
+
+    /// The command has already told the user everything, line by line, and
+    /// only the exit code is left: `main` prints nothing more for it.
+    #[error("")]
+    Reported(i32),
 }
 
 impl Error {
@@ -176,6 +181,7 @@ impl Error {
             Error::ChecksumMismatch { .. } | Error::ChecksumMissing(_) => 6,
             Error::Http { .. } | Error::Network { .. } => 7,
             Error::Locked(_) => 8,
+            Error::Reported(code) => *code,
             _ => 1,
         }
     }

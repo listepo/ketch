@@ -649,4 +649,19 @@ Check: e2e: a file present in 1.0.0 and absent from 1.1.0 is gone after upgrade,
 
 Done (Claude Code / opus-5.5): Ivan chose to keep retained prefixes (step 3), now stated in `docs/COMMANDS.md` under `ketch upgrade`. `install::commit` runs `sweep_swap_leftovers` before the hooks and before anything is placed: every `*.incoming` / `*.old` entry in `store/<name>/` goes, except a prefix the package still records; one that cannot be removed fails the install or upgrade with its path. `package_dir_candidate` is the guard shared with B67's `remove_package_dir`. Step 2's stale *links* stay a warning: they are only known after the new placement, which is placed first on purpose so a failed placement keeps the working links, and a leftover link points at a retained prefix, never into the new one. Tests: unit tests for the sweep (leftovers go, versions and recorded prefixes stay, a failure names the path), e2e `upgrade_installs_into_a_fresh_prefix_that_nothing_stale_reaches` and `a_forced_reinstall_of_the_same_version_leaves_no_stale_file` (macOS).
 
+### B69. Uninstalling a package that is not installed prints only "not found"
+
+Ivan: uninstalling an already-removed program prints only "program not found".
+
+Today `cmd::pkg::uninstall` resolves every name first and fails with `Error::NotInstalled` (`` `<name>` is not installed ``, exit 4), rendered by `ui::error` with the `error` label.
+
+Plan:
+1. A missing name prints one line, `<name>: not found`, with no hint, no detail lines and no summary. Exit code 4 stays for scripts. Wording: ketch's docs say "package"; Ivan's phrase was "program not found". Confirm the final text with Ivan.
+2. Several names: every missing one is reported, and nothing is removed (the up-front resolution stays, so a typo still stops the command).
+3. After B67: a name with no state record but a leftover `store/<name>/` gets the leftover removed and still reports not found.
+
+Check: e2e: uninstall twice → the second run prints exactly one line and exits 4; trycmd snapshot; `just check`.
+
+Done (Claude Code / opus-5.5): wording confirmed by Ivan as `<name>: not found`. `cmd::pkg::uninstall` collects every name state cannot find, prints one `ui::bare_error` line per name (no label, hint or detail, logged at error level) and returns `Error::Reported(4)`, which `main` exits with without printing anything else — not even the log-path note. No installed package is removed when any name is missing. A missing name's leftover `store/<name>/` is removed through B67's `install::remove_package_dir`. Tests: `tests/uninstall_not_found.rs` (one name, several names, a leftover folder; all OSes).
+
 Status: done 2026-09-30
