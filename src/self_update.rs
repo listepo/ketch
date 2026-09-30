@@ -786,8 +786,13 @@ pub fn uninstall_self(cfg: &Config, plan: &UninstallPlan) -> Result<Vec<PathBuf>
     state.save(cfg)?;
     drop(lock);
 
+    // Set when the root is finished off after this process exits: the
+    // running binary inside it is then that process's to delete, not ours.
+    let mut finishing = None;
     if let Some(root) = &plan.root {
-        removed.extend(remove_root(cfg, root));
+        let (gone, later) = remove_root(cfg, root);
+        removed.extend(gone);
+        finishing = later.then_some(root);
     }
 
     // After the root, so the nested `ketch self uninstall` the cask runs on its
@@ -817,6 +822,7 @@ pub fn uninstall_self(cfg: &Config, plan: &UninstallPlan) -> Result<Vec<PathBuf>
     match &plan.exe {
         // Usually already gone with the store prefix or the bin dir; a ketch
         // that was copied in flat by an older installer is not.
+        Some(exe) if finishing.is_some_and(|root| exe.starts_with(root)) => {}
         Some(exe) if exe.exists() => {
             std::fs::remove_file(exe).map_err(|e| Error::io(exe, e))?;
             removed.push(exe.clone());
@@ -858,7 +864,9 @@ pub fn uninstall_self(cfg: &Config, plan: &UninstallPlan) -> Result<Vec<PathBuf>
 /// case. When the root *is* the home directory, the named children (`bin`,
 /// `store`, `cache`, …) are not emptied either — they are shared with the
 /// rest of the account. A dedicated root like `~/.ketch` is still wiped.
-fn remove_root(cfg: &Config, root: &Path) -> Vec<PathBuf> {
+/// Returns what was removed, and whether the rest is removed once this
+/// process has exited.
+fn remove_root(cfg: &Config, root: &Path) -> (Vec<PathBuf>, bool) {
     remove_root_at(cfg, root, dirs::home_dir().as_deref(), finish_after_exit)
 }
 
@@ -869,7 +877,7 @@ fn remove_root_at(
     root: &Path,
     home: Option<&Path>,
     finish: impl FnOnce(&Path, &[PathBuf]) -> bool,
-) -> Vec<PathBuf> {
+) -> (Vec<PathBuf>, bool) {
     let wipe = home.is_none_or(|h| cfg.root != h);
     let mut removed = Vec::new();
     let mut left = Vec::new();
@@ -903,26 +911,29 @@ fn remove_root_at(
         match std::fs::remove_file(file) {
             Ok(()) => removed.push(file.clone()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => {
-                ui::warn(&format!("{}: {e}", file.display()));
-                left.push(file.clone());
-            }
+            Err(e) => left.push((file.clone(), e)),
+        }
+    }
+    if !left.is_empty() {
+        let paths: Vec<PathBuf> = left.iter().map(|(p, _)| p.clone()).collect();
+        // Only a failure nobody will retry is worth a warning.
+        if finish(root, &paths) {
+            ui::note(&format!(
+                "{} is removed once this ketch has exited",
+                root.display()
+            ));
+            return (removed, true);
+        }
+        for (path, e) in &left {
+            ui::warn(&format!("{}: {e}", path.display()));
         }
     }
     if wipe {
         match std::fs::remove_dir(root) {
             Ok(()) => removed.push(root.to_path_buf()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            // What ketch failed to remove is still in there; the warnings above
-            // named it, and it may yet go once this process has exited.
-            Err(_) if !left.is_empty() => {
-                if finish(root, &left) {
-                    ui::note(&format!(
-                        "{} is removed once this ketch has exited",
-                        root.display()
-                    ));
-                }
-            }
+            // Still holding what the warnings above named.
+            Err(_) if !left.is_empty() => {}
             // Anything left is something ketch did not write. Say so and leave it.
             Err(_) => ui::note(&format!(
                 "{} was left in place: it holds files ketch did not put there",
@@ -930,10 +941,15 @@ fn remove_root_at(
             )),
         }
     }
-    removed
+    (removed, false)
 }
 
-fn remove_owned_dir(dir: &Path, wipe: bool, removed: &mut Vec<PathBuf>, left: &mut Vec<PathBuf>) {
+fn remove_owned_dir(
+    dir: &Path,
+    wipe: bool,
+    removed: &mut Vec<PathBuf>,
+    left: &mut Vec<(PathBuf, std::io::Error)>,
+) {
     let result = if wipe {
         std::fs::remove_dir_all(dir)
     } else {
@@ -942,10 +958,7 @@ fn remove_owned_dir(dir: &Path, wipe: bool, removed: &mut Vec<PathBuf>, left: &m
     match result {
         Ok(()) => removed.push(dir.to_path_buf()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) if wipe => {
-            ui::warn(&format!("{}: {e}", dir.display()));
-            left.push(dir.to_path_buf());
-        }
+        Err(e) if wipe => left.push((dir.to_path_buf(), e)),
         Err(_) => ui::note(&format!(
             "{} was left in place: it holds files ketch did not put there",
             dir.display()
