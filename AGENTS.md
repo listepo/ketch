@@ -245,6 +245,8 @@ conditional, multi-stage Rust automation.
 | `install.sh` | the `curl | bash` installer for macOS and Linux; only bootstraps `ketch self install` |
 | `install.ps1` | the `irm | iex` installer for Windows; same bootstrap as `install.sh` |
 | `.github/dependabot.yml` | weekly `chore(deps)` pull requests for cargo, npm and GitHub Actions; not `mise.toml` |
+| `desktop/macos/DESIGN.md` | the macOS app's design system in the DESIGN.md format; its front matter is generated |
+| `desktop/macos/design/` | `tokens.json`, the one source of design tokens, and `build.mjs`, which generates `generated/Tokens.swift`, the DESIGN.md front matter and `preview.html`'s CSS (`just design-tokens`) |
 
 The rule that keeps `cmd/` thin: anything touching the install tree belongs in
 `install.rs`, `state.rs`, or a trait implementation, so the same logic serves
@@ -277,7 +279,9 @@ These are observed throughout; match them rather than introducing your own.
 - **A generated file says so in its first lines**, and the generator writes
   that header, not a person or a second script: `ketch lock` for `ketch.lock`,
   `site/sync-docs.py` for `site/content/docs/`, `scripts/cask.sh` for the
-  tap's `Casks/ketch.rb`. To change such a file, change its generator.
+  tap's `Casks/ketch.rb`, `desktop/macos/design/build.mjs` for `Tokens.swift`
+  and the generated blocks of `DESIGN.md` and `preview.html`. To change such a
+  file, change its generator.
 - **Comments explain *why*, never *what*.** The code already says what it does.
   A comment earns its place by recording a decision, a constraint, or a
   failure that motivated the shape of the code.

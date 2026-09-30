@@ -9,7 +9,7 @@ Project programs and direct packages from manifests.
 | mise | brew / curl, then `mise install` | Pinned tool versions | https://github.com/jdx/mise |
 | cargo-cache | mise | `just cache` / `just cache-autoclean`; the shared cargo home fills up | https://github.com/matthiaskrgr/cargo-cache |
 | cargo-nextest | global (cargo install) | Parallel test runner | https://github.com/nextest-rs/nextest |
-| node | mise | commitlint for `just lint-commits` and the commit-msg hook; node-based checks live in Just and CI only | https://github.com/nodejs/node |
+| node | mise | commitlint for `just lint-commits` and the commit-msg hook, and the macOS design-token generator and checks; node-based checks live in Just and CI only | https://github.com/nodejs/node |
 | rustc | mise (through rustup) | Rust compiler; `mise.toml` pins the one version local work, CI and release builds use | https://github.com/rust-lang/rust |
 | cargo | with rustc | Rust build and dependencies | https://github.com/rust-lang/cargo |
 | just | cargo install just / brew | Command recipes | https://github.com/casey/just |
@@ -72,3 +72,5 @@ Project programs and direct packages from manifests.
 | --- | --- | --- | --- |
 | @commitlint/cli | local | https://www.npmjs.com/package/@commitlint/cli | Commit messages |
 | @commitlint/config-conventional | local | https://www.npmjs.com/package/@commitlint/config-conventional | Commit rules |
+| style-dictionary | local | https://github.com/style-dictionary/style-dictionary | Generates the macOS app's `Tokens.swift`, the DESIGN.md front matter and the preview CSS from `desktop/macos/design/tokens.json` (`just design-tokens`) |
+| @google/design.md | local | https://github.com/google-labs-code/design.md | Lints `desktop/macos/DESIGN.md` against the DESIGN.md format (`just design-check`) |
