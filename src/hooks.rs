@@ -145,12 +145,22 @@ pub fn run_or_warn(hooks: &Hooks, event: Event, ctx: &Context<'_>) {
 }
 
 /// The platform shell, so a hook is one line of what the user already types.
+///
+/// On Windows the script goes to `cmd /C` exactly as written. `Command`'s
+/// usual escaping wraps it for `CommandLineToArgvW`, and `cmd.exe` then
+/// strips those quotes by its own rules, which turns a quoted path in the
+/// script into a filename Windows rejects.
 fn shell(script: &str) -> Command {
-    if cfg!(windows) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
         let mut cmd = Command::new("cmd");
-        cmd.args(["/C", script]);
+        cmd.arg("/C");
+        cmd.raw_arg(script);
         cmd
-    } else {
+    }
+    #[cfg(not(windows))]
+    {
         let mut cmd = Command::new("sh");
         cmd.args(["-c", script]);
         cmd
