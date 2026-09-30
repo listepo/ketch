@@ -10,7 +10,7 @@ wf="$ROOT/.github/workflows"
 
 command -v ruby >/dev/null 2>&1 \
     || { echo "release-workflows: ruby is required to parse the workflows" >&2; exit 1; }
-for f in release bump release-plz verify tap; do
+for f in release bump release-plz tap; do
     [ -f "$wf/$f.yml" ] || { echo "release-workflows: missing $wf/$f.yml" >&2; exit 1; }
     ruby -ryaml -e "YAML.load_file(ARGV[0])" "$wf/$f.yml"
 done
@@ -40,14 +40,16 @@ need "$r" 'uses: ./.github/workflows/tap.yml' 'the tap publish job'
 
 b="$wf/bump.yml"
 need "$b" 'options: \[patch, minor, major\]' 'the patch/minor/major choice'
-need "$b" 'uses: ./.github/workflows/verify.yml' 'the verify gate'
-need "$b" 'scripts/release.sh "$LEVEL"' 'the release.sh call'
+need "$b" 'uses: pyrlyn/infra/.github/workflows/bump.yml@' 'the shared bump workflow'
+need "$b" 'release-script: scripts/release.sh' 'the release.sh call'
+need "$b" 'verify-command:' 'the verify gate'
 
 p="$wf/release-plz.yml"
-need "$p" "grep -qE '^chore: release v" 'the merge gate'
-need "$p" 'startswith("release-plz-")' 'the release-plz branch check'
-need "$p" 'uses: ./.github/workflows/verify.yml' 'the verify gate'
-need "$p" 'scripts/release.sh patch --no-bump' 'the --no-bump dispatch'
+need "$p" 'uses: pyrlyn/infra/.github/workflows/release-plz.yml@' 'the shared release-plz workflow'
+need "$p" '  ^chore: release v' 'the merge gate'
+need "$p" 'release-branch-prefix: release-plz-' 'the release-plz branch check'
+need "$p" 'verify-command:' 'the verify gate'
+need "$p" 'release-workflow: release.yml' 'the release.yml dispatch'
 
 need "$ROOT/release-plz.toml" 'pr_name = "chore: release v{{ version }}"' 'the pull request title the gate matches'
 need "$ROOT/release-plz.toml" 'changelog_config = "cliff.toml"' 'the shared git-cliff config'
