@@ -152,6 +152,62 @@ fn an_upgrade_replaces_the_payload_and_the_link_still_works() {
         .contains(r#""installed": "2.0.0""#));
 }
 
+/// Every file name anywhere under `dir`.
+fn names_under(dir: &std::path::Path) -> Vec<String> {
+    let mut names = Vec::new();
+    for entry in std::fs::read_dir(dir).expect("read dir").flatten() {
+        let path = entry.path();
+        names.push(entry.file_name().to_string_lossy().into_owned());
+        if path.is_dir() {
+            names.extend(names_under(&path));
+        }
+    }
+    names
+}
+
+#[test]
+fn upgrade_installs_into_a_fresh_prefix_that_nothing_stale_reaches() {
+    let sandbox = Sandbox::new();
+    let arch = host_arch();
+    let first = sandbox.asset(
+        &format!("testtool-1.0.0-{arch}-apple-darwin.tar.gz"),
+        Archive::TarGz(vec![
+            Entry::program("testtool-1.0.0/bin/testtool", "testtool 1.0.0"),
+            Entry::file("testtool-1.0.0/only-in-1.0.txt", "gone in 2.0\n"),
+        ]),
+    );
+    sandbox.publish("testtool", &[Release::new("1.0.0", vec![first])]);
+    sandbox.ok(&["install", "test:testtool", "--yes"]);
+    // An interrupted earlier swap to 2.0.0: its staging folder is exactly
+    // where the next swap stages the new payload.
+    let folder = sandbox.store().join("testtool");
+    std::fs::create_dir_all(folder.join("2.0.0.incoming")).expect("plant .incoming");
+    std::fs::write(folder.join("2.0.0.incoming").join("planted"), b"x").expect("planted file");
+
+    publish_tool(&sandbox, "2.0.0");
+    sandbox.ok(&["upgrade", "--yes"]);
+
+    let names = names_under(&folder.join("2.0.0"));
+    assert!(names.contains(&"testtool".to_string()), "{names:?}");
+    assert!(!names.contains(&"only-in-1.0.txt".to_string()), "{names:?}");
+    assert!(!names.contains(&"planted".to_string()), "{names:?}");
+    assert!(!folder.join("2.0.0.incoming").exists());
+}
+
+#[test]
+fn a_forced_reinstall_of_the_same_version_leaves_no_stale_file() {
+    let sandbox = Sandbox::new();
+    publish_tool(&sandbox, "1.0.0");
+    sandbox.ok(&["install", "test:testtool", "--yes"]);
+    let prefix = sandbox.store().join("testtool").join("1.0.0");
+    std::fs::write(prefix.join("stale.txt"), b"x").expect("plant stale file");
+
+    sandbox.ok(&["install", "test:testtool", "--force", "--yes"]);
+
+    assert!(!prefix.join("stale.txt").exists());
+    assert_eq!(run(&sandbox.bin().join("testtool")), "testtool 1.0.0");
+}
+
 #[test]
 fn rollback_restores_the_previous_prefix_without_redownloading() {
     let sandbox = Sandbox::new();

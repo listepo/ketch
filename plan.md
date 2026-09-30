@@ -16,7 +16,6 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | R3 | in progress | P1 | 3 | 67% | Cursor / grok 4.7 high |
 | F8 | in progress | P2 | 3 | 0% | Cursor / grok 4.7 high |
 | M9 | in progress | P2 | 5 | 90% | Claude Code / opus-5.5 |
-| B68 | todo | P1 | 3 | 0% | |
 | F9 | todo | P2 | 2 | 0% | |
 | B69 | todo | P2 | 1 | 0% | |
 | M12 | todo | P2 | 3 | 0% | |
@@ -278,20 +277,6 @@ Dependency summary: B69 ← B67; B68 shares the stale-sibling sweep with B67; F9
 
 Plan:
 
-
-### B68. Update installs into a fresh folder so stale files cannot interfere
-
-Ivan: update must clean or delete the program folder and install into a fresh one.
-
-Today the per-version prefix is already fresh. `move_into_store` stages the payload as `<version>.incoming` and swaps it in through `<version>.old`, so a new version and a `--force` reinstall of the same version both replace the directory whole. Gaps: (a) stale `.incoming` / `.old` siblings survive when their best-effort removal fails; (b) old links and copied files the new version no longer has are removed by `platform.unplace(&stale)`, and a failure there is only a warning; (c) retained prefixes of earlier versions stay on purpose, because `ketch rollback` (M6) needs them.
-
-Plan:
-1. Sweep stale siblings (B67's helper) at the start of every install and upgrade, before hooks run.
-2. If a stale sibling or a stale link cannot be removed, fail the update before anything is placed, naming the path. Do not warn and continue.
-3. Decision for Ivan: "delete the program folder" must not break rollback. Proposal: keep retained prefixes (they are separate directories, so they cannot leak files into the new one) and say so in `docs/COMMANDS.md`. The alternative is to drop retention by default (`retain = 0`).
-4. `ketch self upgrade` replaces the binary in place (`replace_binary`). Its leftovers are covered by B60, and nothing more is needed here.
-
-Check: e2e: a file present in 1.0.0 and absent from 1.1.0 is gone after upgrade, and a same-version `--force` reinstall leaves no stale file; a planted `1.1.0.incoming` does not end up inside the new prefix; `just check`.
 
 ### F9. `ketch install <pkg>` on an installed package offers the update
 
