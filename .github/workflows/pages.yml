@@ -1,13 +1,29 @@
-name: site
+# Build the ketch site (Hugo + Mini UI CSS + Pagefind) and deploy it to GitHub Pages through
+# pyrlyn/infra's pages.yml. The build and its checks live in scripts/site-build.sh; Hugo is
+# installed (checksum-verified) by scripts/site-install-hugo.sh; Node comes from mise.toml.
+# Pull requests build and check only; pushes to main deploy.
+name: pages
 
-# The website is built on every pull request that touches it, so a broken
-# template fails review rather than the deploy. Only main publishes.
 on:
   push:
     branches: [main]
-    paths: ["site/**", "docs/**", "*.md", "package.json", "package-lock.json", ".github/workflows/pages.yml"]
+    paths:
+      - "site/**"
+      - "docs/**"
+      - "*.md"
+      - "package.json"
+      - "package-lock.json"
+      - "scripts/site-*.sh"
+      - ".github/workflows/pages.yml"
   pull_request:
-    paths: ["site/**", "docs/**", "*.md", "package.json", "package-lock.json", ".github/workflows/pages.yml"]
+    paths:
+      - "site/**"
+      - "docs/**"
+      - "*.md"
+      - "package.json"
+      - "package-lock.json"
+      - "scripts/site-*.sh"
+      - ".github/workflows/pages.yml"
   workflow_dispatch:
 
 permissions:
@@ -18,120 +34,16 @@ concurrency:
   group: pages
   cancel-in-progress: false
 
-env:
-  # Pinned so the site builds the same way next year as it does today.
-  HUGO_VERSION: 0.165.0
-
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      # Downloaded from the project's own release and checked against the
-      # checksum published beside it — the same thing ketch does for everything
-      # it installs.
-      - name: Install Hugo
-        run: |
-          base="https://github.com/gohugoio/hugo/releases/download/v${HUGO_VERSION}"
-          tarball="hugo_${HUGO_VERSION}_linux-amd64.tar.gz"
-          curl -fsSLO "$base/$tarball"
-          curl -fsSLO "$base/hugo_${HUGO_VERSION}_checksums.txt"
-          grep " $tarball\$" "hugo_${HUGO_VERSION}_checksums.txt" | sha256sum -c -
-          tar -xzf "$tarball" hugo
-          sudo install -m 755 hugo /usr/local/bin/hugo
-          hugo version
-
-      - name: Configure Pages
-        id: pages
-        if: github.event_name != 'pull_request'
-        uses: actions/configure-pages@v6
-
-      - name: Test site version sync
-        run: python3 site/test_sync_docs.py
-
-      # Landing Mini UI utilities are Tailwind; the pin lives in mise.toml
-      # the same way commitlint's Node does, so the two cannot drift.
-      - name: Read the Node pin from mise.toml
-        id: node_pin
-        run: |
-          version=$(grep '^node = ' mise.toml | cut -d '"' -f2)
-          [ -n "$version" ] || { echo "no node pin found in mise.toml" >&2; exit 1; }
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: ${{ steps.node_pin.outputs.version }}
-          cache: npm
-
-      - name: Build Mini UI CSS
-        run: |
-          npm ci
-          npm run css
-
-      # docs/*.md is the documentation; the site's copies are generated from it
-      # so the two can never drift.
-      - name: Mirror the Markdown into the site
-        run: python3 site/sync-docs.py
-
-      - name: Build
-        env:
-          # A pull-request build has no Pages URL yet, and only needs to prove
-          # the templates compile.
-          BASE_URL: ${{ steps.pages.outputs.base_url || 'https://pyrlyn.github.io/ketch' }}
-        run: |
-          hugo --source site --minify --gc --baseURL "$BASE_URL/"
-
-      - name: Index the site with Pagefind
-        run: npx --yes pagefind@1 --site site/public
-
-      - name: Check the build produced what it should
-        run: |
-          cd site/public
-          for required in index.html sitemap.xml robots.txt docs/index.html \
-                          docs/manifests/index.html docs/registry/index.html \
-                          docs/plugins/index.html docs/roadmap/index.html \
-                          docs/plan/index.html docs/troubleshooting/index.html \
-                          css/main.css css/mini-ui.css img/og.png \
-                          pagefind/pagefind-ui.js pagefind/pagefind-ui.css; do
-            [ -s "$required" ] || { echo "missing or empty: $required" >&2; exit 1; }
-          done
-          # The SEO tags are the point of the landing page; a template that
-          # silently renders nothing would still produce a valid-looking site.
-          # --minify drops quotes around attribute values, so match either form.
-          grep -qE '<meta name="?description"?' index.html
-          grep -qE '<link rel="?canonical"?' index.html
-          grep -q 'og:image' index.html
-          # `ld+json>{` and not `ld+json>"`: Go escapes a string in a script
-          # context into a JS string literal, which is not parseable JSON-LD.
-          grep -q 'ld+json>{' index.html
-          grep -q 'SoftwareApplication' index.html
-          grep -q 'TechArticle' docs/manifests/index.html
-          # Hugo truncates an over-long description with an ellipsis, which is
-          # what a search result would then show. Catch it here rather than on
-          # the deployed page.
-          if grep -rq 'name=description content="[^"]*…"' .; then
-            echo "a meta description was truncated; keep it under 160 characters:" >&2
-            grep -rl 'name=description content="[^"]*…"' . >&2
-            exit 1
-          fi
-          echo "site ok: $(find . -name '*.html' | wc -l) pages"
-
-      - uses: actions/upload-pages-artifact@v5
-        if: github.event_name != 'pull_request'
-        with:
-          path: site/public
-
-  deploy:
-    needs: build
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+  pages:
+    uses: pyrlyn/infra/.github/workflows/pages.yml@863d8960601216eec62d4aa78924f84ce61d72b9
     permissions:
+      contents: read
       pages: write
       id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v5
+    with:
+      mise-install-args: node
+      # Pinned so the site builds the same way next year as it does today.
+      setup-command: HUGO_VERSION=0.165.0 bash scripts/site-install-hugo.sh
+      build-command: BASE_URL=https://pyrlyn.github.io/ketch bash scripts/site-build.sh
+      artifact-path: site/public

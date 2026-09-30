@@ -1,7 +1,8 @@
 # SonarCloud OSS setup (ketch)
 
-Maintainer guide for the SonarCloud workflow in `.github/workflows/sonarcloud.yml` and the scanner
-configuration in `sonar-project.properties`.
+Maintainer guide for the SonarCloud job (pyrlyn/infra's `sonarcloud.yml`, run by its `ci.yml` from
+`.github/workflows/pipeline.yml`, configured under `sonarcloud:` in `.github/infra.yml`) and the
+scanner configuration in `sonar-project.properties`.
 
 The `sonar.organization` / `sonar.projectKey` values (`listepo` / `listepo_ketch`) are
 **placeholders** until they match the SonarCloud UI after you import the project.
@@ -96,6 +97,7 @@ token into the repository.
 
 ## References
 
-- Workflow: `.github/workflows/sonarcloud.yml`
+- Workflow: `.github/workflows/pipeline.yml` -> pyrlyn/infra `ci.yml` / `sonarcloud.yml`
+- Configuration: `.github/infra.yml` (`sonarcloud:`)
 - Scanner configuration: `sonar-project.properties`
 - [SonarQube Cloud documentation](https://docs.sonarsource.com/sonarqube-cloud/)
