@@ -39,7 +39,7 @@ pub fn load(cfg: &Config) -> Vec<(Manifest, PathBuf)> {
 /// or truncated fetch leaves the working copy alone.
 pub fn update(cfg: &Config) -> Result<usize> {
     let repo = &cfg.registry;
-    crate::ui::stage("registry", crate::ui::ProgressStage::Downloading);
+    crate::ui::stage("registry", crate::ui::Stage::Downloading);
     crate::ui::step("updating", &format!("registry {repo}"));
 
     let staging = tempfile::tempdir_in(&cfg.root).map_err(|e| Error::io(&cfg.root, e))?;
@@ -65,7 +65,7 @@ pub fn update(cfg: &Config) -> Result<usize> {
 
     let unpacked = staging.path().join("tree");
     std::fs::create_dir_all(&unpacked).map_err(|e| Error::io(&unpacked, e))?;
-    crate::ui::stage("registry", crate::ui::ProgressStage::Extracting);
+    crate::ui::stage("registry", crate::ui::Stage::Extracting);
     // The tarball download already drew a byte bar. Unpacking has no member
     // count ahead of time, so this is a spinner rather than a second bar.
     crate::ui::activity("extracting registry", None)

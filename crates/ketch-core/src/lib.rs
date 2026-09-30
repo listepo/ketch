@@ -29,12 +29,14 @@ pub mod platform;
 pub mod process;
 pub mod push;
 pub mod registry;
+pub mod report;
 pub mod resolve;
 pub mod self_update;
 pub mod shell;
 pub mod source;
 pub mod state;
 pub mod stats;
+pub mod text;
 pub(crate) mod trust;
 #[cfg(feature = "tui")]
 pub mod tui;

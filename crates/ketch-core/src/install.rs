@@ -205,7 +205,7 @@ pub fn prepare(
     let started = std::time::Instant::now();
     let platform = crate::platform::host()?;
     let label = req.spec.label();
-    ui::stage(&label, ui::ProgressStage::Resolving);
+    ui::stage(&label, ui::Stage::Resolving);
     let (mut manifest, origin) = Resolver::new(cfg)?.resolve(&req.spec)?;
 
     // Local refs are recorded with an absolute path so list/info survive a
@@ -316,7 +316,7 @@ pub fn prepare(
             let app_path = local_path.as_ref().ok_or_else(|| {
                 Error::msg("internal error: local .app install without a recorded path")
             })?;
-            ui::stage(&label, ui::ProgressStage::Downloading);
+            ui::stage(&label, ui::Stage::Downloading);
             let dest_name = app_path
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
@@ -328,7 +328,7 @@ pub fn prepare(
             // checksum to require, but a lockfile's hash still holds it.
             let sha256 = crate::source::local::sha256_tree(&dest)?;
             progress.finish("copied");
-            ui::stage(&label, ui::ProgressStage::Verifying);
+            ui::stage(&label, ui::Stage::Verifying);
             check_locked(req, &manifest.name, &dest_name, &sha256)?;
             // A bundle on disk has no release to carry a signature, so a policy
             // that requires one cannot be met.
@@ -344,7 +344,7 @@ pub fn prepare(
             (sha256, dest_name, false, provenance, payload)
         } else {
             // --- download -------------------------------------------------------
-            ui::stage(&label, ui::ProgressStage::Downloading);
+            ui::stage(&label, ui::Stage::Downloading);
             // A directory of its own, not a name under the cache. Two `prepare`s
             // run side by side, and an alias and a repo path naming the same
             // package would pick the same file name: they would overwrite each
@@ -367,7 +367,7 @@ pub fn prepare(
             // --- checksum -------------------------------------------------------
             check_locked(req, &manifest.name, &asset.name, &sha256)?;
 
-            ui::stage(&label, ui::ProgressStage::Verifying);
+            ui::stage(&label, ui::Stage::Verifying);
             // Local packages never publish a checksum; requiring one would make
             // every `local:` install fail for a reason the user cannot fix.
             let require = if local_kind.is_some() {
@@ -398,7 +398,7 @@ pub fn prepare(
             )?;
 
             // --- extract --------------------------------------------------------
-            ui::stage(&label, ui::ProgressStage::Extracting);
+            ui::stage(&label, ui::Stage::Extracting);
             let format = ui::activity(&format!("extracting {}", asset.name), None).run(|_| {
                 crate::extract::extract_auto(&download_path, unpack.path(), &platform.extractors())
             })?;
@@ -407,7 +407,7 @@ pub fn prepare(
             (sha256, asset.name, checksum_verified, provenance, payload)
         };
 
-    ui::stage(&label, ui::ProgressStage::Trusting);
+    ui::stage(&label, ui::Stage::Trusting);
     let trust = check_trust(platform.as_ref(), cfg, &payload, &manifest.name);
 
     Ok(Prepared {
@@ -634,7 +634,7 @@ pub fn commit(cfg: &Config, state: &mut State, prepared: Prepared) -> Result<Ins
     cancel.check()?;
     let mut manifest = manifest;
     let platform = crate::platform::host()?;
-    ui::stage(&label, ui::ProgressStage::Installing);
+    ui::stage(&label, ui::Stage::Installing);
 
     // Read again rather than trusting what `prepare` saw: in a batch, another
     // package may have been placed since.

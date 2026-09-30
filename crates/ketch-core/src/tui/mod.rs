@@ -3,7 +3,7 @@
 //! This module owns the terminal session, event reducer, and renderer so the
 //! install pipeline can remain a normal, terminal-agnostic command pipeline.
 
-use crate::ui::{ProgressSink, ProgressStage};
+use crate::report::{ProgressSink, Stage};
 use crossterm::cursor::Show;
 use crossterm::event::{self, Event as InputEvent, KeyCode, KeyEventKind, KeyModifiers};
 use crossterm::execute;
@@ -27,14 +27,14 @@ const EVENT_HISTORY: usize = 8;
 
 type PanicHook = Box<dyn Fn(&PanicHookInfo<'_>) + Send + Sync + 'static>;
 
-fn stage_label(stage: ProgressStage) -> &'static str {
+fn stage_label(stage: Stage) -> &'static str {
     match stage {
-        ProgressStage::Resolving => "Resolving release",
-        ProgressStage::Downloading => "Downloading",
-        ProgressStage::Verifying => "Verifying checksum",
-        ProgressStage::Extracting => "Extracting archive",
-        ProgressStage::Trusting => "Checking trust",
-        ProgressStage::Installing => "Installing",
+        Stage::Resolving => "Resolving release",
+        Stage::Downloading => "Downloading",
+        Stage::Verifying => "Verifying checksum",
+        Stage::Extracting => "Extracting archive",
+        Stage::Trusting => "Checking trust",
+        Stage::Installing => "Installing",
     }
 }
 
@@ -68,7 +68,7 @@ pub enum Event {
     /// A pipeline stage began for one package.
     Stage {
         package: String,
-        stage: ProgressStage,
+        stage: Stage,
     },
     /// A download reported its total byte length, when the source provided it.
     DownloadStarted { package: String, total: Option<u64> },
@@ -90,7 +90,7 @@ pub enum Event {
 struct Package {
     name: String,
     status: PackageStatus,
-    stage: Option<ProgressStage>,
+    stage: Option<Stage>,
     downloaded: u64,
     total: Option<u64>,
 }
@@ -143,7 +143,7 @@ impl State {
             Event::DownloadStarted { package, total } => {
                 let item = self.package_mut(&package);
                 item.status = PackageStatus::Active;
-                item.stage = Some(ProgressStage::Downloading);
+                item.stage = Some(Stage::Downloading);
                 item.downloaded = 0;
                 item.total = total;
             }
@@ -153,7 +153,7 @@ impl State {
             }
             Event::DownloadFinished { package } => {
                 let item = self.package_mut(&package);
-                item.stage = Some(ProgressStage::Verifying);
+                item.stage = Some(Stage::Verifying);
             }
             Event::Completed { package, success } => {
                 let name = {
@@ -656,7 +656,7 @@ mod tests {
         let mut state = State::new("install", ["ripgrep".to_string()]);
         state.apply(Event::Stage {
             package: "ripgrep".to_string(),
-            stage: ProgressStage::Resolving,
+            stage: Stage::Resolving,
         });
         state.apply(Event::DownloadStarted {
             package: "ripgrep".to_string(),
@@ -694,11 +694,11 @@ mod tests {
             let mut state = State::new("install", [key.clone()]);
             state.apply(Event::Stage {
                 package: key.clone(),
-                stage: ProgressStage::Resolving,
+                stage: Stage::Resolving,
             });
             state.apply(Event::Stage {
                 package: key.clone(),
-                stage: ProgressStage::Installing,
+                stage: Stage::Installing,
             });
             state.apply(Event::Completed {
                 package: key.clone(),
@@ -712,7 +712,7 @@ mod tests {
                 state
                     .packages
                     .iter()
-                    .all(|item| item.stage != Some(ProgressStage::Installing)),
+                    .all(|item| item.stage != Some(Stage::Installing)),
                 "{key} stuck on Installing"
             );
         }
@@ -751,7 +751,7 @@ mod tests {
         let mut state = State::new("install", ["ripgrep".to_string()]);
         state.apply(Event::Stage {
             package: "ripgrep".to_string(),
-            stage: ProgressStage::Downloading,
+            stage: Stage::Downloading,
         });
         let backend = TestBackend::new(80, 18);
         let mut terminal = Terminal::new(backend).unwrap();
