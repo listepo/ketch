@@ -24,7 +24,6 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | M10 | todo | P2 | 2 | 0% | |
 | M11 | todo | P2 | 3 | 0% | |
 | M12 | todo | P2 | 3 | 0% | |
-| F10 | todo | P2 | 2 | 0% | |
 | F11 | todo | P3 | 2 | 0% | |
 | R4 | todo | P2 | 3 | 0% | |
 
@@ -379,17 +378,6 @@ Plan:
 3. Optional, only if Ivan wants real Tab completion in cmd: a clink Lua script generated from the CLI.
 
 Check: Windows CI: `pwsh -c "TabExpansion2 'ketch ins' 9"` returns `install`; after install, AutoRun contains the doskey line and `ki` expands in a new cmd; after `self uninstall`, the profile block and the AutoRun addition are gone and an earlier AutoRun value is intact; `just check`.
-
-### F10. Coloured output: errors red, success green, warnings yellow
-
-Most of this exists. `src/ui.rs` paints the `error` label red, `warning` yellow, success verbs green, steps blue and notes dim. It honours `--no-color`, `NO_COLOR`, `CLICOLOR_FORCE` and non-TTY output, and there is no `println!` outside `ui`. F10 is an audit plus the gaps:
-
-1. Only the label is coloured today. Decide with Ivan whether the error headline and warning text are coloured as well.
-2. Route every remaining status string through the helpers: prompts (`confirm`, `select`), `completed`, table markers (M9's yellow `update available`).
-3. Windows: make sure ANSI works on legacy conhost (enable VT processing, or fall back to plain text).
-4. Optional: a `color = "auto" | "always" | "never"` config key and `KETCH_COLOR`, next to `--no-color`.
-
-Check: insta snapshots of each line kind with `CLICOLOR_FORCE=1`; no escape bytes with `NO_COLOR=1`, `--no-color`, or when piped; `just check`.
 
 ### F11. Emoji icons per operation, `emoji` config key (default true)
 

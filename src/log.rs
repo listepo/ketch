@@ -160,8 +160,10 @@ pub fn init(cfg: &Config, verbose: bool) {
                 ),
             );
         }
-        // Not through `ui::warn`: that would try to log the failure to log.
-        Err(e) => eprintln!("   warning could not open {}: {e}", cfg.log_file.display()),
+        // Not `ui::warn`: that would try to log the failure to log.
+        Err(e) => {
+            crate::ui::warn_unlogged(&format!("could not open {}: {e}", cfg.log_file.display()))
+        }
     }
 }
 
