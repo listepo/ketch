@@ -45,12 +45,12 @@ jobs:
       contents: read
       actions: write
     with:
-      clippy-args: --locked
+      clippy-args: --workspace --locked
       tools: nextest
       test-command: |
-        cargo nextest run --all-targets --locked
-        cargo nextest run --all-targets --locked --features tui
-      build-command: cargo build --all-targets --all-features --locked --target "$TARGET"
+        cargo nextest run --workspace --all-targets --locked
+        cargo nextest run --workspace --all-targets --locked --features tui
+      build-command: cargo build --workspace --all-targets --all-features --locked --target "$TARGET"
 
   # Commits pushed from anywhere but this machine never met the local
   # commit-msg hook, so a pull request's messages are linted here too.

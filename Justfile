@@ -17,19 +17,19 @@ fmt-check:
     cargo fmt --all -- --check
 
 lint:
-    cargo clippy --all-targets --locked -- -D warnings
+    cargo clippy --workspace --all-targets --locked -- -D warnings
 
 # the same gate under the name people type
 alias clippy := lint
 
 test: && dunnage
-    cargo nextest run --all-targets --locked
+    cargo nextest run --workspace --all-targets --locked
 
 test-install:
-    cargo nextest run --locked --all-targets -E 'binary(install)'
+    cargo nextest run --workspace --locked --all-targets -E 'binary(install)'
 
 test-tui:
-    cargo nextest run --locked --all-targets --features tui
+    cargo nextest run --workspace --locked --all-targets --features tui
 
 # one-time setup: the pinned node from mise.toml, then commitlint onto it
 deps:

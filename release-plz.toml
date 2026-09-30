@@ -54,11 +54,17 @@ changelog_config = "cliff.toml"
 
 # The workspace is two crates with one version: the root `ketch` package, which
 # is what ships, and `crates/ketch-core`, where most of the code now lives.
-# release-plz decides whether a package changed from the files inside it, and
-# the root package's files stop at the nested crate — so without a shared
-# version group a `feat:` in the core would never propose a release at all.
-# The group moves both to the same version; the core's commits are listed in
-# the root CHANGELOG.md, and the core keeps no changelog of its own.
+# release-plz reads commits per package, by the files they touch, and the
+# root package's files stop at the nested crate: left alone, a `feat:` in the
+# core would be written into a crates/ketch-core/CHANGELOG.md that nobody
+# reads, and not into the release notes. The version group keeps the two on
+# one version, `changelog_include` lists the core's commits in the root
+# CHANGELOG.md, and the core keeps no changelog of its own.
+#
+# git_only reads each package at its last tag, and no tag before the split has
+# a ketch-core in it: until one does, `release-plz` stops with "cannot find
+# package ketch-core". The first release after the split is therefore cut
+# with bump.yml or `just release`; from its tag on, the group works as above.
 [[package]]
 name = "ketch"
 version_group = "ketch"
