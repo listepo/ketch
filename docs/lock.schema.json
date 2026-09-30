@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Lockfile",
+  "description": "A whole lockfile.",
+  "type": "object",
+  "properties": {
+    "package": {
+      "description": "Sorted by name, so the file is stable and its diffs are readable.\nOmitted entirely when empty: `package = []` is not what \"nothing is\ninstalled\" should look like in a file people read.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/LockedPackage"
+      }
+    },
+    "version": {
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    }
+  },
+  "$comment": "Generated from the Rust types by `KETCH_BLESS=1 cargo nextest run schema`. Do not edit.",
+  "additionalProperties": false,
+  "required": [
+    "version"
+  ],
+  "$defs": {
+    "LockedPackage": {
+      "description": "One package, pinned.",
+      "type": "object",
+      "properties": {
+        "asset": {
+          "type": "string"
+        },
+        "bin": {
+          "description": "Which of several binaries sharing the package's name was chosen, as a\nfile name. Absent when there was nothing to choose; `ketch sync` feeds\nit to the choice so a machine without state or a terminal makes the\nsame one.",
+          "type": "string"
+        },
+        "name": {
+          "description": "The name it was installed under. Used to find the same manifest again,\nnever to build a path.",
+          "type": "string"
+        },
+        "pinned": {
+          "type": "boolean"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "source": {
+          "description": "`scheme:id`, e.g. `github:BurntSushi/ripgrep`.",
+          "type": "string"
+        },
+        "tag": {
+          "type": "string"
+        },
+        "target": {
+          "description": "The target this entry was captured on, as `<os>-<arch>`.",
+          "type": "string"
+        },
+        "version": {
+          "description": "Human-readable version. `tag` is what actually gets resolved.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "source",
+        "version",
+        "tag",
+        "target",
+        "asset",
+        "sha256"
+      ]
+    }
+  }
+}

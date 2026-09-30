@@ -39,6 +39,7 @@ pub const LOCK_FILE: &str = "ketch.lock";
 
 /// A whole lockfile.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Lockfile {
     pub version: u32,
@@ -51,11 +52,14 @@ pub struct Lockfile {
 
 /// One package, pinned.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct LockedPackage {
     /// The name it was installed under. Used to find the same manifest again,
     /// never to build a path.
     pub name: String,
+    /// `scheme:id`, e.g. `github:BurntSushi/ripgrep`.
+    #[cfg_attr(test, schemars(with = "String"))]
     pub source: PackageRef,
     /// Human-readable version. `tag` is what actually gets resolved.
     pub version: String,
@@ -317,6 +321,11 @@ fn is_sha256(text: &str) -> bool {
 mod tests {
     use super::*;
     use crate::model::{Arch, ManifestOrigin, RetainedVersion, TargetSpec, Version};
+
+    #[test]
+    fn committed_lock_schema_matches_lockfile() {
+        crate::config::assert_schema_current::<Lockfile>("docs/lock.schema.json");
+    }
 
     fn installed(name: &str, repo: &str, tag: &str) -> InstalledPackage {
         InstalledPackage {

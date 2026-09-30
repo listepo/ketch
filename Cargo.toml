@@ -97,6 +97,8 @@ predicates = "3"
 pretty_assertions = "1.4.1"
 proptest = "1.11"
 rstest = "0.26"
+# Only the schema drift tests use it; the derives are `cfg_attr(test, ...)`.
+schemars = "1.2"
 trycmd = "1.2"
 
 # There is no unsafe code in ketch and there is no reason for any to appear.

@@ -408,6 +408,9 @@ release required. See [docs/PLUGINS.md](docs/PLUGINS.md).
 | `log_level` | `KETCH_LOG_LEVEL` | `info` |
 | `log_format` | `KETCH_LOG_FORMAT` | `text` |
 
+[docs/config.schema.json](https://github.com/pyrlyn/ketch/blob/main/docs/config.schema.json) is the file's JSON Schema,
+generated from the types ketch reads it into, for editors and linters.
+
 To start over, `ketch config reset` writes `config.toml` with those defaults
 (after asking, unless `--yes`). The existing file is backed up beside itself
 as `config.toml.bak-<unix-seconds>`, unless it is missing or already matches a

@@ -49,6 +49,7 @@ Project programs and direct packages from manifests.
 | proptest | local | https://crates.io/crates/proptest | Property tests |
 | ratatui | local | https://crates.io/crates/ratatui | TUI |
 | rstest | local | https://crates.io/crates/rstest | Parameterized tests |
+| schemars | local | https://crates.io/crates/schemars | JSON Schema of `config.toml` and `ketch.lock`, checked by drift tests |
 | semver | local | https://crates.io/crates/semver | Rust dependency |
 | serde | local | https://crates.io/crates/serde | Serialization |
 | serde_json | local | https://crates.io/crates/serde_json | JSON |
