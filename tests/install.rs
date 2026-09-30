@@ -302,11 +302,21 @@ fn uninstall_removes_every_trace_of_a_tool() {
 fn write_hooked_manifest(sandbox: &Sandbox, log: &std::path::Path, replace: Option<(&str, &str)>) {
     let dir = sandbox.root().join("manifests");
     std::fs::create_dir_all(&dir).expect("manifests dir");
-    let line = format!(
-        "if [ \"$PWD\" -ef \"$KETCH_PREFIX\" ]; then cwd=prefix; else cwd=elsewhere; fi; \
-         echo \"$KETCH_HOOK $KETCH_VERSION ${{KETCH_PREVIOUS_VERSION:-none}} $cwd\" >> '{}'",
-        log.display()
-    );
+    let log_path = log.display();
+    // cmd.exe has no `-ef` and expands `%var%` when the line is parsed, so the
+    // Windows line compares `%CD%` to the prefix and picks `none` in the same
+    // `if` that prints. Quotes around the log survive because `shell` passes
+    // the line to `cmd /C` without Rust re-quoting it.
+    let line = if cfg!(windows) {
+        format!(
+            "if /I \"%CD%\"==\"%KETCH_PREFIX%\" (if \"%KETCH_PREVIOUS_VERSION%\"==\"\" (echo %KETCH_HOOK% %KETCH_VERSION% none prefix>>\"{log_path}\") else (echo %KETCH_HOOK% %KETCH_VERSION% %KETCH_PREVIOUS_VERSION% prefix>>\"{log_path}\")) else (if \"%KETCH_PREVIOUS_VERSION%\"==\"\" (echo %KETCH_HOOK% %KETCH_VERSION% none elsewhere>>\"{log_path}\") else (echo %KETCH_HOOK% %KETCH_VERSION% %KETCH_PREVIOUS_VERSION% elsewhere>>\"{log_path}\"))"
+        )
+    } else {
+        format!(
+            "if [ \"$PWD\" -ef \"$KETCH_PREFIX\" ]; then cwd=prefix; else cwd=elsewhere; fi; \
+             echo \"$KETCH_HOOK $KETCH_VERSION ${{KETCH_PREVIOUS_VERSION:-none}} $cwd\" >> '{log_path}'"
+        )
+    };
     let hooks = [
         "before_install",
         "after_install",
@@ -355,7 +365,10 @@ after_update 1.0.0 2.0.0 prefix
 before_uninstall 1.0.0 none prefix
 after_uninstall 1.0.0 none elsewhere
 ";
-    assert_eq!(std::fs::read_to_string(&log).expect("hooks ran"), expected);
+    let written = std::fs::read_to_string(&log)
+        .expect("hooks ran")
+        .replace("\r\n", "\n");
+    assert_eq!(written, expected);
 }
 
 #[test]
@@ -365,7 +378,14 @@ fn a_failing_before_install_hook_installs_nothing() {
     write_hooked_manifest(
         &sandbox,
         &log,
-        Some(("before_install", "echo no >&2; exit 7")),
+        Some((
+            "before_install",
+            if cfg!(windows) {
+                "echo no>&2& exit 7"
+            } else {
+                "echo no >&2; exit 7"
+            },
+        )),
     );
     publish_tool(&sandbox, "1.0.0");
 
