@@ -8,9 +8,9 @@
 
 [![license](https://img.shields.io/badge/license-GPLv3%20%7C%20royalty--free%20%7C%20commercial-blue.svg)](#license)
 ![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)
-[![release](https://img.shields.io/github/v/release/listepo/ketch?sort=semver)](https://github.com/listepo/ketch/releases/latest)
-[![ci](https://github.com/listepo/ketch/actions/workflows/ci.yml/badge.svg)](https://github.com/listepo/ketch/actions/workflows/ci.yml)
-[![site](https://github.com/listepo/ketch/actions/workflows/pages.yml/badge.svg)](https://github.com/listepo/ketch/actions/workflows/pages.yml)
+[![release](https://img.shields.io/github/v/release/pyrlyn/ketch?sort=semver)](https://github.com/pyrlyn/ketch/releases/latest)
+[![ci](https://github.com/pyrlyn/ketch/actions/workflows/ci.yml/badge.svg)](https://github.com/pyrlyn/ketch/actions/workflows/ci.yml)
+[![site](https://github.com/pyrlyn/ketch/actions/workflows/pages.yml/badge.svg)](https://github.com/pyrlyn/ketch/actions/workflows/pages.yml)
 <br>
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=listepo_ketch&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=listepo_ketch) [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=listepo_ketch&metric=coverage)](https://sonarcloud.io/component_measures?id=listepo_ketch&metric=coverage) [![Tests](https://img.shields.io/sonar/tests/listepo_ketch?server=https%3A%2F%2Fsonarcloud.io&compact_message)](https://sonarcloud.io/component_measures?id=listepo_ketch&metric=tests)
 
@@ -20,9 +20,9 @@ Install command-line tools and apps from GitHub releases on macOS, Linux, and Wi
 No taps, no formulae, no build step — ketch downloads what a project already
 ships, verifies it, and puts it on your `PATH`.
 
-[Website](https://listepo.github.io/ketch/) ·
-[Documentation](https://listepo.github.io/ketch/docs/) ·
-[Registry](https://github.com/listepo/ketch-registry) ·
+[Website](https://pyrlyn.github.io/ketch/) ·
+[Documentation](https://pyrlyn.github.io/ketch/docs/) ·
+[Registry](https://github.com/pyrlyn/ketch-registry) ·
 [Roadmap](ROADMAP.md)
 
 </div>
@@ -32,13 +32,13 @@ ships, verifies it, and puts it on your `PATH`.
 ## Quick start
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/listepo/ketch/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/pyrlyn/ketch/main/install.sh | bash
 ketch install BurntSushi/ripgrep     # any repo that publishes releases
 ketch why rg                         # how it was resolved, and which asset won
 ```
 
 On Windows, install ketch with
-`irm https://raw.githubusercontent.com/listepo/ketch/main/install.ps1 | iex`;
+`irm https://raw.githubusercontent.com/pyrlyn/ketch/main/install.ps1 | iex`;
 the other commands are the same. `ketch list local` shows what you have.
 
 A package can be named several ways:
@@ -53,10 +53,10 @@ ketch install local:/abs/or/rel      # same thing, as a package ref
 
 ## Demo
 
-**Install & verify.** `ketch install listepo/rtok` downloads the release, checks
+**Install & verify.** `ketch install pyrlyn/rtok` downloads the release, checks
 the published SHA-256, and leaves the binary on your `PATH`.
 
-![ketch install listepo/rtok, checksum verified, then rtok --version](site/static/img/demo/ketch-install.png)
+![ketch install pyrlyn/rtok, checksum verified, then rtok --version](site/static/img/demo/ketch-install.png)
 
 **Manage.** `ketch list`, `ketch outdated`, and `ketch upgrade` keep installed
 tools current — each upgrade is verified the same way.
@@ -117,19 +117,19 @@ touching the network.
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/listepo/ketch/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/pyrlyn/ketch/main/install.sh | bash
 ```
 
 On Windows:
 
 ```powershell
-irm https://raw.githubusercontent.com/listepo/ketch/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/pyrlyn/ketch/main/install.ps1 | iex
 ```
 
 or with Homebrew:
 
 ```bash
-brew install --cask listepo/tap/ketch
+brew install --cask pyrlyn/tap/ketch
 ```
 
 Either way ketch ends up in `~/.ketch`, installed as one of its own packages:
@@ -402,7 +402,7 @@ release required. See [docs/PLUGINS.md](docs/PLUGINS.md).
 | `require_checksums` | `KETCH_REQUIRE_CHECKSUMS` | `false` |
 | `strip_quarantine` | `KETCH_STRIP_QUARANTINE` | `true` |
 | `auto_update` | `KETCH_AUTO_UPDATE` | `true` |
-| `registry` | `KETCH_REGISTRY` | `listepo/ketch-registry` |
+| `registry` | `KETCH_REGISTRY` | `pyrlyn/ketch-registry` |
 | `self_repo` | `KETCH_SELF_REPO` | `listepo/ketch` |
 | `jobs` | `KETCH_JOBS` | `4` (capped at `16`) |
 | `log_level` | `KETCH_LOG_LEVEL` | `info` |
@@ -435,12 +435,12 @@ macOS, Linux and Windows. Each OS has a `Platform` backend that picks a release
 asset, unpacks it and places binaries; everything above that trait is shared.
 `cargo test` runs the suite for the host OS; CI does that on macOS, Linux and
 Windows. Install paths: `curl | bash` via `install.sh` on macOS and Linux,
-`irm | iex` via `install.ps1` on Windows, or `brew install --cask listepo/tap/ketch`
+`irm | iex` via `install.ps1` on Windows, or `brew install --cask pyrlyn/tap/ketch`
 on macOS. `ketch path install` puts `~/.ketch/bin` on PATH (shell startup files
 on Unix; the user PATH on Windows). Releases publish a tarball per target;
 `install.sh` and `install.ps1` fetch the one for the machine they run on. The
-Homebrew tap is [`listepo/homebrew-tap`](https://github.com/listepo/homebrew-tap);
-the package registry is [`listepo/ketch-registry`](https://github.com/listepo/ketch-registry).
+Homebrew tap is [`pyrlyn/homebrew-tap`](https://github.com/pyrlyn/homebrew-tap);
+the package registry is [`pyrlyn/ketch-registry`](https://github.com/pyrlyn/ketch-registry).
 
 ## Documentation
 
@@ -456,7 +456,7 @@ the package registry is [`listepo/ketch-registry`](https://github.com/listepo/ke
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Short contributor checklist |
 
 The same pages are published at
-**[listepo.github.io/ketch/docs](https://listepo.github.io/ketch/docs/)** — the
+**[pyrlyn.github.io/ketch/docs](https://pyrlyn.github.io/ketch/docs/)** — the
 site generates them from the Markdown in this repository, so the two cannot
 drift.
 
@@ -486,7 +486,7 @@ Either way `scripts/release.sh` dispatches `release.yml`, which
 [cargo-dist](https://github.com/axodotdev/cargo-dist) generates: it builds and
 signs both macOS architectures (Linux and Windows unsigned), and only once
 every target has built does it create the tag and the release, after which the
-`tap` job bumps `listepo/homebrew-tap`'s cask. So `v0.4.1` existing means
+`tap` job bumps `pyrlyn/homebrew-tap`'s cask. So `v0.4.1` existing means
 v0.4.1 shipped, and a build that fails leaves nothing to clean up.
 
 CI (`ci.yml`) runs on pushes to `main`, on pull requests that are not drafts,
@@ -553,7 +553,7 @@ Draft posts for announcing ketch, grouped by site. Add new posts as more bullets
 ## Contributing
 
 Contributions are welcome, from individuals and companies alike. Found a bug or
-an asset ketch picks wrong? [Open an issue](https://github.com/listepo/ketch/issues)
+an asset ketch picks wrong? [Open an issue](https://github.com/pyrlyn/ketch/issues)
 with the command you ran and what `ketch why <pkg>` says. Discussion happens in
 the repository's issues, so that is also the place for ideas and questions
 before you start on something bigger. Pull requests are welcome for fixes, docs

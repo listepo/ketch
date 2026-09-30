@@ -238,7 +238,7 @@ conditional, multi-stage Rust automation.
 | `release-plz.toml` | what the release pull request bumps, and what it does not publish |
 | `cliff.toml` | the `CHANGELOG.md` entry format, for release-plz and `scripts/release.sh` alike |
 | `plan.md` | what is being built next, and what each piece would take |
-| `scripts/cask.sh` | the Homebrew cask, generated into `listepo/homebrew-tap` on release |
+| `scripts/cask.sh` | the Homebrew cask, generated into `pyrlyn/homebrew-tap` on release |
 | `install.sh` | the `curl | bash` installer for macOS and Linux; only bootstraps `ketch self install` |
 | `install.ps1` | the `irm | iex` installer for Windows; same bootstrap as `install.sh` |
 | `.github/dependabot.yml` | weekly `chore(deps)` pull requests for cargo, npm and GitHub Actions; not `mise.toml` |
@@ -436,7 +436,7 @@ ticket up online.
 
 After the release is published, dist's publish job `./tap` (`tap.yml`)
 regenerates the Homebrew cask with `scripts/cask.sh` — version and both
-checksums — and pushes it to `Casks/ketch.rb` in `listepo/homebrew-tap`. That
+checksums — and pushes it to `Casks/ketch.rb` in `pyrlyn/homebrew-tap`. That
 push needs `HOMEBREW_TAP_TOKEN`, a token allowed to write to the tap
 repository; the workflow's own token is scoped to this one and cannot. The
 cask is a cask and not a formula because ketch lives in `~/.ketch`: a

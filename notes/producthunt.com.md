@@ -11,9 +11,9 @@ Tagline (60 characters max):
 Install any CLI tool straight from its GitHub releases
 
 Links:
-- Website: https://listepo.github.io/ketch/
-- Repo: https://github.com/listepo/ketch
-- Release: https://github.com/listepo/ketch/releases/tag/v0.6.0
+- Website: https://pyrlyn.github.io/ketch/
+- Repo: https://github.com/pyrlyn/ketch
+- Release: https://github.com/pyrlyn/ketch/releases/tag/v0.6.0
 
 Description:
 
@@ -30,4 +30,4 @@ Maker comment:
 
 Hi Product Hunt! I built ketch because every tool I use already publishes binaries, but installing them was still manual on every machine. v0.6.0 is the first release I'm happy to show widely. It's free and open source under a triple license (GPLv3, a royalty-free license for proprietary desktop, mobile and web apps, or a commercial license). I'd love your feedback.
 
-github.com/listepo/ketch — drafted Product Hunt launch with tagline, gallery captions, maker comment
+github.com/pyrlyn/ketch — drafted Product Hunt launch with tagline, gallery captions, maker comment

@@ -78,7 +78,7 @@ jobs:
         env:
           # A pull-request build has no Pages URL yet, and only needs to prove
           # the templates compile.
-          BASE_URL: ${{ steps.pages.outputs.base_url || 'https://listepo.github.io/ketch' }}
+          BASE_URL: ${{ steps.pages.outputs.base_url || 'https://pyrlyn.github.io/ketch' }}
         run: |
           hugo --source site --minify --gc --baseURL "$BASE_URL/"
 

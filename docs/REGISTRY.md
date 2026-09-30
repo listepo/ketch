@@ -218,5 +218,5 @@ or in `~/.ketch/config.toml`:
 registry = "someone/their-registry"
 ```
 
-The default is `listepo/ketch-registry`. Only `owner/repo` is accepted; the
+The default is `pyrlyn/ketch-registry`. Only `owner/repo` is accepted; the
 repository's default branch is what gets fetched.

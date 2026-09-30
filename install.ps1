@@ -2,7 +2,7 @@
 # Windows bootstrap installer; Unix/macOS use install.sh.
 $ErrorActionPreference = 'Stop'
 
-$SelfRepo = 'listepo/ketch'
+$SelfRepo = 'pyrlyn/ketch'
 $BinaryName = 'ketch.exe'
 $DefaultRoot = Join-Path $env:USERPROFILE '.ketch'
 

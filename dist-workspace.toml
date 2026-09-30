@@ -44,7 +44,7 @@ github-build-setup = "../build-setup.yml"
 # the tag itself, with the GitHub release, once every target has built.
 dispatch-releases = true
 install-updater = false
-# The Homebrew cask in listepo/homebrew-tap, regenerated from the published
+# The Homebrew cask in pyrlyn/homebrew-tap, regenerated from the published
 # release by .github/workflows/tap.yml.
 publish-jobs = ["./tap"]
 # The test gate is NOT a dist `plan-jobs` entry: `host` runs when

@@ -635,7 +635,7 @@ mod tests {
         cfg
     }
 
-    /// Patterns published for `rtok` in listepo/ketch-registry (after the
+    /// Patterns published for `rtok` in pyrlyn/ketch-registry (after the
     /// Windows zip was added to `include`).
     fn rtok_registry_selector() -> AssetSelector {
         AssetSelector {

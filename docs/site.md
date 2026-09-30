@@ -1,12 +1,12 @@
 ---
 title: ketch
 tagline: Catch releases straight from GitHub — a single-binary package manager for command-line tools and apps on macOS, Linux, and Windows.
-repo: https://github.com/listepo/ketch
-homepage: https://listepo.github.io/ketch/
-install: 'curl -fsSL https://raw.githubusercontent.com/listepo/ketch/main/install.sh | bash'
+repo: https://github.com/pyrlyn/ketch
+homepage: https://pyrlyn.github.io/ketch/
+install: 'curl -fsSL https://raw.githubusercontent.com/pyrlyn/ketch/main/install.sh | bash'
 install_alternatives:
-  - 'irm https://raw.githubusercontent.com/listepo/ketch/main/install.ps1 | iex'
-  - 'brew install --cask listepo/tap/ketch'
+  - 'irm https://raw.githubusercontent.com/pyrlyn/ketch/main/install.ps1 | iex'
+  - 'brew install --cask pyrlyn/tap/ketch'
   - 'mise use -g github:listepo/ketch'
 version: "0.6.0"
 accent: "#3DDCB0"
@@ -15,7 +15,7 @@ order: 2
 ---
 
 <!-- Website copy for the listepo project site. The sync-docs workflow copies this file to
-listepo/landing (main) as content/projects/ketch.md on every change to main and on every v*
+pyrlyn/landing (main) as content/projects/ketch.md on every change to main and on every v*
 tag; front matter follows CONTENT_CONTRACT.md in that repository.
 Sources (checked 2026-09-27): README.md and the clap CLI in src/cli.rs; version from the latest
 GitHub release (v0.6.0); accent is the dark-theme --accent in site/DESIGN.md. -->
@@ -55,19 +55,19 @@ store, and links it onto your `PATH`.
 macOS and Linux:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/listepo/ketch/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/pyrlyn/ketch/main/install.sh | bash
 ```
 
 Windows (PowerShell):
 
 ```powershell
-irm https://raw.githubusercontent.com/listepo/ketch/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/pyrlyn/ketch/main/install.ps1 | iex
 ```
 
 Homebrew, or mise:
 
 ```bash
-brew install --cask listepo/tap/ketch
+brew install --cask pyrlyn/tap/ketch
 mise use -g github:listepo/ketch && ketch path install
 ```
 
@@ -119,10 +119,10 @@ ketch self uninstall
 
 ## Links
 
-- Repository: <https://github.com/listepo/ketch>
-- Website and documentation: <https://listepo.github.io/ketch/>
-- Commands reference: <https://listepo.github.io/ketch/docs/commands/>
-- Package registry: <https://github.com/listepo/ketch-registry>
-- Releases: <https://github.com/listepo/ketch/releases>
+- Repository: <https://github.com/pyrlyn/ketch>
+- Website and documentation: <https://pyrlyn.github.io/ketch/>
+- Commands reference: <https://pyrlyn.github.io/ketch/docs/commands/>
+- Package registry: <https://github.com/pyrlyn/ketch-registry>
+- Releases: <https://github.com/pyrlyn/ketch/releases>
 - License: your choice of GNU GPLv3, a royalty-free license for proprietary desktop, mobile and web
-  apps (with attribution), or a commercial license (see <https://github.com/listepo/ketch#license>)
+  apps (with attribution), or a commercial license (see <https://github.com/pyrlyn/ketch#license>)

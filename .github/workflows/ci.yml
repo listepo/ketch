@@ -25,7 +25,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # The shared listepo/infra workflow, pinned by commit, with Rust from
+  # The shared pyrlyn/infra workflow, pinned by commit, with Rust from
   # mise.toml and a check that rustc is that pin: fmt once, then per target of
   # its shared matrix clippy (--all-targets --all-features, so the tui feature
   # is linted too), check, and the tests where the runner executes the target
@@ -39,7 +39,7 @@ jobs:
     # Draft PRs are skipped here and reported green: review happens when the PR
     # is marked ready, and a draft must not look broken meanwhile.
     if: github.event.pull_request.draft != true
-    uses: listepo/infra/.github/workflows/ci-rust.yml@059c0c578f31c53a093aec1260b56ba4fcbc810c
+    uses: pyrlyn/infra/.github/workflows/ci-rust.yml@059c0c578f31c53a093aec1260b56ba4fcbc810c
     with:
       clippy-args: --locked
       tools: nextest

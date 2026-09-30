@@ -29,7 +29,7 @@ carries a `BREAKING CHANGE:` footer so release-plz bumps the minor.
 User-facing guides: [`docs/MANIFESTS.md`](docs/MANIFESTS.md),
 [`docs/REGISTRY.md`](docs/REGISTRY.md), [`docs/PLUGINS.md`](docs/PLUGINS.md),
 [`docs/LOCKFILE.md`](docs/LOCKFILE.md). The site at
-[listepo.github.io/ketch/docs](https://listepo.github.io/ketch/docs/) is
+[pyrlyn.github.io/ketch/docs](https://pyrlyn.github.io/ketch/docs/) is
 generated from those files — edit the Markdown here, not the published HTML.
 
 To add a package to the registry, put a `ketch.toml` at the package repo root

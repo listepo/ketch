@@ -9,7 +9,7 @@ Most CLI tools already ship binaries in their GitHub releases. Installing them i
 
 ketch v0.6.0 fixes that: one command, any repo, macOS, Linux and Windows.
 
-https://github.com/listepo/ketch
+https://github.com/pyrlyn/ketch
 
 2/
 `ketch install listepo/AirTalk`
@@ -31,7 +31,7 @@ Want it gone: `ketch self uninstall` removes everything it added.
 5/
 Single Rust binary. Triple-licensed: GPLv3, royalty-free for apps, or commercial.
 
-Release notes: https://github.com/listepo/ketch/releases/tag/v0.6.0
+Release notes: https://github.com/pyrlyn/ketch/releases/tag/v0.6.0
 Feedback and stars welcome.
 
-github.com/listepo/ketch — drafted five-post X thread announcing ketch v0.6.0
+github.com/pyrlyn/ketch — drafted five-post X thread announcing ketch v0.6.0

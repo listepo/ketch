@@ -22,8 +22,8 @@ It picks the right asset for your platform, checks it against the published chec
 
 Getting started takes one line:
 
-    curl -fsSL https://raw.githubusercontent.com/listepo/ketch/main/install.sh | bash
+    curl -fsSL https://raw.githubusercontent.com/pyrlyn/ketch/main/install.sh | bash
 
-Version 0.6.0 is out now: https://github.com/listepo/ketch/releases/tag/v0.6.0. The code is at https://github.com/listepo/ketch, under a triple license: GPLv3, a royalty-free license for proprietary desktop, mobile and web apps, or a commercial license.
+Version 0.6.0 is out now: https://github.com/pyrlyn/ketch/releases/tag/v0.6.0. The code is at https://github.com/pyrlyn/ketch, under a triple license: GPLv3, a royalty-free license for proprietary desktop, mobile and web apps, or a commercial license.
 
-github.com/listepo/ketch — drafted Medium story explaining ketch to a broader audience
+github.com/pyrlyn/ketch — drafted Medium story explaining ketch to a broader audience

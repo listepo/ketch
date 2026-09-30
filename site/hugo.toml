@@ -4,7 +4,7 @@
 # `sync-docs.py`, so `docs/*.md` stays the single source and the site never
 # drifts from it.
 
-baseURL = "https://listepo.github.io/ketch/"
+baseURL = "https://pyrlyn.github.io/ketch/"
 locale = "en-us"
 title = "ketch"
 enableRobotsTXT = true
@@ -18,8 +18,8 @@ disableKinds = ["taxonomy", "term"]
   description = "Install command-line tools and apps from GitHub releases on macOS, Linux, and Windows. No taps, no formulae, no build step — just what the project already ships, verified."
   tagline = "Catch releases straight from GitHub."
   author = "Ivan Tugay"
-  repo = "https://github.com/listepo/ketch"
-  registryRepo = "https://github.com/listepo/ketch-registry"
+  repo = "https://github.com/pyrlyn/ketch"
+  registryRepo = "https://github.com/pyrlyn/ketch-registry"
   ogImage = "img/og.png"
   keywords = ["package manager", "macOS", "Linux", "Windows", "GitHub releases", "CLI", "Rust", "homebrew alternative", "install binaries"]
 
@@ -41,7 +41,7 @@ disableKinds = ["taxonomy", "term"]
     weight = 30
   [[menu.main]]
     name = "GitHub"
-    url = "https://github.com/listepo/ketch"
+    url = "https://github.com/pyrlyn/ketch"
     weight = 40
 
 [markup]

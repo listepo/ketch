@@ -1,8 +1,8 @@
-# Security scans from the shared listepo/infra pipeline: CodeQL, Semgrep and Snyk in parallel
+# Security scans from the shared pyrlyn/infra pipeline: CodeQL, Semgrep and Snyk in parallel
 # behind `pipeline / gate`. Rust CI is not repeated here (`rust: false`): ci.yml runs it on the
 # same pushes and pull requests through infra's ci-rust.yml. Draft pull requests skip every job,
 # the gate included, until marked ready. Secrets are passed explicitly.
-# Shared workflows: https://github.com/listepo/infra/blob/main/docs/reusable-workflows.md
+# Shared workflows: https://github.com/pyrlyn/infra/blob/main/docs/reusable-workflows.md
 name: pipeline
 
 on:
@@ -24,7 +24,7 @@ permissions:
 
 jobs:
   pipeline:
-    uses: listepo/infra/.github/workflows/pipeline.yml@189816ac5a375e18e0235044970efcbc40e3cabd
+    uses: pyrlyn/infra/.github/workflows/pipeline.yml@189816ac5a375e18e0235044970efcbc40e3cabd
     permissions:
       contents: read
       security-events: write

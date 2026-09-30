@@ -15,7 +15,7 @@ Body:
 Every tool I use already has a release page with binaries for macOS, Linux and Windows. The missing piece was never the build. It was the last mile: choosing the right asset, checking it and putting it somewhere sensible. So I wrote ketch.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/listepo/ketch/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/pyrlyn/ketch/main/install.sh | bash
 ketch install listepo/AirTalk
 ketch why AirTalk
 ```
@@ -27,9 +27,9 @@ A few design decisions I care about:
 - **Reproducible machines.** `ketch lock` and `ketch sync` pin a toolset per project.
 - **Clean removal.** Everything lives under `~/.ketch`, and `ketch self uninstall` removes it all after showing you the list.
 
-v0.6.0 release notes: https://github.com/listepo/ketch/releases/tag/v0.6.0
-Source: https://github.com/listepo/ketch
+v0.6.0 release notes: https://github.com/pyrlyn/ketch/releases/tag/v0.6.0
+Source: https://github.com/pyrlyn/ketch
 
 ketch is triple-licensed: GPLv3, a royalty-free license for proprietary desktop, mobile and web apps, or a commercial license.
 
-github.com/listepo/ketch — drafted Hashnode article on design decisions behind ketch v0.6.0
+github.com/pyrlyn/ketch — drafted Hashnode article on design decisions behind ketch v0.6.0

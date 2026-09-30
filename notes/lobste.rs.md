@@ -8,7 +8,7 @@ Title:
 ketch: install CLI tools from GitHub releases with checksum verification and rollback
 
 URL:
-https://github.com/listepo/ketch
+https://github.com/pyrlyn/ketch
 
 Author comment:
 
@@ -16,10 +16,10 @@ I wrote this. ketch installs any tool that ships prebuilt binaries in GitHub rel
 
     ketch install listepo/AirTalk
 
-State lives under `~/.ketch`; `ketch lock` and `ketch sync` pin versions per project. Single Rust binary, macOS, Linux and Windows. v0.6.0: https://github.com/listepo/ketch/releases/tag/v0.6.0
+State lives under `~/.ketch`; `ketch lock` and `ketch sync` pin versions per project. Single Rust binary, macOS, Linux and Windows. v0.6.0: https://github.com/pyrlyn/ketch/releases/tag/v0.6.0
 
 License is a triple license: GPLv3, a royalty-free license for proprietary desktop, mobile and web apps, or a commercial license.
 
 I'd appreciate critique of the asset-selection heuristics and the verification model.
 
-github.com/listepo/ketch — drafted Lobsters submission with a technical author comment
+github.com/pyrlyn/ketch — drafted Lobsters submission with a technical author comment
