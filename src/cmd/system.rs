@@ -31,6 +31,9 @@ pub fn doctor(cfg: &Config, args: DoctorArgs) -> Result<()> {
     // Not a platform check: every shell reads the same startup files wherever
     // it runs, so a second platform would only duplicate this.
     checks.push(shell::path_check(cfg));
+    if let Some(check) = shell::stale_registry_check(cfg) {
+        checks.push(check);
+    }
     if let Some(check) = path_binary_check(cfg) {
         checks.push(check);
     }
@@ -585,8 +588,8 @@ fn plan_lines(plan: &self_update::UninstallPlan) -> Vec<String> {
     for file in &plan.shell_files {
         lines.push(format!("the PATH block in {}", file.display()));
     }
-    if plan.user_path {
-        lines.push("the user PATH".to_string());
+    for entry in &plan.registry {
+        lines.push(entry.describe().to_string());
     }
     if plan.cask.is_some() {
         lines.push("the Homebrew cask".to_string());
