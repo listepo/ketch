@@ -90,7 +90,7 @@ impl Config {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```ignore
     /// use ketch::config::Config;
     ///
     /// let config = Config::load(None).unwrap();

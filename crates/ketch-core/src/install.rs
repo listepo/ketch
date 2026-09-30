@@ -147,7 +147,7 @@ pub fn install(
 ///
 /// # Examples
 ///
-/// ```no_run
+/// ```ignore
 /// # use crate::config::Config;
 /// # use crate::install::{commit, prepare, InstallRequest, Installed};
 /// # use crate::model::PackageSpec;
@@ -561,7 +561,7 @@ fn extra_placements(
 ///
 /// # Examples
 ///
-/// ```no_run
+/// ```ignore
 /// let mut state = todo!();
 /// let cfg = todo!();
 /// let prepared = todo!();

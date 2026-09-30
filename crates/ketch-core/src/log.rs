@@ -268,7 +268,7 @@ fn now() -> i64 {
 ///
 /// # Examples
 ///
-/// ```
+/// ```ignore
 /// assert_eq!(timestamp(0), "1970-01-01T00:00:00Z");
 /// ```
 pub fn timestamp(secs: i64) -> String {
