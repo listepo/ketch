@@ -222,17 +222,14 @@ pub fn write_ketch_docs(prefix: &Path) -> Result<Vec<ExtraPath>> {
     std::fs::write(&man_path, render_manpage()).map_err(|e| Error::io(&man_path, e))?;
 
     let mut extras = vec![ExtraPath::Path(man_rel.to_string())];
-    let mut command = Cli::command();
-    let name = command.get_name().to_string();
     for shell in CompletionShell::ALL {
         let rel = generated_completion_rel(shell);
         let path = prefix.join(&rel);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
         }
-        let mut buf = Vec::new();
-        clap_complete::generate(shell.to_clap(), &mut command, &name, &mut buf);
-        std::fs::write(&path, buf).map_err(|e| Error::io(&path, e))?;
+        std::fs::write(&path, crate::complete::script(shell.to_clap()))
+            .map_err(|e| Error::io(&path, e))?;
         extras.push(ExtraPath::Spec(ExtraPathSpec {
             path: rel,
             kind: ExtraKind::Completion,

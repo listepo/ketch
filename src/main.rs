@@ -8,6 +8,7 @@ mod bin_choice;
 mod changelog;
 mod cli;
 mod cmd;
+mod complete;
 mod config;
 mod diff;
 mod error;
@@ -37,12 +38,16 @@ mod tui;
 mod ui;
 mod wizard;
 
-use clap::{CommandFactory, Parser};
+use clap::Parser;
 use cli::{Cli, Command};
 use error::Result;
 
 fn main() {
-    let cli = Cli::parse();
+    let args: Vec<std::ffi::OsString> = std::env::args_os().collect();
+    if let Some(code) = complete::intercept(&args) {
+        std::process::exit(code);
+    }
+    let cli = Cli::parse_from(args);
     ui::init(
         if cli.global.no_color {
             Some(false)
@@ -81,9 +86,8 @@ fn run(cli: Cli) -> Result<()> {
     // before the config is built.
     if let Command::Completions(args) = &cli.command {
         if !args.install {
-            let mut command = Cli::command();
-            let name = command.get_name().to_string();
-            clap_complete::generate(args.shell, &mut command, name, &mut std::io::stdout());
+            let script = complete::script(args.shell);
+            ui::out(String::from_utf8_lossy(&script).trim_end_matches('\n'));
             return Ok(());
         }
     }
