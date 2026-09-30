@@ -63,6 +63,10 @@ notes = "Shell completions are under complete/ in the payload."
 bin = [{ path = "*/rg", name = "rg" }]
 extra_paths = ["complete/rg.bash", "doc/rg.1"]
 
+[hooks]
+after_install = "./rg --version"
+after_update = "rm -rf \"$HOME/.cache/rg\""
+
 [asset]
 include = ["*-apple-darwin.tar.gz"]
 exclude = ["*-musl-*"]
@@ -93,6 +97,7 @@ exclude = ["*-musl-*"]
 | `extra_paths` | list of strings or tables | empty | Man pages and completions to link into user directories. |
 | `asset` | table | platform picks | Narrows which release asset is chosen. |
 | `trust` | table | none | Whose signature a release must carry. See below. |
+| `hooks` | table | none | Commands to run before and after install, update and uninstall. See below. |
 
 Unknown keys are an error, not a warning. A misspelt key that is silently
 ignored gives you a package that installs the wrong thing and says nothing.
@@ -268,6 +273,67 @@ shows it. Nothing the signature file says about itself is printed. A package
 without `trust` shows as `checksum` when the release published a matching
 checksum, and `first use` when it published none.
 
+### `hooks`
+
+A command to run at each of six moments in the package's life. Each is one
+line for the platform shell: `sh -c` on macOS and Linux, `cmd /C` on Windows.
+
+```toml
+[hooks]
+before_install = "echo about to install $KETCH_PACKAGE $KETCH_VERSION"
+after_install = "./tool --setup"
+before_update = "./tool --export > \"$KETCH_ROOT/tool-backup.json\""
+after_update = "./tool --import \"$KETCH_ROOT/tool-backup.json\""
+before_uninstall = "./tool --teardown"
+after_uninstall = "rm -rf \"$HOME/.cache/tool\""
+```
+
+| Key | Runs |
+| --- | --- |
+| `before_install` | Before a first install of the package is placed, or a reinstall of the version already installed. |
+| `after_install` | After that install is placed, linked and recorded. |
+| `before_update` | Before a different version replaces the installed one — `ketch upgrade`, `ketch install` of another version, or `ketch rollback`. |
+| `after_update` | After the new version is placed, linked and recorded. |
+| `before_uninstall` | Before the package's links and store directory are removed. |
+| `after_uninstall` | After they are gone and the package is out of `state.json`. |
+
+Every hook gets the same environment on top of your own:
+
+| Variable | Value |
+| --- | --- |
+| `KETCH_HOOK` | The key being run, `after_install` and so on. |
+| `KETCH_PACKAGE` | The package name. |
+| `KETCH_VERSION` | The version being installed, updated to, or removed. |
+| `KETCH_PREVIOUS_VERSION` | The version being replaced. Set for the two update hooks only. |
+| `KETCH_PREFIX` | The package's directory in the store. It does not exist yet in `before_install`, and is gone in `after_uninstall`. |
+| `KETCH_BIN_DIR` | Where binaries are linked, `~/.ketch/bin` by default. |
+| `KETCH_ROOT` | The ketch root, `~/.ketch` by default. |
+
+The working directory is `KETCH_PREFIX` whenever it exists, so `./tool` in a
+hook is the binary that was just unpacked; otherwise the hook inherits the
+directory ketch was run from. Standard input is closed. Output is captured:
+it goes to the log, and to the terminal with `--verbose`.
+
+A `before_*` hook that exits non-zero stops the operation, and its stderr is
+the error's detail — nothing is placed, nothing is removed. An `after_*` hook
+that fails is a warning: the install or removal has already happened and
+`state.json` says so, and a failed hook does not make that untrue. A hook
+still running after ten minutes is stopped, with everything it started, and
+counts as failed.
+
+`ketch rollback` is an update back to the retained version, so it runs the
+two update hooks with `KETCH_PREVIOUS_VERSION` naming the version being left.
+`ketch prune` removes old copies of a package that stays installed at the
+same version, and runs no hooks.
+
+**Hooks run only from a manifest in your own manifest directory**,
+`~/.ketch/manifests/<name>.toml`. A registry package or a built-in manifest is
+someone else's file, and installing what it describes must never mean running
+their shell — so a manifest from those tiers that carries `hooks` is refused
+at install, before anything is placed, with a message saying which file to
+copy where. Copying it to your manifest directory is the opt-in: it becomes
+yours, and it wins over the registry's copy from then on.
+
 ## What ketch checks
 
 Serde checks the shape. These are the values it cannot judge:
@@ -282,6 +348,8 @@ Serde checks the shape. These are the values it cannot judge:
 | each `bin` entry needs `name` or `path` | An entry with neither says nothing. |
 | `provides` aliases must be non-empty and whitespace-free | An alias nobody can type is not an alias. |
 | `strip_prefix` must be at most 8 | Each level is a directory listing, and no real archive nests wrappers that deep. |
+| every `hooks` entry must say something | A blank one would still spawn a shell and report success. |
+| a manifest with `hooks` must come from your manifest directory — checked at install, not at load | A registry or built-in manifest is someone else's file, and its commands are their code. |
 | `trust.signature` and `trust.signed` must be usable file names, and `signature` knows only `{file}` and must name another file | They name files downloaded beside the asset. |
 | `trust` keys must belong to the chosen `verifier` | A `fingerprint` on a minisign policy would read as a check and be none. |
 | sigstore needs an `https` `issuer` and an `identity` or `repository` | An issuer alone admits anyone it issues certificates to. |

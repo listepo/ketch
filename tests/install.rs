@@ -296,6 +296,93 @@ fn uninstall_removes_every_trace_of_a_tool() {
     assert!(sandbox.ok(&["list", "local"]).contains("nothing installed"));
 }
 
+/// A user manifest whose every hook appends its name, the versions it saw and
+/// where it ran to one file, so a run of commands leaves an order to assert
+/// on. `replace` swaps one hook's command for another.
+fn write_hooked_manifest(sandbox: &Sandbox, log: &std::path::Path, replace: Option<(&str, &str)>) {
+    let dir = sandbox.root().join("manifests");
+    std::fs::create_dir_all(&dir).expect("manifests dir");
+    let line = format!(
+        "if [ \"$PWD\" -ef \"$KETCH_PREFIX\" ]; then cwd=prefix; else cwd=elsewhere; fi; \
+         echo \"$KETCH_HOOK $KETCH_VERSION ${{KETCH_PREVIOUS_VERSION:-none}} $cwd\" >> '{}'",
+        log.display()
+    );
+    let hooks = [
+        "before_install",
+        "after_install",
+        "before_update",
+        "after_update",
+        "before_uninstall",
+        "after_uninstall",
+    ]
+    .iter()
+    .map(|key| match replace {
+        // Literal strings, so the shell's own quoting passes through untouched.
+        Some((k, cmd)) if k == *key => format!("{key} = '''{cmd}'''\n"),
+        _ => format!("{key} = '''{line}'''\n"),
+    })
+    .collect::<String>();
+    std::fs::write(
+        dir.join("testtool.toml"),
+        format!("name = \"testtool\"\nsource = \"test:testtool\"\n\n[hooks]\n{hooks}"),
+    )
+    .expect("write manifest");
+}
+
+#[test]
+fn hooks_run_around_install_upgrade_rollback_and_uninstall_in_order() {
+    let sandbox = Sandbox::new();
+    let log = sandbox.fixture("hooks.log");
+    write_hooked_manifest(&sandbox, &log, None);
+    publish_tool(&sandbox, "1.0.0");
+
+    sandbox.ok(&["install", "testtool", "--yes"]);
+    publish_tool(&sandbox, "2.0.0");
+    sandbox.ok(&["upgrade", "--yes"]);
+    sandbox.ok(&["rollback", "testtool"]);
+    sandbox.ok(&["uninstall", "testtool", "--yes"]);
+
+    // The prefix is the working directory once it exists: not yet before an
+    // install, and no longer after an uninstall. A rollback is an update back
+    // to a prefix that is already there.
+    let expected = "\
+before_install 1.0.0 none elsewhere
+after_install 1.0.0 none prefix
+before_update 2.0.0 1.0.0 elsewhere
+after_update 2.0.0 1.0.0 prefix
+before_update 1.0.0 2.0.0 prefix
+after_update 1.0.0 2.0.0 prefix
+before_uninstall 1.0.0 none prefix
+after_uninstall 1.0.0 none elsewhere
+";
+    assert_eq!(std::fs::read_to_string(&log).expect("hooks ran"), expected);
+}
+
+#[test]
+fn a_failing_before_install_hook_installs_nothing() {
+    let sandbox = Sandbox::new();
+    let log = sandbox.fixture("hooks.log");
+    write_hooked_manifest(
+        &sandbox,
+        &log,
+        Some(("before_install", "echo no >&2; exit 7")),
+    );
+    publish_tool(&sandbox, "1.0.0");
+
+    let err = sandbox.fails(&["install", "testtool", "--yes"]);
+    assert!(err.contains("before_install hook for testtool"), "{err}");
+    assert!(
+        err.contains("no"),
+        "stderr of the hook is the detail: {err}"
+    );
+    assert!(!sandbox.bin().join("testtool").exists());
+    assert!(!sandbox.store().join("testtool").exists());
+    assert!(
+        !log.exists(),
+        "the after hook ran for an install that did not happen"
+    );
+}
+
 #[test]
 fn a_binary_the_user_put_there_is_never_overwritten() {
     let sandbox = Sandbox::new();

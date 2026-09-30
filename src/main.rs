@@ -13,6 +13,7 @@ mod diff;
 mod error;
 mod extra;
 mod extract;
+mod hooks;
 mod http;
 mod install;
 mod listing;

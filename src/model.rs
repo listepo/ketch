@@ -696,6 +696,47 @@ pub struct ClassifiedExtra {
     pub section: Option<String>,
 }
 
+/// Commands a manifest runs around its own install, update and uninstall.
+///
+/// Each is one line for the platform shell. `crate::hooks` runs them, and
+/// only from a manifest in the user's own manifest directory: anywhere else
+/// the manifest is someone else's file, and a command in it is their code.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct Hooks {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before_install: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub after_install: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before_update: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub after_update: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before_uninstall: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub after_uninstall: Option<String>,
+}
+
+impl Hooks {
+    /// Every hook with its manifest key, set or not.
+    pub fn entries(&self) -> [(&'static str, Option<&str>); 6] {
+        [
+            ("before_install", self.before_install.as_deref()),
+            ("after_install", self.after_install.as_deref()),
+            ("before_update", self.before_update.as_deref()),
+            ("after_update", self.after_update.as_deref()),
+            ("before_uninstall", self.before_uninstall.as_deref()),
+            ("after_uninstall", self.after_uninstall.as_deref()),
+        ]
+    }
+
+    /// True when no hook is set, so an empty table need not be written.
+    pub fn is_empty(&self) -> bool {
+        self.entries().iter().all(|(_, cmd)| cmd.is_none())
+    }
+}
+
 /// How to install one package.
 ///
 /// `deny_unknown_fields` is deliberate: a manifest is hand-written, often by
@@ -735,6 +776,9 @@ pub struct Manifest {
     /// Whose signature a release must carry. See `crate::trust`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trust: Option<TrustPolicy>,
+    /// Commands to run around install, update and uninstall. See `crate::hooks`.
+    #[serde(default, skip_serializing_if = "Hooks::is_empty")]
+    pub hooks: Hooks,
 }
 
 impl Manifest {
@@ -798,6 +842,13 @@ impl Manifest {
             }
             crate::trust::check_policy(trust)?;
         }
+        // A blank hook would still spawn a shell and report success; a key
+        // that is present and says nothing is a mistake worth naming.
+        for (key, cmd) in self.hooks.entries() {
+            if cmd.is_some_and(|c| c.trim().is_empty()) {
+                return Err(Error::msg(format!("`hooks.{key}` is empty")));
+            }
+        }
         Ok(())
     }
 
@@ -822,6 +873,7 @@ impl Manifest {
             notes: None,
             extra_paths: Vec::new(),
             trust: None,
+            hooks: Hooks::default(),
         }
     }
 }
@@ -1519,5 +1571,31 @@ mod tests {
         assert!(glob_match("rg?.tar.gz", "rg1.tar.gz"));
         // Pathological pattern must still terminate promptly.
         assert!(!glob_match("*a*a*a*a*b", &"a".repeat(64)));
+    }
+
+    #[test]
+    fn hooks_parse_from_their_table_and_a_blank_one_is_refused() {
+        let manifest: Manifest = toml::from_str(
+            "name = \"tool\"\nsource = \"o/r\"\n[hooks]\nafter_install = \"./setup\"\n",
+        )
+        .unwrap();
+        assert_eq!(manifest.hooks.after_install.as_deref(), Some("./setup"));
+        assert!(manifest.hooks.before_install.is_none());
+        manifest.validate().unwrap();
+        // Round-trips without writing the five unset keys.
+        let written = toml::to_string(&manifest).unwrap();
+        assert!(written.contains("after_install"), "{written}");
+        assert!(!written.contains("before_install"), "{written}");
+
+        let blank: Manifest =
+            toml::from_str("name = \"tool\"\nsource = \"o/r\"\n[hooks]\nbefore_update = \" \"\n")
+                .unwrap();
+        let err = blank.validate().unwrap_err().to_string();
+        assert!(err.contains("hooks.before_update"), "{err}");
+
+        let unknown = toml::from_str::<Manifest>(
+            "name = \"tool\"\nsource = \"o/r\"\n[hooks]\nafter_instal = \"x\"\n",
+        );
+        assert!(unknown.is_err(), "a misspelt hook key must not be ignored");
     }
 }

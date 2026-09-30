@@ -207,6 +207,7 @@ conditional, multi-stage Rust automation.
 | `src/cli.rs` | the clap surface, kept separate so `cmd/` takes its args directly |
 | `src/cmd/` | thin command bodies: arguments, output, confirmations |
 | `src/install.rs` | the install/uninstall/relink pipeline every command shares |
+| `src/hooks.rs` | a manifest's `[hooks]` commands, run by `install.rs` around install, update and uninstall — and only from a user-tier manifest |
 | `src/resolve.rs` | side-effect-free resolution trace shared by install and `ketch why` |
 | `src/bin_choice.rs` | which binary to link when several share the package's name, the same on every OS |
 | `src/source/` | where releases come from: GitHub built in, plugins external |
@@ -328,6 +329,12 @@ Reuse the guards that exist rather than writing new ones:
   to wipe named children when the root is `$HOME`, because a leftover tree
   from those older installers can still look like that. Anything left
   behind is reported, never removed.
+- `hooks::allowed` — a manifest's `[hooks]` table is shell the manifest's
+  author wrote, and `install.rs` runs it only when the origin is the user's
+  own manifest directory. A registry or built-in manifest with hooks is
+  refused before anything is placed, and skipped with a warning on uninstall
+  so a package can always be removed. Add a new hook event through
+  `hooks::Event`, not with a second `Command` in a command body.
 - `changelog::sanitize` — drops escape sequences and bidi overrides from client
   prose before it is printed. A changelog and the registry's copy of a package
   file, shown as `ketch registry push`'s review diff, are the places ketch shows

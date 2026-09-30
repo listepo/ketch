@@ -91,6 +91,7 @@ pub fn manifest(answers: &Answers) -> Result<Manifest> {
             .map(ExtraPath::Path)
             .collect(),
         trust: None,
+        hooks: crate::model::Hooks::default(),
     };
     // A config written from now on says which binary is the command rather
     // than leaving it to discovery, whose order differs between platforms

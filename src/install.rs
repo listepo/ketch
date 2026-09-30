@@ -9,6 +9,7 @@
 use crate::bin_choice::{self, Picked};
 use crate::config::{sanitize_component, Config};
 use crate::error::{Error, Result};
+use crate::hooks;
 use crate::manifest::Resolver;
 use crate::model::{
     now_unix, AssetSelector, BinSpec, InstalledPackage, LinkRecord, LocalKind, PackageRef,
@@ -603,9 +604,40 @@ pub fn commit(cfg: &Config, state: &mut State, prepared: Prepared) -> Result<Ins
     // package may have been placed since.
     let existing = state.get(&manifest.name).cloned();
 
-    // --- place --------------------------------------------------------------
     let version = release.version.to_string();
     let store_dir = cfg.package_dir(&manifest.name, &version);
+
+    // --- hooks: before ------------------------------------------------------
+    // Refused before anything is placed: a manifest that may not run hooks
+    // must not install as though it had none, or the user never learns why
+    // the hook they wrote did nothing.
+    if !manifest.hooks.is_empty() && !hooks::allowed(&origin) {
+        return Err(hooks::refusal(&origin, &manifest.name));
+    }
+    // A reinstall of the same version is an install, not an update: nothing
+    // the update hooks exist to migrate has changed.
+    let previous = existing
+        .as_ref()
+        .filter(|p| p.version != release.version)
+        .map(|p| p.version.to_string());
+    let (before, after) = match previous {
+        Some(_) => (hooks::Event::BeforeUpdate, hooks::Event::AfterUpdate),
+        None => (hooks::Event::BeforeInstall, hooks::Event::AfterInstall),
+    };
+    hooks::run(
+        &manifest.hooks,
+        before,
+        &hooks::Context {
+            name: &manifest.name,
+            version: &version,
+            previous: previous.as_deref(),
+            prefix: &store_dir,
+            bin_dir: &cfg.bin_dir,
+            root: &cfg.root,
+        },
+    )?;
+
+    // --- place --------------------------------------------------------------
     // Reinstalling the same version writes into the directory the current
     // install already occupies, and failing there must not delete it.
     let in_place = existing.as_ref().is_some_and(|p| p.prefix == store_dir);
@@ -700,6 +732,21 @@ pub fn commit(cfg: &Config, state: &mut State, prepared: Prepared) -> Result<Ins
     state.insert(package.clone());
     orphan.keep();
 
+    if let Some(manifest) = &package.manifest {
+        hooks::run_or_warn(
+            &manifest.hooks,
+            after,
+            &hooks::Context {
+                name: &package.name,
+                version: &version,
+                previous: previous.as_deref(),
+                prefix: &package.prefix,
+                bin_dir: &cfg.bin_dir,
+                root: &cfg.root,
+            },
+        );
+    }
+
     // Everything above has already happened: the payload is placed and `state`
     // names it. Recording is the last thing and the least important thing, so
     // `stats::record` warns rather than returning — an install that succeeded
@@ -783,6 +830,24 @@ pub fn batch(
     results.into_iter().map(|(_, result)| result).collect()
 }
 
+/// The hooks a recorded package may run: none when its manifest has none, and
+/// an error when the manifest's origin may not run any.
+fn recorded_hooks(pkg: &InstalledPackage) -> Result<Option<&crate::model::Hooks>> {
+    let Some(h) = pkg
+        .manifest
+        .as_ref()
+        .map(|m| &m.hooks)
+        .filter(|h| !h.is_empty())
+    else {
+        return Ok(None);
+    };
+    if hooks::allowed(&pkg.origin) {
+        Ok(Some(h))
+    } else {
+        Err(hooks::refusal(&pkg.origin, &pkg.name))
+    }
+}
+
 /// Removes a package's links and stored files, then removes its state entry.
 ///
 /// # Errors
@@ -802,12 +867,37 @@ pub fn uninstall(cfg: &Config, state: &mut State, name: &str) -> Result<Installe
         .cloned()
         .ok_or_else(|| Error::NotInstalled(name.to_string()))?;
     let platform = crate::platform::host()?;
+    let version = pkg.version.to_string();
+    let hook_ctx = hooks::Context {
+        name: &pkg.name,
+        version: &version,
+        previous: None,
+        prefix: &pkg.prefix,
+        bin_dir: &cfg.bin_dir,
+        root: &cfg.root,
+    };
+    // Skipped rather than refused, unlike install and rollback: an uninstall
+    // must stay possible whatever the recorded manifest says.
+    let pkg_hooks = recorded_hooks(&pkg).unwrap_or_else(|_| {
+        ui::warn(&format!(
+            "{}: skipping hooks from a {} manifest",
+            pkg.name,
+            pkg.origin.tier()
+        ));
+        None
+    });
+    if let Some(h) = pkg_hooks {
+        hooks::run(h, hooks::Event::BeforeUninstall, &hook_ctx)?;
+    }
     platform.unplace(&pkg.links)?;
     remove_store_dir(cfg, &pkg.prefix);
     for previous in &pkg.retained {
         remove_store_dir(cfg, &previous.prefix);
     }
     state.remove(&pkg.name);
+    if let Some(h) = pkg_hooks {
+        hooks::run_or_warn(h, hooks::Event::AfterUninstall, &hook_ctx);
+    }
 
     // Recorded after the removal has happened, for the same reason `commit`
     // records last: the package is gone either way.
@@ -943,6 +1033,27 @@ pub fn rollback(
     let version = target.version.to_string();
     let manifest = pkg.manifest.clone();
     let linked = !pkg.links.is_empty();
+
+    // A rollback is an update back to the retained version, so it runs the
+    // update hooks — and, as at install, refuses a manifest that may not run
+    // any before a single link moves.
+    let pkg_hooks = recorded_hooks(&pkg)?.cloned();
+    let leaving = pkg.version.to_string();
+    if let Some(h) = &pkg_hooks {
+        hooks::run(
+            h,
+            hooks::Event::BeforeUpdate,
+            &hooks::Context {
+                name: &pkg.name,
+                version: &version,
+                previous: Some(&leaving),
+                prefix: &target.prefix,
+                bin_dir: &cfg.bin_dir,
+                root: &cfg.root,
+            },
+        )?;
+    }
+
     let extras = extra_placements(
         platform.as_ref(),
         manifest
@@ -1023,6 +1134,20 @@ pub fn rollback(
 
     let previous = replaced.to_string();
     let version = package.version.to_string();
+    if let Some(h) = &pkg_hooks {
+        hooks::run_or_warn(
+            h,
+            hooks::Event::AfterUpdate,
+            &hooks::Context {
+                name: &package.name,
+                version: &version,
+                previous: Some(&previous),
+                prefix: &package.prefix,
+                bin_dir: &cfg.bin_dir,
+                root: &cfg.root,
+            },
+        );
+    }
     let source = package.source.to_string();
     let target_spec = package.target.to_string();
     crate::stats::record(
