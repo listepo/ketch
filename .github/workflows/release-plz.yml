@@ -18,7 +18,7 @@ name: release-plz
 # an organization secret) is required: GitHub starts no workflow from a
 # GITHUB_TOKEN event, so a pull request opened with it would carry no CI.
 # Pinned to pyrlyn/infra#11 (release-commit-pattern, release-branch-prefix,
-# verify-tools); repin to its merge commit.
+# verify-tools, verify-mise-install-args); repin to its merge commit.
 on:
   push:
     branches: [main]
@@ -28,7 +28,7 @@ permissions:
 
 jobs:
   release-plz:
-    uses: pyrlyn/infra/.github/workflows/release-plz.yml@f2eb30d55d603479e9c95b4bfa19569b3197c3fc
+    uses: pyrlyn/infra/.github/workflows/release-plz.yml@90f7b2bac7f2b06119a5831470057ca3ec6926ac
     permissions:
       contents: write # the release branch
       pull-requests: write # the release pull request
@@ -40,6 +40,7 @@ jobs:
       release-branch-prefix: release-plz-
       release-workflow: release.yml
       verify-os: '["macos-latest", "ubuntu-latest", "windows-latest"]'
+      verify-mise-install-args: rust
       verify-tools: nextest
       verify-command: |
         if [ "$RUNNER_OS" = macOS ]; then cargo fmt --all -- --check; fi

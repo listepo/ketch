@@ -8,7 +8,7 @@ name: Bump and release
 # commit touches only Cargo.toml, Cargo.lock and CHANGELOG.md, so what is
 # tested is what ships. No `dry_run` input: a green "Bump and release" reads as
 # a release. The preview is local only: `scripts/release.sh <level> --dry-run`.
-# Pinned to pyrlyn/infra#11 (verify-tools); repin to its merge commit.
+# Pinned to pyrlyn/infra#11 (verify-tools, verify-mise-install-args); repin to its merge commit.
 on:
   workflow_dispatch:
     inputs:
@@ -23,7 +23,7 @@ permissions:
 
 jobs:
   bump:
-    uses: pyrlyn/infra/.github/workflows/bump.yml@f2eb30d55d603479e9c95b4bfa19569b3197c3fc
+    uses: pyrlyn/infra/.github/workflows/bump.yml@90f7b2bac7f2b06119a5831470057ca3ec6926ac
     permissions:
       contents: write # push the version commit
       actions: write # dispatch release.yml, cancel-run
@@ -33,6 +33,7 @@ jobs:
       # git-cliff and the Rust (scripts/release.sh runs cargo) at the mise.toml pins.
       mise-install-args: rust git-cliff
       verify-os: '["macos-latest", "ubuntu-latest", "windows-latest"]'
+      verify-mise-install-args: rust
       verify-tools: nextest
       verify-command: |
         if [ "$RUNNER_OS" = macOS ]; then cargo fmt --all -- --check; fi
