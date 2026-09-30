@@ -14,7 +14,7 @@ The same schema is used in three places:
 | --- | --- | --- |
 | Your machine | `~/.ketch/manifests/<name>.toml` | just you |
 | The package registry | `<package>/ketch.toml` | everyone — see [REGISTRY.md](REGISTRY.md) |
-| Built into ketch | `src/builtin.toml` | everyone, offline |
+| Built into ketch | `crates/ketch-core/src/builtin.toml` | everyone, offline |
 
 They are searched in that order, so a manifest of your own always wins.
 

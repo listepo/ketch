@@ -2,7 +2,7 @@
 #
 # This is the file `ketch registry push` sends to the registry (pyrlyn/ketch-registry,
 # folder `ketch/`), and what `ketch self install` resolves through once it is
-# there. It must stay in step with the entry in src/builtin.toml, which serves
+# there. It must stay in step with the entry in crates/ketch-core/src/builtin.toml, which serves
 # the same purpose for a machine that has not fetched the registry yet.
 # Schema: docs/MANIFESTS.md.
 
