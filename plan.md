@@ -22,7 +22,6 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | F9 | todo | P2 | 2 | 0% | |
 | B69 | todo | P2 | 1 | 0% | |
 | M10 | todo | P2 | 2 | 0% | |
-| F10 | todo | P2 | 2 | 0% | |
 | F11 | todo | P3 | 2 | 0% | |
 | R4 | todo | P2 | 3 | 0% | |
 
@@ -356,16 +355,6 @@ Plan:
 
 Check: a test walks `Cli::command()` and asserts one page per visible command; `mandoc -Tlint` clean on macOS and Linux CI; `man ketch-install` works after `self install` in a scratch root; `just check`.
 
-### F10. Coloured output: errors red, success green, warnings yellow
-
-Most of this exists. `src/ui.rs` paints the `error` label red, `warning` yellow, success verbs green, steps blue and notes dim. It honours `--no-color`, `NO_COLOR`, `CLICOLOR_FORCE` and non-TTY output, and there is no `println!` outside `ui`. F10 is an audit plus the gaps:
-
-1. Only the label is coloured today. Decide with Ivan whether the error headline and warning text are coloured as well.
-2. Route every remaining status string through the helpers: prompts (`confirm`, `select`), `completed`, table markers (M9's yellow `update available`).
-3. Windows: make sure ANSI works on legacy conhost (enable VT processing, or fall back to plain text).
-4. Optional: a `color = "auto" | "always" | "never"` config key and `KETCH_COLOR`, next to `--no-color`.
-
-Check: insta snapshots of each line kind with `CLICOLOR_FORCE=1`; no escape bytes with `NO_COLOR=1`, `--no-color`, or when piped; `just check`.
 
 ### F11. Emoji icons per operation, `emoji` config key (default true)
 

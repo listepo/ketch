@@ -2637,6 +2637,7 @@ dependencies = [
  "bzip2",
  "clap",
  "clap_complete",
+ "console",
  "crossterm",
  "diesel",
  "diesel_migrations",
