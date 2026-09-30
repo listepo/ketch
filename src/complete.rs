@@ -4,8 +4,8 @@
 //! clap_complete writes the static part — commands, aliases, flags — from
 //! `Cli::command()`. Package names are not known when a script is generated,
 //! so the script calls back into `ketch __complete <kind>`, which prints the
-//! names one per line. That command is shell-agnostic on purpose: bash uses it
-//! today, and the PowerShell completer is meant to reuse it.
+//! names one per line. That command is shell-agnostic on purpose: the bash and
+//! PowerShell scripts both call it, with the same table of commands.
 //!
 //! Why not clap_complete's `CompleteEnv`: it lives behind the
 //! `unstable-dynamic` feature, outside clap_complete's semver promise, and its
@@ -142,11 +142,110 @@ pub fn script(shell: clap_complete::Shell) -> Vec<u8> {
     let name = command.get_name().to_string();
     let mut buf = Vec::new();
     clap_complete::generate(shell, &mut command, &name, &mut buf);
-    if shell == clap_complete::Shell::Bash {
-        buf.extend_from_slice(bash_packages(&name).as_bytes());
+    match shell {
+        clap_complete::Shell::Bash => buf.extend_from_slice(bash_packages(&name).as_bytes()),
+        clap_complete::Shell::PowerShell => {
+            buf = powershell_with_packages(&String::from_utf8_lossy(&buf)).into_bytes();
+        }
+        _ => {}
     }
     buf
 }
+
+/// The line clap's PowerShell completer opens with. The package lookup goes
+/// straight after it, inside clap's own script block, so there is one
+/// completer to register and no closure to keep alive.
+const POWERSHELL_PARAM: &str = "param($wordToComplete, $commandAst, $cursorPosition)\n";
+
+/// Package-name completion spliced into clap's PowerShell completer, the
+/// same rules as [`bash_packages`]: when the word being completed is a
+/// package for a command in [`DYNAMIC`], answer from `ketch __complete`;
+/// otherwise fall through to clap's static answers below it.
+///
+/// Written for Windows PowerShell 5.1 as well as 7: no `??`, no ternary.
+/// Comparisons are the case-sensitive `-ceq`/`-ccontains`, because clap's
+/// subcommands and flags are. When clap stops emitting [`POWERSHELL_PARAM`]
+/// the script is left as clap wrote it, and a test says so.
+fn powershell_with_packages(clap_script: &str) -> String {
+    let Some(at) = clap_script.find(POWERSHELL_PARAM) else {
+        return clap_script.to_string();
+    };
+    let mut command = Cli::command();
+    command.build();
+    let mut cases = String::new();
+    for (sub_name, kind) in DYNAMIC {
+        let Some(sub) = command.find_subcommand(sub_name) else {
+            continue;
+        };
+        let mut names = vec![sub.get_name()];
+        names.extend(sub.get_visible_aliases());
+        let multi = sub
+            .get_positionals()
+            .any(|arg| matches!(arg.get_action(), ArgAction::Append));
+        cases.push_str(&format!(
+            "                {}if (@({}) -ccontains $sub) {{ $kind = '{}'; $multi = ${}; $takes += @({}) }}\n",
+            if cases.is_empty() { "" } else { "else" },
+            powershell_list(&names),
+            kind.as_str(),
+            multi,
+            powershell_list(&value_options(sub)),
+        ));
+    }
+    cases.push_str("                else { break }\n");
+    let block = POWERSHELL_PACKAGES
+        .replace("@GLOBAL@", &powershell_list(&value_options(&command)))
+        .replace("@CASES@", &cases)
+        .replace("@COMMAND@", COMMAND);
+    let split = at + POWERSHELL_PARAM.len();
+    format!("{}{block}{}", &clap_script[..split], &clap_script[split..])
+}
+
+/// `'a','b'` — every item is a clap name or flag, so none holds a quote.
+fn powershell_list<S: AsRef<str>>(items: &[S]) -> String {
+    items
+        .iter()
+        .map(|s| format!("'{}'", s.as_ref().replace('\'', "''")))
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+const POWERSHELL_PACKAGES: &str = r#"
+    # Package names for the commands that take them, from `ketch @COMMAND@`.
+    # Any other position falls through to clap's completions below.
+    $packages = & {
+        $takes = @(@GLOBAL@)
+        $words = @($commandAst.CommandElements | Where-Object { $_.Extent.EndOffset -lt $cursorPosition })
+        $texts = @($words | ForEach-Object { if ($_ -is [StringConstantExpressionAst]) { $_.Value } else { $_.Extent.Text } })
+        $sub = $null; $kind = $null; $multi = $false; $root = $null; $seen = 0
+        for ($i = 1; $i -lt $texts.Count; $i++) {
+            $word = [string]$texts[$i]
+            if ($word -ceq '--root') {
+                if ($i + 1 -lt $texts.Count) { $root = [string]$texts[$i + 1] }
+                $i++
+                continue
+            }
+            if ($word.StartsWith('--root=')) { $root = $word.Substring(7); continue }
+            if ($null -eq $sub) {
+                if ($takes -ccontains $word) { $i++; continue }
+                if ($word.StartsWith('-')) { continue }
+                $sub = $word
+@CASES@                continue
+            }
+            if ($takes -ccontains $word) { $i++ }
+            elseif (-not $word.StartsWith('-')) { $seen++ }
+        }
+        if ($null -eq $kind) { return }
+        if ($wordToComplete.StartsWith('-') -or ($takes -ccontains [string]$texts[$texts.Count - 1])) { return }
+        if (-not $multi -and $seen -gt 0) { return }
+        $request = @('@COMMAND@')
+        if ($root) { $request += @('--root', $root) }
+        $request += @($kind, '--', $wordToComplete)
+        & $texts[0] @request 2>$null | Where-Object { $_ } | ForEach-Object {
+            [CompletionResult]::new($_, $_, [CompletionResultType]::ParameterValue, $_)
+        }
+    }
+    if ($packages) { return $packages }
+"#;
 
 /// A bash function that completes package names for the subcommands in
 /// [`DYNAMIC`] and hands every other case to clap's `_<name>`, then registers
@@ -334,6 +433,42 @@ mod tests {
         let written =
             std::fs::read(tmp.path().join("share/ketch/completions/ketch")).expect("bash script");
         assert_eq!(written, script(clap_complete::Shell::Bash));
+    }
+
+    #[test]
+    fn the_powershell_script_asks_for_packages_inside_clap_completer() {
+        let script = String::from_utf8(script(clap_complete::Shell::PowerShell)).expect("utf-8");
+        let param = script.find(POWERSHELL_PARAM).expect("clap's param line");
+        let lookup = script.find("$packages = & {").expect("the package lookup");
+        let clap_body = script.find("$commandElements = ").expect("clap's body");
+        assert!(param < lookup && lookup < clap_body, "{script}");
+        assert_eq!(script.matches("Register-ArgumentCompleter").count(), 1);
+        assert!(script.contains(
+            "if (@('uninstall','remove','rm') -ccontains $sub) { $kind = 'installed'; $multi = $true; "
+        ));
+        assert!(script.contains(
+            "elseif (@('rollback') -ccontains $sub) { $kind = 'installed'; $multi = $false; "
+        ));
+        assert!(script.contains("elseif (@('install','i') -ccontains $sub) { $kind = 'registry'; "));
+        assert!(script.contains("$request = @('__complete')"));
+        for placeholder in ["@GLOBAL@", "@CASES@", "@COMMAND@"] {
+            assert!(!script.contains(placeholder), "{placeholder} left unfilled");
+        }
+    }
+
+    #[test]
+    fn the_powershell_script_names_every_visible_subcommand_alias_and_flag() {
+        let script = String::from_utf8(script(clap_complete::Shell::PowerShell)).expect("utf-8");
+        let mut command = Cli::command();
+        command.build();
+        let mut missing = Vec::new();
+        walk(&command, &words(&script), &mut missing);
+        assert_eq!(missing, Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_clap_script_without_the_param_line_is_left_alone() {
+        assert_eq!(powershell_with_packages("# other\n"), "# other\n");
     }
 
     #[test]

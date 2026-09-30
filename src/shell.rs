@@ -8,6 +8,12 @@
 //! runs only when the user asks for it — `ketch path install`, or
 //! `ketch doctor --fix`. Everything it adds sits between two markers so it can
 //! be found again, rewritten in place, and taken back out without guessing.
+//!
+//! On Windows it also switches completion on, which `self install` and
+//! `ketch completions --install` ask for: a block in the PowerShell profiles
+//! that dot-sources the completion script, and doskey macros for cmd.exe
+//! loaded through `Command Processor\AutoRun`. Both are taken back out by
+//! `ketch self uninstall`.
 
 use crate::config::Config;
 use crate::error::{Error, Result};
@@ -505,6 +511,496 @@ fn write_user_path(value: &str) -> Result<()> {
     Ok(())
 }
 
+/// The Windows PowerShell editions, each with its own profile directory.
+#[cfg_attr(not(windows), allow(dead_code))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PowerShell {
+    /// PowerShell 7 (`pwsh`), profile in `Documents\PowerShell`.
+    Core,
+    /// Windows PowerShell 5.1 (`powershell`), profile in
+    /// `Documents\WindowsPowerShell`.
+    Desktop,
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+impl PowerShell {
+    /// Both editions, the current one first.
+    pub const ALL: [PowerShell; 2] = [PowerShell::Core, PowerShell::Desktop];
+
+    /// What the user calls it.
+    pub fn label(self) -> &'static str {
+        match self {
+            PowerShell::Core => "PowerShell 7",
+            PowerShell::Desktop => "Windows PowerShell",
+        }
+    }
+
+    #[cfg_attr(not(windows), allow(dead_code))]
+    fn exe(self) -> &'static str {
+        match self {
+            PowerShell::Core => "pwsh",
+            PowerShell::Desktop => "powershell",
+        }
+    }
+
+    /// The CurrentUserAllHosts profile under `documents`: what `$PROFILE.
+    /// CurrentUserAllHosts` names, read by the console and every editor host.
+    pub fn profile(self, documents: &Path) -> PathBuf {
+        let dir = match self {
+            PowerShell::Core => "PowerShell",
+            PowerShell::Desktop => "WindowsPowerShell",
+        };
+        documents.join(dir).join("profile.ps1")
+    }
+}
+
+/// What happened to one PowerShell profile.
+#[cfg_attr(not(windows), allow(dead_code))]
+#[derive(Debug, Clone)]
+pub struct ProfileChange {
+    pub shell: PowerShell,
+    pub file: PathBuf,
+    /// `Err` carries why the profile was left alone; it is not a failure.
+    pub outcome: std::result::Result<Outcome, String>,
+}
+
+/// The profile block: dot-source `script` when it is there.
+///
+/// `Test-Path` first, because the script is a link `self uninstall` removes
+/// and a profile that errors on every start is worse than no completion.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn powershell_block(script: &str) -> String {
+    let path = quote_powershell(script);
+    format!("{BEGIN}\nif (Test-Path -LiteralPath {path}) {{ . {path} }}\n{END}\n")
+}
+
+/// Single-quote for PowerShell. It treats the typographic single quotes as
+/// quote characters too, so each of those is doubled like `'` itself.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn quote_powershell(text: &str) -> String {
+    let mut out = String::with_capacity(text.len() + 2);
+    out.push('\'');
+    for c in text.chars() {
+        if matches!(c, '\'' | '\u{2018}' | '\u{2019}' | '\u{201A}' | '\u{201B}') {
+            out.push(c);
+        }
+        out.push(c);
+    }
+    out.push('\'');
+    out
+}
+
+/// `text` with the profile block for `script` in it, or `None` when it
+/// already says exactly that.
+///
+/// Windows PowerShell 5.1 reads a profile without a byte order mark in the
+/// ANSI code page, so a new file whose block names a non-ASCII path starts
+/// with one. An existing file keeps whatever encoding its owner chose.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn splice_profile(text: &str, script: &str) -> Option<String> {
+    let block = powershell_block(script);
+    if text.is_empty() && !block.is_ascii() {
+        return Some(format!("\u{FEFF}{block}"));
+    }
+    splice(text, &block)
+}
+
+/// Take the block out of a profile. `Some(None)` means nothing but the block
+/// (and a byte order mark ketch may have written) was in it, so the file can
+/// go: an empty profile still trips an execution policy that forbids scripts.
+pub(crate) fn unsplice_profile(text: &str) -> Option<Option<String>> {
+    let next = unsplice(text)?;
+    if next.trim_start_matches('\u{FEFF}').is_empty() {
+        Some(None)
+    } else {
+        Some(Some(next))
+    }
+}
+
+/// Add the block that dot-sources `script` to both editions' profiles.
+///
+/// A profile that does not exist yet is created only when that edition is
+/// installed and its execution policy runs local scripts. Windows PowerShell
+/// ships with `Restricted` on client editions: a new profile there would put
+/// an error on every start and complete nothing.
+#[cfg(windows)]
+pub fn install_powershell_profiles(script: &Path) -> Result<Vec<ProfileChange>> {
+    let script = script.to_str().ok_or_else(|| {
+        Error::msg(format!(
+            "{} is not valid UTF-8, so no profile can name it",
+            script.display()
+        ))
+    })?;
+    if script.contains(['\n', '\r']) {
+        return Err(Error::msg(format!("{script} contains a newline")));
+    }
+    let documents = documents_dir()?;
+    let mut changes = Vec::new();
+    for shell in PowerShell::ALL {
+        let file = shell.profile(&documents);
+        let outcome = if file.is_file() {
+            Ok(())
+        } else {
+            match execution_policy(shell) {
+                None => Err(format!("{} is not installed", shell.exe())),
+                Some(policy) if runs_local_scripts(&policy) => Ok(()),
+                Some(policy) => Err(format!(
+                    "its execution policy is {policy}; run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` there and install completions again"
+                )),
+            }
+        };
+        let outcome = match outcome {
+            Err(why) => Err(why),
+            Ok(()) => {
+                let text = read(&file)?;
+                let had_block = block_span(&text).is_some();
+                match splice_profile(&text, script) {
+                    None => Ok(Outcome::Unchanged),
+                    Some(next) => {
+                        write(&file, &next)?;
+                        Ok(if had_block {
+                            Outcome::Updated
+                        } else {
+                            Outcome::Added
+                        })
+                    }
+                }
+            }
+        };
+        changes.push(ProfileChange {
+            shell,
+            file,
+            outcome,
+        });
+    }
+    Ok(changes)
+}
+
+/// Every PowerShell profile holding a ketch block. Empty off Windows, and
+/// when Documents cannot be found.
+pub fn powershell_profiles_with_block() -> Vec<PathBuf> {
+    #[cfg(windows)]
+    {
+        let Ok(documents) = documents_dir() else {
+            return Vec::new();
+        };
+        PowerShell::ALL
+            .into_iter()
+            .map(|shell| shell.profile(&documents))
+            .filter(|p| {
+                std::fs::read_to_string(p)
+                    .map(|t| block_span(&t).is_some())
+                    .unwrap_or(false)
+            })
+            .collect()
+    }
+    #[cfg(not(windows))]
+    {
+        Vec::new()
+    }
+}
+
+/// Take the ketch block out of one PowerShell profile. True when it changed.
+/// A profile left with nothing in it is removed, since ketch created it.
+pub fn uninstall_powershell_profile(file: &Path) -> Result<bool> {
+    match unsplice_profile(&read(file)?) {
+        None => Ok(false),
+        Some(Some(next)) => {
+            write(file, &next)?;
+            Ok(true)
+        }
+        Some(None) => {
+            let target = dunce::canonicalize(file).unwrap_or_else(|_| file.to_path_buf());
+            std::fs::remove_file(&target).map_err(|e| Error::io(&target, e))?;
+            Ok(true)
+        }
+    }
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+fn runs_local_scripts(policy: &str) -> bool {
+    ["Unrestricted", "RemoteSigned", "Bypass"]
+        .iter()
+        .any(|p| policy.trim().eq_ignore_ascii_case(p))
+}
+
+/// The effective execution policy of one edition, or `None` when it does not
+/// run.
+#[cfg(windows)]
+fn execution_policy(shell: PowerShell) -> Option<String> {
+    powershell(shell.exe(), "Get-ExecutionPolicy", &[])
+        .ok()
+        .map(|p| p.trim().to_string())
+}
+
+/// The Documents folder, as PowerShell itself resolves it.
+///
+/// Asked of the shell rather than built from the home directory: OneDrive
+/// and group policy move Documents, and the profile PowerShell reads is under
+/// wherever it went.
+#[cfg(windows)]
+fn documents_dir() -> Result<PathBuf> {
+    let asked = powershell(
+        PowerShell::Desktop.exe(),
+        "[Console]::Out.Write([Environment]::GetFolderPath('MyDocuments'))",
+        &[],
+    )
+    .ok()
+    .filter(|p| !p.trim().is_empty())
+    .map(|p| PathBuf::from(p.trim()));
+    asked
+        .or_else(dirs::document_dir)
+        .ok_or_else(|| Error::msg("could not find the Documents folder"))
+}
+
+/// Run a PowerShell command and return its standard output.
+///
+/// Anything variable goes in through `env`, never into `script`: a value
+/// holding a quote or `$` cannot then break out of the command. Output is
+/// forced to UTF-8 so a non-ASCII path survives the console code page.
+#[cfg(windows)]
+fn powershell(exe: &str, script: &str, env: &[(&str, &str)]) -> Result<String> {
+    // Without a console to change, the assignment throws; the default
+    // encoding is then the only one there is.
+    let script = format!(
+        "try {{ [Console]::OutputEncoding = [Text.Encoding]::UTF8 }} catch {{ }}; {script}"
+    );
+    let out = std::process::Command::new(exe)
+        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+        .envs(env.iter().copied())
+        .output()
+        .map_err(|e| Error::msg(format!("could not run {exe}: {e}")))?;
+    if !out.status.success() {
+        return Err(Error::msg(format!(
+            "{exe} failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        )));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// The macros cmd.exe gets. cmd has no programmable completion, so short
+/// names for the common commands are what it can have.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub const DOSKEY_MACROS: &str =
+    "ki=ketch install $*\r\nku=ketch upgrade $*\r\nkl=ketch list $*\r\nkun=ketch uninstall $*\r\n";
+
+/// Where the macro file lives: in the root, not the versioned store prefix,
+/// so the AutoRun line that names it survives every `self upgrade`.
+pub fn doskey_file(cfg: &Config) -> PathBuf {
+    cfg.root.join("share").join("ketch").join("ketch.doskey")
+}
+
+/// The command ketch adds to AutoRun to load `file`.
+///
+/// cmd expands `%…%` in AutoRun and has no escape for `"` inside quotes, so a
+/// path holding either is refused rather than written and hoped for.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn autorun_command(file: &Path) -> Result<String> {
+    let path = file.to_str().ok_or_else(|| {
+        Error::msg(format!(
+            "{} is not valid UTF-8, so cmd cannot be told about it",
+            file.display()
+        ))
+    })?;
+    if path.contains(['"', '%', '\n', '\r']) {
+        return Err(Error::msg(format!(
+            "{path} holds a character cmd's AutoRun cannot quote"
+        )));
+    }
+    Ok(format!("doskey /macrofile=\"{path}\""))
+}
+
+/// What to do with the AutoRun value.
+#[cfg_attr(not(windows), allow(dead_code))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum AutoRunEdit {
+    /// Leave it as it is.
+    Unchanged,
+    /// Write this value.
+    Set(String),
+    /// Delete the value: nothing but ketch's command was in it.
+    Delete,
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+fn autorun_has(current: &str, ours: &str) -> bool {
+    current == ours
+        || current.ends_with(&format!(" & {ours}"))
+        || current.starts_with(&format!("{ours} & "))
+        || current.contains(&format!(" & {ours} & "))
+}
+
+/// Add `ours` to an AutoRun value, after whatever the user already runs
+/// there. Appending exactly ` & ours` is what lets [`autorun_remove`] give
+/// the earlier value back byte for byte.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn autorun_add(current: Option<&str>, ours: &str) -> AutoRunEdit {
+    match current {
+        Some(current) if autorun_has(current, ours) => AutoRunEdit::Unchanged,
+        // A blank value runs nothing; `  & cmd` would be a syntax error.
+        Some(current) if !current.trim().is_empty() => {
+            AutoRunEdit::Set(format!("{current} & {ours}"))
+        }
+        _ => AutoRunEdit::Set(ours.to_string()),
+    }
+}
+
+/// Take `ours` back out of an AutoRun value, leaving the rest as it was.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn autorun_remove(current: &str, ours: &str) -> AutoRunEdit {
+    if current == ours {
+        return AutoRunEdit::Delete;
+    }
+    if let Some(head) = current.strip_suffix(&format!(" & {ours}")) {
+        return AutoRunEdit::Set(head.to_string());
+    }
+    let middle = format!(" & {ours} & ");
+    if let Some(at) = current.find(&middle) {
+        return AutoRunEdit::Set(format!(
+            "{} & {}",
+            &current[..at],
+            &current[at + middle.len()..]
+        ));
+    }
+    if let Some(tail) = current.strip_prefix(&format!("{ours} & ")) {
+        return AutoRunEdit::Set(tail.to_string());
+    }
+    AutoRunEdit::Unchanged
+}
+
+/// The value AutoRun lives in.
+#[cfg_attr(not(windows), allow(dead_code))]
+const AUTORUN_KEY: &str = r"Software\Microsoft\Command Processor";
+
+/// Write the doskey macro file and load it from cmd's AutoRun, after
+/// whatever AutoRun already runs.
+#[cfg(windows)]
+pub fn install_cmd_macros(cfg: &Config) -> Result<Outcome> {
+    let file = doskey_file(cfg);
+    let ours = autorun_command(&file)?;
+    if let Some(parent) = file.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
+    }
+    std::fs::write(&file, DOSKEY_MACROS).map_err(|e| Error::io(&file, e))?;
+    let current = read_autorun()?;
+    match autorun_add(current.as_ref().map(|(_, v)| v.as_str()), &ours) {
+        AutoRunEdit::Set(next) => {
+            // An `ExpandString` stays one: its `%VAR%` must keep expanding.
+            let kind = current.as_ref().map_or("String", |(k, _)| k.as_str());
+            write_autorun(kind, &next)?;
+            Ok(Outcome::Added)
+        }
+        AutoRunEdit::Unchanged | AutoRunEdit::Delete => Ok(Outcome::Unchanged),
+    }
+}
+
+/// True when cmd's AutoRun loads this root's macro file.
+pub fn cmd_macros_configured(cfg: &Config) -> bool {
+    #[cfg(windows)]
+    {
+        let Ok(ours) = autorun_command(&doskey_file(cfg)) else {
+            return false;
+        };
+        read_autorun()
+            .ok()
+            .flatten()
+            .is_some_and(|(_, value)| autorun_has(&value, &ours))
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = cfg;
+        false
+    }
+}
+
+/// Take this root's command back out of AutoRun — the earlier value comes
+/// back as it was, or the value goes when it held only ketch's — and delete
+/// the macro file. True when AutoRun changed.
+pub fn uninstall_cmd_macros(cfg: &Config) -> Result<bool> {
+    let file = doskey_file(cfg);
+    #[cfg(windows)]
+    let changed = {
+        let ours = autorun_command(&file)?;
+        match read_autorun()? {
+            None => false,
+            Some((kind, value)) => match autorun_remove(&value, &ours) {
+                AutoRunEdit::Unchanged => false,
+                AutoRunEdit::Set(next) => {
+                    write_autorun(&kind, &next)?;
+                    true
+                }
+                AutoRunEdit::Delete => {
+                    delete_autorun()?;
+                    true
+                }
+            },
+        }
+    };
+    #[cfg(not(windows))]
+    let changed = false;
+    match std::fs::remove_file(&file) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(Error::io(&file, e)),
+    }
+    // Only if empty: `share` is a name a user could have put there too.
+    let mut dir = file.parent();
+    while let Some(d) = dir.filter(|d| *d != cfg.root) {
+        if std::fs::remove_dir(d).is_err() {
+            break;
+        }
+        dir = d.parent();
+    }
+    Ok(changed)
+}
+
+/// AutoRun's kind and raw value, `%VAR%` unexpanded; `None` when it is unset.
+#[cfg(windows)]
+fn read_autorun() -> Result<Option<(String, String)>> {
+    let out = powershell(
+        PowerShell::Desktop.exe(),
+        "$k = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($env:KETCH_AUTORUN_KEY); \
+         if ($k -and ($k.GetValueNames() -contains 'AutoRun')) { \
+         [Console]::Out.Write($k.GetValueKind('AutoRun').ToString() + [char]10 + \
+         [string]$k.GetValue('AutoRun', '', 'DoNotExpandEnvironmentNames')) }",
+        &[("KETCH_AUTORUN_KEY", AUTORUN_KEY)],
+    )
+    .map_err(|e| Error::msg(format!("could not read cmd's AutoRun: {e}")))?;
+    Ok(out
+        .split_once('\n')
+        .map(|(kind, value)| (kind.trim().to_string(), value.to_string())))
+}
+
+#[cfg(windows)]
+fn write_autorun(kind: &str, value: &str) -> Result<()> {
+    powershell(
+        PowerShell::Desktop.exe(),
+        "$k = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($env:KETCH_AUTORUN_KEY); \
+         $k.SetValue('AutoRun', $env:KETCH_AUTORUN_VALUE, \
+         [Microsoft.Win32.RegistryValueKind]$env:KETCH_AUTORUN_KIND); $k.Close()",
+        &[
+            ("KETCH_AUTORUN_KEY", AUTORUN_KEY),
+            ("KETCH_AUTORUN_VALUE", value),
+            ("KETCH_AUTORUN_KIND", kind),
+        ],
+    )
+    .map(|_| ())
+    .map_err(|e| Error::msg(format!("could not write cmd's AutoRun: {e}")))
+}
+
+#[cfg(windows)]
+fn delete_autorun() -> Result<()> {
+    powershell(
+        PowerShell::Desktop.exe(),
+        "$k = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($env:KETCH_AUTORUN_KEY, $true); \
+         if ($k) { $k.DeleteValue('AutoRun', $false); $k.Close() }",
+        &[("KETCH_AUTORUN_KEY", AUTORUN_KEY)],
+    )
+    .map(|_| ())
+    .map_err(|e| Error::msg(format!("could not delete cmd's AutoRun: {e}")))
+}
+
 fn home() -> Result<PathBuf> {
     dirs::home_dir().ok_or_else(|| Error::msg("no home directory; set HOME"))
 }
@@ -603,7 +1099,9 @@ fn marker_at_line_start(text: &str, marker: &str, from: usize) -> Option<usize> 
         .match_indices(marker)
         .map(|(offset, _)| from + offset)
         .find(|&i| {
-            let starts_line = i == 0 || text.as_bytes()[i - 1] == b'\n';
+            // A byte order mark (a PowerShell profile may open with one)
+            // is not part of the first line.
+            let starts_line = i == 0 || text.as_bytes()[i - 1] == b'\n' || &text[..i] == "\u{FEFF}";
             let ends_line = text[i + marker.len()..]
                 .chars()
                 .next()
@@ -873,6 +1371,168 @@ mod tests {
         } else {
             assert!(first.ends_with(".bashrc"));
         }
+    }
+
+    const DOSKEY: &str = r#"doskey /macrofile="C:\Users\u\.ketch\share\ketch\ketch.doskey""#;
+
+    #[rstest]
+    #[case(None, AutoRunEdit::Set(DOSKEY.to_string()))]
+    #[case(Some(String::new()), AutoRunEdit::Set(DOSKEY.to_string()))]
+    #[case(Some("  ".to_string()), AutoRunEdit::Set(DOSKEY.to_string()))]
+    #[case(Some("@echo off".to_string()), AutoRunEdit::Set(format!("@echo off & {DOSKEY}")))]
+    #[case(Some(DOSKEY.to_string()), AutoRunEdit::Unchanged)]
+    #[case(Some(format!("@echo off & {DOSKEY}")), AutoRunEdit::Unchanged)]
+    #[case(Some(format!("{DOSKEY} & cls")), AutoRunEdit::Unchanged)]
+    #[case(Some(format!("a & {DOSKEY} & b")), AutoRunEdit::Unchanged)]
+    fn autorun_add_appends_once_after_what_is_there(
+        #[case] current: Option<String>,
+        #[case] expected: AutoRunEdit,
+    ) {
+        assert_eq!(autorun_add(current.as_deref(), DOSKEY), expected);
+    }
+
+    #[rstest]
+    #[case(DOSKEY, AutoRunEdit::Delete)]
+    #[case(&format!("@echo off & {DOSKEY}"), AutoRunEdit::Set("@echo off".to_string()))]
+    #[case(&format!("{DOSKEY} & cls"), AutoRunEdit::Set("cls".to_string()))]
+    #[case(&format!("a & {DOSKEY} & b"), AutoRunEdit::Set("a & b".to_string()))]
+    #[case("@echo off", AutoRunEdit::Unchanged)]
+    #[case("", AutoRunEdit::Unchanged)]
+    // Another root's line is not this one's to take.
+    #[case(
+        r#"doskey /macrofile="D:\other\share\ketch\ketch.doskey""#,
+        AutoRunEdit::Unchanged
+    )]
+    fn autorun_remove_takes_exactly_ketch_part(
+        #[case] current: &str,
+        #[case] expected: AutoRunEdit,
+    ) {
+        assert_eq!(autorun_remove(current, DOSKEY), expected);
+    }
+
+    /// Add then remove hands back the value that was there, byte for byte.
+    #[rstest]
+    #[case("@echo off")]
+    #[case("set X=1 & prompt $g ")]
+    #[case("%USERPROFILE%\\init.cmd")]
+    fn autorun_add_then_remove_restores_the_earlier_value(#[case] earlier: &str) {
+        let AutoRunEdit::Set(with) = autorun_add(Some(earlier), DOSKEY) else {
+            panic!("nothing added to {earlier:?}");
+        };
+        assert_eq!(
+            autorun_remove(&with, DOSKEY),
+            AutoRunEdit::Set(earlier.to_string())
+        );
+    }
+
+    #[test]
+    fn autorun_command_quotes_the_path_and_refuses_what_cmd_cannot_hold() {
+        let file = Path::new(r"C:\Users\u\.ketch\share\ketch\ketch.doskey");
+        assert_eq!(autorun_command(file).expect("command"), DOSKEY);
+        assert!(autorun_command(Path::new(r"C:\a%PATH%\ketch.doskey")).is_err());
+        assert!(autorun_command(Path::new("C:\\a\"b\\ketch.doskey")).is_err());
+    }
+
+    #[test]
+    fn the_doskey_file_holds_the_four_macros() {
+        let lines: Vec<&str> = DOSKEY_MACROS.lines().map(str::trim_end).collect();
+        assert_eq!(
+            lines,
+            [
+                "ki=ketch install $*",
+                "ku=ketch upgrade $*",
+                "kl=ketch list $*",
+                "kun=ketch uninstall $*"
+            ]
+        );
+        assert!(DOSKEY_MACROS.ends_with("\r\n"));
+    }
+
+    #[test]
+    fn the_profile_block_dot_sources_the_script_only_when_it_exists() {
+        let block = powershell_block(r"C:\Users\u\Documents\PowerShell\Completions\ketch.ps1");
+        assert_eq!(
+            block,
+            format!(
+                "{BEGIN}\nif (Test-Path -LiteralPath 'C:\\Users\\u\\Documents\\PowerShell\\Completions\\ketch.ps1') {{ . 'C:\\Users\\u\\Documents\\PowerShell\\Completions\\ketch.ps1' }}\n{END}\n"
+            )
+        );
+    }
+
+    #[rstest]
+    #[case("o'brien", "'o''brien'")]
+    #[case("o\u{2019}brien", "'o\u{2019}\u{2019}brien'")]
+    #[case("$env:X", "'$env:X'")]
+    fn powershell_quoting_keeps_quotes_and_dollars_literal(
+        #[case] text: &str,
+        #[case] quoted: &str,
+    ) {
+        assert_eq!(quote_powershell(text), quoted);
+    }
+
+    #[test]
+    fn a_profile_gets_the_block_once_and_loses_it_byte_for_byte() {
+        let original = "Set-PSReadLineOption -EditMode Emacs\r\n";
+        let script = r"C:\d\PowerShell\Completions\ketch.ps1";
+        let with = splice_profile(original, script).expect("added");
+        assert_eq!(splice_profile(&with, script), None);
+        assert_eq!(unsplice_profile(&with), Some(Some(original.to_string())));
+    }
+
+    #[test]
+    fn a_profile_ketch_created_goes_away_whole() {
+        let with = splice_profile("", r"C:\d\ketch.ps1").expect("added");
+        assert!(with.starts_with(BEGIN));
+        assert_eq!(unsplice_profile(&with), Some(None));
+    }
+
+    /// Windows PowerShell reads a BOM-less profile in the ANSI code page.
+    #[test]
+    fn a_new_profile_naming_a_non_ascii_path_starts_with_a_bom() {
+        let with = splice_profile("", r"C:\Users\Иван\Documents\ketch.ps1").expect("added");
+        assert!(with.starts_with('\u{FEFF}'));
+        assert_eq!(unsplice_profile(&with), Some(None));
+    }
+
+    #[test]
+    fn profiles_are_the_all_hosts_ones_for_both_editions() {
+        let docs = Path::new("D");
+        assert_eq!(
+            PowerShell::Core.profile(docs),
+            docs.join("PowerShell").join("profile.ps1")
+        );
+        assert_eq!(
+            PowerShell::Desktop.profile(docs),
+            docs.join("WindowsPowerShell").join("profile.ps1")
+        );
+    }
+
+    #[rstest]
+    #[case("RemoteSigned\r\n", true)]
+    #[case("Unrestricted", true)]
+    #[case("Bypass", true)]
+    #[case("Restricted", false)]
+    #[case("AllSigned", false)]
+    fn only_a_policy_that_runs_local_scripts_gets_a_new_profile(
+        #[case] policy: &str,
+        #[case] runs: bool,
+    ) {
+        assert_eq!(runs_local_scripts(policy), runs);
+    }
+
+    #[test]
+    fn uninstalling_cmd_macros_removes_the_file_and_empty_dirs_only() {
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let cfg = Config::load(Some(tmp.path().to_path_buf())).expect("config");
+        let file = doskey_file(&cfg);
+        std::fs::create_dir_all(file.parent().expect("parent")).expect("dirs");
+        std::fs::write(&file, DOSKEY_MACROS).expect("write");
+        let mine = cfg.root.join("share").join("mine.txt");
+        std::fs::write(&mine, "keep").expect("write");
+        uninstall_cmd_macros(&cfg).expect("uninstall");
+        assert!(!file.exists());
+        assert!(!file.parent().expect("parent").exists());
+        assert!(mine.exists(), "a file ketch did not write was removed");
     }
 
     #[test]

@@ -480,7 +480,7 @@ ketch completions zsh > _ketch
 ketch completions bash --install
 ```
 
-The bash script also completes package names: installed ones after
+The bash and PowerShell scripts also complete package names: installed ones after
 `uninstall`, `upgrade`, `pin`, `unpin`, `link`, `unlink`, `info`, `why`,
 `changelog` and `rollback`, and names from the local registry copy after
 `install` and `search`. It asks the binary for them with the internal
@@ -497,6 +497,30 @@ Install a current bash and bash-completion 2 (with Homebrew:
 source bash-completion's `bash_completion` from `~/.bashrc` as its caveats
 say. The script itself also runs under bash
 3.2, so `eval "$(ketch completions bash)"` in `~/.bashrc` works without either.
+
+On Windows, `--install` (and `ketch self install`, which installs every
+shell's script) also switches completion on, since neither shell loads a
+completion directory by itself:
+
+- **PowerShell.** The script goes to `Documents\PowerShell\Completions\ketch.ps1`,
+  and a block between `# >>> ketch >>>` and `# <<< ketch <<<` in the
+  CurrentUserAllHosts profile of PowerShell 7 (`Documents\PowerShell\profile.ps1`)
+  and Windows PowerShell 5.1 (`Documents\WindowsPowerShell\profile.ps1`)
+  dot-sources it. Documents is the folder PowerShell reports, so a OneDrive
+  redirect is followed. A profile that does not exist yet is created only when
+  that edition is installed and its execution policy runs local scripts;
+  otherwise ketch says why it left it alone.
+- **cmd.** cmd has no programmable completion, so it gets doskey macros:
+  `ki` (`ketch install`), `ku` (`ketch upgrade`), `kl` (`ketch list`) and `kun`
+  (`ketch uninstall`), each passing its arguments on. They live in
+  `<root>\share\ketch\ketch.doskey`, loaded by
+  `doskey /macrofile="…"` appended to
+  `HKCU\Software\Microsoft\Command Processor\AutoRun` with ` & ` after
+  whatever AutoRun already runs.
+
+`ketch self uninstall` takes the profile blocks out (deleting a profile that
+held nothing else) and removes exactly its own command from AutoRun, leaving
+the earlier value as it was, or deleting the value when it held only ketch's.
 
 ## ketch itself
 
@@ -533,7 +557,9 @@ ketch self version
 Remove ketch and everything it installed, permanently. Lists what it is about
 to delete and asks first. `--keep-packages` removes only ketch. A ketch
 installed with mise also asks whether to run `mise unuse -g` for its own copy;
-`--yes` answers that too.
+`--yes` answers that too. On Windows it also removes the PowerShell profile
+blocks and the cmd AutoRun addition that switch completion on, with
+`--keep-packages` too, since both load ketch itself.
 
 ```bash
 ketch self uninstall --dry-run

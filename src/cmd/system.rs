@@ -577,6 +577,14 @@ fn plan_lines(plan: &self_update::UninstallPlan) -> Vec<String> {
     if plan.user_path {
         lines.push("the user PATH".to_string());
     }
+    for file in &plan.powershell_profiles {
+        lines.push(format!("the completion block in {}", file.display()));
+    }
+    if plan.cmd_macros {
+        lines.push(
+            "the cmd macros in HKCU\\Software\\Microsoft\\Command Processor\\AutoRun".to_string(),
+        );
+    }
     if plan.cask.is_some() {
         lines.push("the Homebrew cask".to_string());
     }
