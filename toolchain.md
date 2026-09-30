@@ -15,6 +15,9 @@ Project programs and direct packages from manifests.
 | just | cargo install just / brew | Command recipes | https://github.com/casey/just |
 | cargo-dist | mise | Generates `release.yml` and builds the release tarballs (`just dist-generate`, `just package`) | https://github.com/axodotdev/cargo-dist |
 | git-cliff | mise | Writes the `CHANGELOG.md` entry from `cliff.toml` (`scripts/release.sh`) | https://github.com/orhun/git-cliff |
+| xcodegen | mise | Generates `desktop/macos/Ketch.xcodeproj` from `project.yml` (`just macos-app`, `just macos-test`) | https://github.com/yonaskolb/XcodeGen |
+| Xcode | global (App Store / developer.apple.com) | Builds and tests the macOS app (`xcodebuild`); 26 or later | https://developer.apple.com/xcode/ |
+| swift-format | with Xcode (`xcrun swift-format`) | Formats and lints the macOS app's Swift | https://github.com/swiftlang/swift-format |
 | release-plz | GitHub Action | The release pull request | https://github.com/release-plz/release-plz |
 | ketch | see its README | Installs dunnage | https://github.com/pyrlyn/ketch |
 | dunnage | `ketch` | Lossless cleanup of `target/` after tests | https://github.com/listepo/dunnage |

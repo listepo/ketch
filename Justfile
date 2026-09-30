@@ -188,3 +188,23 @@ dunnage:
     command -v dunnage >/dev/null || { echo "dunnage not found; install it with: ketch install dunnage"; exit 0; }
     [ -d target ] || exit 0
     dunnage run target || test $? -eq 2
+
+# The macOS app (desktop/macos). XcodeGen writes Ketch.xcodeproj from
+# project.yml; the project file and build/ are gitignored. Builds are unsigned:
+# signing and notarisation belong to the app's release pipeline.
+macos_dir := "desktop/macos"
+macos_build := "xcodebuild -project " + macos_dir + "/Ketch.xcodeproj -scheme Ketch -derivedDataPath " + macos_dir + "/build"
+
+macos-project:
+    mise exec -- xcodegen generate --quiet --spec {{macos_dir}}/project.yml
+    # Tagged like cargo's target/, so backup tools and worktree cleanup treat it as a cache.
+    mkdir -p {{macos_dir}}/build
+    printf 'Signature: 8a477f597d28d172789f06886806bc55\n# xcodebuild output for the macOS app; safe to delete.\n' > {{macos_dir}}/build/CACHEDIR.TAG
+
+# universal (arm64 + x86_64) Debug build of Ketch.app
+macos-app: macos-project
+    {{macos_build}} -configuration Debug -destination 'generic/platform=macOS' ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO -quiet build
+
+# Swift Testing unit tests on the fake core, then the UI smoke test
+macos-test: macos-project
+    {{macos_build}} -destination 'platform=macOS' test

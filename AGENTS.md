@@ -243,6 +243,7 @@ conditional, multi-stage Rust automation.
 | `install.sh` | the `curl | bash` installer for macOS and Linux; only bootstraps `ketch self install` |
 | `install.ps1` | the `irm | iex` installer for Windows; same bootstrap as `install.sh` |
 | `.github/dependabot.yml` | weekly `chore(deps)` pull requests for cargo, npm and GitHub Actions; not `mise.toml` |
+| `desktop/macos/` | the SwiftUI macOS app: `project.yml` (XcodeGen), `Ketch/` sources, `KetchTests/`, `KetchUITests/`; see its `README.md` |
 
 The rule that keeps `cmd/` thin: anything touching the install tree belongs in
 `install.rs`, `state.rs`, or a trait implementation, so the same logic serves
@@ -265,6 +266,22 @@ startup file to its target before writing, because that file is very often a
 link into a dotfiles repository. On Windows `ketch path install` writes
 `HKCU\Environment\Path` via `[Environment]::SetEnvironmentVariable` so a new
 terminal sees it without a logoff; `setx` is not used, because it truncates.
+
+## macOS app
+
+`desktop/macos/` is a SwiftUI app (Swift 6, strict concurrency, macOS 26)
+described by XcodeGen's `project.yml`; the generated `Ketch.xcodeproj` and
+`build/` are gitignored. `just macos-app` builds it unsigned for arm64 and
+x86_64, `just macos-test` runs the Swift Testing unit tests and the UI smoke
+test; the `macos-app` CI job runs the same plus `swift format lint --strict`.
+It has no Rust in it and does not touch the CLI gate.
+
+Views talk to `KetchStore`, the store talks to `KetchCoreProtocol`, and
+`CoreFactory.swift` alone decides which core that is — `FakeKetchCore`
+until `ketch-ffi` (R9) exists. Keep it that way: no view or test reaches past
+the protocol. The UI uses system Liquid Glass (`glassEffect`, glass button
+styles), never a drawn imitation. Signing and releases are not set up here.
+`desktop/macos/README.md` has the architecture and the steps to wire R9.
 
 ## Conventions
 
