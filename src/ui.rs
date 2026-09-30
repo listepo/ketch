@@ -163,7 +163,7 @@ pub fn init(color: Option<bool>, quiet: bool, verbose: bool) {
                 && std::env::var_os("NO_COLOR").is_none()
                 && std::env::var("TERM").map(|t| t != "dumb").unwrap_or(true))
     });
-    COLOR.store(enabled, Ordering::Relaxed);
+    COLOR.store(enabled && terminal_takes_ansi(), Ordering::Relaxed);
     LEVEL.store(
         if quiet {
             0
@@ -183,6 +183,38 @@ pub fn init(color: Option<bool>, quiet: bool, verbose: bool) {
 /// explicit request, so it outranks `NO_COLOR`; `--no-color` still outranks it.
 fn force_color() -> bool {
     std::env::var("CLICOLOR_FORCE").is_ok_and(|v| !v.is_empty() && v != "0")
+}
+
+/// Whether escape sequences reach the screen as colour rather than as text.
+///
+/// Only a console needs asking: a pipe or a file takes the bytes as they are,
+/// which is what `CLICOLOR_FORCE` into a pager wants.
+fn terminal_takes_ansi() -> bool {
+    if !std::io::stderr().is_terminal() {
+        return true;
+    }
+    windows_vt()
+}
+
+/// Legacy conhost prints `ESC[31m` literally until a program switches on
+/// virtual terminal processing for its handle. Windows Terminal and recent
+/// consoles have it on already, and switching it on again is harmless. When
+/// it cannot be switched on, plain text beats a screen full of escape codes.
+/// `console` does the switching so this crate stays free of `unsafe`.
+#[cfg(windows)]
+fn windows_vt() -> bool {
+    let stderr_ok = console::Term::stderr().features().colors_supported();
+    // Data and tables go to stdout, painted on the same decision; when both
+    // are the console they share one screen buffer, but a redirected stdout
+    // must not veto colour on the stderr the user is looking at.
+    let stdout_ok =
+        !std::io::stdout().is_terminal() || console::Term::stdout().features().colors_supported();
+    stderr_ok && stdout_ok
+}
+
+#[cfg(not(windows))]
+fn windows_vt() -> bool {
+    true
 }
 
 pub fn color_enabled() -> bool {
@@ -227,55 +259,120 @@ pub fn cyan(t: &str) -> String {
     paint("36", t)
 }
 
+/// What a piece of status text means.
+///
+/// The one place a meaning picks its colour, so a command never chooses red
+/// or green by hand and every "this failed" looks the same wherever it is said.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tone {
+    /// Work happening now.
+    Step,
+    /// Work that finished well.
+    Success,
+    /// Something to look at that does not stop the run, or a question that
+    /// asks for consent.
+    Warning,
+    /// Something that failed.
+    Error,
+    /// An aside.
+    Note,
+    /// A suggestion, or a question that asks for an answer.
+    Hint,
+}
+
+/// Paint `text` in the colour its [`Tone`] carries, when colour is on.
+pub fn tone(tone: Tone, text: &str) -> String {
+    match tone {
+        Tone::Step => blue(text),
+        Tone::Success => green(text),
+        Tone::Warning => yellow(text),
+        Tone::Error => red(text),
+        Tone::Note => dim(text),
+        Tone::Hint => cyan(text),
+    }
+}
+
+/// The right-aligned verb column every status line starts with.
+fn label(verb: &str) -> String {
+    format!("{verb:>10}")
+}
+
 fn step_line(verb: &str, detail: &str) -> String {
-    format!("{} {}", blue(&format!("{verb:>10}")), printable(detail))
+    format!("{} {}", tone(Tone::Step, &label(verb)), printable(detail))
 }
 
+/// The whole line is green, not only the verb: a finished step should read as
+/// finished at a glance, among the blue lines of the work that led to it.
 fn success_line(verb: &str, detail: &str) -> String {
-    format!("{} {}", green(&format!("{verb:>10}")), printable(detail))
+    tone(
+        Tone::Success,
+        &format!("{} {}", label(verb), printable(detail)),
+    )
 }
 
+/// The whole warning is yellow. A yellow label with plain text after it reads
+/// as a step, and the text is the part the user has to act on.
 fn warn_line(detail: &str) -> String {
-    format!(
-        "{} {}",
-        yellow(&format!("{:>10}", "warning")),
-        printable(detail)
+    tone(
+        Tone::Warning,
+        &format!("{} {}", label("warning"), printable(detail)),
     )
 }
 
 fn note_line(detail: &str) -> String {
-    format!(
-        "{} {}",
-        dim(&format!("{:>10}", "note")),
-        dim(&printable(detail))
+    tone(
+        Tone::Note,
+        &format!("{} {}", label("note"), printable(detail)),
     )
 }
 
 fn debug_line(detail: &str) -> String {
-    format!(
-        "{} {}",
-        dim(&format!("{:>10}", "debug")),
-        dim(&printable(detail))
+    tone(
+        Tone::Note,
+        &format!("{} {}", label("debug"), printable(detail)),
     )
 }
 
+/// The headline is red end to end; details stay dim and the hint cyan, so the
+/// one line that says what failed stands apart from the context under it.
 fn error_lines(headline: &str, details: &[String], hint: Option<&str>) -> Vec<String> {
-    let mut lines = vec![format!(
-        "{} {}",
-        red(&format!("{:>10}", "error")),
-        printable(headline)
+    let mut lines = vec![tone(
+        Tone::Error,
+        &format!("{} {}", label("error"), printable(headline)),
     )];
     for line in details {
-        lines.push(format!("{} {}", " ".repeat(10), dim(&printable(line))));
+        lines.push(format!(
+            "{} {}",
+            " ".repeat(10),
+            tone(Tone::Note, &printable(line))
+        ));
     }
     if let Some(hint) = hint {
         lines.push(format!(
             "{} {}",
-            cyan(&format!("{:>10}", "hint")),
+            tone(Tone::Hint, &label("hint")),
             printable(hint)
         ));
     }
     lines
+}
+
+/// The start of a question: a coloured label, then the question itself. The
+/// question can name a client app's asset or package, so it is filtered too.
+fn prompt_line(kind: Tone, verb: &str, question: &str) -> String {
+    format!("{} {}", tone(kind, &label(verb)), printable(question))
+}
+
+fn confirm_line(question: &str, default: bool) -> String {
+    let suffix = if default { "[Y/n]" } else { "[y/N]" };
+    format!(
+        "{} {suffix} ",
+        prompt_line(Tone::Warning, "confirm", question)
+    )
+}
+
+fn cancelled_line(question: &str) -> String {
+    prompt_line(Tone::Step, "cancelled", question)
 }
 
 /// Status line for a step that is happening now.
@@ -296,6 +393,15 @@ pub fn success(verb: &str, detail: &str) {
         return;
     }
     emit(&success_line(verb, detail));
+}
+
+/// A warning that is not written to the log, for the one caller that cannot:
+/// the log failing to open.
+pub(crate) fn warn_unlogged(detail: &str) {
+    if is_quiet() {
+        return;
+    }
+    emit(&warn_line(detail));
 }
 
 /// Something the user should know but that does not stop the run.
@@ -365,7 +471,8 @@ pub fn confirm(question: &str, default: bool) -> bool {
         // from a non-interactive stdin rather than from a person. Printed even
         // under `--quiet`: "it did nothing and said nothing" is not quiet, it
         // is a bug report waiting to happen.
-        eprintln!("{} {question}", blue(&format!("{:>10}", "cancelled")));
+        log::record(log::Level::Info, &format!("cancelled {question}"));
+        emit(&cancelled_line(question));
     }
     answered
 }
@@ -398,11 +505,7 @@ fn ask(question: &str, default: bool) -> bool {
         if !std::io::stdin().is_terminal() {
             return default;
         }
-        let suffix = if default { "[Y/n]" } else { "[y/N]" };
-        eprint!(
-            "{} {question} {suffix} ",
-            yellow(&format!("{:>10}", "confirm"))
-        );
+        eprint!("{}", confirm_line(question, default));
         let _ = std::io::stderr().flush();
         let mut answer = String::new();
         if std::io::stdin().read_line(&mut answer).is_err() {
@@ -432,8 +535,9 @@ pub fn prompt(question: &str, default: &str) -> String {
     with_tui_input_paused(|| {
         let hint = if default.is_empty() { "none" } else { default };
         eprint!(
-            "{} {question} [{hint}] ",
-            cyan(&format!("{:>10}", "answer"))
+            "{} [{}] ",
+            prompt_line(Tone::Hint, "answer", question),
+            printable(hint)
         );
         let _ = std::io::stderr().flush();
         let mut answer = String::new();
@@ -453,7 +557,7 @@ pub fn prompt(question: &str, default: &str) -> String {
 /// write a config nobody asked for and say nothing about it.
 pub fn prompt_required(question: &str) -> crate::error::Result<String> {
     with_tui_input_paused(|| {
-        eprint!("{} {question} ", cyan(&format!("{:>10}", "answer")));
+        eprint!("{} ", prompt_line(Tone::Hint, "answer", question));
         let _ = std::io::stderr().flush();
         let mut answer = String::new();
         match std::io::stdin().read_line(&mut answer) {
@@ -487,15 +591,20 @@ pub fn select(question: &str, options: &[String]) -> Option<usize> {
         if !std::io::stdin().is_terminal() || !std::io::stderr().is_terminal() {
             return None;
         }
-        eprintln!("{} {question}", cyan(&format!("{:>10}", "choose")));
+        // Straight to stderr, not `emit`: the TUI is paused for the question
+        // and would otherwise swallow the options into its activity pane.
+        eprintln!("{}", prompt_line(Tone::Hint, "choose", question));
         for (i, option) in options.iter().enumerate() {
             eprintln!("{:>11} {}", format!("{})", i + 1), printable(option));
         }
         loop {
             eprint!(
-                "{} number, 1 to {}: ",
-                cyan(&format!("{:>10}", "answer")),
-                options.len()
+                "{}: ",
+                prompt_line(
+                    Tone::Hint,
+                    "answer",
+                    &format!("number, 1 to {}", options.len())
+                )
             );
             let _ = std::io::stderr().flush();
             let mut answer = String::new();
@@ -646,11 +755,7 @@ impl ProgressSink for BarProgress {
         // In a batch the download is one step of several and `installed X`
         // follows it directly; a line per asset just pushes that off screen.
         if !is_quiet() && self.group.is_none() {
-            emit(&format!(
-                "{} {}",
-                green(&format!("{:>10}", "fetched")),
-                message
-            ));
+            emit(&success_line("fetched", message));
         }
     }
 }
@@ -998,7 +1103,7 @@ pub fn counter(verb: &str, total: u64, unit: &str) -> Counter {
     let style = ProgressStyle::with_template(&format!("{{msg}} {{pos}}/{{len}} {unit}"))
         .unwrap_or_else(|_| ProgressStyle::default_bar());
     bar.set_style(style);
-    bar.set_message(blue(&format!("{verb:>10}")));
+    bar.set_message(tone(Tone::Step, &label(verb)));
     bar.enable_steady_tick(std::time::Duration::from_millis(120));
     Counter { bar }
 }
@@ -1147,6 +1252,41 @@ mod tests {
         let lines = error_lines(&err.to_string(), &[], Some(&hint));
         assert_eq!(lines.len(), 2);
         assert_client_text_is_filtered(&lines[1]);
+    }
+
+    /// One of each line kind a terminal can get, in the order a run shows them.
+    fn every_line_kind() -> Vec<String> {
+        let mut lines = vec![
+            step_line("installing", "ripgrep 14.1.0"),
+            success_line("installed", "ripgrep 14.1.0"),
+            warn_line("ripgrep ships no checksum"),
+            note_line("ripgrep is pinned"),
+            debug_line("GET /repos/BurntSushi/ripgrep"),
+        ];
+        lines.extend(error_lines(
+            "`ghost` is not installed",
+            &["looked in state.json".to_string()],
+            Some("run `ketch list`"),
+        ));
+        lines.push(confirm_line("remove ripgrep?", false));
+        lines.push(cancelled_line("remove ripgrep?"));
+        lines.push(prompt_line(Tone::Hint, "answer", "package name?"));
+        lines
+    }
+
+    #[test]
+    fn each_line_kind_is_painted_by_its_meaning() {
+        init(Some(true), false, true);
+        let shown = every_line_kind().join("\n").replace('\u{1b}', "\\e");
+        insta::assert_snapshot!(shown);
+    }
+
+    #[test]
+    fn no_line_kind_carries_escape_bytes_with_colour_off() {
+        init(Some(false), false, true);
+        for line in every_line_kind() {
+            assert!(!line.contains('\u{1b}'), "{line:?}");
+        }
     }
 
     #[test]

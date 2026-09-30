@@ -238,7 +238,9 @@ fn list_all(cfg: &Config, args: &ListArgs) -> Result<()> {
         match c {
             1 if row.local.is_some() => ui::bold(text),
             3 if row.update_available() => match text.strip_suffix(listing::UPDATE) {
-                Some(version) => format!("{version}{}", ui::yellow(listing::UPDATE)),
+                Some(version) => {
+                    format!("{version}{}", ui::tone(ui::Tone::Warning, listing::UPDATE))
+                }
                 None => text.to_string(),
             },
             _ => text.to_string(),

@@ -1,0 +1,15 @@
+---
+source: src/ui.rs
+expression: shown
+---
+\e[34minstalling\e[0m ripgrep 14.1.0
+\e[32m installed ripgrep 14.1.0\e[0m
+\e[33m   warning ripgrep ships no checksum\e[0m
+\e[2m      note ripgrep is pinned\e[0m
+\e[2m     debug GET /repos/BurntSushi/ripgrep\e[0m
+\e[31m     error `ghost` is not installed\e[0m
+           \e[2mlooked in state.json\e[0m
+\e[36m      hint\e[0m run `ketch list`
+\e[33m   confirm\e[0m remove ripgrep? [y/N] 
+\e[34m cancelled\e[0m remove ripgrep?
+\e[36m    answer\e[0m package name?

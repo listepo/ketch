@@ -81,6 +81,12 @@ sigstore = { version = "0.14", default-features = false, features = ["verify"] }
 minisign-verify = "0.2"
 pgp = { version = "0.20", default-features = false }
 
+# Legacy Windows conhost prints ANSI escapes as text until a program switches
+# on virtual terminal processing. console does that per handle without unsafe
+# on our side, and is already in the tree through indicatif.
+[target.'cfg(windows)'.dependencies]
+console = { version = "0.16", default-features = false, features = ["std"] }
+
 [dev-dependencies]
 assert_cmd = "2"
 assert_fs = "1"
