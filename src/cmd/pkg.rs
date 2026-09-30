@@ -134,15 +134,23 @@ pub fn uninstall(cfg: &Config, args: UninstallArgs) -> Result<()> {
     // Resolve every name up front: a typo should stop the command before it
     // has already removed the packages that did match.
     let mut targets: Vec<String> = Vec::new();
+    let mut missing: Vec<&String> = Vec::new();
     for name in &args.names {
-        let found = state
-            .find(name)
-            .ok_or_else(|| Error::NotInstalled(name.clone()))?
-            .name
-            .clone();
-        if !targets.contains(&found) {
-            targets.push(found);
+        match state.find(name) {
+            Some(pkg) if !targets.contains(&pkg.name) => targets.push(pkg.name.clone()),
+            Some(_) => {}
+            None => missing.push(name),
         }
+    }
+    if !missing.is_empty() {
+        for name in missing {
+            // A folder a failed uninstall left behind has no record to match,
+            // so this is the only command that will ever take it away.
+            install::remove_package_dir(cfg, name);
+            ui::bare_error(&format!("{name}: not found"));
+        }
+        // Exit 4, `NotInstalled`'s code, so scripts branch the same as before.
+        return Err(Error::Reported(4));
     }
 
     if !args.yes && !ui::confirm(&format!("remove {}?", targets.join(", ")), false) {

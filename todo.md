@@ -13,7 +13,6 @@ Empty: F1/F2/M3/F5 and the 2026-09-20 audit follow-ups (A2) are in `done.md`; th
 - B66. Windows self-uninstall removes the registry entries ketch wrote at install
 - B68. Update installs into a fresh folder so stale files cannot interfere
 - F9. `ketch install <pkg>` on an installed package offers the update
-- B69. Uninstalling a package that is not installed prints only "not found"
 - M10. Man pages in roff for every command
 - M12. Windows completion: PowerShell `Register-ArgumentCompleter` and doskey macros for cmd
 - F11. Emoji icons per operation, `emoji` config key (default true)

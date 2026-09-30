@@ -5,7 +5,7 @@
 //! and a pipe all reach `ui::init` through the environment and the argument
 //! parser, not through a test calling it. `uninstall` of a package that was
 //! never installed is the failure used throughout: it is offline, touches
-//! nothing, and ends in an error headline on every OS.
+//! nothing, and ends in one error line on every OS.
 
 use assert_cmd::Command;
 use assert_fs::TempDir;
@@ -40,20 +40,17 @@ fn uninstall_ghost(extra_args: &[&str], envs: &[(&str, &str)]) -> String {
 }
 
 #[test]
-fn a_forced_error_headline_is_red_from_label_to_end() {
+fn a_forced_error_line_is_red_end_to_end() {
     let stderr = uninstall_ghost(&[], &[("CLICOLOR_FORCE", "1")]);
     let headline = stderr.lines().next().unwrap_or_default();
-    insta::assert_snapshot!(headline.replace('\u{1b}', "\\e"), @r"\e[31m     error `ghost` is not installed\e[0m");
+    insta::assert_snapshot!(headline.replace('\u{1b}', "\\e"), @r"\e[31mghost: not found\e[0m");
 }
 
 #[test]
 fn a_pipe_gets_no_escape_bytes() {
     let stderr = uninstall_ghost(&[], &[]);
     assert!(!stderr.contains('\u{1b}'), "{stderr:?}");
-    assert!(
-        stderr.contains("error `ghost` is not installed"),
-        "{stderr:?}"
-    );
+    assert!(stderr.contains("ghost: not found"), "{stderr:?}");
 }
 
 #[test]
