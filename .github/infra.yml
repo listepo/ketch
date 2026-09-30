@@ -12,3 +12,8 @@ sonarcloud:
   events: [push, pull_request, workflow_dispatch] # as the former sonarcloud.yml
   rust: true # llvm-tools-preview, cargo-llvm-cov, `cargo llvm-cov --locked --lcov`
   mise-install-args: rust
+
+# actionlint stays off for now: dist-generated release.yml (never hand-edited) has shellcheck
+# findings. Turn on once .github/actionlint.yaml ignores that file.
+lint:
+  enabled: false
