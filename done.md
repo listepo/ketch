@@ -537,6 +537,39 @@ Model: ZCode / glm-5.3
 
 Status: done 2026-09-27 (PR #150)
 
+### M10. Man pages in roff for every command
+
+Today `extra::render_manpage` writes one hand-rolled `ketch.1`, listing top-level commands with no options and no nested subcommands. `write_ketch_docs` places it under `share/man/man1/` at `self install`.
+
+Plan:
+1. Add `clap_mangen` (rtok already uses it for `rtok man`, a working reference). Generate `ketch.1` plus `ketch-<cmd>.1` for every visible subcommand, recursively (`ketch-config-create.1`, `ketch-self-uninstall.1`, …), with options, defaults, env vars and examples from the clap definitions. Replace `render_manpage`.
+2. Write every page through `write_ketch_docs` as `ExtraPath` records, so uninstall and relink remove them with the same ownership proof as today's page.
+3. A hidden `ketch man --out <dir>` (or a `just man` recipe) for packaging; the Homebrew cask may ship them.
+
+Check: a test walks `Cli::command()` and asserts one page per visible command; `mandoc -Tlint` clean on macOS and Linux CI; `man ketch-install` works after `self install` in a scratch root; `just check`.
+
+Execution: `src/man.rs` renders every page with `clap_mangen` 0.3 (`env` feature) from `Cli::command()`: `ketch.1`, then `ketch-<cmd>[-<sub>…].1` depth first for each subcommand that is not hidden and not clap's generated `help`. Titles are upper case, the source is `ketch <version>`, the date is `SOURCE_DATE_EPOCH` when set (reproducible packaging) or today. Two clap_mangen layouts that `mandoc -Tlint` warns about (a break beside a blank line before "Possible values") are tidied into one `.sp`. `extra::write_ketch_docs` writes every page under `share/man/man1/` of the store prefix and records each as an `ExtraPath`; `extra::render_manpage` is gone. A hidden `ketch man --out <DIR>` writes the same pages without a ketch root, for packaging. `just lint-man` (part of `just check`) runs `mandoc -Tlint -Wwarning` on them when mandoc is present and says it skipped otherwise; the Linux CI job does not install mandoc.
+
+Tests: `src/man.rs` walks `Cli::command()` and asserts one page per visible command in order, nested pages exist (`ketch-self-uninstall.1`), hidden commands and `help` get none, a subcommand page names its full invocation and options, the tidy step, and `write_to`. `src/extra.rs` asserts every page is written into the prefix and recorded as a man extra. Verified by hand: `mandoc -Tlint -Wwarning` clean on all 42 pages on macOS; `self install` in a scratch root (KETCH_ROOT, HOME and XDG_* under `target/`, a local mock of the GitHub API serving the built binary) linked 42 pages into `$XDG_DATA_HOME/man/man1`, `man ketch-install` rendered, and `self uninstall` removed them all.
+
+### B67. Uninstall deletes the package's install folder
+
+Ivan: uninstall must delete the program's folder (for example the `ketch` folder).
+
+Today `install::uninstall` removes the current prefix and every retained prefix with `remove_store_dir`, which then calls `remove_dir(store/<name>)`. That call only succeeds when the directory is empty, so any leftover keeps `store/<name>/` in place. Leftovers include `<version>.incoming` or `<version>.old` siblings from `move_into_store` (removed best-effort with `let _ = remove_any`), or a file Windows kept locked. For ketch itself, `self_update::remove_root_at` wipes the named directories and then `remove_dir(root)`. The root stays when anything else is in it. On Windows the running `ketch.exe` cannot delete its own image, so `~/.ketch` survives the uninstall. This is the same cause as B60.
+
+Plan:
+1. Package uninstall: after the prefixes are gone, remove `store/<name>/` whole (`remove_dir_all`). Guard it with `is_inside_store`, and only for a direct child of the store named exactly like the package. On failure, warn and name the path.
+2. One helper sweeps stale `.incoming` / `.old` siblings. B68 reuses it.
+3. Self uninstall on Windows: finish the root removal after the process exits, with a detached `cmd /c` that waits for the PID and then removes the root. `unsafe_code = "forbid"` rules out calling the Win32 API directly. The home-directory safety rule in `remove_root_at` stays: a root equal to `$HOME` is never wiped.
+4. `ketch doctor` notes a `store/<name>/` that has no state record.
+
+Check: e2e: install, uninstall, then `store/<name>` does not exist, including with a planted `1.0.0.old` sibling; Windows e2e: `self uninstall` leaves no `~/.ketch` after the process exits; `just check`.
+
+Done (Claude Code / opus-5.5): `install::uninstall` removes `store/<name>/` whole through `remove_package_dir` — only a direct child of the store named exactly like the package, inside the store after symlinks resolve — so `.incoming` / `.old` leftovers go with it; prefixes outside that folder still go through `remove_store_dir`. Self uninstall collects what `remove_root_at` could not delete and, on Windows, hands it to a detached PowerShell that waits for the ketch PID, removes only those named paths and then deletes the root non-recursively (a root equal to `$HOME` is never handed on). Step 4 already existed: `ketch doctor`'s `orphans` check names a store folder with no state record. The shared stale-sibling sweep is left for B68, its first user. Tests: unit tests in `install.rs` and `self_update.rs`, e2e `tests/install.rs::uninstall_removes_the_package_folder_with_what_a_failed_swap_left_in_it` and `tests/self_uninstall_root.rs` (all OSes).
+
+Status: done 2026-09-30
+
 ### F10. Coloured output: errors red, success green, warnings yellow
 
 Most of this exists. `src/ui.rs` paints the `error` label red, `warning` yellow, success verbs green, steps blue and notes dim. It honours `--no-color`, `NO_COLOR`, `CLICOLOR_FORCE` and non-TTY output, and there is no `println!` outside `ui`. F10 is an audit plus the gaps:
@@ -577,3 +610,60 @@ Execution plan (Claude Code / opus-5.5, done), with Ivan's final set: the propos
 4. Docs: `README.md` Configuration table, `docs/COMMANDS.md` global flags. `Cargo.toml`: `unicode-width` as a direct dependency (already locked through indicatif), `toolchain.md` and `rust.md` rows.
 
 Result: `src/ui.rs` holds one icon table beside `Tone`: an operation icon picked from the verb (install 📦, upgrade/update ⬆️, uninstall/remove/prune 🗑️, download/fetch ⬇️, link 🔗, rollback ⏪, search 🔍, doctor 🩺), else the tone's icon (success ✅, warning ⚠️, error ❌, note ℹ️); steps, debug lines and prompts get a blank gutter of the same width, measured with `unicode-width` (now a direct dependency), so the verb column stays aligned with and without icons. `emoji` (default `true`) is in `Config` and `default_toml()`, `KETCH_EMOJI` overrides it, and the global `--no-emoji` turns it off. `ui::set_emoji` runs after the config loads and keeps icons off a pipe and `TERM=dumb`; they never touch `ui::out`, tables, `--json`, `--names-only` or the log. Tests: insta snapshots of every line kind with emoji on and off, the resolver cases, icon widths and column alignment, config file and env tests, `config reset` writing `emoji = true`, and an end-to-end install whose piped output, `--json` and log carry no icon. Skipped: a schemars schema for `config.toml`, which the repository does not have for any key yet. `search` and `doctor` print data rather than status lines today, so their icons have no line to appear on until one is added.
+
+### B66. Windows self-uninstall removes the registry entries ketch wrote at install
+
+Ivan: uninstalling ketch on Windows must remove the registry entry that was added at install.
+
+What ketch writes to the registry today: only `HKCU\Environment\Path`. `install.ps1` adds the bin dir there, and so does `ketch path install` (`shell::install_user`, through `[Environment]::SetEnvironmentVariable(..., 'User')`). There is no Apps & Features (`...\CurrentVersion\Uninstall\ketch`) key, because `dist-workspace.toml` sets `installers = []`. `self uninstall` removes the Path entry only when `UninstallPlan.user_path` is true (`shell::user_path_configured(cfg)`). That is false under `--keep-packages`, and it may miss an entry written by `install.ps1 -InstallDir <dir>` for a bin dir that is not `cfg.bin_dir`.
+
+Plan:
+1. Reproduce on a Windows runner: `install.ps1` (default and with `-InstallDir`), then `ketch self uninstall --yes`, then read `HKCU\Environment\Path` and list what is left.
+2. Keep one inventory of every registry value ketch writes (a function in `src/shell.rs`, for example `registry_entries(cfg)`): the user Path entry today, and M12's `HKCU\Software\Microsoft\Command Processor\AutoRun` addition later. `self uninstall` removes each entry it finds, matching Path entries the way `install.ps1`'s `Normalize-PathKey` does (quotes, slashes, trailing separator, case).
+3. `ketch doctor` warns when an inventory entry points into a ketch root that no longer exists.
+4. Ask Ivan whether he also expects an Apps & Features entry. That would be new (register at `self install`, remove at uninstall), not a fix.
+
+Check: Windows e2e (`tests/install_windows.rs` or `tests/install_ps1.rs`): after `install.ps1` + `ketch self uninstall --yes`, the user Path holds no entry for the ketch bin dir, with and without `-InstallDir`; `just check` green on all three OSes.
+
+Decisions (Ivan): no Apps & Features entry; only clean up what ketch writes.
+
+Result: `shell::registry_entries(cfg)` is the one inventory of registry values ketch writes (`RegistryEntry::UserPath` today; M12's AutoRun joins it), and `self uninstall` removes each one through `shell::remove_registry_entry`, before the root so the bin dir can still be resolved. A Path entry now matches the bin dir by spelling (case, quotes, slashes, trailing separator — as `install.ps1`'s `Normalize-PathKey`) or, while the folder exists, by resolving both paths, which covers 8.3 short names. `install.ps1 -InstallDir` never puts that dir on the user PATH — it always adds `<root>\bin` — so there was no second entry to chase. `--keep-packages` keeps the entry, like the shell blocks, because the packages left in the bin dir still need it. `ketch doctor` warns about user PATH entries that name a ketch bin dir whose folder is gone. Tests: unit tests for resolution matching, stale detection and the empty inventory off Windows; `tests/install_windows.rs` writes a quoted, upper-case, trailing-backslash entry for the sandbox bin dir and checks `self uninstall --yes` removes it. The Windows parts were verified only in CI.
+
+### M11. Bash completion for every command
+
+Today clap_complete generates a static bash script (`ketch completions bash`, installed at `self install` as `share/ketch/completions/ketch`). It knows commands and flags, but not values.
+
+Plan:
+1. Test coverage: a test walks `Cli::command()` and asserts every visible subcommand, alias and flag appears in the generated script.
+2. Dynamic values: installed package names for `uninstall`, `upgrade`, `pin`, `unpin`, `link`, `unlink`, `info`, `why`, `changelog` and `rollback`, read from the state file; registry names for `install` and `search`, read from the local registry copy. No network in completion. Use clap_complete `CompleteEnv` (`unstable-dynamic`) or a hidden `ketch __complete <kind>`; decide after checking how stable the feature is.
+3. Docs: the bash ≥ 4 and bash-completion 2 note for macOS.
+
+Check: bash smoke on Linux and macOS CI (`COMP_WORDS=(ketch un) COMP_CWORD=1` → `uninstall unlink unpin`; `ketch uninstall r<TAB>` → an installed name from a scratch root); `just check`.
+
+Execution plan (as carried out):
+1. Decision: a hidden `ketch __complete <installed|registry> [PREFIX]` command, not `CompleteEnv`. clap_complete 4.6's `unstable-dynamic` sits outside semver and its docs say the shell-to-binary protocol may change between releases, while ketch writes its bash script to disk at `self install`; a cargo patch update could break every installed script.
+2. New `src/complete.rs`: the shell-agnostic candidate lists (state file, local registry copy, no network) and the bash script: clap_complete's static script plus a wrapper, generated from `Cli::command()`, that asks `ketch __complete` for positional package names. `main.rs` and `extra::write_ketch_docs` both call it.
+3. Tests in `src/complete.rs`: every visible subcommand, alias and flag appears in the script; candidate filtering. `tests/`: bash smoke (`ketch un` → `uninstall unlink unpin`; `ketch uninstall r` → an installed fixture name) with `KETCH_ROOT` and `HOME` in a temp dir, skipped when no bash ≥ 4 is found.
+4. Docs: `docs/COMMANDS.md` completions section, the bash ≥ 4 + bash-completion 2 note for macOS.
+
+Result: `src/complete.rs` owns the completion scripts and `ketch __complete [--root DIR] <installed|registry> [PREFIX]`, intercepted in `main` before clap parses so no generated script, help or man page lists it. The bash script is clap_complete's plus `_ketch_packages`, registered in its place; the value-taking options it skips come from the clap tree, and names reach the command line only when they are plain (`[A-Za-z0-9._+@-]`), since registry folder names are someone else's input and `compgen -W` would expand them. Tests: unit tests in `src/complete.rs` (every visible subcommand, alias and flag in the script; candidate filtering; `self install` writes the same script); `tests/completion.rs` drives the script through the `bash` on PATH (3.2 on macOS) against a sandbox root. Docs: `docs/COMMANDS.md`.
+
+Status: done 2026-09-30
+Model: Claude Code / opus-5.5
+
+### B69. Uninstalling a package that is not installed prints only "not found"
+
+Ivan: uninstalling an already-removed program prints only "program not found".
+
+Today `cmd::pkg::uninstall` resolves every name first and fails with `Error::NotInstalled` (`` `<name>` is not installed ``, exit 4), rendered by `ui::error` with the `error` label.
+
+Plan:
+1. A missing name prints one line, `<name>: not found`, with no hint, no detail lines and no summary. Exit code 4 stays for scripts. Wording: ketch's docs say "package"; Ivan's phrase was "program not found". Confirm the final text with Ivan.
+2. Several names: every missing one is reported, and nothing is removed (the up-front resolution stays, so a typo still stops the command).
+3. After B67: a name with no state record but a leftover `store/<name>/` gets the leftover removed and still reports not found.
+
+Check: e2e: uninstall twice → the second run prints exactly one line and exits 4; trycmd snapshot; `just check`.
+
+Done (Claude Code / opus-5.5): wording confirmed by Ivan as `<name>: not found`. `cmd::pkg::uninstall` collects every name state cannot find, prints one `ui::bare_error` line per name (no label, hint or detail, logged at error level) and returns `Error::Reported(4)`, which `main` exits with without printing anything else — not even the log-path note. No installed package is removed when any name is missing. A missing name's leftover `store/<name>/` is removed through B67's `install::remove_package_dir`. Tests: `tests/uninstall_not_found.rs` (one name, several names, a leftover folder; all OSes).
+
+Status: done 2026-09-30

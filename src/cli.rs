@@ -154,6 +154,10 @@ pub enum Command {
 
     /// Print a shell completion script, or install it with `--install`
     Completions(CompletionsArgs),
+
+    /// Write ketch's man pages, one per command, into a directory (for packaging)
+    #[command(hide = true)]
+    Man(ManArgs),
 }
 
 #[derive(Args, Debug, Clone)]
@@ -603,6 +607,14 @@ pub enum SelfCommand {
         #[arg(long, short = 'y')]
         yes: bool,
     },
+}
+
+/// Arguments for the hidden `ketch man`.
+#[derive(Args, Debug, Clone)]
+pub struct ManArgs {
+    /// Directory to write the pages into; created if missing
+    #[arg(long, value_name = "DIR")]
+    pub out: PathBuf,
 }
 
 #[derive(Args, Debug, Clone)]

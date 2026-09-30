@@ -890,9 +890,20 @@ pub fn uninstall(cfg: &Config, state: &mut State, name: &str) -> Result<Installe
         hooks::run(h, hooks::Event::BeforeUninstall, &hook_ctx)?;
     }
     platform.unplace(&pkg.links)?;
-    remove_store_dir(cfg, &pkg.prefix);
-    for previous in &pkg.retained {
-        remove_store_dir(cfg, &previous.prefix);
+    // The whole `store/<name>/` goes, not just the prefixes state knows of:
+    // a `.incoming` or `.old` sibling a failed swap left behind would
+    // otherwise keep the package's folder alive forever.
+    let package_dir = remove_package_dir(cfg, &pkg.name);
+    for prefix in std::iter::once(&pkg.prefix).chain(pkg.retained.iter().map(|r| &r.prefix)) {
+        // Already attempted as part of the package folder; a second try
+        // would only repeat its warning.
+        if package_dir
+            .as_deref()
+            .is_some_and(|d| prefix.starts_with(d))
+        {
+            continue;
+        }
+        remove_store_dir(cfg, prefix);
     }
     state.remove(&pkg.name);
     if let Some(h) = pkg_hooks {
@@ -1456,6 +1467,33 @@ fn remove_store_dir(cfg: &Config, prefix: &Path) {
     }
 }
 
+/// Delete `store/<name>/` whole, with whatever is left in it.
+///
+/// Returns the folder when it was a candidate — a direct child of the store
+/// named exactly like the package, and inside it after symlinks resolve — so
+/// the caller knows which prefixes it already covered. A name that is not one
+/// plain path component is never joined onto the store.
+pub(crate) fn remove_package_dir(cfg: &Config, name: &str) -> Option<PathBuf> {
+    use std::path::Component;
+    let mut components = Path::new(name).components();
+    if !matches!(
+        (components.next(), components.next()),
+        (Some(Component::Normal(c)), None) if c == name
+    ) {
+        return None;
+    }
+    let dir = cfg.store_dir.join(name);
+    if dir.symlink_metadata().is_err() || !is_inside_store(&cfg.store_dir, &dir) {
+        return None;
+    }
+    if let Err(e) = std::fs::remove_dir_all(&dir) {
+        if e.kind() != std::io::ErrorKind::NotFound {
+            ui::warn(&format!("could not remove {}: {e}", dir.display()));
+        }
+    }
+    Some(dir)
+}
+
 /// True when `prefix` is a proper subdirectory of `store`, after resolving
 /// symlinks and rejecting `..` escapes a corrupted state file could invent.
 fn is_inside_store(store: &Path, prefix: &Path) -> bool {
@@ -1747,6 +1785,58 @@ mod tests {
         );
         // The decoy symlink itself may remain; the point is the target survived.
         assert!(decoy.symlink_metadata().is_ok());
+    }
+
+    #[test]
+    fn the_package_folder_goes_whole_with_stale_swap_siblings() {
+        let root = tempfile::tempdir().unwrap();
+        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        cfg.ensure_dirs().unwrap();
+        let folder = cfg.store_dir.join("tool");
+        std::fs::create_dir_all(folder.join("1.0.0.old")).unwrap();
+        std::fs::write(folder.join("1.0.0.old").join("stale"), b"x").unwrap();
+
+        assert_eq!(remove_package_dir(&cfg, "tool"), Some(folder.clone()));
+        assert!(!folder.exists());
+        assert!(cfg.store_dir.is_dir(), "the store itself stays");
+    }
+
+    #[test]
+    fn a_package_name_that_is_not_one_component_is_never_removed() {
+        let root = tempfile::tempdir().unwrap();
+        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        cfg.ensure_dirs().unwrap();
+        let nested = cfg.store_dir.join("a").join("b");
+        std::fs::create_dir_all(&nested).unwrap();
+
+        for name in ["a/b", "..", ".", "", "a/../a"] {
+            assert_eq!(remove_package_dir(&cfg, name), None, "{name:?}");
+        }
+        assert!(nested.is_dir());
+        assert!(cfg.store_dir.is_dir());
+    }
+
+    #[test]
+    fn a_missing_package_folder_is_not_a_candidate() {
+        let root = tempfile::tempdir().unwrap();
+        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        cfg.ensure_dirs().unwrap();
+        assert_eq!(remove_package_dir(&cfg, "tool"), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_package_folder_linked_outside_the_store_is_left_alone() {
+        let root = tempfile::tempdir().unwrap();
+        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        cfg.ensure_dirs().unwrap();
+        let victim = root.path().join("victim");
+        std::fs::create_dir_all(&victim).unwrap();
+        std::fs::write(victim.join("keep"), b"safe").unwrap();
+        std::os::unix::fs::symlink(&victim, cfg.store_dir.join("tool")).unwrap();
+
+        assert_eq!(remove_package_dir(&cfg, "tool"), None);
+        assert!(victim.join("keep").is_file());
     }
 
     #[test]

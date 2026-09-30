@@ -143,6 +143,20 @@ lint-cask:
         > cask/Casks/ketch.rb
     brew style cask/Casks/ketch.rb
 
+# every generated man page through `mandoc -Tlint` at warning level; the
+# style notes it also prints come from clap_mangen's layout, not ketch's text
+lint-man:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! command -v mandoc >/dev/null; then
+        echo "lint-man: skipped (mandoc not found; it ships with macOS, apt install mandoc on Linux)"
+        exit 0
+    fi
+    out=target/man-lint
+    rm -rf "$out"
+    cargo run --locked --quiet -- man --out "$out/man1"
+    mandoc -Tlint -Wwarning "$out"/man1/*.1
+
 # what `dist` would release for the version in Cargo.toml, per target
 dist-plan:
     {{dist}} plan
@@ -167,7 +181,7 @@ dist-check:
 release level="patch" *flags:
     scripts/release.sh {{level}} {{flags}}
 
-check: fmt-check lint test lint-commits lint-shell dist-check package lint-cask
+check: fmt-check lint test lint-commits lint-shell lint-man dist-check package lint-cask
 
 # $CARGO_HOME sizes (no deletes) and the build output, wherever cargo puts it
 cache:

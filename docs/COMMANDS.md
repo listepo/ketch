@@ -57,6 +57,10 @@ the release has that name, and when the package's manifest already has a `bin`
 
 Remove installed packages. Names resolve like `install` (installed name,
 binary, or `owner/repo`); a typo stops the command before anything is removed.
+The package's whole store folder goes, including anything an interrupted
+update left in it.
+A name that is not installed prints `<name>: not found` and exits 4; every
+missing name is listed and nothing is removed.
 
 ```bash
 ketch uninstall rg
@@ -433,7 +437,8 @@ ketch plugin dir
 
 Check the environment and the install tree: version, PATH setup, platform
 checks, log, registry age, store against `state.json`. Exits non-zero when a
-check fails.
+check fails. On Windows it also warns about user PATH entries that name a ketch
+bin dir whose folder is gone — this root's, or any `.ketch\bin`.
 
 ```bash
 ketch doctor
@@ -488,6 +493,24 @@ ketch completions zsh > _ketch
 ketch completions bash --install
 ```
 
+The bash script also completes package names: installed ones after
+`uninstall`, `upgrade`, `pin`, `unpin`, `link`, `unlink`, `info`, `why`,
+`changelog` and `rollback`, and names from the local registry copy after
+`install` and `search`. It asks the binary for them with the internal
+`ketch __complete <installed|registry> [PREFIX]`, which reads the state file and
+the registry already on disk and never touches the network. A `--root` earlier
+on the command line is honoured.
+
+`--install` writes the bash script to
+`${XDG_DATA_HOME:-~/.local/share}/bash-completion/completions/ketch`, where
+bash-completion 2 loads it on first use. On macOS that needs more than the
+system shell: `/bin/bash` is 3.2 and bash-completion 2 wants bash 4.2 or newer.
+Install a current bash and bash-completion 2 (with Homebrew:
+`brew install bash bash-completion@2`), make that bash your login shell, and
+source bash-completion's `bash_completion` from `~/.bashrc` as its caveats
+say. The script itself also runs under bash
+3.2, so `eval "$(ketch completions bash)"` in `~/.bashrc` works without either.
+
 ## ketch itself
 
 ### `ketch self install [--force] [--link-dir <DIR>]`
@@ -524,6 +547,16 @@ Remove ketch and everything it installed, permanently. Lists what it is about
 to delete and asks first. `--keep-packages` removes only ketch. A ketch
 installed with mise also asks whether to run `mise unuse -g` for its own copy;
 `--yes` answers that too.
+On Windows the running `ketch.exe` cannot delete itself, so the rest of the
+root is removed by a background process once ketch has exited.
+
+On Windows it also removes what ketch wrote to the registry. Today that is
+only the bin dir in the user PATH (`HKCU\Environment\Path`), written by
+`install.ps1` or `ketch path install`. The entry is matched however it is
+spelled: case, quotes, `/` or `\`, a trailing separator, or an 8.3 short
+name. `--keep-packages` leaves it, as it leaves the shell blocks, because the
+packages still in the bin dir need it. ketch never registers itself in Apps &
+Features, so there is no entry there to remove.
 
 ```bash
 ketch self uninstall --dry-run
