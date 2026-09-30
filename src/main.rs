@@ -19,6 +19,7 @@ mod install;
 mod listing;
 mod lockfile;
 mod log;
+mod man;
 mod manifest;
 mod model;
 mod platform;
@@ -88,6 +89,12 @@ fn run(cli: Cli) -> Result<()> {
         }
     }
 
+    // Man pages are rendered from the CLI definition alone; a packager runs
+    // this on a build machine where no ketch root should appear.
+    if let Command::Man(args) = &cli.command {
+        return cmd::system::man(args);
+    }
+
     // `config create` writes a project file in the working tree. Creating the
     // ketch root for it would leave empty store/bin/cache dirs behind a
     // questionnaire that never uses them.
@@ -149,6 +156,7 @@ fn run(cli: Cli) -> Result<()> {
         Command::Plugin { command } => cmd::system::plugin(&cfg, command),
         Command::Zelf { command } => cmd::system::zelf(&cfg, command),
         Command::Completions(args) => cmd::system::install_completions(&cfg, args),
+        Command::Man(args) => cmd::system::man(&args),
     }
 }
 

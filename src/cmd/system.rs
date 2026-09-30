@@ -1,7 +1,8 @@
 //! Commands about ketch itself and its environment.
 
 use crate::cli::{
-    CompletionsArgs, DoctorArgs, PathArgs, PathCommand, PathInstallArgs, PluginCommand, SelfCommand,
+    CompletionsArgs, DoctorArgs, ManArgs, PathArgs, PathCommand, PathInstallArgs, PluginCommand,
+    SelfCommand,
 };
 use crate::config::Config;
 use crate::error::{Error, Result};
@@ -166,6 +167,16 @@ fn fix(cfg: &Config) {
             }
         }
     }
+}
+
+/// `ketch man --out <dir>`: every page, for a package to ship.
+pub fn man(args: &ManArgs) -> Result<()> {
+    let written = crate::man::write_to(&args.out)?;
+    ui::success(
+        "Wrote",
+        &format!("{} man pages to {}", written.len(), args.out.display()),
+    );
+    Ok(())
 }
 
 /// Write one shell's completion script into the platform destination and

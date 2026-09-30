@@ -18,6 +18,7 @@ Project programs and direct packages from manifests.
 | release-plz | GitHub Action | The release pull request | https://github.com/release-plz/release-plz |
 | ketch | see its README | Installs dunnage | https://github.com/pyrlyn/ketch |
 | dunnage | `ketch` | Lossless cleanup of `target/` after tests | https://github.com/listepo/dunnage |
+| mandoc | ships with macOS; `apt install mandoc` on Linux | `just lint-man` checks the generated man pages | https://mandoc.bsd.lv |
 
 ## cargo
 
@@ -28,6 +29,7 @@ Project programs and direct packages from manifests.
 | bzip2 | local | https://crates.io/crates/bzip2 | Rust dependency |
 | clap | local | https://crates.io/crates/clap | CLI |
 | clap_complete | local | https://crates.io/crates/clap_complete | Rust dependency |
+| clap_mangen | local | https://crates.io/crates/clap_mangen | ketch's man pages, one per command (`src/man.rs`) |
 | crossterm | local | https://crates.io/crates/crossterm | Terminal |
 | diesel | local | https://crates.io/crates/diesel | SQLite ORM |
 | diesel_migrations | local | https://crates.io/crates/diesel_migrations | SQLite migrations |
