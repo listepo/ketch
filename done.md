@@ -1,3 +1,11 @@
+### M8. Lifecycle hooks in a manifest
+
+A manifest's `[hooks]` table names one shell line for each of `before_install`, `after_install`, `before_update`, `after_update`, `before_uninstall` and `after_uninstall`. `src/hooks.rs` runs them with `sh -c` (`cmd /C` on Windows), `KETCH_HOOK`, `KETCH_PACKAGE`, `KETCH_VERSION`, `KETCH_PREVIOUS_VERSION`, `KETCH_PREFIX`, `KETCH_BIN_DIR` and `KETCH_ROOT` in the environment, and the store prefix as the working directory whenever it exists. `install::commit` runs the before hook ahead of placement and the after hook once `state` records the package; `install::uninstall` does the same around unplace and removal. A reinstall of the same version is an install, not an update. A failing `before_*` hook stops the operation with its stderr as the detail; a failing `after_*` hook is a warning. Rollback runs the two update hooks; prune runs none. A hook is killed with its process tree after ten minutes via `plugin::run_with_deadline`, the runner source plugins already used.
+
+Hooks are a trust boundary: they run only from a user-tier manifest (`~/.ketch/manifests`). A registry or built-in manifest carrying hooks is refused at install before anything is placed, and skipped with a warning on uninstall. `Manifest::validate` refuses a blank hook. Schema and semantics are in `docs/MANIFESTS.md`.
+
+Tests: `src/hooks.rs` (environment, working directory, stderr detail, origin gate), `src/model.rs` (parsing, blank hook, misspelt key), `tests/install.rs` (order across install, upgrade and uninstall; a failing before hook installs nothing).
+
 ### B61. `self update` swap fails on a transient Windows lock
 
 `replace_binary` retries a short antivirus lock. `io_retry` pauses 100, 150, 200, then 250 ms and gives up. It wraps the rename of the running binary aside, the copy of the new binary into place, and the restore rename/remove. Only `PermissionDenied` and Windows os errors 5 and 32 are retried; any other error returns on the first attempt. The success-path removal of the `.old` image is not retried: that file is the running image until this process exits, and B60 sweeps it on the next self command. Noted in `docs/TROUBLESHOOTING.md`.

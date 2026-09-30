@@ -247,18 +247,47 @@ fn plugin_fail(path: &Path, detail: String, stderr: &[u8]) -> Error {
 }
 
 fn run_plugin(path: &Path, args: &[&str], timeout: Duration) -> Result<String> {
-    let fail = |detail: String| plugin_fail(path, detail, &[]);
     let mut command = Command::new(path);
     command
         .args(args)
-        .env("KETCH_PROTOCOL_VERSION", PROTOCOL_VERSION.to_string())
+        .env("KETCH_PROTOCOL_VERSION", PROTOCOL_VERSION.to_string());
+    let (status, out, err) = run_with_deadline(&mut command, timeout)
+        .map_err(|(detail, err)| plugin_fail(path, detail, &err))?;
+    if out.len() as u64 > PLUGIN_MAX_OUTPUT {
+        return Err(plugin_fail(
+            path,
+            format!("wrote more than {PLUGIN_MAX_OUTPUT} bytes to stdout"),
+            &err,
+        ));
+    }
+    if !status.success() {
+        return Err(Error::Command {
+            cmd: format!("{} {}", file_name(path), args.join(" ")),
+            status: status.to_string(),
+            stderr: String::from_utf8_lossy(&err).to_string(),
+        });
+    }
+    String::from_utf8(out)
+        .map_err(|e| plugin_fail(path, format!("wrote output that is not UTF-8: {e}"), &err))
+}
+
+/// What a bounded run produced — status, stdout, stderr — or the failure in
+/// words plus whatever stderr was drained before it.
+pub(crate) type Bounded = std::result::Result<(ExitStatus, Vec<u8>, Vec<u8>), (String, Vec<u8>)>;
+
+/// Spawn `command` with no stdin, drain what it writes (capped), and kill its
+/// whole process tree if it outlives `timeout`. Shared with `crate::hooks`,
+/// which runs a manifest's commands under the same three guards.
+pub(crate) fn run_with_deadline(command: &mut Command, timeout: Duration) -> Bounded {
+    command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    set_process_group(&mut command);
+    set_process_group(command);
+    let program = command.get_program().to_string_lossy().to_string();
     let mut child = command
         .spawn()
-        .map_err(|e| fail(format!("could not run {}: {e}", path.display())))?;
+        .map_err(|e| (format!("could not run {program}: {e}"), Vec::new()))?;
 
     let pid = child.id();
     let deadline = Instant::now() + timeout;
@@ -280,23 +309,8 @@ fn run_plugin(path: &Path, args: &[&str], timeout: Duration) -> Result<String> {
     let out = join_with_timeout(reading_out, remaining.max(drain)).unwrap_or_default();
     let err = join_with_timeout(reading_err, remaining.max(drain)).unwrap_or_default();
 
-    let status = status.map_err(|detail| plugin_fail(path, detail, &err))?;
-    if out.len() as u64 > PLUGIN_MAX_OUTPUT {
-        return Err(plugin_fail(
-            path,
-            format!("wrote more than {PLUGIN_MAX_OUTPUT} bytes to stdout"),
-            &err,
-        ));
-    }
-    if !status.success() {
-        return Err(Error::Command {
-            cmd: format!("{} {}", file_name(path), args.join(" ")),
-            status: status.to_string(),
-            stderr: String::from_utf8_lossy(&err).to_string(),
-        });
-    }
-    String::from_utf8(out)
-        .map_err(|e| plugin_fail(path, format!("wrote output that is not UTF-8: {e}"), &err))
+    let status = status.map_err(|detail| (detail, err.clone()))?;
+    Ok((status, out, err))
 }
 
 /// Read a pipe to the end, or to the cap — whichever comes first.
