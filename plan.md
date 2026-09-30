@@ -20,7 +20,6 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | B68 | todo | P1 | 3 | 0% | |
 | F9 | todo | P2 | 2 | 0% | |
 | B69 | todo | P2 | 1 | 0% | |
-| M10 | todo | P2 | 2 | 0% | |
 | M12 | todo | P2 | 3 | 0% | |
 | F11 | todo | P3 | 2 | 0% | |
 | R4 | todo | P2 | 3 | 0% | |
@@ -330,16 +329,10 @@ Plan:
 
 Check: e2e: uninstall twice → the second run prints exactly one line and exits 4; trycmd snapshot; `just check`.
 
-### M10. Man pages in roff for every command
 
-Today `extra::render_manpage` writes one hand-rolled `ketch.1`, listing top-level commands with no options and no nested subcommands. `write_ketch_docs` places it under `share/man/man1/` at `self install`.
 
 Plan:
-1. Add `clap_mangen` (rtok already uses it for `rtok man`, a working reference). Generate `ketch.1` plus `ketch-<cmd>.1` for every visible subcommand, recursively (`ketch-config-create.1`, `ketch-self-uninstall.1`, …), with options, defaults, env vars and examples from the clap definitions. Replace `render_manpage`.
-2. Write every page through `write_ketch_docs` as `ExtraPath` records, so uninstall and relink remove them with the same ownership proof as today's page.
-3. A hidden `ketch man --out <dir>` (or a `just man` recipe) for packaging; the Homebrew cask may ship them.
 
-Check: a test walks `Cli::command()` and asserts one page per visible command; `mandoc -Tlint` clean on macOS and Linux CI; `man ketch-install` works after `self install` in a scratch root; `just check`.
 
 ### M12. Windows completion: PowerShell `Register-ArgumentCompleter` and doskey macros for cmd
 
