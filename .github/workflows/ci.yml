@@ -45,7 +45,7 @@ jobs:
       contents: read
       actions: write
     with:
-      clippy-args: --workspace --locked
+      clippy-args: --locked
       tools: nextest
       test-command: |
         cargo nextest run --workspace --all-targets --locked
