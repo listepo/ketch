@@ -28,7 +28,7 @@ permissions:
 
 jobs:
   release-plz:
-    uses: pyrlyn/infra/.github/workflows/release-plz.yml@90f7b2bac7f2b06119a5831470057ca3ec6926ac
+    uses: pyrlyn/infra/.github/workflows/release-plz.yml@5e892cc4fb4be97cfa388f5dc82e6bf47340337a
     permissions:
       contents: write # the release branch
       pull-requests: write # the release pull request
