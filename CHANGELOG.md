@@ -8,6 +8,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [0.8.0](https://github.com/listepo/ketch/releases/tag/v0.8.0) - 2026-09-30
+
+### Added
+
+- run lifecycle hooks from the user's own manifest ([#164](https://github.com/listepo/ketch/pull/164))
+
+### Fixed
+
+- pass a Windows hook line to cmd.exe without re-quoting it
+
+### Other
+
+- record why CI does not add a second cache ([#155](https://github.com/listepo/ketch/pull/155))
+- point docs and the registry repo at pyrlyn ([#163](https://github.com/listepo/ketch/pull/163))
 
 ## [0.7.0](https://github.com/listepo/ketch/releases/tag/v0.7.0) - 2026-09-29
 
