@@ -51,6 +51,8 @@ Remove installed packages. Names resolve like `install` (installed name,
 binary, or `owner/repo`); a typo stops the command before anything is removed.
 The package's whole store folder goes, including anything an interrupted
 update left in it.
+A name that is not installed prints `<name>: not found` and exits 4; every
+missing name is listed and nothing is removed.
 
 ```bash
 ketch uninstall rg

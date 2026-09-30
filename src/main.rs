@@ -60,6 +60,9 @@ fn main() {
     );
 
     if let Err(err) = run(cli) {
+        if let error::Error::Reported(code) = err {
+            std::process::exit(code);
+        }
         ui::error(&err);
         // What npm and cargo do, and for the same reason: the terminal shows
         // the failure, the log shows the run that led to it.

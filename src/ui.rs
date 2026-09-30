@@ -413,6 +413,14 @@ pub fn warn(detail: &str) {
     emit(&warn_line(detail));
 }
 
+/// A failure that is the whole message, with no `error` label, hint or
+/// detail lines: `<name>: not found`. Printed even under `--quiet`, like
+/// every other error.
+pub fn bare_error(line: &str) {
+    log::record(log::Level::Error, line);
+    emit(&tone(Tone::Error, &printable(line)));
+}
+
 /// An aside: true, worth saying once, and not a problem.
 pub fn note(detail: &str) {
     log::record(log::Level::Info, detail);

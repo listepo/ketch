@@ -12,6 +12,5 @@ Empty: F1/F2/M3/F5 and the 2026-09-20 audit follow-ups (A2) are in `done.md`; th
 - M9. `ketch list` refactor: `local`, `remote`, and both by default
 - B68. Update installs into a fresh folder so stale files cannot interfere
 - F9. `ketch install <pkg>` on an installed package offers the update
-- B69. Uninstalling a package that is not installed prints only "not found"
 - F11. Emoji icons per operation, `emoji` config key (default true)
 - R4. Fuzz testing with cargo-fuzz / libFuzzer
