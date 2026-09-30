@@ -18,7 +18,6 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | M9 | in progress | P2 | 5 | 90% | Claude Code / opus-5.5 |
 | B68 | todo | P1 | 3 | 0% | |
 | F9 | todo | P2 | 2 | 0% | |
-| M12 | todo | P2 | 3 | 0% | |
 | F11 | todo | P3 | 2 | 0% | |
 | R4 | todo | P2 | 3 | 0% | |
 
@@ -310,17 +309,6 @@ Check: e2e with the mock release API: newer + yes → upgraded; newer + no → u
 
 Plan:
 
-
-### M12. Windows completion: PowerShell `Register-ArgumentCompleter` and doskey macros for cmd
-
-Today clap_complete emits `Register-ArgumentCompleter -Native -CommandName 'ketch'`, and `ketch completions powershell --install` writes it to `Documents\PowerShell\Completions`. PowerShell does not load that directory by itself, so nothing is active until the user dot-sources it.
-
-Plan:
-1. PowerShell: a managed block in the CurrentUserAllHosts profile that dot-sources the script, for both PowerShell 7 (`Documents\PowerShell`) and Windows PowerShell 5.1 (`Documents\WindowsPowerShell`). Resolve Documents through the shell, not a fixed path, because OneDrive may redirect it. Use the same managed-block mechanism as the PATH blocks in `src/shell.rs`, so `self uninstall` removes it. Dynamic values come from M11's completer.
-2. cmd: cmd.exe has no programmable argument completion, so ship doskey macros. Generate `share/ketch/ketch.doskey` (the macro list is for Ivan to choose; for example `ki=ketch install $*`, `ku=ketch upgrade $*`, `kl=ketch list $*`) and load it through `HKCU\Software\Microsoft\Command Processor\AutoRun` (`doskey /macrofile=<file>`). Append to an existing AutoRun value rather than replace it. Register the value in B66's inventory so `self uninstall` restores the old value.
-3. Optional, only if Ivan wants real Tab completion in cmd: a clink Lua script generated from the CLI.
-
-Check: Windows CI: `pwsh -c "TabExpansion2 'ketch ins' 9"` returns `install`; after install, AutoRun contains the doskey line and `ki` expands in a new cmd; after `self uninstall`, the profile block and the AutoRun addition are gone and an earlier AutoRun value is intact; `just check`.
 
 ### F11. Emoji icons per operation, `emoji` config key (default true)
 
