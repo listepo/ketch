@@ -18,7 +18,6 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | M9 | in progress | P2 | 5 | 90% | Claude Code / opus-5.5 |
 | B68 | todo | P1 | 3 | 0% | |
 | F9 | todo | P2 | 2 | 0% | |
-| B69 | todo | P2 | 1 | 0% | |
 | M12 | todo | P2 | 3 | 0% | |
 | F11 | todo | P3 | 2 | 0% | |
 | R4 | todo | P2 | 3 | 0% | |
@@ -306,19 +305,6 @@ Plan:
 4. Pinned packages keep `Error::Pinned`. An explicit version (`pkg@1.2.0`) keeps today's behaviour. In a batch, each installed package is asked separately. `ketch sync` is unaffected.
 
 Check: e2e with the mock release API: newer + yes → upgraded; newer + no → unchanged, exit 0; nothing newer → the message and exit 5; non-TTY without `--yes` → error; `docs/COMMANDS.md` updated; `just check`.
-
-### B69. Uninstalling a package that is not installed prints only "not found"
-
-Ivan: uninstalling an already-removed program prints only "program not found".
-
-Today `cmd::pkg::uninstall` resolves every name first and fails with `Error::NotInstalled` (`` `<name>` is not installed ``, exit 4), rendered by `ui::error` with the `error` label.
-
-Plan:
-1. A missing name prints one line, `<name>: not found`, with no hint, no detail lines and no summary. Exit code 4 stays for scripts. Wording: ketch's docs say "package"; Ivan's phrase was "program not found". Confirm the final text with Ivan.
-2. Several names: every missing one is reported, and nothing is removed (the up-front resolution stays, so a typo still stops the command).
-3. After B67: a name with no state record but a leftover `store/<name>/` gets the leftover removed and still reports not found.
-
-Check: e2e: uninstall twice → the second run prints exactly one line and exits 4; trycmd snapshot; `just check`.
 
 
 

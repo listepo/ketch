@@ -1,0 +1,3 @@
+{"run_id":"da00afb7-5a85-4a1c-a606-f6cf6b3d17e2","line":46,"new":{"module_name":"colour","snapshot_name":"a_forced_error_headline_is_red_from_label_to_end","metadata":{"source":"tests/colour.rs","assertion_line":46,"expression":"headline.replace('\\u{1b}', \"\\\\e\")"},"snapshot":"ghost: not found"},"old":{"module_name":"colour","metadata":{},"snapshot":"\\e[31m     error `ghost` is not installed\\e[0m"}}
+{"run_id":"09baddb8-6e91-4acc-b9c5-f7a72c1bf035","line":46,"new":null,"old":null}
+{"run_id":"eac4163b-0e9a-4c58-aec9-a7dfed76b0ae","line":46,"new":null,"old":null}
