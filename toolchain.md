@@ -28,6 +28,7 @@ Project programs and direct packages from manifests.
 | bzip2 | local | https://crates.io/crates/bzip2 | Rust dependency |
 | clap | local | https://crates.io/crates/clap | CLI |
 | clap_complete | local | https://crates.io/crates/clap_complete | Rust dependency |
+| console | local (Windows only) | https://crates.io/crates/console | Switches on virtual terminal processing so legacy conhost shows colour instead of escape codes; already in the tree through indicatif |
 | crossterm | local | https://crates.io/crates/crossterm | Terminal |
 | diesel | local | https://crates.io/crates/diesel | SQLite ORM |
 | diesel_migrations | local | https://crates.io/crates/diesel_migrations | SQLite migrations |
