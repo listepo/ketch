@@ -425,7 +425,8 @@ ketch plugin dir
 
 Check the environment and the install tree: version, PATH setup, platform
 checks, log, registry age, store against `state.json`. Exits non-zero when a
-check fails.
+check fails. On Windows it also warns about user PATH entries that name a ketch
+bin dir whose folder is gone — this root's, or any `.ketch\bin`.
 
 ```bash
 ketch doctor
@@ -516,6 +517,14 @@ Remove ketch and everything it installed, permanently. Lists what it is about
 to delete and asks first. `--keep-packages` removes only ketch. A ketch
 installed with mise also asks whether to run `mise unuse -g` for its own copy;
 `--yes` answers that too.
+
+On Windows it also removes what ketch wrote to the registry. Today that is
+only the bin dir in the user PATH (`HKCU\Environment\Path`), written by
+`install.ps1` or `ketch path install`. The entry is matched however it is
+spelled: case, quotes, `/` or `\`, a trailing separator, or an 8.3 short
+name. `--keep-packages` leaves it, as it leaves the shell blocks, because the
+packages still in the bin dir need it. ketch never registers itself in Apps &
+Features, so there is no entry there to remove.
 
 ```bash
 ketch self uninstall --dry-run

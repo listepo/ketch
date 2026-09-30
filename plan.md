@@ -16,7 +16,6 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | R3 | in progress | P1 | 3 | 67% | Cursor / grok 4.7 high |
 | F8 | in progress | P2 | 3 | 0% | Cursor / grok 4.7 high |
 | M9 | in progress | P2 | 5 | 90% | Claude Code / opus-5.5 |
-| B66 | todo | P1 | 2 | 0% | |
 | B67 | todo | P1 | 2 | 0% | |
 | B68 | todo | P1 | 3 | 0% | |
 | F9 | todo | P2 | 2 | 0% | |
@@ -276,20 +275,6 @@ Dependency summary: B69 ← B67; B68 shares the stale-sibling sweep with B67; F9
 - **PowerShell**: `Register-ArgumentCompleter -Native` is what clap_complete already emits. `pwsh` 7 exists on the `windows-latest` runner; Windows PowerShell 5.1 uses a different profile directory. **doskey** is built into cmd.exe. cmd has no programmable completion, so doskey gives macros only (see M12).
 - **Colour**: no colour crate; `src/ui.rs` writes ANSI itself and honours `--no-color`, `NO_COLOR` and `CLICOLOR_FORCE`. **Emoji width**: `unicode-width` is already a transitive dependency (through indicatif). F11 needs it as a direct dependency to pad columns correctly.
 - **Fuzzing**: `cargo-fuzz` (`cargo install cargo-fuzz`, or `"cargo:cargo-fuzz"` in `mise.toml`) plus a **nightly** toolchain (`rustup toolchain install nightly`). `mise.toml` pins stable 1.98.1 only, and that stays the build toolchain. libFuzzer runs on macOS and Linux; Windows is not a target for R4. Use the same layout as rtok's in-progress `test/cargo-fuzz` branch (a standalone `fuzz/` workspace excluded from the root one).
-
-### B66. Windows self-uninstall removes the registry entries ketch wrote at install
-
-Ivan: uninstalling ketch on Windows must remove the registry entry that was added at install.
-
-What ketch writes to the registry today: only `HKCU\Environment\Path`. `install.ps1` adds the bin dir there, and so does `ketch path install` (`shell::install_user`, through `[Environment]::SetEnvironmentVariable(..., 'User')`). There is no Apps & Features (`...\CurrentVersion\Uninstall\ketch`) key, because `dist-workspace.toml` sets `installers = []`. `self uninstall` removes the Path entry only when `UninstallPlan.user_path` is true (`shell::user_path_configured(cfg)`). That is false under `--keep-packages`, and it may miss an entry written by `install.ps1 -InstallDir <dir>` for a bin dir that is not `cfg.bin_dir`.
-
-Plan:
-1. Reproduce on a Windows runner: `install.ps1` (default and with `-InstallDir`), then `ketch self uninstall --yes`, then read `HKCU\Environment\Path` and list what is left.
-2. Keep one inventory of every registry value ketch writes (a function in `src/shell.rs`, for example `registry_entries(cfg)`): the user Path entry today, and M12's `HKCU\Software\Microsoft\Command Processor\AutoRun` addition later. `self uninstall` removes each entry it finds, matching Path entries the way `install.ps1`'s `Normalize-PathKey` does (quotes, slashes, trailing separator, case).
-3. `ketch doctor` warns when an inventory entry points into a ketch root that no longer exists.
-4. Ask Ivan whether he also expects an Apps & Features entry. That would be new (register at `self install`, remove at uninstall), not a fix.
-
-Check: Windows e2e (`tests/install_windows.rs` or `tests/install_ps1.rs`): after `install.ps1` + `ketch self uninstall --yes`, the user Path holds no entry for the ketch bin dir, with and without `-InstallDir`; `just check` green on all three OSes.
 
 ### B67. Uninstall deletes the package's install folder
 

@@ -708,8 +708,8 @@ pub struct UninstallPlan {
     pub root: Option<PathBuf>,
     /// Shell startup files holding a ketch PATH block.
     pub shell_files: Vec<PathBuf>,
-    /// The Windows user PATH names the bin dir.
-    pub user_path: bool,
+    /// Registry values ketch wrote that are still there.
+    pub registry: Vec<crate::shell::RegistryEntry>,
     /// The Homebrew cask's own directory, when ketch came from `brew`.
     pub cask: Option<PathBuf>,
     /// The running binary, when it lives inside the root and so goes with it.
@@ -748,7 +748,13 @@ pub fn uninstall_plan(cfg: &Config, keep_packages: bool, no_brew: bool) -> Resul
         } else {
             crate::shell::files_with_block()
         },
-        user_path: !keep_packages && crate::shell::user_path_configured(cfg),
+        // Kept with `--keep-packages`, like the shell blocks: the packages
+        // left in the bin dir are still meant to be on PATH.
+        registry: if keep_packages {
+            Vec::new()
+        } else {
+            crate::shell::registry_entries(cfg)
+        },
         cask: (!no_brew).then(cask_dir).flatten(),
         exe: current_exe().ok().filter(|exe| {
             let root = dunce::canonicalize(&cfg.root).unwrap_or_else(|_| cfg.root.clone());
@@ -786,6 +792,15 @@ pub fn uninstall_self(cfg: &Config, plan: &UninstallPlan) -> Result<Vec<PathBuf>
     state.save(cfg)?;
     drop(lock);
 
+    // Before the root: a Path entry spelled differently from the bin dir is
+    // matched by resolving both, which needs the folder still there.
+    #[cfg(windows)]
+    for entry in &plan.registry {
+        if let Err(e) = crate::shell::remove_registry_entry(cfg, *entry) {
+            ui::warn(&format!("{}: {e}", entry.describe()));
+        }
+    }
+
     if let Some(root) = &plan.root {
         removed.extend(remove_root(cfg, root));
     }
@@ -803,14 +818,6 @@ pub fn uninstall_self(cfg: &Config, plan: &UninstallPlan) -> Result<Vec<PathBuf>
             Ok(true) => removed.push(file.clone()),
             Ok(false) => {}
             Err(e) => ui::warn(&format!("{}: {e}", file.display())),
-        }
-    }
-
-    #[cfg(windows)]
-    if plan.user_path {
-        match crate::shell::uninstall_user(cfg, false) {
-            Ok(_) => {}
-            Err(e) => ui::warn(&format!("user PATH: {e}")),
         }
     }
 
