@@ -2648,6 +2648,7 @@ dependencies = [
  "clap",
  "clap_complete",
  "clap_mangen",
+ "console",
  "crossterm",
  "diesel",
  "diesel_migrations",

@@ -61,9 +61,9 @@ pub fn doctor(cfg: &Config, args: DoctorArgs) -> Result<()> {
     } else {
         for check in &checks {
             let (mark, name) = match check.status {
-                CheckStatus::Ok => (ui::green("ok  "), ui::dim(&check.name)),
-                CheckStatus::Warn => (ui::yellow("warn"), ui::bold(&check.name)),
-                CheckStatus::Fail => (ui::red("fail"), ui::bold(&check.name)),
+                CheckStatus::Ok => (ui::tone(ui::Tone::Success, "ok  "), ui::dim(&check.name)),
+                CheckStatus::Warn => (ui::tone(ui::Tone::Warning, "warn"), ui::bold(&check.name)),
+                CheckStatus::Fail => (ui::tone(ui::Tone::Error, "fail"), ui::bold(&check.name)),
             };
             ui::out(&format!(
                 "{mark} {name}  {}",

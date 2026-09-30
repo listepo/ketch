@@ -5,12 +5,10 @@
 //! Ambiguous entries are refused rather than guessed. Destination directories
 //! come from the platform; this module only maps a classified entry onto them.
 
-use crate::cli::Cli;
 use crate::error::{Error, Result};
 use crate::model::{
     ClassifiedExtra, CompletionShell, ExtraKind, ExtraPath, ExtraPathSpec, LinkRole,
 };
-use clap::CommandFactory;
 use std::path::{Path, PathBuf};
 
 /// One extra file ready to place: a payload-relative source and a destination
@@ -215,17 +213,14 @@ pub fn resolve_under(root: &Path, rel: &str) -> Result<PathBuf> {
 /// proof as binaries: they point at files ketch placed.
 pub fn write_ketch_docs(prefix: &Path) -> Result<Vec<ExtraPath>> {
     let mut extras = write_ketch_man_pages(prefix)?;
-    let mut command = Cli::command();
-    let name = command.get_name().to_string();
     for shell in CompletionShell::ALL {
         let rel = generated_completion_rel(shell);
         let path = prefix.join(&rel);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
         }
-        let mut buf = Vec::new();
-        clap_complete::generate(shell.to_clap(), &mut command, &name, &mut buf);
-        std::fs::write(&path, buf).map_err(|e| Error::io(&path, e))?;
+        std::fs::write(&path, crate::complete::script(shell.to_clap()))
+            .map_err(|e| Error::io(&path, e))?;
         extras.push(ExtraPath::Spec(ExtraPathSpec {
             path: rel,
             kind: ExtraKind::Completion,

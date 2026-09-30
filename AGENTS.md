@@ -210,6 +210,7 @@ conditional, multi-stage Rust automation.
 | `src/install.rs` | the install/uninstall/relink pipeline every command shares |
 | `src/hooks.rs` | a manifest's `[hooks]` commands, run by `install.rs` around install, update and uninstall — and only from a user-tier manifest |
 | `src/resolve.rs` | side-effect-free resolution trace shared by install and `ketch why` |
+| `src/complete.rs` | completion scripts, and `ketch __complete`: the package names they ask for at <TAB>, for every shell |
 | `src/bin_choice.rs` | which binary to link when several share the package's name, the same on every OS |
 | `src/source/` | where releases come from: GitHub built in, plugins external |
 | `src/extract/` | archive formats, selected by sniffing content not file names |

@@ -49,6 +49,8 @@ the release has that name, and when the package's manifest already has a `bin`
 
 Remove installed packages. Names resolve like `install` (installed name,
 binary, or `owner/repo`); a typo stops the command before anything is removed.
+The package's whole store folder goes, including anything an interrupted
+update left in it.
 
 ```bash
 ketch uninstall rg
@@ -480,6 +482,24 @@ ketch completions zsh > _ketch
 ketch completions bash --install
 ```
 
+The bash script also completes package names: installed ones after
+`uninstall`, `upgrade`, `pin`, `unpin`, `link`, `unlink`, `info`, `why`,
+`changelog` and `rollback`, and names from the local registry copy after
+`install` and `search`. It asks the binary for them with the internal
+`ketch __complete <installed|registry> [PREFIX]`, which reads the state file and
+the registry already on disk and never touches the network. A `--root` earlier
+on the command line is honoured.
+
+`--install` writes the bash script to
+`${XDG_DATA_HOME:-~/.local/share}/bash-completion/completions/ketch`, where
+bash-completion 2 loads it on first use. On macOS that needs more than the
+system shell: `/bin/bash` is 3.2 and bash-completion 2 wants bash 4.2 or newer.
+Install a current bash and bash-completion 2 (with Homebrew:
+`brew install bash bash-completion@2`), make that bash your login shell, and
+source bash-completion's `bash_completion` from `~/.bashrc` as its caveats
+say. The script itself also runs under bash
+3.2, so `eval "$(ketch completions bash)"` in `~/.bashrc` works without either.
+
 ## ketch itself
 
 ### `ketch self install [--force] [--link-dir <DIR>]`
@@ -516,6 +536,8 @@ Remove ketch and everything it installed, permanently. Lists what it is about
 to delete and asks first. `--keep-packages` removes only ketch. A ketch
 installed with mise also asks whether to run `mise unuse -g` for its own copy;
 `--yes` answers that too.
+On Windows the running `ketch.exe` cannot delete itself, so the rest of the
+root is removed by a background process once ketch has exited.
 
 ```bash
 ketch self uninstall --dry-run

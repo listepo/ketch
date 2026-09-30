@@ -552,5 +552,64 @@ Execution: `src/man.rs` renders every page with `clap_mangen` 0.3 (`env` feature
 
 Tests: `src/man.rs` walks `Cli::command()` and asserts one page per visible command in order, nested pages exist (`ketch-self-uninstall.1`), hidden commands and `help` get none, a subcommand page names its full invocation and options, the tidy step, and `write_to`. `src/extra.rs` asserts every page is written into the prefix and recorded as a man extra. Verified by hand: `mandoc -Tlint -Wwarning` clean on all 42 pages on macOS; `self install` in a scratch root (KETCH_ROOT, HOME and XDG_* under `target/`, a local mock of the GitHub API serving the built binary) linked 42 pages into `$XDG_DATA_HOME/man/man1`, `man ketch-install` rendered, and `self uninstall` removed them all.
 
+### B67. Uninstall deletes the package's install folder
+
+Ivan: uninstall must delete the program's folder (for example the `ketch` folder).
+
+Today `install::uninstall` removes the current prefix and every retained prefix with `remove_store_dir`, which then calls `remove_dir(store/<name>)`. That call only succeeds when the directory is empty, so any leftover keeps `store/<name>/` in place. Leftovers include `<version>.incoming` or `<version>.old` siblings from `move_into_store` (removed best-effort with `let _ = remove_any`), or a file Windows kept locked. For ketch itself, `self_update::remove_root_at` wipes the named directories and then `remove_dir(root)`. The root stays when anything else is in it. On Windows the running `ketch.exe` cannot delete its own image, so `~/.ketch` survives the uninstall. This is the same cause as B60.
+
+Plan:
+1. Package uninstall: after the prefixes are gone, remove `store/<name>/` whole (`remove_dir_all`). Guard it with `is_inside_store`, and only for a direct child of the store named exactly like the package. On failure, warn and name the path.
+2. One helper sweeps stale `.incoming` / `.old` siblings. B68 reuses it.
+3. Self uninstall on Windows: finish the root removal after the process exits, with a detached `cmd /c` that waits for the PID and then removes the root. `unsafe_code = "forbid"` rules out calling the Win32 API directly. The home-directory safety rule in `remove_root_at` stays: a root equal to `$HOME` is never wiped.
+4. `ketch doctor` notes a `store/<name>/` that has no state record.
+
+Check: e2e: install, uninstall, then `store/<name>` does not exist, including with a planted `1.0.0.old` sibling; Windows e2e: `self uninstall` leaves no `~/.ketch` after the process exits; `just check`.
+
+Done (Claude Code / opus-5.5): `install::uninstall` removes `store/<name>/` whole through `remove_package_dir` — only a direct child of the store named exactly like the package, inside the store after symlinks resolve — so `.incoming` / `.old` leftovers go with it; prefixes outside that folder still go through `remove_store_dir`. Self uninstall collects what `remove_root_at` could not delete and, on Windows, hands it to a detached PowerShell that waits for the ketch PID, removes only those named paths and then deletes the root non-recursively (a root equal to `$HOME` is never handed on). Step 4 already existed: `ketch doctor`'s `orphans` check names a store folder with no state record. The shared stale-sibling sweep is left for B68, its first user. Tests: unit tests in `install.rs` and `self_update.rs`, e2e `tests/install.rs::uninstall_removes_the_package_folder_with_what_a_failed_swap_left_in_it` and `tests/self_uninstall_root.rs` (all OSes).
+
+Status: done 2026-09-30
+
+### F10. Coloured output: errors red, success green, warnings yellow
+
+Most of this exists. `src/ui.rs` paints the `error` label red, `warning` yellow, success verbs green, steps blue and notes dim. It honours `--no-color`, `NO_COLOR`, `CLICOLOR_FORCE` and non-TTY output, and there is no `println!` outside `ui`. F10 is an audit plus the gaps:
+
+1. Only the label is coloured today. Decide with Ivan whether the error headline and warning text are coloured as well.
+2. Route every remaining status string through the helpers: prompts (`confirm`, `select`), `completed`, table markers (M9's yellow `update available`).
+3. Windows: make sure ANSI works on legacy conhost (enable VT processing, or fall back to plain text).
+4. Optional: a `color = "auto" | "always" | "never"` config key and `KETCH_COLOR`, next to `--no-color`.
+
+Check: insta snapshots of each line kind with `CLICOLOR_FORCE=1`; no escape bytes with `NO_COLOR=1`, `--no-color`, or when piped; `just check`.
+
+Decisions (Ivan): the whole error headline is red and the whole warning text yellow, not only the label; success lines green. Step 4 is skipped.
+
+Execution plan (done):
+1. `src/ui.rs`: paint the full error headline red and the full warning text yellow; success lines green.
+2. `src/ui.rs` and callers: route `confirm`/`select` prompts, `completed` and table markers through the style helpers.
+3. Windows: enable VT processing on legacy conhost through a maintained crate without `unsafe`, or fall back to plain text when it cannot be enabled.
+4. Tests beside `ui.rs`: insta snapshots of each line kind with colour forced; no escape bytes with `NO_COLOR`, `--no-color` or a pipe.
+5. `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, `cargo nextest run`.
+
+Result: `ui::Tone` names the meaning of status text (step, success, warning, error, note, hint) and is the one place a meaning picks its colour. Success lines are green end to end, warnings yellow, error headlines red; details stay dim and the hint cyan. Prompts (`confirm`, `answer`, `choose`, `cancelled`), the `fetched` line, the counter label, `list`'s update marker, `doctor`'s ok/warn/fail and `lock`'s +/~/- markers go through the same helpers; the log-open warning no longer bypasses `ui`. On Windows `console` switches on virtual terminal processing, and colour falls back to plain text when it cannot. `completed` prints nothing outside the TUI, whose status colours already honour `--no-color`, so it was left as is.
+
+### M11. Bash completion for every command
+
+Today clap_complete generates a static bash script (`ketch completions bash`, installed at `self install` as `share/ketch/completions/ketch`). It knows commands and flags, but not values.
+
+Plan:
+1. Test coverage: a test walks `Cli::command()` and asserts every visible subcommand, alias and flag appears in the generated script.
+2. Dynamic values: installed package names for `uninstall`, `upgrade`, `pin`, `unpin`, `link`, `unlink`, `info`, `why`, `changelog` and `rollback`, read from the state file; registry names for `install` and `search`, read from the local registry copy. No network in completion. Use clap_complete `CompleteEnv` (`unstable-dynamic`) or a hidden `ketch __complete <kind>`; decide after checking how stable the feature is.
+3. Docs: the bash ≥ 4 and bash-completion 2 note for macOS.
+
+Check: bash smoke on Linux and macOS CI (`COMP_WORDS=(ketch un) COMP_CWORD=1` → `uninstall unlink unpin`; `ketch uninstall r<TAB>` → an installed name from a scratch root); `just check`.
+
+Execution plan (as carried out):
+1. Decision: a hidden `ketch __complete <installed|registry> [PREFIX]` command, not `CompleteEnv`. clap_complete 4.6's `unstable-dynamic` sits outside semver and its docs say the shell-to-binary protocol may change between releases, while ketch writes its bash script to disk at `self install`; a cargo patch update could break every installed script.
+2. New `src/complete.rs`: the shell-agnostic candidate lists (state file, local registry copy, no network) and the bash script: clap_complete's static script plus a wrapper, generated from `Cli::command()`, that asks `ketch __complete` for positional package names. `main.rs` and `extra::write_ketch_docs` both call it.
+3. Tests in `src/complete.rs`: every visible subcommand, alias and flag appears in the script; candidate filtering. `tests/`: bash smoke (`ketch un` → `uninstall unlink unpin`; `ketch uninstall r` → an installed fixture name) with `KETCH_ROOT` and `HOME` in a temp dir, skipped when no bash ≥ 4 is found.
+4. Docs: `docs/COMMANDS.md` completions section, the bash ≥ 4 + bash-completion 2 note for macOS.
+
+Result: `src/complete.rs` owns the completion scripts and `ketch __complete [--root DIR] <installed|registry> [PREFIX]`, intercepted in `main` before clap parses so no generated script, help or man page lists it. The bash script is clap_complete's plus `_ketch_packages`, registered in its place; the value-taking options it skips come from the clap tree, and names reach the command line only when they are plain (`[A-Za-z0-9._+@-]`), since registry folder names are someone else's input and `compgen -W` would expand them. Tests: unit tests in `src/complete.rs` (every visible subcommand, alias and flag in the script; candidate filtering; `self install` writes the same script); `tests/completion.rs` drives the script through the `bash` on PATH (3.2 on macOS) against a sandbox root. Docs: `docs/COMMANDS.md`.
+
 Status: done 2026-09-30
 Model: Claude Code / opus-5.5

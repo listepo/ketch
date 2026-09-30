@@ -225,7 +225,7 @@ fn report_plan(plan: &Plan) {
     for entry in &plan.missing {
         ui::out(&format!(
             "{} {} {}",
-            ui::green("+"),
+            ui::tone(ui::Tone::Success, "+"),
             clean(&entry.name),
             ui::dim(&clean(&entry.tag))
         ));
@@ -233,7 +233,7 @@ fn report_plan(plan: &Plan) {
     for (entry, have) in &plan.changed {
         ui::out(&format!(
             "{} {} {}",
-            ui::yellow("~"),
+            ui::tone(ui::Tone::Warning, "~"),
             clean(&entry.name),
             ui::dim(&clean(&format!("{have} -> {}", entry.tag)))
         ));
@@ -241,7 +241,7 @@ fn report_plan(plan: &Plan) {
     for name in &plan.extra {
         ui::out(&format!(
             "{} {} {}",
-            ui::red("-"),
+            ui::tone(ui::Tone::Error, "-"),
             name,
             ui::dim("not in the lockfile")
         ));
