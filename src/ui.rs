@@ -1,10 +1,11 @@
-//! Terminal output.
+//! Terminal output: the only place the binary prints.
 //!
-//! Kept dependency-light on purpose: sources and platforms report download
-//! progress through the `ProgressSink` trait, so nothing below this module needs
-//! to know whether a human, a pipe, or a test is watching. Other long work
-//! reports through [`activity`]: a bar when the total is known, a spinner
-//! otherwise.
+//! The core prints nothing; it says what happens as `report::Event`s, and
+//! [`Terminal`] is the `Reporter` that draws them here — each event through the
+//! same helper a command body calls, so a line looks the same whoever said it.
+//! Colour, verbosity and the choice between line output and the `tui` renderer
+//! are settings of this renderer, never of the core. Long work is drawn by
+//! [`activity`]: a bar when the total is known, a spinner otherwise.
 
 use crate::config::Config;
 use crate::log;
@@ -884,11 +885,6 @@ impl Drop for Bars {
     }
 }
 
-/// Pick the right sink for the current run.
-pub fn progress() -> Box<dyn ProgressSink> {
-    progress_for("download")
-}
-
 /// Pick the right sink for a named unit of work.
 pub fn progress_for(label: &str) -> Box<dyn ProgressSink> {
     #[cfg(not(feature = "tui"))]
@@ -933,6 +929,7 @@ impl Activity {
     /// Which mode this was started in.
     ///
     /// Read by unit tests. `ketch list` does not need it.
+    #[cfg(test)]
     pub fn kind(&self) -> ActivityKind {
         self.kind
     }
@@ -949,6 +946,7 @@ impl Activity {
     ///
     /// `ketch list` will use this for `N/M packages`. Nothing in this binary
     /// has that shape yet.
+    #[cfg(test)]
     pub fn set_position(&self, position: u64) {
         self.bar.set_position(position);
     }
@@ -975,13 +973,6 @@ impl Activity {
                 group.clear().ok();
             }
         }
-    }
-
-    /// Run `work` and clear the line before returning its value.
-    pub fn run<T>(self, work: impl FnOnce(&Self) -> T) -> T {
-        let out = work(&self);
-        self.finish();
-        out
     }
 }
 

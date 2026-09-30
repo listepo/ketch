@@ -16,8 +16,14 @@ completion scripts and ketch's own man pages stay in the binary at the
 repository root; when the core needs something only the CLI can produce, the
 binary passes it in (`extra::SelfDocs`).
 
-Terminal output still goes through `ui`, which lives here for now, and so does
-the opt-in full-screen renderer (`tui` feature) that `ui` drives.
+It does not print either. Everything the pipeline has to say — which stage a
+package is in, a download's progress, a warning, a trace line, the one question
+it may ask (which binary to link) — goes out as a typed `report::Event` to the
+`report::Reporter` the caller hands in through `report::Ctx`. The binary's
+`ui::Terminal` draws those events as lines, bars or the full-screen `tui`;
+another front end supplies its own reporter, and `report::LogReporter` writes
+them to the log for one that has no terminal. `report::Recorder` keeps them for
+a test to assert on.
 
 The crate shares the workspace version, because it reports that version (user
 agent, `ketch --version`, `stats.db`). It is `publish = false` and dist does

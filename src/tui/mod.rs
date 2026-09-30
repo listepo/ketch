@@ -2,6 +2,7 @@
 //!
 //! This module owns the terminal session, event reducer, and renderer so the
 //! install pipeline can remain a normal, terminal-agnostic command pipeline.
+//! It lives in the binary beside `ui`, which maps the core's events onto it.
 
 use crate::report::{ProgressSink, Stage};
 use crossterm::cursor::Show;

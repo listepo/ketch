@@ -467,8 +467,7 @@ struct BinPick {
 /// checked either way, so a name that matches nothing is an error, not a
 /// silent no-op.
 fn pick_bin(
-    cfg: &Config,
-    report: &Report,
+    cx: &Ctx<'_>,
     platform: &dyn Platform,
     payload: &Path,
     manifest: Option<&crate::model::Manifest>,
@@ -476,6 +475,7 @@ fn pick_bin(
     known: bin_choice::Known<'_>,
     interactive: bool,
 ) -> Result<Option<BinPick>> {
+    let (cfg, report) = (cx.cfg, cx.report);
     if manifest.is_some_and(|m| !m.bin.is_empty()) {
         if let Some(flag) = known.flag {
             return Err(Error::msg(format!(
@@ -716,8 +716,7 @@ pub fn commit(cx: &Ctx<'_>, state: &mut State, prepared: Prepared) -> Result<Ins
     };
     let pick = if link || known.flag.is_some() {
         pick_bin(
-            cfg,
-            report,
+            cx,
             platform.as_ref(),
             &payload,
             Some(&manifest),
@@ -1014,8 +1013,7 @@ pub fn relink(cx: &Ctx<'_>, state: &mut State, name: &str) -> Result<()> {
     )?;
     let remembered = pkg.bin_choice.as_deref();
     let pick = pick_bin(
-        cfg,
-        report,
+        cx,
         platform.as_ref(),
         &pkg.prefix,
         manifest.as_ref(),
@@ -1146,8 +1144,7 @@ pub fn rollback(
     let remembered = pkg.bin_choice.as_deref();
     let pick = if linked {
         pick_bin(
-            cfg,
-            report,
+            cx,
             platform.as_ref(),
             &target.prefix,
             manifest.as_ref(),
@@ -2268,5 +2265,75 @@ mod tests {
             .unwrap();
         }
         assert_eq!(state.packages.len(), 2);
+    }
+
+    /// The event sequence a front end draws an install from: every stage in
+    /// order, the download as one task that ends, and nothing printed.
+    #[cfg(unix)]
+    #[test]
+    fn a_local_install_reports_each_stage_through_the_reporter() {
+        use crate::report::{Event, Recorder, Task};
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let recorder = std::sync::Arc::new(Recorder::default());
+        let report = Report::shared(recorder.clone());
+        let cfg = Config::load(Some(tmp.path().join("root")), &report).unwrap();
+        let cx = Ctx::new(&cfg, &report);
+        let tool = tmp.path().join("tool");
+        std::fs::write(&tool, "#!/bin/sh\necho tool\n").unwrap();
+        std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let sources = SourceRegistry::builtin_only(&cx);
+        let mut state = State::default();
+        let spec = PackageSpec::parse(&format!("local:{}", tool.display()));
+
+        install(&cx, &sources, &mut state, &InstallRequest::new(spec)).unwrap();
+
+        let events = recorder.events();
+        let stages: Vec<Stage> = events
+            .iter()
+            .filter_map(|e| match e {
+                Event::Step { stage, .. } => Some(*stage),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            stages,
+            [
+                Stage::Resolving,
+                Stage::Downloading,
+                Stage::Verifying,
+                Stage::Extracting,
+                Stage::Trusting,
+                Stage::Installing,
+            ]
+        );
+        let download = events
+            .iter()
+            .find_map(|e| match e {
+                Event::Began {
+                    id,
+                    task: Task::Download { batch: None, .. },
+                } => Some(*id),
+                _ => None,
+            })
+            .expect("the download is announced");
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, Event::Ended { id, .. } if *id == download)),
+            "a download that arrived ends rather than being abandoned: {events:#?}"
+        );
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                Event::Status { verb, detail } if verb == "resolving" && detail.starts_with("tool ")
+            )),
+            "{events:#?}"
+        );
+        assert!(
+            !events.iter().any(|e| matches!(e, Event::Warn { .. })),
+            "a clean install warns about nothing: {events:#?}"
+        );
     }
 }

@@ -75,6 +75,9 @@ pub fn check_policy(policy: &TrustPolicy) -> Result<()> {
 /// policy that cannot be satisfied is an error whatever the reason: no
 /// sidecar, a bad signature, the wrong signer, or a verifier that could not
 /// finish. Fail closed.
+// Everything but `report` is evidence a check reads; a struct made only to
+// carry it into this one call would hide which check reads which piece.
+#[allow(clippy::too_many_arguments)]
 pub fn verify(
     policy: Option<&TrustPolicy>,
     source: &dyn Source,

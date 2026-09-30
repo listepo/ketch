@@ -6,8 +6,9 @@
 //! command bodies that call into this crate. It is a separate crate so a
 //! second front end can link the same pipeline without the CLI.
 //!
-//! `ui` is still here and still prints: moving output behind a reporter the
-//! front end supplies is a later step, and this crate is a move only.
+//! It prints nothing. What it has to say — stages, progress, warnings, a
+//! question — goes out as `report::Event`s to the `report::Reporter` the front
+//! end hands in through `report::Ctx`, and the front end decides how it looks.
 
 pub(crate) mod bin_choice;
 pub mod cancel;
@@ -38,7 +39,4 @@ pub mod state;
 pub mod stats;
 pub mod text;
 pub(crate) mod trust;
-#[cfg(feature = "tui")]
-pub mod tui;
-pub mod ui;
 pub mod wizard;
