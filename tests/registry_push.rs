@@ -273,7 +273,7 @@ fn registry_push_dry_run_names_the_registry_folder_and_sends_nothing() {
         .success()
         .stdout("source = \"github:acme/fancy-tool\"\n# keep me\n")
         .stderr(predicate::str::contains(
-            "listepo/ketch-registry:fancy-tool/ketch.toml",
+            "pyrlyn/ketch-registry:fancy-tool/ketch.toml",
         ));
 }
 
@@ -549,7 +549,7 @@ fn strip_tokens(cmd: &mut Command) -> &mut Command {
 fn write_meta(root: &assert_fs::fixture::ChildPath, fetched_at: u64) {
     root.child("registry.meta.toml")
         .write_str(&format!(
-            "repo = \"listepo/ketch-registry\"\nrevision = \"abc123\"\nfetched_at = {fetched_at}\n"
+            "repo = \"pyrlyn/ketch-registry\"\nrevision = \"abc123\"\nfetched_at = {fetched_at}\n"
         ))
         .unwrap();
 }

@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 pub const SELF_REPO: &str = "listepo/ketch";
 /// The package registry ketch resolves names against: a GitHub repository
 /// with one folder per package. See `registry.rs`.
-pub const REGISTRY_REPO: &str = "listepo/ketch-registry";
+pub const REGISTRY_REPO: &str = "pyrlyn/ketch-registry";
 pub const USER_AGENT: &str = concat!("ketch/", env!("CARGO_PKG_VERSION"));
 
 /// On-disk settings. Every field optional so a partial file is valid.
@@ -461,10 +461,10 @@ mod tests {
 
     #[test]
     fn only_owner_repo_is_accepted_as_a_repository() {
-        let want = "listepo/ketch-registry";
+        let want = "pyrlyn/ketch-registry";
         assert_eq!(validate_repo("registry", want.into()).unwrap(), want);
         assert_eq!(
-            validate_repo("registry", "github:listepo/ketch-registry".into()).unwrap(),
+            validate_repo("registry", "github:pyrlyn/ketch-registry".into()).unwrap(),
             want
         );
         for bad in [

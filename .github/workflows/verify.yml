@@ -13,7 +13,7 @@ name: verify
 # stop one. Here a red gate means no dispatch, no tag, and nothing on the
 # releases page.
 #
-# The checks of ci.yml's `rust` job (listepo/infra ci-rust.yml) on its three
+# The checks of ci.yml's `rust` job (pyrlyn/infra ci-rust.yml) on its three
 # native operating systems, deliberately: a gate that tests something narrower
 # than the one every pull request passed lets through what that one caught.
 on:
@@ -47,7 +47,7 @@ jobs:
         if: runner.os == 'macOS'
         run: cargo fmt --all -- --check
 
-      # --all-features, as ci.yml's `rust` job (listepo/infra ci-rust.yml) lints.
+      # --all-features, as ci.yml's `rust` job (pyrlyn/infra ci-rust.yml) lints.
       - name: Lint
         run: cargo clippy --all-targets --all-features --locked -- -D warnings
 

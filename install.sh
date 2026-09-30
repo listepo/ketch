@@ -15,7 +15,7 @@ else
 fi
 
 # Script constants
-SELF_REPO="listepo/ketch"
+SELF_REPO="pyrlyn/ketch"
 BINARY_NAME="ketch"
 DEFAULT_ROOT="${HOME}/.ketch"
 DEFAULT_INSTALL_DIR="${HOME}/.ketch/bin"

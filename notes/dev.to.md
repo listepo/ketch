@@ -9,12 +9,12 @@ Installing CLI tools straight from GitHub releases with ketch
 
 Body:
 
-Most command-line tools publish a prebuilt binary for every OS in their GitHub releases. Yet the usual path to your `PATH` is either a package-manager formula someone has to write, or a manual download, unpack and `chmod +x`. [ketch](https://github.com/listepo/ketch) automates that last step for any repo that ships releases.
+Most command-line tools publish a prebuilt binary for every OS in their GitHub releases. Yet the usual path to your `PATH` is either a package-manager formula someone has to write, or a manual download, unpack and `chmod +x`. [ketch](https://github.com/pyrlyn/ketch) automates that last step for any repo that ships releases.
 
 ### Install ketch
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/listepo/ketch/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/pyrlyn/ketch/main/install.sh | bash
 ```
 
 ### Install a tool
@@ -52,8 +52,8 @@ ketch sync   # installs them on another machine or in CI
 
 `ketch self uninstall` lists what it will delete under `~/.ketch`, asks, then removes it, including the PATH lines it added.
 
-ketch is a single Rust binary for macOS, Linux and Windows. v0.6.0 is out: https://github.com/listepo/ketch/releases/tag/v0.6.0
+ketch is a single Rust binary for macOS, Linux and Windows. v0.6.0 is out: https://github.com/pyrlyn/ketch/releases/tag/v0.6.0
 
-It's triple-licensed: GPLv3, a royalty-free license for proprietary desktop, mobile and web apps, or a commercial license. Issues and pull requests are welcome at https://github.com/listepo/ketch.
+It's triple-licensed: GPLv3, a royalty-free license for proprietary desktop, mobile and web apps, or a commercial license. Issues and pull requests are welcome at https://github.com/pyrlyn/ketch.
 
-github.com/listepo/ketch — drafted technical DEV article with code blocks and examples
+github.com/pyrlyn/ketch — drafted technical DEV article with code blocks and examples

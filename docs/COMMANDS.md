@@ -215,7 +215,7 @@ $ ketch list local
 package  installed        source
 fd       v10.4.2          github:sharkdp/fd
 ripgrep  14.1.1           github:BurntSushi/ripgrep
-rtok     v0.9.0 (pinned)  github:listepo/rtok
+rtok     v0.9.0 (pinned)  github:pyrlyn/rtok
 ```
 
 ```text
@@ -233,13 +233,13 @@ runa     ?        Run AI models locally (GGUF via llama.cpp) or through the Open
 ```text
 $ ketch list
    package  installed        latest                      source
-   cox                       v0.1.0                      github:listepo/cox
+   cox                       v0.1.0                      github:pyrlyn/cox
    dunnage                   v0.1.0                      github:listepo/dunnage
 *  fd       v10.4.2          v10.5.0 (update available)  github:sharkdp/fd
-   ketch                     v0.6.1                      github:listepo/ketch
+   ketch                     v0.6.1                      github:pyrlyn/ketch
 *  ripgrep  14.1.1           15.2.0 (update available)   github:BurntSushi/ripgrep
-*  rtok     v0.9.0 (pinned)  v0.10.0                     github:listepo/rtok
-   runa                      ?                           github:listepo/runa
+*  rtok     v0.9.0 (pinned)  v0.10.0                     github:pyrlyn/rtok
+   runa                      ?                           github:pyrlyn/runa
 2 updates available: ketch upgrade fd ripgrep
 ? means the latest release could not be checked: runa
 ```
@@ -251,7 +251,7 @@ $ ketch list
 package  installed        source
 fd       v10.4.2          github:sharkdp/fd
 ripgrep  14.1.1           github:BurntSushi/ripgrep
-rtok     v0.9.0 (pinned)  github:listepo/rtok
+rtok     v0.9.0 (pinned)  github:pyrlyn/rtok
 latest: offline
 $ ketch list remote
      error could not reach any package source to check the latest versions; `ketch list local` works offline

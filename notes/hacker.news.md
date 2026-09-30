@@ -8,7 +8,7 @@ Title:
 Show HN: Ketch – install CLI tools straight from GitHub releases, no formulas
 
 URL:
-https://github.com/listepo/ketch
+https://github.com/pyrlyn/ketch
 
 Text:
 
@@ -25,12 +25,12 @@ It's a single Rust binary for macOS, Linux and Windows. What it does:
 
 Quick try:
 
-    curl -fsSL https://raw.githubusercontent.com/listepo/ketch/main/install.sh | bash
+    curl -fsSL https://raw.githubusercontent.com/pyrlyn/ketch/main/install.sh | bash
     ketch install listepo/AirTalk
     ketch why AirTalk
 
-v0.6.0 just shipped: https://github.com/listepo/ketch/releases/tag/v0.6.0
+v0.6.0 just shipped: https://github.com/pyrlyn/ketch/releases/tag/v0.6.0
 
 It's triple-licensed: GPLv3, a royalty-free license for proprietary desktop, mobile and web apps, or a commercial license. I'd especially like feedback on how it picks assets for repos that name their files oddly.
 
-github.com/listepo/ketch — drafted Show HN post for ketch v0.6.0, triple license noted
+github.com/pyrlyn/ketch — drafted Show HN post for ketch v0.6.0, triple license noted

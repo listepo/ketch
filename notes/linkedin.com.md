@@ -18,9 +18,9 @@ What it provides:
 
 ketch is available under a triple license: GPLv3, a royalty-free license for proprietary desktop, mobile and web apps, or a commercial license. Businesses that need commercial terms or support are welcome to get in touch.
 
-Release: https://github.com/listepo/ketch/releases/tag/v0.6.0
-Repository: https://github.com/listepo/ketch
+Release: https://github.com/pyrlyn/ketch/releases/tag/v0.6.0
+Repository: https://github.com/pyrlyn/ketch
 
 #opensource #developertools #rust #devops
 
-github.com/listepo/ketch — drafted professional LinkedIn announcement for ketch v0.6.0 release
+github.com/pyrlyn/ketch — drafted professional LinkedIn announcement for ketch v0.6.0 release

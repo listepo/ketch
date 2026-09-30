@@ -10,13 +10,13 @@ cover the cases where it does, and the formats you would write when it does.
 ## Installing
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/listepo/ketch/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/pyrlyn/ketch/main/install.sh | bash
 ```
 
 On Windows:
 
 ```powershell
-irm https://raw.githubusercontent.com/listepo/ketch/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/pyrlyn/ketch/main/install.ps1 | iex
 ```
 
 Then put `~/.ketch/bin` on your `PATH` (or `%USERPROFILE%\.ketch\bin` on Windows). `ketch doctor` reports whether it is,
@@ -25,7 +25,7 @@ along with anything else that needs attention.
 ## Everyday use
 
 ```bash
-ketch install listepo/rtok           # any repo that publishes releases
+ketch install pyrlyn/rtok           # any repo that publishes releases
 ketch install rg                     # or a name the registry knows
 ketch install sharkdp/fd@v10.2.0     # or an exact version
 ketch upgrade                        # everything unpinned
