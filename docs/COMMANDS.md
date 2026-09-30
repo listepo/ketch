@@ -21,6 +21,15 @@ ketch install sharkdp/fd@v10.2.0  # or an exact version
 ketch install --path ./mytool     # a local binary, archive, symlink, or .app
 ```
 
+A package that is already installed is not updated behind your back. With a
+newer release, `install` asks `<pkg> <installed> is installed; update to
+<latest>?` (default no) and, on yes, updates it the way `ketch upgrade` does;
+`--yes` answers yes, and without a terminal it stops with exit 5 and says to
+pass `--yes` or run `ketch upgrade`. With nothing newer it fails with exit 5:
+`cannot install <pkg>: <version> is already installed and no update is
+available` (`--force` reinstalls). An exact version (`pkg@1.2.0`) and a pinned
+package behave as before.
+
 Options: `--path <PATH>` installs a local file (equivalent to
 `local:<PATH>`); `--name <NAME>` sets the installed name for a single
 package; `--force/-f` reinstalls the requested version even when present;

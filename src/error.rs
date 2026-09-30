@@ -53,6 +53,23 @@ pub enum Error {
     #[error("`{name}` {version} is already installed")]
     AlreadyInstalled { name: String, version: String },
 
+    /// `ketch install` of a package already installed without a version:
+    /// the resolved release is the installed one.
+    #[error("cannot install `{name}`: {version} is already installed and no update is available")]
+    NoUpdate { name: String, version: String },
+
+    /// `ketch install` of an installed package that has a newer release:
+    /// the command asks before it updates.
+    #[error("`{name}` {installed} is installed and {latest} is available")]
+    UpdateAvailable {
+        name: String,
+        installed: String,
+        latest: String,
+        /// The release tag to update to, so the update installs exactly what
+        /// the question named.
+        tag: String,
+    },
+
     #[error("`{name}` is pinned to {version}")]
     Pinned { name: String, version: String },
 
@@ -161,7 +178,12 @@ impl Error {
             Error::ChecksumMismatch { .. } => {
                 Some("Refusing to install. Re-run to retry the download.".to_string())
             }
-            Error::AlreadyInstalled { .. } => Some("Use --force to reinstall.".to_string()),
+            Error::AlreadyInstalled { .. } | Error::NoUpdate { .. } => {
+                Some("Use --force to reinstall.".to_string())
+            }
+            Error::UpdateAvailable { name, .. } => Some(format!(
+                "Pass --yes to update it, or run `ketch upgrade {name}`."
+            )),
             Error::Pinned { .. } => Some("Run `ketch unpin <pkg>` first.".to_string()),
             Error::NoRetained(_) => Some(
                 "Upgrade keeps the previous prefix until `ketch prune`.".to_string(),
@@ -177,7 +199,10 @@ impl Error {
     pub fn exit_code(&self) -> i32 {
         match self {
             Error::NotInstalled(_) | Error::NoRelease(_) | Error::NoRetained(_) => 4,
-            Error::AlreadyInstalled { .. } | Error::Pinned { .. } => 5,
+            Error::AlreadyInstalled { .. }
+            | Error::NoUpdate { .. }
+            | Error::UpdateAvailable { .. }
+            | Error::Pinned { .. } => 5,
             Error::ChecksumMismatch { .. } | Error::ChecksumMissing(_) => 6,
             Error::Http { .. } | Error::Network { .. } => 7,
             Error::Locked(_) => 8,

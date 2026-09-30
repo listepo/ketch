@@ -208,6 +208,90 @@ fn a_forced_reinstall_of_the_same_version_leaves_no_stale_file() {
     assert_eq!(run(&sandbox.bin().join("testtool")), "testtool 1.0.0");
 }
 
+/// Installed at 1.0.0 with 2.0.0 published since: the state every
+/// `install`-offers-the-update case starts from.
+fn installed_with_an_update(sandbox: &Sandbox) {
+    publish_tool(sandbox, "1.0.0");
+    sandbox.ok(&["install", "test:testtool", "--yes"]);
+    publish_tool(sandbox, "2.0.0");
+}
+
+fn installed_version(sandbox: &Sandbox) -> String {
+    run(&sandbox.bin().join("testtool"))
+}
+
+#[test]
+fn install_of_an_installed_package_updates_it_when_the_answer_is_yes() {
+    let sandbox = Sandbox::new();
+    installed_with_an_update(&sandbox);
+
+    let out = sandbox.ketch_on_tty(&["install", "test:testtool"], "y\n");
+    let shown = String::from_utf8_lossy(&out.stdout);
+
+    assert!(out.status.success(), "{shown}");
+    assert!(
+        shown.contains("testtool 1.0.0 is installed; update to 2.0.0?"),
+        "{shown}"
+    );
+    assert_eq!(installed_version(&sandbox), "testtool 2.0.0", "{shown}");
+}
+
+#[test]
+fn install_of_an_installed_package_changes_nothing_when_the_answer_is_no() {
+    let sandbox = Sandbox::new();
+    installed_with_an_update(&sandbox);
+
+    let out = sandbox.ketch_on_tty(&["install", "test:testtool"], "n\n");
+    let shown = String::from_utf8_lossy(&out.stdout);
+
+    assert!(out.status.success(), "{shown}");
+    assert_eq!(installed_version(&sandbox), "testtool 1.0.0");
+}
+
+#[test]
+fn install_with_yes_updates_an_installed_package_without_asking() {
+    let sandbox = Sandbox::new();
+    installed_with_an_update(&sandbox);
+
+    sandbox.ok(&["install", "test:testtool", "--yes"]);
+
+    assert_eq!(installed_version(&sandbox), "testtool 2.0.0");
+}
+
+#[test]
+fn install_without_a_terminal_or_yes_refuses_to_update_and_says_how() {
+    let sandbox = Sandbox::new();
+    installed_with_an_update(&sandbox);
+
+    let out = sandbox.ketch(&["install", "test:testtool"]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert_eq!(out.status.code(), Some(5), "{stderr}");
+    assert!(stderr.contains("2.0.0 is available"), "{stderr}");
+    assert!(stderr.contains("--yes"), "{stderr}");
+    assert!(stderr.contains("ketch upgrade testtool"), "{stderr}");
+    assert_eq!(installed_version(&sandbox), "testtool 1.0.0");
+}
+
+#[test]
+fn install_of_an_up_to_date_package_says_no_update_is_available() {
+    let sandbox = Sandbox::new();
+    publish_tool(&sandbox, "1.0.0");
+    sandbox.ok(&["install", "test:testtool", "--yes"]);
+
+    let out = sandbox.ketch(&["install", "test:testtool"]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert_eq!(out.status.code(), Some(5), "{stderr}");
+    assert!(
+        stderr.contains(
+            "cannot install `testtool`: 1.0.0 is already installed and no update is available"
+        ),
+        "{stderr}"
+    );
+    assert!(stderr.contains("--force"), "{stderr}");
+}
+
 #[test]
 fn rollback_restores_the_previous_prefix_without_redownloading() {
     let sandbox = Sandbox::new();

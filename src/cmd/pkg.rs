@@ -82,6 +82,8 @@ pub fn install(cfg: &Config, args: InstallArgs) -> Result<()> {
             interactive: !args.yes,
             bin: args.bin.clone(),
             locked_bin: None,
+            // `--yes` has already answered the question this would ask.
+            offer_update: !args.yes,
         })
         .collect();
 
@@ -90,6 +92,7 @@ pub fn install(cfg: &Config, args: InstallArgs) -> Result<()> {
     let mut failed: Vec<String> = Vec::new();
 
     let outcomes = install::batch(cfg, &sources, &mut state, &reqs, jobs(cfg, args.jobs));
+    let mut updates: Vec<InstallRequest> = Vec::new();
     for (req, outcome) in reqs.iter().zip(outcomes) {
         let key = req.spec.label();
         match outcome {
@@ -97,6 +100,22 @@ pub fn install(cfg: &Config, args: InstallArgs) -> Result<()> {
                 done += 1;
                 ui::completed(&key, true);
                 report(&out);
+            }
+            // Asked below, one package at a time, once every download is done:
+            // a question has no place in the middle of a parallel batch.
+            Err(Error::UpdateAvailable {
+                name,
+                installed,
+                latest,
+                tag,
+            }) if ui::can_ask() => {
+                let question = format!("{name} {installed} is installed; update to {latest}?");
+                if ui::confirm(&question, false) {
+                    let mut update = req.clone();
+                    update.spec.version = VersionSpec::Exact(tag);
+                    update.offer_update = false;
+                    updates.push(update);
+                }
             }
             Err(e) if single => {
                 ui::completed(&key, false);
@@ -108,6 +127,27 @@ pub fn install(cfg: &Config, args: InstallArgs) -> Result<()> {
                 ui::completed(&key, false);
                 ui::error(&e);
                 failed.push(req.spec.raw.clone());
+            }
+        }
+    }
+
+    // The same path `ketch upgrade` takes: prepare and commit the exact
+    // release the question named, update hooks included.
+    if !updates.is_empty() {
+        let outcomes = install::batch(cfg, &sources, &mut state, &updates, jobs(cfg, args.jobs));
+        for (req, outcome) in updates.iter().zip(outcomes) {
+            let key = req.spec.label();
+            match outcome {
+                Ok(out) => {
+                    done += 1;
+                    ui::completed(&key, true);
+                    report(&out);
+                }
+                Err(e) => {
+                    ui::completed(&key, false);
+                    ui::error(&e);
+                    failed.push(req.spec.raw.clone());
+                }
             }
         }
     }
@@ -318,6 +358,7 @@ pub fn upgrade(cfg: &Config, args: UpgradeArgs) -> Result<()> {
             interactive: !args.yes,
             bin: args.bin.clone(),
             locked_bin: None,
+            offer_update: false,
         })
         .collect();
 

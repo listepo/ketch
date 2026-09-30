@@ -52,6 +52,10 @@ pub struct InstallRequest {
     /// The choice `ketch.lock` recorded, consulted after state's: a fresh
     /// machine has no state, and no terminal to ask on during `ketch sync`.
     pub locked_bin: Option<String>,
+    /// `ketch install` without `--yes`: an installed package with a newer
+    /// release stops with `Error::UpdateAvailable`, so the command can ask
+    /// before it updates, instead of updating on its own.
+    pub offer_update: bool,
 }
 
 impl InstallRequest {
@@ -69,6 +73,7 @@ impl InstallRequest {
             interactive: false,
             bin: None,
             locked_bin: None,
+            offer_update: false,
         }
     }
 }
@@ -254,10 +259,27 @@ pub fn prepare(
                 version: old.version.to_string(),
             });
         }
+        let unversioned = !matches!(req.spec.version, VersionSpec::Exact(_));
         if old.tag == release.tag && !req.force {
-            return Err(Error::AlreadyInstalled {
+            // `pkg@1.2.0` asked for that version and keeps the old message.
+            return Err(if unversioned && req.offer_update {
+                Error::NoUpdate {
+                    name: old.name.clone(),
+                    version: old.version.to_string(),
+                }
+            } else {
+                Error::AlreadyInstalled {
+                    name: old.name.clone(),
+                    version: old.version.to_string(),
+                }
+            });
+        }
+        if unversioned && req.offer_update && !req.force {
+            return Err(Error::UpdateAvailable {
                 name: old.name.clone(),
-                version: old.version.to_string(),
+                installed: old.version.to_string(),
+                latest: release.version.to_string(),
+                tag: release.tag.clone(),
             });
         }
     }

@@ -469,6 +469,11 @@ pub fn out(line: &str) {
     let _ = writeln!(lock, "{line}");
 }
 
+/// Whether a question can be put to a person: stdin is a terminal.
+pub fn can_ask() -> bool {
+    std::io::stdin().is_terminal()
+}
+
 /// Ask a yes/no question. Returns `default` when stdin is not a terminal, so
 /// scripts never hang waiting for input that will not come.
 pub fn confirm(question: &str, default: bool) -> bool {

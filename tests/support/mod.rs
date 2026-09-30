@@ -296,6 +296,35 @@ impl Sandbox {
         cmd.output().expect("run ketch")
     }
 
+    /// Run ketch on a pseudo-terminal, as a person at a prompt would, with
+    /// `input` typed ahead. BSD `script` provides the terminal; its output is
+    /// stdout and stderr together, as the terminal showed them.
+    #[cfg(target_os = "macos")]
+    pub fn ketch_on_tty(&self, args: &[&str], input: &str) -> Output {
+        use std::io::Write;
+        let mut script_args = vec!["-q", "/dev/null", env!("CARGO_BIN_EXE_ketch")];
+        script_args.extend_from_slice(args);
+        let mut child = self
+            .command_for(
+                Path::new("/usr/bin/script"),
+                &script_args,
+                self.path_with_bin(),
+            )
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("run ketch under script");
+        let mut stdin = child.stdin.take().expect("stdin");
+        stdin.write_all(input.as_bytes()).expect("type the answer");
+        // Held open until ketch is done: `script` turns the end of its input
+        // into an end-of-file on the terminal, which can reach the prompt
+        // before the answer does.
+        let out = child.wait_with_output().expect("wait for script");
+        drop(stdin);
+        out
+    }
+
     /// `PATH` with the sandbox bin dir in front of the inherited one.
     fn path_with_bin(&self) -> std::ffi::OsString {
         let inherited = std::env::var_os("PATH").unwrap_or_default();
