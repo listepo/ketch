@@ -822,7 +822,7 @@ pub fn uninstall_self(cfg: &Config, plan: &UninstallPlan) -> Result<Vec<PathBuf>
     match &plan.exe {
         // Usually already gone with the store prefix or the bin dir; a ketch
         // that was copied in flat by an older installer is not.
-        Some(exe) if finishing.is_some_and(|root| exe.starts_with(root)) => {}
+        Some(exe) if finishing.is_some_and(|root| is_within(exe, root)) => {}
         Some(exe) if exe.exists() => {
             std::fs::remove_file(exe).map_err(|e| Error::io(exe, e))?;
             removed.push(exe.clone());
@@ -864,6 +864,16 @@ pub fn uninstall_self(cfg: &Config, plan: &UninstallPlan) -> Result<Vec<PathBuf>
 /// case. When the root *is* the home directory, the named children (`bin`,
 /// `store`, `cache`, …) are not emptied either — they are shared with the
 /// rest of the account. A dedicated root like `~/.ketch` is still wiped.
+/// `path` is `root` or below it, compared on resolved paths where both
+/// exist: a root spelled with a Windows short name (`RUNNER~1`) must still
+/// contain the binary spelled with the long one.
+fn is_within(path: &Path, root: &Path) -> bool {
+    match (dunce::canonicalize(path), dunce::canonicalize(root)) {
+        (Ok(path), Ok(root)) => path.starts_with(root),
+        _ => path.starts_with(root),
+    }
+}
+
 /// Returns what was removed, and whether the rest is removed once this
 /// process has exited.
 fn remove_root(cfg: &Config, root: &Path) -> (Vec<PathBuf>, bool) {
