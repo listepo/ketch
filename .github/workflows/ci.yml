@@ -39,7 +39,11 @@ jobs:
     # Draft PRs are skipped here and reported green: review happens when the PR
     # is marked ready, and a draft must not look broken meanwhile.
     if: github.event.pull_request.draft != true
-    uses: pyrlyn/infra/.github/workflows/ci-rust.yml@059c0c578f31c53a093aec1260b56ba4fcbc810c
+    uses: pyrlyn/infra/.github/workflows/ci-rust.yml@863d8960601216eec62d4aa78924f84ce61d72b9
+    # actions: write for infra's cancel-run (the first failing job cancels the run).
+    permissions:
+      contents: read
+      actions: write
     with:
       clippy-args: --locked
       tools: nextest

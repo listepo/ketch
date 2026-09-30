@@ -1,7 +1,7 @@
-# Security scans from the shared pyrlyn/infra pipeline: CodeQL, Semgrep and Snyk in parallel
-# behind `pipeline / gate`. Rust CI is not repeated here (`rust: false`): ci.yml runs it on the
-# same pushes and pull requests through infra's ci-rust.yml. Draft pull requests skip every job,
-# the gate included, until marked ready. Secrets are passed explicitly.
+# Scans from pyrlyn/infra's config-driven ci.yml (.github/infra.yml): CodeQL, Semgrep, Snyk,
+# SonarCloud and actionlint in parallel behind `pipeline / gate`. Rust CI is not repeated here:
+# ci.yml runs it on the same pushes and pull requests through infra's ci-rust.yml. Draft pull
+# requests skip every job, the gate included, until marked ready. Secrets are passed explicitly.
 # Shared workflows: https://github.com/pyrlyn/infra/blob/main/docs/reusable-workflows.md
 name: pipeline
 
@@ -24,14 +24,13 @@ permissions:
 
 jobs:
   pipeline:
-    uses: pyrlyn/infra/.github/workflows/pipeline.yml@189816ac5a375e18e0235044970efcbc40e3cabd
+    uses: pyrlyn/infra/.github/workflows/ci.yml@863d8960601216eec62d4aa78924f84ce61d72b9
+    # The union every nested job asks for, validated up front even for disabled checks.
     permissions:
       contents: read
       security-events: write
-      actions: read
-    with:
-      rust: false
-      # Every language in the repository that supports `build-mode: none`.
-      codeql-languages: '["actions", "javascript-typescript", "python", "rust"]'
+      pull-requests: read
+      actions: write
     secrets:
       SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
