@@ -14,10 +14,13 @@ Project programs and direct packages from manifests.
 | cargo | with rustc | Rust build and dependencies | https://github.com/rust-lang/cargo |
 | just | cargo install just / brew | Command recipes | https://github.com/casey/just |
 | cargo-dist | mise | Generates `release.yml` and builds the release tarballs (`just dist-generate`, `just package`) | https://github.com/axodotdev/cargo-dist |
-| git-cliff | mise | Writes the `CHANGELOG.md` entry from `cliff.toml` (`scripts/release.sh`) | https://github.com/orhun/git-cliff |
+| git-cliff | mise | Writes the `CHANGELOG.md` entry from `cliff.toml` (`scripts/release.sh`), and the macOS app's release notes from `desktop/cliff.toml` | https://github.com/orhun/git-cliff |
 | xcodegen | mise | Generates `desktop/macos/Ketch.xcodeproj` from `project.yml` (`just macos-app`, `just macos-test`) | https://github.com/yonaskolb/XcodeGen |
 | Xcode | global (App Store / developer.apple.com) | Builds and tests the macOS app (`xcodebuild`); 26 or later | https://developer.apple.com/xcode/ |
 | swift-format | with Xcode (`xcrun swift-format`) | Formats and lints the macOS app's Swift | https://github.com/swiftlang/swift-format |
+| notarytool, stapler | with Xcode (`xcrun`) | Notarise and staple the macOS app and its `.dmg` (`desktop-release.yml`) | https://developer.apple.com/documentation/security/customizing-the-notarization-workflow |
+| hdiutil, codesign, spctl | with macOS | Build the app's `.dmg` (`scripts/desktop-dmg.sh`), sign it, and assess what Gatekeeper will decide | https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution |
+| generate_appcast | with the Sparkle package (`build/SourcePackages/artifacts/sparkle/Sparkle/bin/`) | Writes and signs the macOS app's appcast (`scripts/desktop-appcast.sh`) | https://github.com/sparkle-project/Sparkle |
 | release-plz | GitHub Action | The release pull request | https://github.com/release-plz/release-plz |
 | ketch | see its README | Installs dunnage | https://github.com/pyrlyn/ketch |
 | dunnage | `ketch` | Lossless cleanup of `target/` after tests | https://github.com/listepo/dunnage |
@@ -73,3 +76,9 @@ Project programs and direct packages from manifests.
 | --- | --- | --- | --- |
 | @commitlint/cli | local | https://www.npmjs.com/package/@commitlint/cli | Commit messages |
 | @commitlint/config-conventional | local | https://www.npmjs.com/package/@commitlint/config-conventional | Commit rules |
+
+## SwiftPM
+
+| Package | Where | Source | Why here |
+| --- | --- | --- | --- |
+| Sparkle | local (`desktop/macos/project.yml`, exact 2.10.0) | https://github.com/sparkle-project/Sparkle | The macOS app's own updates; its `generate_appcast` writes the release's appcast |

@@ -185,6 +185,124 @@ SDK 27.0, Swift 6.4, `xcodebuild -version`. The deployment target is macOS
 20260907.0351.1, [runner-images](https://github.com/actions/runner-images/blob/main/images/macos/macos-26-arm64-Readme.md)),
 which CI uses.
 
+## macOS app updates and releases (F13, checked 2026-10-01)
+
+F13 releases the app from this repository under `desktop-v*` tags with
+`make_latest: false` (creator, 2026-10-01), signed with the CLI's Developer ID
+certificate and notarised. What remained open: how installed copies update,
+where the update feed lives, and how the disk image is built.
+
+### Update mechanism
+
+| | Sparkle 2 | Squirrel.Mac | No in-app updater |
+| --- | --- | --- | --- |
+| Latest release | 2.10.0, 2026-09-13; 2.9.6, 2026-08-17; default branch pushed 2026-09-28 ([releases API](https://api.github.com/repos/sparkle-project/Sparkle/releases)) | 0.3.2, 2017-08-18 ([releases API](https://api.github.com/repos/Squirrel/Squirrel.Mac/releases/latest)) | — |
+| Licence | MIT, with the copyright holders listed in [LICENSE](https://github.com/sparkle-project/Sparkle/blob/2.10.0/LICENSE) (GitHub reports `NOASSERTION` because of the multi-holder text) | MIT ([repository](https://github.com/Squirrel/Squirrel.Mac)) | — |
+| Integrity | EdDSA (Ed25519) signature per archive (`SUPublicEDKey`), plus a signed feed with `SURequireSignedFeed` (Sparkle 2.9+) and `SUVerifyUpdateBeforeExtraction` (2.7.3+) ([customization](https://sparkle-project.org/documentation/customization/)) | code-signature match of the new bundle only | — |
+| Feed | a static `appcast.xml`, written and signed by `generate_appcast` ([documentation](https://sparkle-project.org/documentation/)) | a JSON endpoint someone has to serve | — |
+| SwiftUI | `SPUStandardUpdaterController` and a `CommandGroup(after: .appInfo)` item ([programmatic setup](https://sparkle-project.org/documentation/programmatic-setup/)) | none | — |
+| Install | SwiftPM, `https://github.com/sparkle-project/Sparkle`; a binary XCFramework whose checksum is in `Package.swift`, `platforms: [.macOS(.v12)]` ([Package.swift at 2.10.0](https://github.com/sparkle-project/Sparkle/blob/2.10.0/Package.swift)) | Carthage/manual | — |
+
+ketch itself cannot update the app either: it resolves `/releases/latest` for
+this repository (`src/source/github.rs`), which by the decision above is
+always the CLI.
+
+**Choice: Sparkle 2.10.0**, pinned with `exactVersion` in
+`desktop/macos/project.yml`. It is the only maintained option, it is MIT, and
+its EdDSA signatures do not depend on the Developer ID certificate, which
+expires. The release uses the `generate_appcast` that ships in the same
+SwiftPM artifact (`SourcePackages/artifacts/sparkle/Sparkle/bin/`), so the
+feed writer and the framework reading it are one version. From its source at
+2.10.0 ([generate_appcast/main.swift](https://github.com/sparkle-project/Sparkle/blob/2.10.0/generate_appcast/main.swift)):
+`--ed-key-file -` reads the private key from standard input, which is how the
+workflow passes the `SPARKLE_ED_PRIVATE_KEY` secret; `--download-url-prefix`
+sets the new item's URL; the existing `appcast.xml` in the archives directory
+is read and its items kept ([Appcast.swift](https://github.com/sparkle-project/Sparkle/blob/2.10.0/generate_appcast/Appcast.swift));
+the feed is signed when the app's Info.plist sets `SURequireSignedFeed`
+([ArchiveItem.swift](https://github.com/sparkle-project/Sparkle/blob/2.10.0/generate_appcast/ArchiveItem.swift)).
+The key format: `generate_keys -x` exports, for keys made by current versions,
+the base64 32-byte Ed25519 seed ([generate_keys/main.swift](https://github.com/sparkle-project/Sparkle/blob/2.10.0/generate_keys/main.swift)).
+
+Observed with 2.10.0 on this machine (2026-10-01, `tests/desktop-appcast.sh`):
+when the private key is not the app's pair, `generate_appcast` prints a
+warning, exits 0 and writes the item without `sparkle:edSignature`. Every
+installed copy would then refuse the update, so the release verifies the
+enclosure signature with the exported app's `SUPublicEDKey` through CryptoKit
+(`scripts/desktop-appcast-verify.swift`) before anything is published.
+
+### Where the feed lives
+
+`SUFeedURL` must not go through `/releases/latest`, and must not change. Options:
+
+- **A fixed `desktop-appcast` release whose `appcast.xml` asset every app
+  release replaces** (chosen): `https://github.com/pyrlyn/ketch/releases/download/desktop-appcast/appcast.xml`.
+  No other infrastructure, served from the same place as the `.dmg`, and the
+  feed is signed, so the mutable asset is not trusted on its own. The release
+  is a prerelease with `make_latest: false`: GitHub never makes a prerelease
+  latest, and ketch's own listing skips prereleases when stable ones exist.
+  It needs asset replacement, which [immutable releases](https://docs.github.com/en/code-security/supply-chain-security/understanding-your-software-supply-chain/immutable-releases)
+  would forbid; the repository has them off (`GET /repos/pyrlyn/ketch/immutable-releases`
+  → `enabled: false`, 2026-10-01). Turning them on means moving the feed.
+- GitHub Pages (`https://pyrlyn.github.io/ketch/`, built by `pages.yml`): the
+  site build would have to fetch the feed from the newest app release on every
+  deploy, or a site deploy would drop it.
+- A file committed to `main` by the workflow: a bot push to the protected
+  branch for every release.
+
+### Latest release
+
+GitHub's [Create a release](https://docs.github.com/en/rest/releases/releases?apiVersion=2022-11-28#create-a-release)
+(checked 2026-10-01): `make_latest` is `true`, `false` or `legacy`, "Defaults
+to true for newly published releases", and "Drafts and prereleases cannot be
+set as latest". `gh` 2.101.0: `gh release create --latest=false` "to
+explicitly NOT set as latest"; without the flag it leaves the choice to
+GitHub (`gh release create --help`). So `release.yml`'s `gh release create`
+(no flag) makes each CLI release latest again, and the app workflow passes
+`--latest=false` on every create and checks afterwards that `/releases/latest`
+did not move.
+
+The CLI's tag lookups, checked for `desktop-v*`:
+
+- git-cliff: `tag_pattern` is "A regular expression for matching the git
+  tags" ([docs](https://git-cliff.org/docs/configuration/git)); it matches
+  anywhere in the name. With 2.13.1 and the old `v[0-9].*`, a fixture with a
+  `desktop-v5.0.0` tag turned the next CLI entry into `## [desktop-v5.0.0]`
+  (`tests/release-sh.sh`). Anchored to `^v[0-9].*`.
+- release-plz: `git_only` finds releases by `git_tag_name`
+  ([config docs](https://github.com/release-plz/release-plz/blob/release-plz-v0.3.169/website/docs/config.md)),
+  turned into `^v(\d+\.\d+\.\d+)$`, anchored
+  ([release_regex.rs](https://github.com/release-plz/release-plz/blob/release-plz-v0.3.169/crates/release_plz_core/src/release_regex.rs), release-plz v0.3.169).
+- `tests/crate-version.sh` listed every tag; now only `v[0-9]*`.
+- ketch's own release selection: when it lists releases instead of asking
+  for `/releases/latest` (`ketch install pyrlyn/ketch --pre`, or prereleases
+  switched on), `select_release` compared `desktop-v1.0.0`, which does not
+  parse as a version, with `v0.8.1` as text (`natural_cmp` in `src/model.rs`),
+  ranking the letter `d` above the digit `0`: the app release would have won
+  and has no tarball. Tags that are not versions now lose to any that are
+  (`src/source/mod.rs`).
+- `scripts/release.sh`, pyrlyn/infra's `release-plz.yml` and `tap.yml` use
+  exact `v<version>` tags; `sync-docs.yml` ran on any published release and
+  would have set the site card's version to `desktop-v…`; it now skips tag
+  refs that do not start with `v`.
+
+### Disk image and notarisation
+
+`hdiutil`, which ships with macOS, builds the `.dmg` (UDZO, with an
+`/Applications` link); `create-dmg/create-dmg` 1.3.0 (2026-07-02) and
+`sindresorhus/create-dmg` 8.1.0 (2026-03-21) (releases API: [create-dmg](https://api.github.com/repos/create-dmg/create-dmg/releases/latest), [sindresorhus](https://api.github.com/repos/sindresorhus/create-dmg/releases/latest))
+add a styled window, which nothing here needs, at the cost of a dependency.
+Apple's [Customizing the notarization workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow)
+(checked 2026-10-01): export with `xcodebuild -exportArchive
+-exportOptionsPlist`; the notary service "accepts disk images (UDIF format),
+signed flat installer packages, and ZIP archives" and processes nested
+containers; `stapler` attaches a ticket to an app, bundle, disk image or flat
+package but not to a ZIP; verify an image with `hdiutil verify` before
+submitting. The workflow notarises the app (as a ZIP) and staples it, so a
+copy dragged out of the image opens offline, then signs, notarises and
+staples the image. `xcodebuild -help` (Xcode 27.0, 27A266a) lists
+`developer-id` as the export method and `Developer ID Application` as an
+automatic `signingCertificate` selector.
+
 ## Unverified
 
 - Tauri's macOS notarization flow: the page
@@ -192,3 +310,13 @@ which CI uses.
   checked.
 - No official bundle-size figures were found for any toolkit; sizes are not
   compared here for that reason.
+- A signed, notarised app release has not run: the Developer ID export with
+  Sparkle embedded, both notarisations and the `spctl` smoke test need the
+  repository secrets and a `macos-26` runner. Everything up to signing
+  (Release build with Sparkle, the `.dmg`, the appcast and its verification)
+  ran locally on 2026-10-01.
+- Which release-plz version `release-plz/action` v0.5.139 (pinned by
+  pyrlyn/infra) runs was not checked; the anchoring above was read at
+  release-plz v0.3.169.
+- Whether GitHub recomputes `/releases/latest` when the current latest release
+  is deleted, and whether it could then pick an app release, was not checked.
