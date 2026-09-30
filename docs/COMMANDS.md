@@ -482,6 +482,24 @@ ketch completions zsh > _ketch
 ketch completions bash --install
 ```
 
+The bash script also completes package names: installed ones after
+`uninstall`, `upgrade`, `pin`, `unpin`, `link`, `unlink`, `info`, `why`,
+`changelog` and `rollback`, and names from the local registry copy after
+`install` and `search`. It asks the binary for them with the internal
+`ketch __complete <installed|registry> [PREFIX]`, which reads the state file and
+the registry already on disk and never touches the network. A `--root` earlier
+on the command line is honoured.
+
+`--install` writes the bash script to
+`${XDG_DATA_HOME:-~/.local/share}/bash-completion/completions/ketch`, where
+bash-completion 2 loads it on first use. On macOS that needs more than the
+system shell: `/bin/bash` is 3.2 and bash-completion 2 wants bash 4.2 or newer.
+Install a current bash and bash-completion 2 (with Homebrew:
+`brew install bash bash-completion@2`), make that bash your login shell, and
+source bash-completion's `bash_completion` from `~/.bashrc` as its caveats
+say. The script itself also runs under bash
+3.2, so `eval "$(ketch completions bash)"` in `~/.bashrc` works without either.
+
 ## ketch itself
 
 ### `ketch self install [--force] [--link-dir <DIR>]`
