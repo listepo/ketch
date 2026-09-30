@@ -21,7 +21,6 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | M12 | todo | P2 | 3 | 0% | |
 | F11 | todo | P3 | 2 | 0% | |
 | R4 | todo | P2 | 3 | 0% | |
-| B70 | in progress | P1 | 1 | 10% | Claude Code / opus-5.5 |
 
 ### F1. Notarisation
 
@@ -344,13 +343,3 @@ Plan:
 6. Deliver as a PR; do not merge it.
 
 Check: `cargo +nightly fuzz build` succeeds for all targets; each target runs 60 s with no crash (or the crash is filed with a repro test); stable `just check` does not compile `fuzz/`.
-
-### B70. Flaky `upgrade_stops_a_process_holding_the_binary_when_yes`
-
-`tests/auto_update.rs` starts the installed sleeper, sleeps a fixed 400 ms, then runs `ketch upgrade --yes` and expects it to report the process as `in use`. On macOS under load (several cargo builds in parallel) it failed on 2026-09-30 and 2026-10-01 and passed when run alone. Done means the test waits on a condition, not a delay, and survives a stress loop.
-
-Plan (Claude Code / opus-5.5):
-1. Reproduce: run the built `auto_update` test binary 64-way in parallel for several rounds.
-2. `tests/support/mod.rs`: `Entry::sleeper` creates the file named by `KETCH_TEST_SLEEPER_READY`, when set, before it starts waiting (sh and cmd).
-3. `tests/auto_update.rs`: set that variable on the child and wait for the file (bounded at 60 s so a sleeper that never starts fails instead of hanging) in place of the 400 ms sleep.
-4. Verify: the same stress loop, then `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo nextest run`.
