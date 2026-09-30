@@ -190,7 +190,7 @@ pub fn install_completions(cfg: &Config, args: CompletionsArgs) -> Result<()> {
 
 /// Refresh the local copy of the package registry.
 pub fn update(cfg: &Config) -> Result<()> {
-    let count = match registry::update(cfg) {
+    let count = match registry::update(&crate::ui::ctx(cfg)) {
         Ok(count) => count,
         Err(error) => {
             ui::completed("registry", false);
@@ -244,7 +244,7 @@ fn registry_check(cfg: &Config) -> DoctorCheck {
             "Run `ketch update`.",
         );
     }
-    let count = registry::load(cfg).len();
+    let count = registry::load(&crate::ui::ctx(cfg)).len();
     match registry::load_meta(cfg) {
         Ok(Some(meta)) => {
             let age = registry::age_phrase(meta.fetched_at);
@@ -637,7 +637,7 @@ pub fn plugin(cfg: &Config, command: PluginCommand) -> Result<()> {
         PluginCommand::List { json } => {
             let mut rows = Vec::new();
             let mut found = Vec::new();
-            for result in plugin::discover(cfg) {
+            for result in plugin::discover(&crate::ui::ctx(cfg)) {
                 match result {
                     Ok(p) => {
                         rows.push(vec![
@@ -916,7 +916,11 @@ mod tests {
     #[test]
     fn registry_check_reports_age_from_meta_without_a_network() {
         let tmp = tempfile::tempdir().unwrap();
-        let cfg = Config::load(Some(tmp.path().to_path_buf())).unwrap();
+        let cfg = Config::load(
+            Some(tmp.path().to_path_buf()),
+            &ketch_core::report::Report::silent(),
+        )
+        .unwrap();
         std::fs::create_dir_all(&cfg.registry_dir).unwrap();
         let pkg = cfg.registry_dir.join("jq");
         std::fs::create_dir_all(&pkg).unwrap();
@@ -936,7 +940,11 @@ mod tests {
     #[test]
     fn path_binary_check_is_silent_when_the_store_link_wins() {
         let tmp = tempfile::tempdir().unwrap();
-        let cfg = Config::load(Some(tmp.path().to_path_buf())).unwrap();
+        let cfg = Config::load(
+            Some(tmp.path().to_path_buf()),
+            &ketch_core::report::Report::silent(),
+        )
+        .unwrap();
         std::fs::create_dir_all(&cfg.bin_dir).unwrap();
         let linked = store_ketch_link(&cfg);
         std::fs::write(&linked, b"store").unwrap();
@@ -970,7 +978,11 @@ mod tests {
     #[test]
     fn path_binary_check_warns_when_an_earlier_ketch_shadows_the_store() {
         let tmp = tempfile::tempdir().unwrap();
-        let cfg = Config::load(Some(tmp.path().to_path_buf())).unwrap();
+        let cfg = Config::load(
+            Some(tmp.path().to_path_buf()),
+            &ketch_core::report::Report::silent(),
+        )
+        .unwrap();
         std::fs::create_dir_all(&cfg.bin_dir).unwrap();
         let linked = store_ketch_link(&cfg);
         std::fs::write(&linked, b"store").unwrap();

@@ -93,7 +93,7 @@ fn run(cli: Cli) -> Result<()> {
             command: cli::ConfigCommand::Create { .. }
         }
     ) {
-        let cfg = config::Config::load(cli.global.root.clone())?;
+        let cfg = config::Config::load(cli.global.root.clone(), ui::report())?;
         ui::set_emoji(cfg.emoji && !cli.global.no_emoji);
         return match cli.command {
             Command::Config { command } => cmd::config::run(&cfg, command),
@@ -101,10 +101,13 @@ fn run(cli: Cli) -> Result<()> {
         };
     }
 
-    let cfg = config::Config::load(cli.global.root.clone())?;
+    let cfg = config::Config::load(cli.global.root.clone(), ui::report())?;
     ui::set_emoji(cfg.emoji && !cli.global.no_emoji);
     cfg.ensure_dirs()?;
-    log::init(&cfg, cli.global.verbose);
+    // Not `ui::warn`: that would try to log the failure to log.
+    if let Err(e) = log::init(&cfg, cli.global.verbose) {
+        ui::warn_unlogged(&e.to_string());
+    }
 
     #[cfg(feature = "tui")]
     let _tui = start_tui(&cli);

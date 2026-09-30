@@ -184,7 +184,9 @@ impl Reporter for LogReporter {
     }
 
     fn choose(&self, question: &str, options: &[String]) -> Option<usize> {
-        self.inner.as_ref().and_then(|r| r.choose(question, options))
+        self.inner
+            .as_ref()
+            .and_then(|r| r.choose(question, options))
     }
 
     fn offer(&self, question: &str, default: bool) -> bool {

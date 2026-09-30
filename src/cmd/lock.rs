@@ -48,7 +48,7 @@ pub fn sync(cfg: &Config, args: SyncArgs) -> Result<()> {
     let lock = Lockfile::load(&path)?;
 
     let _guard = Lock::acquire(cfg)?;
-    let sources = SourceRegistry::load(cfg);
+    let sources = SourceRegistry::load(&crate::ui::ctx(cfg));
     let mut state = State::load(cfg)?;
     let plan = lockfile::plan(&lock, &state);
 
@@ -203,7 +203,7 @@ fn spec_for(cfg: &Config, entry: &LockedPackage) -> Result<PackageSpec> {
         alias: Some(entry.name.to_ascii_lowercase()),
         version: version.clone(),
     };
-    if let Ok(resolver) = Resolver::new(cfg) {
+    if let Ok(resolver) = Resolver::new(&crate::ui::ctx(cfg)) {
         if let Ok((manifest, _)) = resolver.resolve(&by_name) {
             if manifest.source == entry.source {
                 return Ok(by_name);

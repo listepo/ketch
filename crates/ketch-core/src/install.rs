@@ -167,7 +167,7 @@ pub fn install(
 /// # use crate::source::SourceRegistry;
 /// # use crate::state::State;
 /// # use crate::ui;
-/// # let cfg: Config = Config::load(None)?;
+/// # let cfg: Config = Config::load(None, &crate::report::Report::silent())?;
 /// # let sources: SourceRegistry = SourceRegistry::load(&cfg);
 /// # let mut state: State = State::default();
 /// # let request: InstallRequest = InstallRequest::new(PackageSpec::parse("ripgrep"));
@@ -206,7 +206,7 @@ pub fn prepare(
     let platform = crate::platform::host()?;
     let label = req.spec.label();
     ui::stage(&label, ui::Stage::Resolving);
-    let (mut manifest, origin) = Resolver::new(cfg)?.resolve(&req.spec)?;
+    let (mut manifest, origin) = Resolver::new(&crate::ui::ctx(cfg))?.resolve(&req.spec)?;
 
     // Local refs are recorded with an absolute path so list/info survive a
     // later change of working directory. Classification also needs the path
@@ -1722,7 +1722,11 @@ mod tests {
     }
 
     fn config() -> Config {
-        let mut cfg = Config::load(Some(std::env::temp_dir().join("ketch-test-root"))).unwrap();
+        let mut cfg = Config::load(
+            Some(std::env::temp_dir().join("ketch-test-root")),
+            &crate::report::Report::silent(),
+        )
+        .unwrap();
         cfg.target = TargetSpec {
             os: Os::MacOs,
             arch: Arch::Aarch64,
@@ -1795,7 +1799,11 @@ mod tests {
     #[test]
     fn inside_store_accepts_ascii_case_folded_prefix() {
         let root = tempfile::tempdir().unwrap();
-        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        let cfg = Config::load(
+            Some(root.path().join("ketch")),
+            &crate::report::Report::silent(),
+        )
+        .unwrap();
         cfg.ensure_dirs().unwrap();
         let payload = cfg.store_dir.join("rg").join("1.0.0");
         std::fs::create_dir_all(&payload).unwrap();
@@ -1839,7 +1847,11 @@ mod tests {
     #[test]
     fn refuses_dotdot_escape_out_of_the_store() {
         let root = tempfile::tempdir().unwrap();
-        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        let cfg = Config::load(
+            Some(root.path().join("ketch")),
+            &crate::report::Report::silent(),
+        )
+        .unwrap();
         cfg.ensure_dirs().unwrap();
         let victim = root.path().join("victim");
         std::fs::create_dir_all(&victim).unwrap();
@@ -1869,7 +1881,11 @@ mod tests {
     #[test]
     fn refuses_a_store_symlink_that_points_outside() {
         let root = tempfile::tempdir().unwrap();
-        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        let cfg = Config::load(
+            Some(root.path().join("ketch")),
+            &crate::report::Report::silent(),
+        )
+        .unwrap();
         cfg.ensure_dirs().unwrap();
         let victim = root.path().join("victim");
         std::fs::create_dir_all(&victim).unwrap();
@@ -1889,7 +1905,11 @@ mod tests {
     #[test]
     fn the_package_folder_goes_whole_with_stale_swap_siblings() {
         let root = tempfile::tempdir().unwrap();
-        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        let cfg = Config::load(
+            Some(root.path().join("ketch")),
+            &crate::report::Report::silent(),
+        )
+        .unwrap();
         cfg.ensure_dirs().unwrap();
         let folder = cfg.store_dir.join("tool");
         std::fs::create_dir_all(folder.join("1.0.0.old")).unwrap();
@@ -1967,7 +1987,11 @@ mod tests {
     #[test]
     fn a_package_name_that_is_not_one_component_is_never_removed() {
         let root = tempfile::tempdir().unwrap();
-        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        let cfg = Config::load(
+            Some(root.path().join("ketch")),
+            &crate::report::Report::silent(),
+        )
+        .unwrap();
         cfg.ensure_dirs().unwrap();
         let nested = cfg.store_dir.join("a").join("b");
         std::fs::create_dir_all(&nested).unwrap();
@@ -1982,7 +2006,11 @@ mod tests {
     #[test]
     fn a_missing_package_folder_is_not_a_candidate() {
         let root = tempfile::tempdir().unwrap();
-        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        let cfg = Config::load(
+            Some(root.path().join("ketch")),
+            &crate::report::Report::silent(),
+        )
+        .unwrap();
         cfg.ensure_dirs().unwrap();
         assert_eq!(remove_package_dir(&cfg, "tool"), None);
     }
@@ -1991,7 +2019,11 @@ mod tests {
     #[test]
     fn a_package_folder_linked_outside_the_store_is_left_alone() {
         let root = tempfile::tempdir().unwrap();
-        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        let cfg = Config::load(
+            Some(root.path().join("ketch")),
+            &crate::report::Report::silent(),
+        )
+        .unwrap();
         cfg.ensure_dirs().unwrap();
         let victim = root.path().join("victim");
         std::fs::create_dir_all(&victim).unwrap();
@@ -2010,7 +2042,11 @@ mod tests {
         // `KETCH_ROOT=../ketch` keeps the `..` in the root path, and so in
         // every store prefix below it. Those are the root's components, not the
         // state file's, and refusing them disables every cleanup there is.
-        let cfg = Config::load(Some(work.join("../ketch"))).unwrap();
+        let cfg = Config::load(
+            Some(work.join("../ketch")),
+            &crate::report::Report::silent(),
+        )
+        .unwrap();
         cfg.ensure_dirs().unwrap();
         let prefix = cfg.store_dir.join("tool").join("1.0.0");
         std::fs::create_dir_all(&prefix).unwrap();
@@ -2052,7 +2088,11 @@ mod tests {
     #[test]
     fn retain_replaced_keeps_an_eligible_prefix_and_skips_the_same_one() {
         let root = tempfile::tempdir().unwrap();
-        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        let cfg = Config::load(
+            Some(root.path().join("ketch")),
+            &crate::report::Report::silent(),
+        )
+        .unwrap();
         cfg.ensure_dirs().unwrap();
         let old_prefix = cfg.package_dir("tool", "1.0.0");
         std::fs::create_dir_all(&old_prefix).unwrap();

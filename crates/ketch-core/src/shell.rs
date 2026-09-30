@@ -1752,7 +1752,11 @@ mod tests {
     #[test]
     fn no_registry_entries_are_found_off_windows() {
         let tmp = tempfile::tempdir().expect("tempdir");
-        let cfg = Config::load(Some(tmp.path().join("root"))).expect("config");
+        let cfg = Config::load(
+            Some(tmp.path().join("root")),
+            &crate::report::Report::silent(),
+        )
+        .expect("config");
         assert!(registry_entries(&cfg).is_empty());
     }
 }

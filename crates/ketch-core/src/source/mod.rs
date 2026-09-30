@@ -9,11 +9,11 @@ pub mod local;
 pub mod plugin;
 
 use crate::cancel::Cancel;
-use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::http::Http;
 use crate::model::{PackageRef, Release, ReleaseAsset, SourceInfo, VersionSpec};
-use crate::ui::ProgressSink;
+use crate::report::Ctx;
+pub use crate::report::ProgressSink;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -268,20 +268,21 @@ impl SourceRegistry {
     /// Built-in sources plus every discovered plugin. Plugin discovery failures
     /// are reported as warnings rather than aborting the command: a broken
     /// third-party plugin must not make `ketch install owner/repo` fail.
-    pub fn load(cfg: &Config) -> Self {
-        let http = Arc::new(Http::new(cfg));
+    pub fn load(cx: &Ctx<'_>) -> Self {
+        let http = Arc::new(Http::new(cx));
         let mut sources: Vec<Arc<dyn Source>> = vec![
             Arc::new(github::GitHubSource::new(http.clone())),
             Arc::new(local::LocalSource::new()),
         ];
 
-        for found in plugin::discover(cfg) {
+        for found in plugin::discover(cx) {
             match found {
                 Ok(p) => {
-                    crate::ui::debug(&format!("plugin `{}` provides `{}`", p.name(), p.scheme()));
+                    cx.report
+                        .debug(&format!("plugin `{}` provides `{}`", p.name(), p.scheme()));
                     sources.push(Arc::new(p));
                 }
-                Err(e) => crate::ui::warn(&format!("ignoring plugin: {e}")),
+                Err(e) => cx.report.warn(&format!("ignoring plugin: {e}")),
             }
         }
         SourceRegistry { sources }
@@ -289,8 +290,8 @@ impl SourceRegistry {
 
     /// Only the built-in GitHub source. Used by self-update, which must not
     /// depend on third-party plugins.
-    pub fn builtin_only(cfg: &Config) -> Self {
-        let http = Arc::new(Http::new(cfg));
+    pub fn builtin_only(cx: &Ctx<'_>) -> Self {
+        let http = Arc::new(Http::new(cx));
         SourceRegistry {
             // Local stays available even for self-update's registry: it cannot
             // serve the host package, and omitting it would make `local:` fail

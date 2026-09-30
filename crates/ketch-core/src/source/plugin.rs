@@ -19,11 +19,10 @@
 
 use super::{ListOpts, Source};
 use crate::cancel::Cancel;
-use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::http::{self, Http};
 use crate::model::{Release, ReleaseAsset, SourceInfo};
-use crate::ui::ProgressSink;
+use crate::report::{Ctx, ProgressSink, Report};
 use serde::Deserialize;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -61,11 +60,13 @@ pub struct PluginSource {
     scheme: String,
     downloads: bool,
     searches: bool,
+    /// Where ketch's own download of a URL the plugin hands back is noted.
+    report: Report,
 }
 
 impl PluginSource {
     /// Interrogate an executable and adopt it if it speaks a version we know.
-    pub fn probe(path: &Path) -> Result<Self> {
+    pub fn probe(path: &Path, report: &Report) -> Result<Self> {
         let caps: Capabilities = parse(path, &output(path, &["capabilities"])?)?;
         if caps.protocol != PROTOCOL_VERSION {
             return Err(Error::Plugin {
@@ -96,6 +97,7 @@ impl PluginSource {
             scheme: caps.scheme,
             downloads: caps.download,
             searches: caps.search,
+            report: report.clone(),
         })
     }
 
@@ -153,7 +155,7 @@ impl Source for PluginSource {
         if !self.downloads {
             // No token is ever handed to a plugin's URLs: whatever credentials
             // an asset needs must come from the plugin's own headers.
-            return Http::anonymous().download(
+            return Http::anonymous(&self.report).download(
                 &asset.url,
                 dest,
                 &asset.headers,
@@ -188,7 +190,8 @@ impl Source for PluginSource {
 ///
 /// Returns one entry per candidate so a single broken plugin can be reported
 /// without hiding the ones that work.
-pub fn discover(cfg: &Config) -> Vec<Result<PluginSource>> {
+pub fn discover(cx: &Ctx<'_>) -> Vec<Result<PluginSource>> {
+    let cfg = cx.cfg;
     let Ok(platform) = crate::platform::host() else {
         return Vec::new();
     };
@@ -223,7 +226,7 @@ pub fn discover(cfg: &Config) -> Vec<Result<PluginSource>> {
                 continue;
             }
             seen.push(name);
-            found.push(PluginSource::probe(&path));
+            found.push(PluginSource::probe(&path, cx.report));
         }
     }
     found
@@ -560,7 +563,7 @@ esac
         let dir = tempfile::tempdir().unwrap();
         let path = fake_plugin(dir.path(), "demo", PROTOCOL_VERSION);
 
-        let plugin = PluginSource::probe(&path).unwrap();
+        let plugin = PluginSource::probe(&path, &Report::silent()).unwrap();
         assert_eq!(plugin.scheme(), "demo");
 
         // Drafts always go; prereleases only when asked for, unless they are
@@ -599,7 +602,7 @@ esac
         .unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
 
-        let plugin = PluginSource::probe(&path).unwrap();
+        let plugin = PluginSource::probe(&path, &Report::silent()).unwrap();
         let releases = plugin.list_releases("x/y", &ListOpts::default()).unwrap();
         assert_eq!(releases.len(), 1);
         assert_eq!(releases[0].tag, "v2.0.0-rc1");
@@ -610,7 +613,7 @@ esac
     fn refuses_a_protocol_it_does_not_speak() {
         let dir = tempfile::tempdir().unwrap();
         let path = fake_plugin(dir.path(), "future", PROTOCOL_VERSION + 1);
-        assert!(PluginSource::probe(&path).is_err());
+        assert!(PluginSource::probe(&path, &Report::silent()).is_err());
     }
 
     fn write_plugin_script(dir: &Path, scheme: &str, body: &str) -> PathBuf {

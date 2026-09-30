@@ -6,15 +6,15 @@
 //! reports through [`activity`]: a bar when the total is known, a spinner
 //! otherwise.
 
-use crate::log;
 use crate::config::Config;
+use crate::log;
 use crate::report::{Ctx, Event, Report, Reporter, Task, TaskId};
 pub use crate::report::{ProgressSink, SilentProgress, Stage};
 pub use crate::text::{bytes, truncate};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use std::collections::HashMap;
 use std::io::{IsTerminal, Write};
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
-use std::collections::HashMap;
 use std::sync::Mutex;
 use unicode_width::UnicodeWidthStr;
 
@@ -504,7 +504,7 @@ pub fn success(verb: &str, detail: &str) {
 
 /// A warning that is not written to the log, for the one caller that cannot:
 /// the log failing to open.
-pub(crate) fn warn_unlogged(detail: &str) {
+pub fn warn_unlogged(detail: &str) {
     if is_quiet() {
         return;
     }
@@ -1247,7 +1247,9 @@ enum Live {
         done: u64,
     },
     /// Held for its drop, which clears the spinner.
-    Activity { _spinner: Activity },
+    Activity {
+        _spinner: Activity,
+    },
     Counter {
         counter: Counter,
         done: u64,
@@ -1362,7 +1364,6 @@ pub fn report() -> &'static Report {
 pub fn ctx(cfg: &Config) -> Ctx<'_> {
     Ctx::new(cfg, report())
 }
-
 
 #[cfg(test)]
 mod tests {

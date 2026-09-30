@@ -9,7 +9,7 @@ use crate::config::validate_repo;
 use crate::error::{Error, Result};
 use crate::http::Http;
 use crate::model::{Checksum, Release, ReleaseAsset, SourceInfo, Version, VersionSpec};
-use crate::ui::ProgressSink;
+use crate::report::ProgressSink;
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -397,7 +397,9 @@ impl Source for GitHubSource {
             // match, and an unbounded number of name matches is an unbounded
             // number of downloads.
             if fetches >= MAX_CHECKSUM_FETCHES {
-                crate::ui::debug("stopping after the checksum-file fetch limit");
+                self.http
+                    .report()
+                    .debug("stopping after the checksum-file fetch limit");
                 break;
             }
             fetches += 1;
@@ -581,7 +583,7 @@ not-a-hash                                                          junk.txt
     #[test]
     fn derives_a_browsable_url_from_the_api_base() {
         let source = GitHubSource {
-            http: Arc::new(Http::anonymous()),
+            http: Arc::new(Http::anonymous(&crate::report::Report::silent())),
             api: DEFAULT_API.to_string(),
         };
         assert_eq!(
@@ -593,7 +595,7 @@ not-a-hash                                                          junk.txt
     #[test]
     fn validates_repository_ids_before_building_api_urls() {
         let source = GitHubSource {
-            http: Arc::new(Http::anonymous()),
+            http: Arc::new(Http::anonymous(&crate::report::Report::silent())),
             api: DEFAULT_API.to_string(),
         };
         assert!(source.repo_url("https://attacker.invalid/x", "").is_err());
@@ -605,7 +607,7 @@ not-a-hash                                                          junk.txt
         use std::collections::BTreeMap;
 
         let source = GitHubSource {
-            http: Arc::new(Http::anonymous()),
+            http: Arc::new(Http::anonymous(&crate::report::Report::silent())),
             api: DEFAULT_API.to_string(),
         };
         let release = Release {
@@ -664,7 +666,7 @@ not-a-hash                                                          junk.txt
     fn an_exact_tag_not_on_the_first_list_page_is_still_resolved() {
         let mock = ReleaseListMock::spawn();
         let source = GitHubSource {
-            http: Arc::new(Http::anonymous()),
+            http: Arc::new(Http::anonymous(&crate::report::Report::silent())),
             api: mock.api.clone(),
         };
         let got = source

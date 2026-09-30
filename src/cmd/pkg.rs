@@ -49,7 +49,7 @@ pub fn install(cfg: &Config, args: InstallArgs) -> Result<()> {
     }
 
     let _lock = Lock::acquire(cfg)?;
-    let sources = SourceRegistry::load(cfg);
+    let sources = SourceRegistry::load(&crate::ui::ctx(cfg));
     let mut state = State::load(cfg)?;
 
     // --path synthesises a local: ref; otherwise the user-typed PKG list is
@@ -227,7 +227,7 @@ pub fn upgrade(cfg: &Config, args: UpgradeArgs) -> Result<()> {
         return Err(Error::msg("--bin needs exactly one package name"));
     }
     let _lock = Lock::acquire(cfg)?;
-    let sources = SourceRegistry::load(cfg);
+    let sources = SourceRegistry::load(&crate::ui::ctx(cfg));
     let mut state = State::load(cfg)?;
 
     let names = select(&state, &args.names)?;

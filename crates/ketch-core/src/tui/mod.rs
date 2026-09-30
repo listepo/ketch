@@ -66,10 +66,7 @@ impl PackageStatus {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
     /// A pipeline stage began for one package.
-    Stage {
-        package: String,
-        stage: Stage,
-    },
+    Stage { package: String, stage: Stage },
     /// A download reported its total byte length, when the source provided it.
     DownloadStarted { package: String, total: Option<u64> },
     /// A download advanced by this many bytes.

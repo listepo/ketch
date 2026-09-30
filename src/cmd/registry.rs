@@ -126,7 +126,7 @@ fn print_validate_json(report: &registry::Report) -> Result<()> {
 /// `ketch registry status`: age and source of the local copy. No network.
 fn status(cfg: &Config, json: bool) -> Result<()> {
     let packages = if registry::exists(cfg) {
-        Some(registry::load(cfg).len())
+        Some(registry::load(&crate::ui::ctx(cfg)).len())
     } else {
         None
     };
@@ -253,7 +253,7 @@ fn probe_fixtures(
             }];
         }
     };
-    let probe_cfg = match Config::load(Some(probe.path().to_path_buf())) {
+    let probe_cfg = match Config::load(Some(probe.path().to_path_buf()), crate::ui::report()) {
         Ok(cfg) => cfg,
         Err(e) => {
             return vec![registry::ValidationError {
@@ -313,7 +313,7 @@ fn install_from_fixture(
     let path = crate::manifest::user_manifest_path(cfg, &rewritten.name);
     std::fs::write(&path, crate::manifest::to_toml(&rewritten)?)
         .map_err(|e| Error::io(&path, e))?;
-    let sources = SourceRegistry::load(cfg);
+    let sources = SourceRegistry::load(&crate::ui::ctx(cfg));
     let mut state = State::default();
     install::install(
         cfg,

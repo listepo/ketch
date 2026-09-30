@@ -416,7 +416,7 @@ pub fn history_at(path: &Path, package: Option<&str>, limit: i64) -> Result<Vec<
 /// # Examples
 ///
 /// ```ignore
-/// # let cfg = Config::load(None)?;
+/// # let cfg = Config::load(None, &crate::report::Report::silent())?;
 /// let summary = summary(&cfg)?;
 /// println!("{} events recorded", summary.events);
 /// # Ok::<(), _>(())

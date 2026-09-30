@@ -74,7 +74,7 @@ pub fn install_self(
     sweep_stale_asides(&cfg.bin_dir);
     let mut state = State::load(cfg)?;
     // Built-in sources only, as in `update`.
-    let sources = SourceRegistry::builtin_only(cfg);
+    let sources = SourceRegistry::builtin_only(&crate::ui::ctx(cfg));
     let mut req = InstallRequest::new(PackageSpec::parse(&format!(
         "{}@v{}",
         cfg.self_repo,
@@ -437,7 +437,7 @@ pub fn update(cfg: &Config, force: bool, dry_run: bool, docs: SelfDocs) -> Resul
 
     // Built-in sources only: a third-party plugin must never be in a position
     // to hand ketch its own replacement.
-    let sources = SourceRegistry::builtin_only(cfg);
+    let sources = SourceRegistry::builtin_only(&crate::ui::ctx(cfg));
     let source = sources.get("github")?;
     ui::step("checking", &cfg.self_repo);
     let release = ui::activity("checking for updates", None)
@@ -466,7 +466,7 @@ pub fn update(cfg: &Config, force: bool, dry_run: bool, docs: SelfDocs) -> Resul
     sweep_stale_asides(&cfg.bin_dir);
 
     if installed.is_some() {
-        let sources = SourceRegistry::builtin_only(cfg);
+        let sources = SourceRegistry::builtin_only(&crate::ui::ctx(cfg));
         let mut req = InstallRequest::new(PackageSpec::parse(&format!(
             "{}@{}",
             cfg.self_repo, release.tag
@@ -1444,7 +1444,8 @@ mod tests {
         let tmp = tempfile::tempdir().expect("temp dir");
         let home = tmp.path().join("home");
         std::fs::create_dir_all(&home).expect("home");
-        let cfg = Config::load(Some(home.clone())).expect("config");
+        let cfg =
+            Config::load(Some(home.clone()), &crate::report::Report::silent()).expect("config");
         std::fs::create_dir_all(&cfg.bin_dir).expect("bin");
         std::fs::write(cfg.bin_dir.join("keep-me"), b"stay").expect("keep-me");
         std::fs::create_dir_all(&cfg.store_dir).expect("store");
@@ -1468,7 +1469,8 @@ mod tests {
         let home = tmp.path().join("home");
         let root = tmp.path().join(".ketch");
         std::fs::create_dir_all(&home).expect("home");
-        let cfg = Config::load(Some(root.clone())).expect("config");
+        let cfg =
+            Config::load(Some(root.clone()), &crate::report::Report::silent()).expect("config");
         std::fs::create_dir_all(&cfg.bin_dir).expect("bin");
         std::fs::write(cfg.bin_dir.join("gone"), b"x").expect("bin file");
 
@@ -1488,7 +1490,11 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let tmp = tempfile::tempdir().expect("temp dir");
         let home = tmp.path().join("home");
-        let cfg = Config::load(Some(tmp.path().join(".ketch"))).expect("config");
+        let cfg = Config::load(
+            Some(tmp.path().join(".ketch")),
+            &crate::report::Report::silent(),
+        )
+        .expect("config");
         let locked = cfg.store_dir.join(SELF_NAME);
         std::fs::create_dir_all(&locked).expect("store");
         std::fs::write(locked.join("ketch"), b"running").expect("binary");
@@ -1514,7 +1520,8 @@ mod tests {
     fn a_root_that_is_home_is_never_handed_on() {
         let tmp = tempfile::tempdir().expect("temp dir");
         let home = tmp.path().join("home");
-        let cfg = Config::load(Some(home.clone())).expect("config");
+        let cfg =
+            Config::load(Some(home.clone()), &crate::report::Report::silent()).expect("config");
         std::fs::create_dir_all(&cfg.store_dir).expect("store");
         std::fs::write(cfg.store_dir.join("mine"), b"x").expect("store file");
 
@@ -1551,7 +1558,11 @@ mod tests {
     #[test]
     fn a_bootstrap_link_dir_is_recorded_and_placed() {
         let tmp = tempfile::tempdir().unwrap();
-        let cfg = Config::load(Some(tmp.path().join("root"))).unwrap();
+        let cfg = Config::load(
+            Some(tmp.path().join("root")),
+            &crate::report::Report::silent(),
+        )
+        .unwrap();
         std::fs::create_dir_all(&cfg.bin_dir).unwrap();
         let bin = cfg.bin_dir.join(bootstrap_binary_name());
         std::fs::write(&bin, b"ketch").unwrap();
@@ -1592,7 +1603,11 @@ mod tests {
     #[test]
     fn a_link_dir_that_is_the_bin_dir_is_left_alone() {
         let tmp = tempfile::tempdir().unwrap();
-        let cfg = Config::load(Some(tmp.path().join("root"))).unwrap();
+        let cfg = Config::load(
+            Some(tmp.path().join("root")),
+            &crate::report::Report::silent(),
+        )
+        .unwrap();
         std::fs::create_dir_all(&cfg.bin_dir).unwrap();
         let bin = cfg.bin_dir.join(bootstrap_binary_name());
         std::fs::write(&bin, b"ketch").unwrap();

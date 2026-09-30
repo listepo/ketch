@@ -241,7 +241,7 @@ pub fn explain(
     sources: &SourceRegistry,
     spec: &PackageSpec,
 ) -> Result<ResolutionTrace> {
-    let (manifest, origin) = Resolver::new(cfg)?.resolve(spec)?;
+    let (manifest, origin) = Resolver::new(&crate::ui::ctx(cfg))?.resolve(spec)?;
     let source = sources.for_ref(&manifest.source)?;
     explain_with(cfg, source.as_ref(), spec, manifest, origin)
 }
@@ -431,7 +431,11 @@ mod tests {
     }
 
     fn config() -> Config {
-        let mut cfg = Config::load(Some(std::env::temp_dir().join("ketch-why-test-root"))).unwrap();
+        let mut cfg = Config::load(
+            Some(std::env::temp_dir().join("ketch-why-test-root")),
+            &crate::report::Report::silent(),
+        )
+        .unwrap();
         cfg.target = TargetSpec {
             os: Os::MacOs,
             arch: Arch::Aarch64,
