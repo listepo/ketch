@@ -18,6 +18,7 @@ struct InstalledView: View {
                                 InstalledRow(package: package, update: store.outdatedVersion(of: package.name))
                             }
                             .buttonStyle(.plain)
+                            .accessibilityIdentifier("installed-\(package.name)")
                             .contextMenu { menu(for: package) }
                         }
                     }

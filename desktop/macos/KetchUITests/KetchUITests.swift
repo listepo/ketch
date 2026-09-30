@@ -19,9 +19,7 @@ final class KetchUITests: XCTestCase {
 
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 10))
         XCTAssertTrue(app.descendants(matching: .any)["sidebar-installed"].waitForExistence(timeout: 5))
-        // A List row merges its texts into one element, so match on the label.
-        let ripgrep = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label CONTAINS 'ripgrep' OR value CONTAINS 'ripgrep'")).firstMatch
-        XCTAssertTrue(ripgrep.waitForExistence(timeout: 5), app.debugDescription)
+        // By identifier: a predicate over every element's label times out on CI runners.
+        XCTAssertTrue(app.descendants(matching: .any)["installed-ripgrep"].waitForExistence(timeout: 10))
     }
 }
