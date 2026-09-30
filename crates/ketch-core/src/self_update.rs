@@ -13,6 +13,7 @@
 
 use crate::config::Config;
 use crate::error::{Error, Result};
+use crate::extra::SelfDocs;
 use crate::install::{InstallRequest, Installed};
 use crate::model::{
     AssetSelector, CompletionShell, LinkKind, LinkRecord, LinkRole, PackageSpec, Version,
@@ -59,7 +60,12 @@ pub fn current_version() -> Version {
 /// downloaded, and this path is the one that verifies it against the published
 /// checksum. Returns `Error::AlreadyInstalled` when this version already is the
 /// package and `force` is off, like any other install.
-pub fn install_self(cfg: &Config, force: bool, link_dir: Option<&Path>) -> Result<Installed> {
+pub fn install_self(
+    cfg: &Config,
+    force: bool,
+    link_dir: Option<&Path>,
+    docs: SelfDocs,
+) -> Result<Installed> {
     let _lock = Lock::acquire(cfg)?;
     // A previous in-place swap or flat install leaves its aside here. This
     // process is a new one, so the file is no longer the running image and
@@ -98,7 +104,7 @@ pub fn install_self(cfg: &Config, force: bool, link_dir: Option<&Path>) -> Resul
             if let Some(dir) = link_dir {
                 record_bootstrap_link(cfg, &mut state, dir)?;
             }
-            expose_self_docs(cfg, &mut state)?;
+            expose_self_docs(cfg, &mut state, docs)?;
             state.save(cfg)?;
             Ok(out)
         })(),
@@ -106,7 +112,7 @@ pub fn install_self(cfg: &Config, force: bool, link_dir: Option<&Path>) -> Resul
             if let Some(dir) = link_dir {
                 record_bootstrap_link(cfg, &mut state, dir)?;
             }
-            if let Err(e) = expose_self_docs(cfg, &mut state) {
+            if let Err(e) = expose_self_docs(cfg, &mut state, docs) {
                 ui::warn(&format!("could not install man page and completions: {e}"));
             } else if let Err(e) = state.save(cfg) {
                 ui::warn(&format!("could not record man page and completions: {e}"));
@@ -279,12 +285,12 @@ fn create_bootstrap_link(link: &Path, target: &Path) -> Result<LinkRecord> {
 
 /// Generate ketch's man page and completions into the store prefix and link
 /// them into the user directories `doctor` reports.
-fn expose_self_docs(cfg: &Config, state: &mut State) -> Result<()> {
+fn expose_self_docs(cfg: &Config, state: &mut State, docs: SelfDocs) -> Result<()> {
     let Some(pkg) = state.get(SELF_NAME).cloned() else {
         return Ok(());
     };
     let platform = crate::platform::host()?;
-    let extras = crate::extra::write_ketch_docs(&pkg.prefix)?;
+    let extras = crate::extra::write_ketch_docs(&pkg.prefix, docs)?;
     let planned = crate::extra::plan(&extras, &platform.user_man_root(), |shell| {
         platform.completion_dir(shell)
     })?;
@@ -369,7 +375,11 @@ fn enable_windows_completion(cfg: &Config, script: Option<&Path>) {
 }
 
 /// Install one shell's completion script the same way `self install` does.
-pub fn install_completion_script(cfg: &Config, shell: clap_complete::Shell) -> Result<()> {
+pub fn install_completion_script(
+    cfg: &Config,
+    shell: clap_complete::Shell,
+    docs: SelfDocs,
+) -> Result<()> {
     let Some(want) = CompletionShell::from_clap(shell) else {
         return Err(Error::msg(format!(
             "{shell} completions cannot be installed into a user directory"
@@ -381,7 +391,7 @@ pub fn install_completion_script(cfg: &Config, shell: clap_complete::Shell) -> R
             "ketch is not installed as a package; run `ketch self install` first",
         ));
     }
-    expose_self_docs(cfg, &mut state)?;
+    expose_self_docs(cfg, &mut state, docs)?;
     state.save(cfg)?;
     let platform = crate::platform::host()?;
     let dest = platform.completion_dir(want);
@@ -401,7 +411,7 @@ pub fn current_exe() -> Result<PathBuf> {
 
 /// Fetch the latest ketch release and install it: as an upgrade of the `ketch`
 /// package when there is one, otherwise by replacing this binary in place.
-pub fn update(cfg: &Config, force: bool, dry_run: bool) -> Result<SelfUpdate> {
+pub fn update(cfg: &Config, force: bool, dry_run: bool, docs: SelfDocs) -> Result<SelfUpdate> {
     let _lock = Lock::acquire(cfg)?;
     let mut state = State::load(cfg)?;
     // When ketch is a package, the package is what gets updated, so its
@@ -464,7 +474,7 @@ pub fn update(cfg: &Config, force: bool, dry_run: bool) -> Result<SelfUpdate> {
         req.force = force;
         req.require_checksum = true;
         install::install(cfg, &sources, &mut state, &req)?;
-        expose_self_docs(cfg, &mut state)?;
+        expose_self_docs(cfg, &mut state, docs)?;
         state.save(cfg)?;
         return Ok(SelfUpdate {
             from,
@@ -623,7 +633,7 @@ fn sweep_stale_asides(bin_dir: &Path) {
 
 /// Warn when a previous self command's aside is still in the bin dir, or beside
 /// the running binary when that binary lives somewhere else.
-pub(crate) fn stale_aside_check(cfg: &Config) -> Option<DoctorCheck> {
+pub fn stale_aside_check(cfg: &Config) -> Option<DoctorCheck> {
     stale_aside_from(&cfg.bin_dir, current_exe().ok().as_deref())
 }
 
@@ -1123,7 +1133,7 @@ fn finish_after_exit(_root: &Path, _left: &[PathBuf]) -> bool {
 ///
 /// Homebrew records a cask under `<prefix>/Caskroom/<token>`, so its presence
 /// is the question "did brew install this?" answered without running anything.
-pub(crate) fn cask_dir() -> Option<PathBuf> {
+pub fn cask_dir() -> Option<PathBuf> {
     cask_dir_in(&brew_prefixes())
 }
 

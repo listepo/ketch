@@ -11,7 +11,7 @@ set -eu
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-version="$(awk '/^\[package\]/ { in_pkg = 1; next }
+version="$(awk '/^\[(package|workspace\.package)\]/ { in_pkg = 1; next }
                 /^\[/          { in_pkg = 0 }
                 in_pkg && /^version[[:space:]]*=/ {
                   split($0, q, "\""); print q[2]; exit

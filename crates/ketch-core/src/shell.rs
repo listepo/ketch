@@ -569,7 +569,7 @@ fn windows_path_eq(entry: &str, dir: &Path) -> bool {
 }
 
 #[cfg_attr(not(windows), allow(dead_code))]
-pub(crate) fn windows_path_key(p: &Path) -> String {
+pub fn windows_path_key(p: &Path) -> String {
     // Registry PATH values are sometimes quoted (`"C:\\Program Files\\…"`).
     // Strip the quotes before folding so doctor/install see the same entry as
     // an unquoted bin dir and do not prepend a duplicate.

@@ -42,10 +42,12 @@ esac
 CARGO="${CARGO:-cargo}"
 CLIFF="${CLIFF:-mise exec -- git-cliff}"
 
-# Only the version inside [package]: `rust-version` and every dependency's
-# inline `version =` are left alone.
+# Only the literal version inside [package] or [workspace.package]: ketch's
+# root package inherits it (`version.workspace = true`) so ketch-core carries
+# the same one. `rust-version` and every dependency's inline `version =` are
+# left alone.
 package_version() {
-  awk '/^\[package\]/ { in_pkg = 1; next }
+  awk '/^\[(package|workspace\.package)\]/ { in_pkg = 1; next }
        /^\[/          { in_pkg = 0 }
        in_pkg && /^version[[:space:]]*=/ { split($0, q, "\""); print q[2]; exit }' Cargo.toml
 }
@@ -92,7 +94,7 @@ if [ "$version" != "$current" ]; then
     || die "main is not level with origin/main; pull or push first"
 
   awk -v new="$version" '
-    /^\[package\]/ { in_pkg = 1; print; next }
+    /^\[(package|workspace\.package)\]/ { in_pkg = 1; print; next }
     /^\[/          { in_pkg = 0 }
     in_pkg && /^version[[:space:]]*=/ && !done { printf "version = \"%s\"\n", new; done = 1; next }
     { print }

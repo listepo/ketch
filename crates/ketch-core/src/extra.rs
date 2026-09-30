@@ -207,19 +207,33 @@ pub fn resolve_under(root: &Path, rel: &str) -> Result<PathBuf> {
     Ok(target)
 }
 
+/// ketch's own man pages and completion scripts, as the binary renders them.
+///
+/// Both come from the command-line definition, which belongs to the binary;
+/// the binary hands the renderers in so this crate never depends on the CLI.
+#[derive(Debug, Clone, Copy)]
+pub struct SelfDocs {
+    /// Writes every man page into the given directory, creating it, and
+    /// returns the paths it wrote.
+    pub man_pages: fn(&Path) -> Result<Vec<PathBuf>>,
+    /// One shell's completion script, byte for byte what `ketch completions`
+    /// prints for it.
+    pub completion: fn(clap_complete::Shell) -> Vec<u8>,
+}
+
 /// Write ketch's own man pages and completion scripts into `prefix`.
 ///
 /// Generated under the store so the links that follow have the same ownership
 /// proof as binaries: they point at files ketch placed.
-pub fn write_ketch_docs(prefix: &Path) -> Result<Vec<ExtraPath>> {
-    let mut extras = write_ketch_man_pages(prefix)?;
+pub fn write_ketch_docs(prefix: &Path, docs: SelfDocs) -> Result<Vec<ExtraPath>> {
+    let mut extras = write_ketch_man_pages(prefix, docs)?;
     for shell in CompletionShell::ALL {
         let rel = generated_completion_rel(shell);
         let path = prefix.join(&rel);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
         }
-        std::fs::write(&path, crate::complete::script(shell.to_clap()))
+        std::fs::write(&path, (docs.completion)(shell.to_clap()))
             .map_err(|e| Error::io(&path, e))?;
         extras.push(ExtraPath::Spec(ExtraPathSpec {
             path: rel,
@@ -242,12 +256,12 @@ pub(crate) fn generated_completion_rel(shell: CompletionShell) -> String {
     }
 }
 
-/// Every page from [`crate::man::pages`], under `share/man/man1/`, recorded as
-/// a man extra so uninstall and relink take each one back like any other.
-fn write_ketch_man_pages(prefix: &Path) -> Result<Vec<ExtraPath>> {
+/// Every page `docs` renders, under `share/man/man1/`, recorded as a man
+/// extra so uninstall and relink take each one back like any other.
+fn write_ketch_man_pages(prefix: &Path, docs: SelfDocs) -> Result<Vec<ExtraPath>> {
     let dir_rel = "share/man/man1";
     let dir = prefix.join(dir_rel);
-    Ok(crate::man::write_to(&dir)?
+    Ok((docs.man_pages)(&dir)?
         .iter()
         .filter_map(|path| path.file_name().and_then(|n| n.to_str()))
         .map(|name| ExtraPath::Path(format!("{dir_rel}/{name}")))
@@ -489,41 +503,6 @@ mod tests {
         assert!(resolve_under(root, "doc/missing.1").is_err());
         assert!(resolve_under(root, "../doc/rg.1").is_err());
         assert!(resolve_under(root, "doc").is_err());
-    }
-
-    #[test]
-    fn generated_ketch_docs_classify_and_stay_in_the_prefix() {
-        let tmp = tempfile::tempdir().unwrap();
-        let prefix = tmp.path().join("store/ketch/1.0.0");
-        let extras = write_ketch_docs(&prefix).unwrap();
-        assert!(prefix.join("share/man/man1/ketch.1").is_file());
-        assert!(prefix.join("share/ketch/completions/ketch").is_file());
-        for entry in &extras {
-            classify(entry).unwrap_or_else(|e| panic!("{}: {e}", entry.as_rel_path()));
-        }
-        let man = std::fs::read_to_string(prefix.join("share/man/man1/ketch.1")).unwrap();
-        assert!(man.contains(".TH KETCH 1"), "{man}");
-        assert!(man.contains(".SH SUBCOMMANDS"), "{man}");
-    }
-
-    #[test]
-    fn every_generated_man_page_is_recorded_as_a_man_extra() {
-        let tmp = tempfile::tempdir().unwrap();
-        let prefix = tmp.path().join("store/ketch/1.0.0");
-        let extras = write_ketch_docs(&prefix).unwrap();
-        let recorded: Vec<String> = extras
-            .iter()
-            .map(|e| classify(e).unwrap())
-            .filter(|c| c.kind == ExtraKind::Man)
-            .map(|c| c.rel_path)
-            .collect();
-        let expected: Vec<String> = crate::man::pages()
-            .unwrap()
-            .into_iter()
-            .map(|p| format!("share/man/man1/{}", p.file_name))
-            .collect();
-        assert_eq!(recorded, expected);
-        assert!(recorded.iter().all(|rel| prefix.join(rel).is_file()));
     }
 
     #[test]

@@ -691,8 +691,10 @@ mod tests {
     use super::*;
 
     fn fixture(name: &str) -> PathBuf {
+        // The fixtures are shared with the binary's end-to-end tests, which
+        // live at the workspace root.
         Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures/trust")
+            .join("../../tests/fixtures/trust")
             .join(name)
     }
 

@@ -429,7 +429,8 @@ mod tests {
     #[test]
     fn the_script_self_install_writes_is_the_one_completions_prints() {
         let tmp = tempfile::tempdir().expect("temp dir");
-        crate::extra::write_ketch_docs(tmp.path()).expect("write docs");
+        ketch_core::extra::write_ketch_docs(tmp.path(), crate::self_docs::SELF_DOCS)
+            .expect("write docs");
         let written =
             std::fs::read(tmp.path().join("share/ketch/completions/ketch")).expect("bash script");
         assert_eq!(written, script(clap_complete::Shell::Bash));

@@ -147,7 +147,7 @@ fn held() -> std::sync::MutexGuard<'static, Option<MultiProgress>> {
 /// error message cannot each forget it.
 ///
 /// Only the text is filtered, never the colours: painting happens after.
-pub(crate) fn printable(text: &str) -> String {
+pub fn printable(text: &str) -> String {
     crate::changelog::sanitize(text)
 }
 
@@ -866,7 +866,6 @@ impl Activity {
     /// Which mode this was started in.
     ///
     /// Read by unit tests. `ketch list` does not need it.
-    #[cfg_attr(not(test), expect(dead_code))]
     pub fn kind(&self) -> ActivityKind {
         self.kind
     }
@@ -883,7 +882,6 @@ impl Activity {
     ///
     /// `ketch list` will use this for `N/M packages`. Nothing in this binary
     /// has that shape yet.
-    #[cfg_attr(not(test), expect(dead_code))]
     pub fn set_position(&self, position: u64) {
         self.bar.set_position(position);
     }

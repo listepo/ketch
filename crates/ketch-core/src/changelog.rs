@@ -126,7 +126,7 @@ pub fn from_release(notes: Option<&str>) -> Option<Entry> {
 /// `ketch registry push` borrows it for the registry's copy of a package file,
 /// the other whole file someone else wrote that ketch prints, and `ui::` uses it
 /// on every status line, table cell and error that carries somebody else's text.
-pub(crate) fn sanitize(text: &str) -> String {
+pub fn sanitize(text: &str) -> String {
     text.chars()
         .filter(|&c| match c {
             '\n' | '\t' => true,

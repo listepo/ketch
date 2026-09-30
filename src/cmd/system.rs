@@ -185,7 +185,7 @@ pub fn man(args: &ManArgs) -> Result<()> {
 /// Write one shell's completion script into the platform destination and
 /// record it on the installed `ketch` package so uninstall can take it back.
 pub fn install_completions(cfg: &Config, args: CompletionsArgs) -> Result<()> {
-    crate::self_update::install_completion_script(cfg, args.shell)
+    crate::self_update::install_completion_script(cfg, args.shell, crate::self_docs::SELF_DOCS)
 }
 
 /// Refresh the local copy of the package registry.
@@ -675,7 +675,12 @@ pub fn zelf(cfg: &Config, command: SelfCommand) -> Result<()> {
     match command {
         SelfCommand::Install { force, link_dir } => {
             let version = self_update::current_version();
-            match self_update::install_self(cfg, force, link_dir.as_deref()) {
+            match self_update::install_self(
+                cfg,
+                force,
+                link_dir.as_deref(),
+                crate::self_docs::SELF_DOCS,
+            ) {
                 Ok(out) => {
                     let detail = match &out.replaced {
                         Some(old) if old != &out.package.version => {
@@ -717,7 +722,7 @@ pub fn zelf(cfg: &Config, command: SelfCommand) -> Result<()> {
             if !dry_run {
                 crate::process::offer_to_stop(&self_replacement_paths(cfg), yes);
             }
-            let out = self_update::update(cfg, force, dry_run)?;
+            let out = self_update::update(cfg, force, dry_run, crate::self_docs::SELF_DOCS)?;
             // `replaced` is false both when already current and on dry-run, so
             // the verb has to look at whether an upgrade is actually needed.
             let needs_update = out.to > out.from || force;

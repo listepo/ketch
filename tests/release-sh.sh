@@ -34,12 +34,19 @@ git config tag.gpgsign false
 mkdir scripts src
 cp "$ROOT/scripts/release.sh" scripts/
 cp "$ROOT/cliff.toml" .
+# The layout ketch's own root has: the version lives in [workspace.package]
+# and the package inherits it, so a workspace crate shares it.
 cat >Cargo.toml <<'EOF'
 [package]
 name = "fixture"
-version = "1.2.3"
+version.workspace = true
 edition = "2021"
 rust-version = "1.70"
+
+[workspace]
+
+[workspace.package]
+version = "1.2.3"
 EOF
 echo 'fn main() {}' >src/main.rs
 cat >CHANGELOG.md <<'EOF'
@@ -75,6 +82,7 @@ scripts/release.sh patch --local >/dev/null 2>&1 || fail "--local failed"
 [ "$(git log -1 --format=%s)" = "chore: release v1.2.4" ] || fail "wrong version commit subject"
 grep -q '^version = "1.2.4"$' Cargo.toml || fail "Cargo.toml was not bumped"
 grep -q '^rust-version = "1.70"$' Cargo.toml || fail "rust-version was rewritten"
+grep -q '^version.workspace = true$' Cargo.toml || fail "the inherited version was rewritten"
 grep -q 'name = "fixture"' Cargo.lock && grep -q '^version = "1.2.4"$' Cargo.lock \
     || fail "Cargo.lock does not carry 1.2.4"
 grep -q '^- \*(cli)\* second (\[#7\](https://github.com/listepo/ketch/pull/7))$' CHANGELOG.md \

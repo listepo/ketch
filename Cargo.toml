@@ -1,16 +1,40 @@
 [package]
 name = "ketch"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Catch releases straight from GitHub — a package manager for GitHub-released binaries and apps."
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["package-manager", "github", "releases", "installer", "macos"]
+categories = ["command-line-utilities", "development-tools"]
+
+# The root stays the `ketch` package: dist (`members = ["cargo:."]`),
+# release-plz and the version readers in scripts/ and tests/ all look here.
+# `crates/ketch-core` holds everything the binary does besides parsing the
+# command line, so another front end can link it without clap.
+[workspace]
+members = [".", "crates/ketch-core"]
+# A bare `cargo test` or `cargo clippy` at the root covers the core too.
+default-members = [".", "crates/ketch-core"]
+
+# One version for both crates: the core reports it (user agent, `--version`,
+# the statistics database), so it can never be allowed to drift from the
+# binary's. scripts/release.sh, tests/crate-version.sh and site/sync-docs.py
+# read and write this line.
+[workspace.package]
 version = "0.8.1"
 edition = "2021"
 # Raised from 1.82 by Diesel 2.3, which is the floor for the statistics
 # database. Nothing else in the tree needs it.
 rust-version = "1.86"
-description = "Catch releases straight from GitHub — a package manager for GitHub-released binaries and apps."
 license = "MIT"
 repository = "https://github.com/listepo/ketch"
-readme = "README.md"
-keywords = ["package-manager", "github", "releases", "installer", "macos"]
-categories = ["command-line-utilities", "development-tools"]
+
+# There is no unsafe code in ketch and there is no reason for any to appear.
+[workspace.lints.rust]
+unsafe_code = "forbid"
 
 [[bin]]
 name = "ketch"
@@ -19,56 +43,21 @@ path = "src/main.rs"
 [features]
 # The interactive renderer is deliberately opt-in: the normal binary keeps
 # its dependable line-oriented interface and avoids terminal-only dependencies.
-tui = ["dep:crossterm", "dep:ratatui"]
+# The renderer lives in the core beside `ui`, which drives it.
+tui = ["ketch-core/tui"]
 
 [dependencies]
+ketch-core = { path = "crates/ketch-core" }
 clap = { version = "4", features = ["derive", "env", "wrap_help"] }
 clap_complete = "4"
 # `env` lists each option's environment variable on its man page.
 clap_mangen = { version = "0.3", features = ["env"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-toml = "1.1"
-# Writing a chosen `bin` back into a user manifest without touching the rest
-# of the file, comments and layout included; `toml` alone would re-render it.
-toml_edit = "0.25"
-ureq = { version = "2", features = ["json", "proxy-from-env"] }
-sha2 = "0.11"
-hex = "0.4"
-flate2 = "1"
-bzip2 = "0.6"
-tar = "0.4"
-zip = { version = "8", default-features = false, features = ["deflate"] }
-lzma-rs = "0.3"
-walkdir = "2"
-semver = "1"
 tempfile = "3"
 dirs = "7"
 # canonicalize without Windows `\\?\` UNC prefixes (path compare / display)
 dunce = "1"
-# relative path between two absolute paths (copy_tree, platform link checks)
-pathdiff = "0.2"
-# parse Windows archive member paths correctly on any host (zip-slip guard)
-typed-path = "0.12"
-thiserror = "2"
-indicatif = "0.18"
-# The terminal width `ketch list remote` fits descriptions to. Already in the
-# tree through clap's `wrap_help`, so it costs the binary nothing.
-terminal_size = "0.4"
-crossterm = { version = "0.29", optional = true }
-ratatui = { version = "0.30", optional = true }
-diesel = { version = "2.3", features = ["sqlite", "returning_clauses_for_sqlite_3_35"] }
-diesel_migrations = "2.3"
-# `bundled` compiles SQLite into the binary. Linking the system one would make
-# ketch's single-binary promise depend on what the host happens to ship, and
-# the release builds both macOS architectures where that answer differs.
-libsqlite3-sys = { version = "0.38.2", features = ["bundled"] }
-# `ketch registry push` talks to GitHub through octocrab rather than the ureq
-# client the sources use: it needs forks, refs, contents and pull requests,
-# which octocrab already types and paginates. It is async, hence tokio for a
-# runtime to block on; everything else in ketch stays synchronous.
-octocrab = "0.54"
-tokio = { version = "1", features = ["rt"] }
 # Shared file backup (`<name>.bak-<unix-seconds>`) used by `ketch config reset`.
 # Published on crates.io as `file-backup`; local development against
 # `packages/crates/file-backup` uses a `paths` override in
@@ -76,18 +65,6 @@ tokio = { version = "1", features = ["rt"] }
 # or `[patch]` here — CI and release builds must resolve this from the
 # registry on the committed lock.
 file-backup = "0.1"
-# Publisher signatures (the manifest's `trust` table). Verification only:
-# sigstore without its signing, OCI and TUF-fetching halves, rPGP without
-# bzip2 (signatures are never compressed), minisign-verify has no deps.
-sigstore = { version = "0.14", default-features = false, features = ["verify"] }
-minisign-verify = "0.2"
-pgp = { version = "0.20", default-features = false }
-
-# Legacy Windows conhost prints ANSI escapes as text until a program switches
-# on virtual terminal processing. console does that per handle without unsafe
-# on our side, and is already in the tree through indicatif.
-[target.'cfg(windows)'.dependencies]
-console = { version = "0.16", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 assert_cmd = "2"
@@ -98,10 +75,17 @@ pretty_assertions = "1.4.1"
 proptest = "1.11"
 rstest = "0.26"
 trycmd = "1.2"
+# What tests/ builds fixture archives, lockfiles and registries with.
+flate2 = "1"
+hex = "0.4"
+semver = "1"
+sha2 = "0.11"
+tar = "0.4"
+toml = "1.1"
+zip = { version = "8", default-features = false, features = ["deflate"] }
 
-# There is no unsafe code in ketch and there is no reason for any to appear.
-[lints.rust]
-unsafe_code = "forbid"
+[lints]
+workspace = true
 
 [profile.release]
 opt-level = "z"

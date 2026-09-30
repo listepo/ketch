@@ -1473,7 +1473,7 @@ fn remove_store_dir(cfg: &Config, prefix: &Path) {
 /// named exactly like the package, and inside it after symlinks resolve — so
 /// the caller knows which prefixes it already covered. A name that is not one
 /// plain path component is never joined onto the store.
-pub(crate) fn remove_package_dir(cfg: &Config, name: &str) -> Option<PathBuf> {
+pub fn remove_package_dir(cfg: &Config, name: &str) -> Option<PathBuf> {
     use std::path::Component;
     let mut components = Path::new(name).components();
     if !matches!(

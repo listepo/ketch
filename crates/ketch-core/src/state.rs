@@ -255,7 +255,7 @@ impl Drop for Lock {
 /// exit status alone — and reading it as "gone" steals a lock that is very much
 /// still held.
 #[cfg(unix)]
-pub(crate) fn process_alive(pid: u32) -> bool {
+pub fn process_alive(pid: u32) -> bool {
     std::process::Command::new("/bin/ps")
         .arg("-p")
         .arg(pid.to_string())
@@ -271,7 +271,7 @@ pub(crate) fn process_alive(pid: u32) -> bool {
 /// `tasklist` rather than OpenProcess: keeps the crate free of a Windows-sys
 /// dependency, and a missing tool still fails closed (assume held).
 #[cfg(windows)]
-pub(crate) fn process_alive(pid: u32) -> bool {
+pub fn process_alive(pid: u32) -> bool {
     let output = std::process::Command::new("tasklist")
         .args(["/FI", &format!("PID eq {pid}"), "/NH"])
         .stdout(std::process::Stdio::piped())
@@ -288,7 +288,7 @@ pub(crate) fn process_alive(pid: u32) -> bool {
 }
 
 #[cfg(not(any(unix, windows)))]
-pub(crate) fn process_alive(_pid: u32) -> bool {
+pub fn process_alive(_pid: u32) -> bool {
     true
 }
 
