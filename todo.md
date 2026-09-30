@@ -18,3 +18,10 @@ Empty: F1/F2/M3/F5 and the 2026-09-20 audit follow-ups (A2) are in `done.md`; th
 - M12. Windows completion: PowerShell `Register-ArgumentCompleter` and doskey macros for cmd
 - F11. Emoji icons per operation, `emoji` config key (default true)
 - R4. Fuzz testing with cargo-fuzz / libFuzzer
+- R5. Workspace split: `ketch-core` library crate
+- R6. A reporter instead of the global `ui::` sink
+- R7. Decisions out of the pipeline
+- R8. Core calls from a long-running host
+- R9. `ketch-ffi`: the core exported through UniFFI
+- F12. Native macOS app (SwiftUI) on `ketch-ffi`
+- F13. macOS app release pipeline
