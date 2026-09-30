@@ -409,7 +409,7 @@ fn list(keys: &[(PathBuf, String)]) -> Vec<Occupant> {
 }
 
 #[cfg(windows)]
-fn powershell_exe() -> PathBuf {
+pub(crate) fn powershell_exe() -> PathBuf {
     std::env::var_os("SystemRoot")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(r"C:\Windows"))

@@ -371,6 +371,106 @@ pub fn install_user(cfg: &Config, dry_run: bool) -> Result<Outcome> {
     }
 }
 
+/// A value ketch writes into the Windows registry.
+///
+/// `self uninstall` removes every entry [`registry_entries`] finds, so a new
+/// value ketch starts writing is added here rather than as one more step in
+/// the uninstall — one that a later change could forget.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RegistryEntry {
+    /// The bin dir in `HKCU\Environment\Path`, written by `install.ps1` and
+    /// `ketch path install`.
+    UserPath,
+    /// The command in `HKCU\Software\Microsoft\Command Processor\AutoRun`
+    /// that loads ketch's doskey macros into every cmd.
+    CmdMacros,
+}
+
+impl RegistryEntry {
+    /// How the entry is named when the user is asked to remove it.
+    pub fn describe(self) -> &'static str {
+        match self {
+            Self::UserPath => "the user PATH",
+            Self::CmdMacros => {
+                r"the cmd macros in HKCU\Software\Microsoft\Command Processor\AutoRun"
+            }
+        }
+    }
+
+    /// True when the packages ketch installed rely on the entry, so
+    /// `self uninstall --keep-packages` leaves it; false when it only loads
+    /// ketch itself.
+    pub fn serves_packages(self) -> bool {
+        match self {
+            Self::UserPath => true,
+            Self::CmdMacros => false,
+        }
+    }
+}
+
+/// The registry values ketch wrote that are present now. Always empty off
+/// Windows.
+pub fn registry_entries(cfg: &Config) -> Vec<RegistryEntry> {
+    let mut entries = Vec::new();
+    if user_path_configured(cfg) {
+        entries.push(RegistryEntry::UserPath);
+    }
+    if cmd_macros_configured(cfg) {
+        entries.push(RegistryEntry::CmdMacros);
+    }
+    entries
+}
+
+/// A `ketch doctor` warning for user PATH entries that point into a ketch
+/// root that is gone — left by an uninstall that could not reach the
+/// registry, or by a root deleted by hand. `None` when there are none, and
+/// always off Windows.
+pub fn stale_registry_check(cfg: &Config) -> Option<DoctorCheck> {
+    #[cfg(windows)]
+    {
+        let path = read_user_path().ok()?;
+        let stale = stale_path_entries(&path, &cfg.bin_dir);
+        (!stale.is_empty()).then(|| {
+            DoctorCheck::warn(
+                "user PATH",
+                format!(
+                    "names ketch folders that no longer exist: {}",
+                    stale.join(", ")
+                ),
+                "Remove them from the user PATH in System Properties → Environment Variables.",
+            )
+        })
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = cfg;
+        None
+    }
+}
+
+/// Entries of a Windows PATH that are a ketch bin dir whose folder is gone:
+/// this root's own, or the `bin` of any `.ketch` root, the name every
+/// installer defaults to.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn stale_path_entries<'a>(path: &'a str, bin_dir: &Path) -> Vec<&'a str> {
+    windows_path_entries(path)
+        .filter(|entry| {
+            let key = windows_path_key(Path::new(entry));
+            let ketch_bin = key == windows_path_key(bin_dir) || key.ends_with(r"\.ketch\bin");
+            ketch_bin && !Path::new(entry.trim().trim_matches('"')).exists()
+        })
+        .collect()
+}
+
+/// Remove one registry value ketch wrote.
+#[cfg(windows)]
+pub fn remove_registry_entry(cfg: &Config, entry: RegistryEntry) -> Result<()> {
+    match entry {
+        RegistryEntry::UserPath => uninstall_user(cfg, false).map(|_| ()),
+        RegistryEntry::CmdMacros => uninstall_cmd_macros(cfg).map(|_| ()),
+    }
+}
+
 /// Take the bin dir back out of the Windows user PATH.
 #[cfg(windows)]
 pub fn uninstall_user(cfg: &Config, dry_run: bool) -> Result<Outcome> {
@@ -454,7 +554,18 @@ fn windows_path_entry_list(path: &str) -> Vec<&str> {
 
 #[cfg_attr(not(windows), allow(dead_code))]
 fn windows_path_eq(entry: &str, dir: &Path) -> bool {
-    windows_path_key(Path::new(entry)) == windows_path_key(dir)
+    if windows_path_key(Path::new(entry)) == windows_path_key(dir) {
+        return true;
+    }
+    // The same folder spelled another way: `install.ps1` writes the path
+    // `Resolve-Path` gives, while the root ketch was started with may be an
+    // 8.3 short name (`RUNNER~1`) or go through a link. Folding text cannot
+    // see through either; resolving both can, while the folder still exists.
+    let entry = entry.trim().trim_matches('"').trim_matches('\'');
+    match (dunce::canonicalize(entry), dunce::canonicalize(dir)) {
+        (Ok(a), Ok(b)) => windows_path_key(&a) == windows_path_key(&b),
+        _ => false,
+    }
 }
 
 #[cfg_attr(not(windows), allow(dead_code))]
@@ -1590,5 +1701,58 @@ mod tests {
     ) {
         let dir = Path::new(r"C:\Users\u\.ketch\bin");
         assert_eq!(windows_path_remove(path, dir).as_deref(), expected);
+    }
+
+    // The Windows case is an 8.3 short name; a link is how the same folder
+    // gets a second spelling on a unix test host.
+    #[cfg(unix)]
+    #[test]
+    fn a_path_entry_that_resolves_to_the_bin_dir_is_the_bin_dir() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let bin = tmp.path().join("bin");
+        std::fs::create_dir(&bin).expect("bin");
+        let link = tmp.path().join("alias");
+        std::os::unix::fs::symlink(&bin, &link).expect("link");
+        let path = format!("/usr/bin;{}", link.display());
+        assert!(windows_path_has(&path, &bin));
+        assert_eq!(
+            windows_path_remove(&path, &bin).as_deref(),
+            Some("/usr/bin")
+        );
+    }
+
+    #[test]
+    fn a_path_entry_for_a_missing_folder_matches_only_by_spelling() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let gone = tmp.path().join("gone");
+        assert!(!windows_path_has(&tmp.path().display().to_string(), &gone));
+        assert!(windows_path_has(&gone.display().to_string(), &gone));
+    }
+
+    #[test]
+    fn only_ketch_bin_dirs_that_are_gone_are_stale() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let live = tmp.path().join(".ketch").join("bin");
+        std::fs::create_dir_all(&live).expect("bin");
+        let gone_default = r"C:\Users\u\.ketch\bin";
+        let gone_custom = tmp.path().join("custom").join("bin");
+        let path = format!(
+            r"C:\Windows;{};{gone_default};{};C:\gone\tools\bin",
+            live.display(),
+            gone_custom.display()
+        );
+        let custom = gone_custom.display().to_string();
+        assert_eq!(
+            stale_path_entries(&path, &gone_custom),
+            vec![gone_default, custom.as_str()]
+        );
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn no_registry_entries_are_found_off_windows() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let cfg = Config::load(Some(tmp.path().join("root"))).expect("config");
+        assert!(registry_entries(&cfg).is_empty());
     }
 }

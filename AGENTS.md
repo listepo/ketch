@@ -64,7 +64,8 @@ cargo build                      # debug binary at target/debug/ketch
 The Justfile wraps the same commands with `--locked`: `just fmt`, `just clippy`
 (or `just lint`), `just test`, and `just check` runs what CI runs on this
 host — format, clippy, `cargo nextest run --all-targets`, commitlint fixtures, shell
-syntax on `install.sh` and the release scripts, whether `release.yml` is what
+syntax on `install.sh` and the release scripts, `mandoc -Tlint` on the
+generated man pages when mandoc is present, whether `release.yml` is what
 `dist generate` produces, `dist build` for the host target, and on macOS
 `brew style` on the generated cask. Cross-target
 builds and the Linux/Windows jobs are CI-only.
@@ -222,6 +223,7 @@ conditional, multi-stage Rust automation.
 | `src/stats.rs` | `stats.db`: the history of what was installed, in SQLite |
 | `src/log.rs` | the log file, in text or JSON Lines |
 | `src/changelog.rs` | finding and slicing a client app's changelog |
+| `src/man.rs` | the host's own man pages, one per visible command, rendered from `Cli::command()` |
 | `src/lockfile.rs` | `ketch.lock`: what is installed, pinned to exact releases |
 | `src/listing.rs` | `ketch list`: installed and registry packages merged, `latest` looked up in parallel and cached |
 | `src/push.rs` | `ketch registry push`: a project's `ketch.toml` as a registry pull request, via octocrab |
