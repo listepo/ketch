@@ -301,6 +301,31 @@ These are observed throughout; match them rather than introducing your own.
   throwaway root, fixture archives and a source plugin that serves them, so the
   suite stays offline. Add a case there when a bug could pass every unit test
   in the tree — most of them could.
+- **Core calls are callable from any thread and from a host that outlives
+  the operation.** No `Rc`, thread-local or once-per-process initialisation
+  sits in the install pipeline. Two rules bind whoever calls it:
+  - *Lock.* A mutating operation holds `state::Lock` for its whole run. The
+    lock is non-blocking and exclusive per lock file across processes *and*
+    within this one (a static set of held paths), so a second acquire fails
+    with the typed `Error::Busy { pid, lock }`, never waits and never adopts
+    the lock because the file names our own pid. A lock file naming our own
+    pid with no holder in the set is a stale leftover and is reclaimed. Do not
+    acquire the lock inside an operation that already holds it; it would be
+    `Busy` against itself. The CLI prints the same `another ketch process
+    holds the lock (pid N)` and exits 8.
+  - *Cancel.* `cancel::Cancel` is a cloneable shared flag. A host puts one
+    clone in `InstallRequest::cancel` and keeps another; `cancel()` makes the
+    pipeline return `Error::Cancelled` (exit 130) at its next check: before a
+    package is prepared, between download chunks (`Http::download`,
+    `Source::download` take the token), and before `commit` places anything.
+    A cancelled install has removed its temp dirs and written no state entry.
+    New long-running steps must take the token and check it, not loop without
+    one. The CLI passes tokens that nothing cancels.
+  - *Per operation.* Build `Config` per operation (`Config::load` re-reads
+    `config.toml` and the environment) and call `log::init` per operation; do
+    not cache either across operations. `push.rs` owns a tokio runtime and
+    blocks on it, so call it from a plain worker thread, not from inside an
+    async task.
 - **Best-effort where a partial answer beats no answer.** A broken plugin, an
   unreadable manifest or one unreachable source is warned about and skipped,
   never fatal. A malformed *built-in* registry is a ketch bug and does fail.

@@ -18,6 +18,7 @@
 //! ```
 
 use super::{ListOpts, Source};
+use crate::cancel::Cancel;
 use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::http::{self, Http};
@@ -146,11 +147,20 @@ impl Source for PluginSource {
         asset: &ReleaseAsset,
         dest: &Path,
         progress: &dyn ProgressSink,
+        cancel: &Cancel,
     ) -> Result<String> {
+        cancel.check()?;
         if !self.downloads {
             // No token is ever handed to a plugin's URLs: whatever credentials
             // an asset needs must come from the plugin's own headers.
-            return Http::anonymous().download(&asset.url, dest, &asset.headers, false, progress);
+            return Http::anonymous().download(
+                &asset.url,
+                dest,
+                &asset.headers,
+                false,
+                progress,
+                cancel,
+            );
         }
         let dest_str = dest.to_string_lossy().to_string();
         output(&self.path, &["download", &asset.url, &dest_str])?;

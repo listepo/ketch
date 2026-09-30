@@ -7,6 +7,7 @@
 //! traits, so this file contains no GitHub-specific and no macOS-specific code.
 
 use crate::bin_choice::{self, Picked};
+use crate::cancel::Cancel;
 use crate::config::{sanitize_component, Config};
 use crate::error::{Error, Result};
 use crate::hooks;
@@ -52,6 +53,10 @@ pub struct InstallRequest {
     /// The choice `ketch.lock` recorded, consulted after state's: a fresh
     /// machine has no state, and no terminal to ask on during `ketch sync`.
     pub locked_bin: Option<String>,
+    /// Stops this install at its next check: before the download, between
+    /// chunks, and before anything is placed. Clones share one flag, so a host
+    /// keeps a clone to cancel with. `Cancel::new()` never fires on its own.
+    pub cancel: Cancel,
 }
 
 impl InstallRequest {
@@ -69,6 +74,7 @@ impl InstallRequest {
             interactive: false,
             bin: None,
             locked_bin: None,
+            cancel: Cancel::new(),
         }
     }
 }
@@ -124,6 +130,8 @@ pub struct Prepared {
     /// Set for `local:` installs so list/info can show how the path was used.
     local_kind: Option<LocalKind>,
     local_path: Option<PathBuf>,
+    /// Carried from the request so `commit` can stop before it places anything.
+    cancel: Cancel,
 }
 
 /// Run the pipeline. Mutates `state` in memory; the caller saves it, so a batch
@@ -188,6 +196,7 @@ pub fn prepare(
     req: &InstallRequest,
     progress: &dyn ui::ProgressSink,
 ) -> Result<Prepared> {
+    req.cancel.check()?;
     let started = std::time::Instant::now();
     let platform = crate::platform::host()?;
     let label = req.spec.label();
@@ -331,7 +340,7 @@ pub fn prepare(
             if let Some(path) = &local_path {
                 asset.url = path.to_string_lossy().into_owned();
             }
-            let sha256 = source.download(&asset, &download_path, progress)?;
+            let sha256 = source.download(&asset, &download_path, progress, &req.cancel)?;
 
             // --- checksum -------------------------------------------------------
             check_locked(req, &manifest.name, &asset.name, &sha256)?;
@@ -398,6 +407,7 @@ pub fn prepare(
         started,
         local_kind,
         local_path,
+        cancel: req.cancel.clone(),
     })
 }
 
@@ -595,7 +605,11 @@ pub fn commit(cfg: &Config, state: &mut State, prepared: Prepared) -> Result<Ins
         started,
         local_kind,
         local_path,
+        cancel,
     } = prepared;
+    // Before the first hook or file: later steps are short and leave the tree
+    // consistent on their own, so this is the last point a stop is free.
+    cancel.check()?;
     let mut manifest = manifest;
     let platform = crate::platform::host()?;
     ui::stage(&label, ui::ProgressStage::Installing);
@@ -1926,5 +1940,97 @@ mod tests {
         assert_eq!(select_retained(&pkg, None).unwrap(), 0);
         assert_eq!(select_retained(&pkg, Some("1.0.0")).unwrap(), 0);
         assert!(select_retained(&pkg, Some("0.9.0")).is_err());
+    }
+
+    /// A scratch ketch root and a local program to install from it.
+    #[cfg(unix)]
+    fn local_fixture(dir: &Path, name: &str) -> (Config, PathBuf) {
+        use std::os::unix::fs::PermissionsExt;
+        let cfg = Config::load(Some(dir.join("root"))).unwrap();
+        let program = dir.join(name);
+        std::fs::write(&program, "#!/bin/sh\necho hi\n").unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+        (cfg, program)
+    }
+
+    #[cfg(unix)]
+    fn local_request(program: &Path, cancel: &Cancel) -> InstallRequest {
+        let mut req =
+            InstallRequest::new(PackageSpec::parse(&format!("local:{}", program.display())));
+        req.cancel = cancel.clone();
+        req
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn an_install_cancelled_before_it_commits_leaves_no_store_folder_or_state_entry() {
+        let dir = tempfile::tempdir().unwrap();
+        let (cfg, program) = local_fixture(dir.path(), "canceltool");
+        let sources = SourceRegistry::load(&cfg);
+        let mut state = State::default();
+        let cancel = Cancel::new();
+        let req = local_request(&program, &cancel);
+
+        let prepared =
+            prepare(&cfg, &sources, &state, &req, &ui::SilentProgress).expect("prepare succeeds");
+        // The host pressed Stop after the download, before anything was placed.
+        cancel.cancel();
+        let err = commit(&cfg, &mut state, prepared).expect_err("commit must stop");
+
+        assert!(matches!(err, Error::Cancelled), "got {err}");
+        assert!(state.packages.is_empty(), "no state entry");
+        assert!(
+            !cfg.store_dir.join("canceltool").exists(),
+            "no store folder"
+        );
+        let staged = std::fs::read_dir(&cfg.cache_dir).map(|d| d.count());
+        assert_eq!(staged.unwrap_or(0), 0, "temp dir removed");
+        assert!(!cfg.bin_dir.join("canceltool").exists(), "no link");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_cancelled_token_stops_a_batch_before_any_package_is_prepared() {
+        let dir = tempfile::tempdir().unwrap();
+        let (cfg, program) = local_fixture(dir.path(), "batchtool");
+        let sources = SourceRegistry::load(&cfg);
+        let mut state = State::default();
+        let cancel = Cancel::new();
+        cancel.cancel();
+        let reqs = vec![
+            local_request(&program, &cancel),
+            local_request(&program, &cancel),
+        ];
+
+        for jobs in [1, 2] {
+            let outcomes = batch(&cfg, &sources, &mut state, &reqs, jobs);
+            assert_eq!(outcomes.len(), 2);
+            assert!(outcomes.iter().all(|o| matches!(o, Err(Error::Cancelled))));
+        }
+        assert!(state.packages.is_empty());
+        assert!(!cfg.store_dir.exists() || std::fs::read_dir(&cfg.store_dir).unwrap().count() == 0);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn two_operations_in_one_process_run_one_after_the_other() {
+        let dir = tempfile::tempdir().unwrap();
+        let (cfg, first) = local_fixture(dir.path(), "firsttool");
+        let (_, second) = local_fixture(dir.path(), "secondtool");
+        let sources = SourceRegistry::load(&cfg);
+        let mut state = State::default();
+
+        for program in [&first, &second] {
+            // What a host does per operation: lock, run, release.
+            let _lock = crate::state::Lock::acquire(&cfg).unwrap();
+            install(
+                &cfg,
+                &sources,
+                &mut state,
+                &local_request(program, &Cancel::new()),
+            )
+            .unwrap();
+        }
+        assert_eq!(state.packages.len(), 2);
     }
 }
