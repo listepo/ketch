@@ -126,7 +126,7 @@ fn list_remote(cfg: &Config, args: &ListArgs) -> Result<()> {
     }
 
     let sources = SourceRegistry::load(&crate::ui::ctx(cfg));
-    if listing::fill_latest(cfg, &sources, &mut rows).offline() {
+    if listing::fill_latest(&crate::ui::ctx(cfg), &sources, &mut rows).offline() {
         return Err(Error::msg(
             "could not reach any package source to check the latest versions; \
              `ketch list local` works offline",
@@ -183,7 +183,7 @@ fn list_all(cfg: &Config, args: &ListArgs) -> Result<()> {
     }
 
     let sources = SourceRegistry::load(&crate::ui::ctx(cfg));
-    let offline = listing::fill_latest(cfg, &sources, &mut rows).offline();
+    let offline = listing::fill_latest(&crate::ui::ctx(cfg), &sources, &mut rows).offline();
     // No source answered: the network is missing, not one package. What is
     // installed is still known, so that much is the answer.
     if offline {
@@ -960,7 +960,7 @@ fn installed_for_spec(state: &State, spec: &PackageSpec, raw: &str) -> Option<In
 pub fn why(cfg: &Config, args: WhyArgs) -> Result<()> {
     let spec = PackageSpec::parse(&args.package);
     let sources = SourceRegistry::load(&crate::ui::ctx(cfg));
-    let trace = crate::resolve::explain(cfg, &sources, &spec)?;
+    let trace = crate::resolve::explain(&crate::ui::ctx(cfg), &sources, &spec)?;
     if args.json {
         print_json(&trace)?;
     } else {

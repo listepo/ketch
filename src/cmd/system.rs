@@ -185,7 +185,11 @@ pub fn man(args: &ManArgs) -> Result<()> {
 /// Write one shell's completion script into the platform destination and
 /// record it on the installed `ketch` package so uninstall can take it back.
 pub fn install_completions(cfg: &Config, args: CompletionsArgs) -> Result<()> {
-    crate::self_update::install_completion_script(cfg, args.shell, crate::self_docs::SELF_DOCS)
+    crate::self_update::install_completion_script(
+        &crate::ui::ctx(cfg),
+        args.shell,
+        crate::self_docs::SELF_DOCS,
+    )
 }
 
 /// Refresh the local copy of the package registry.
@@ -676,7 +680,7 @@ pub fn zelf(cfg: &Config, command: SelfCommand) -> Result<()> {
         SelfCommand::Install { force, link_dir } => {
             let version = self_update::current_version();
             match self_update::install_self(
-                cfg,
+                &crate::ui::ctx(cfg),
                 force,
                 link_dir.as_deref(),
                 crate::self_docs::SELF_DOCS,
@@ -720,9 +724,18 @@ pub fn zelf(cfg: &Config, command: SelfCommand) -> Result<()> {
             yes,
         } => {
             if !dry_run {
-                crate::process::offer_to_stop(&self_replacement_paths(cfg), yes);
+                crate::process::offer_to_stop(
+                    &self_replacement_paths(cfg),
+                    yes,
+                    crate::ui::report(),
+                );
             }
-            let out = self_update::update(cfg, force, dry_run, crate::self_docs::SELF_DOCS)?;
+            let out = self_update::update(
+                &crate::ui::ctx(cfg),
+                force,
+                dry_run,
+                crate::self_docs::SELF_DOCS,
+            )?;
             // `replaced` is false both when already current and on dry-run, so
             // the verb has to look at whether an upgrade is actually needed.
             let needs_update = out.to > out.from || force;
@@ -785,7 +798,7 @@ pub fn zelf(cfg: &Config, command: SelfCommand) -> Result<()> {
                     ui::note(&format!("mise still has this ketch; `{run}` removes it"));
                 }
             }
-            for path in self_update::uninstall_self(cfg, &plan)? {
+            for path in self_update::uninstall_self(&crate::ui::ctx(cfg), &plan)? {
                 ui::success("removed", &path.display().to_string());
             }
             Ok(())

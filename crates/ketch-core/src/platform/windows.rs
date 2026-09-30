@@ -524,13 +524,13 @@ impl Platform for WindowsPlatform {
         }
     }
 
-    fn unplace(&self, links: &[LinkRecord]) -> Result<()> {
+    fn unplace(&self, links: &[LinkRecord], report: &crate::report::Report) -> Result<()> {
         for record in links {
             if std::fs::symlink_metadata(&record.link).is_err() {
                 continue;
             }
             if !still_placed(record) {
-                crate::ui::debug(&format!(
+                report.debug(&format!(
                     "leaving {}: it is no longer what ketch placed there",
                     record.link.display()
                 ));
@@ -715,11 +715,16 @@ mod tests {
             role: LinkRole::Binary,
         };
         let p = WindowsPlatform::new();
-        p.unplace(std::slice::from_ref(&record)).unwrap();
+        p.unplace(
+            std::slice::from_ref(&record),
+            &crate::report::Report::silent(),
+        )
+        .unwrap();
         assert!(std::fs::symlink_metadata(&link).is_err());
 
         std::fs::write(&link, cmd_body("mine")).unwrap();
-        p.unplace(&[record]).unwrap();
+        p.unplace(&[record], &crate::report::Report::silent())
+            .unwrap();
         assert!(link.is_file(), "the user's file must survive");
     }
 
@@ -743,7 +748,11 @@ mod tests {
             role: LinkRole::Binary,
         };
         let p = WindowsPlatform::new();
-        p.unplace(std::slice::from_ref(&record)).unwrap();
+        p.unplace(
+            std::slice::from_ref(&record),
+            &crate::report::Report::silent(),
+        )
+        .unwrap();
         assert!(
             link.join("Contents/mine.txt").is_file(),
             "a stale record must not authorize deleting the user's bundle"

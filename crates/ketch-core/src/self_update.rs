@@ -14,15 +14,16 @@
 use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::extra::SelfDocs;
+use crate::install;
 use crate::install::{InstallRequest, Installed};
 use crate::model::{
     AssetSelector, CompletionShell, LinkKind, LinkRecord, LinkRole, PackageSpec, Version,
     VersionSpec,
 };
 use crate::platform::DoctorCheck;
+use crate::report::{Ctx, Report};
 use crate::source::{ListOpts, SourceRegistry};
 use crate::state::{Lock, State};
-use crate::{install, ui};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
@@ -61,20 +62,21 @@ pub fn current_version() -> Version {
 /// checksum. Returns `Error::AlreadyInstalled` when this version already is the
 /// package and `force` is off, like any other install.
 pub fn install_self(
-    cfg: &Config,
+    cx: &Ctx<'_>,
     force: bool,
     link_dir: Option<&Path>,
     docs: SelfDocs,
 ) -> Result<Installed> {
-    let _lock = Lock::acquire(cfg)?;
+    let (cfg, report) = (cx.cfg, cx.report);
+    let _lock = Lock::acquire(cx)?;
     // A previous in-place swap or flat install leaves its aside here. This
     // process is a new one, so the file is no longer the running image and
     // the delete that failed at the end of that swap can succeed. A failure
     // stays a warning: the install can still move the flat binary aside.
-    sweep_stale_asides(&cfg.bin_dir);
+    sweep_stale_asides(&cfg.bin_dir, report);
     let mut state = State::load(cfg)?;
     // Built-in sources only, as in `update`.
-    let sources = SourceRegistry::builtin_only(&crate::ui::ctx(cfg));
+    let sources = SourceRegistry::builtin_only(cx);
     let mut req = InstallRequest::new(PackageSpec::parse(&format!(
         "{}@v{}",
         cfg.self_repo,
@@ -99,23 +101,23 @@ pub fn install_self(
     if let Some(aside) = &aside {
         std::fs::rename(&flat, aside).map_err(|e| Error::io(&flat, e))?;
     }
-    let result = match install::install(cfg, &sources, &mut state, &req) {
+    let result = match install::install(cx, &sources, &mut state, &req) {
         Ok(out) => (|| {
             if let Some(dir) = link_dir {
-                record_bootstrap_link(cfg, &mut state, dir)?;
+                record_bootstrap_link(cx, &mut state, dir)?;
             }
-            expose_self_docs(cfg, &mut state, docs)?;
+            expose_self_docs(cx, &mut state, docs)?;
             state.save(cfg)?;
             Ok(out)
         })(),
         Err(Error::AlreadyInstalled { name, version }) => {
             if let Some(dir) = link_dir {
-                record_bootstrap_link(cfg, &mut state, dir)?;
+                record_bootstrap_link(cx, &mut state, dir)?;
             }
-            if let Err(e) = expose_self_docs(cfg, &mut state, docs) {
-                ui::warn(&format!("could not install man page and completions: {e}"));
+            if let Err(e) = expose_self_docs(cx, &mut state, docs) {
+                report.warn(&format!("could not install man page and completions: {e}"));
             } else if let Err(e) = state.save(cfg) {
-                ui::warn(&format!("could not record man page and completions: {e}"));
+                report.warn(&format!("could not record man page and completions: {e}"));
             }
             Err(Error::AlreadyInstalled { name, version })
         }
@@ -125,7 +127,7 @@ pub fn install_self(
         if result.is_ok() {
             let _ = std::fs::remove_file(&aside);
         } else if let Err(e) = std::fs::rename(&aside, &flat) {
-            ui::warn(&format!(
+            report.warn(&format!(
                 "could not put {} back ({e}); move it to {} by hand",
                 aside.display(),
                 flat.display()
@@ -184,7 +186,8 @@ fn remove_any(path: &Path) -> std::io::Result<()> {
 ///
 /// The link follows `<root>/bin/ketch` so `self upgrade` keeps the bootstrap
 /// path current. Uninstall removes it through the package's link records.
-fn record_bootstrap_link(cfg: &Config, state: &mut State, link_dir: &Path) -> Result<()> {
+fn record_bootstrap_link(cx: &Ctx<'_>, state: &mut State, link_dir: &Path) -> Result<()> {
+    let (cfg, report) = (cx.cfg, cx.report);
     let platform = crate::platform::host()?;
     let bin_dir = canonical_dir(&cfg.bin_dir)?;
     let link_dir = canonical_dir(link_dir)?;
@@ -201,7 +204,7 @@ fn record_bootstrap_link(cfg: &Config, state: &mut State, link_dir: &Path) -> Re
         })
         .unwrap_or_default();
     if !old.is_empty() {
-        platform.unplace(&old)?;
+        platform.unplace(&old, report)?;
     }
 
     if link_dir == bin_dir {
@@ -285,7 +288,8 @@ fn create_bootstrap_link(link: &Path, target: &Path) -> Result<LinkRecord> {
 
 /// Generate ketch's man page and completions into the store prefix and link
 /// them into the user directories `doctor` reports.
-fn expose_self_docs(cfg: &Config, state: &mut State, docs: SelfDocs) -> Result<()> {
+fn expose_self_docs(cx: &Ctx<'_>, state: &mut State, docs: SelfDocs) -> Result<()> {
+    let report = cx.report;
     let Some(pkg) = state.get(SELF_NAME).cloned() else {
         return Ok(());
     };
@@ -305,7 +309,7 @@ fn expose_self_docs(cfg: &Config, state: &mut State, docs: SelfDocs) -> Result<(
         .cloned()
         .collect();
     if !stale.is_empty() {
-        platform.unplace(&stale)?;
+        platform.unplace(&stale, report)?;
     }
     // Windows loads neither directory by itself: a profile block and AutoRun
     // are what switch completion on there.
@@ -316,10 +320,8 @@ fn expose_self_docs(cfg: &Config, state: &mut State, docs: SelfDocs) -> Result<(
             .iter()
             .find(|p| p.rel_path == powershell_rel)
             .map(|p| p.dest.clone());
-        enable_windows_completion(cfg, script.as_deref());
+        enable_windows_completion(cx, script.as_deref());
     }
-    #[cfg(not(windows))]
-    let _ = cfg;
     if let Some(entry) = state.get_mut(SELF_NAME) {
         entry.links.retain(|record| {
             record.role.is_binary() || extra_links.iter().any(|fresh| fresh.link == record.link)
@@ -340,7 +342,8 @@ fn expose_self_docs(cfg: &Config, state: &mut State, docs: SelfDocs) -> Result<(
 /// Switch completion on for PowerShell and cmd. Best effort: completion is
 /// worth a warning when it cannot be set up, never a failed install.
 #[cfg(windows)]
-fn enable_windows_completion(cfg: &Config, script: Option<&Path>) {
+fn enable_windows_completion(cx: &Ctx<'_>, script: Option<&Path>) {
+    let (cfg, report) = (cx.cfg, cx.report);
     if let Some(script) = script {
         match crate::shell::install_powershell_profiles(script) {
             Ok(changes) => {
@@ -351,35 +354,36 @@ fn enable_windows_completion(cfg: &Config, script: Option<&Path>) {
                         change.file.display()
                     );
                     match change.outcome {
-                        Ok(crate::shell::Outcome::Added) => ui::success("added", &what),
-                        Ok(crate::shell::Outcome::Updated) => ui::success("updated", &what),
+                        Ok(crate::shell::Outcome::Added) => report.success("added", &what),
+                        Ok(crate::shell::Outcome::Updated) => report.success("updated", &what),
                         Ok(_) => {}
-                        Err(why) => ui::note(&format!(
+                        Err(why) => report.note(&format!(
                             "{} completion not enabled: {why}",
                             change.shell.label()
                         )),
                     }
                 }
             }
-            Err(e) => ui::warn(&format!("could not enable PowerShell completion: {e}")),
+            Err(e) => report.warn(&format!("could not enable PowerShell completion: {e}")),
         }
     }
     match crate::shell::install_cmd_macros(cfg) {
-        Ok(crate::shell::Outcome::Added) => ui::success(
+        Ok(crate::shell::Outcome::Added) => report.success(
             "added",
             "cmd macros ki, ku, kl, kun (HKCU\\Software\\Microsoft\\Command Processor\\AutoRun)",
         ),
         Ok(_) => {}
-        Err(e) => ui::warn(&format!("could not add the cmd macros: {e}")),
+        Err(e) => report.warn(&format!("could not add the cmd macros: {e}")),
     }
 }
 
 /// Install one shell's completion script the same way `self install` does.
 pub fn install_completion_script(
-    cfg: &Config,
+    cx: &Ctx<'_>,
     shell: clap_complete::Shell,
     docs: SelfDocs,
 ) -> Result<()> {
+    let (cfg, report) = (cx.cfg, cx.report);
     let Some(want) = CompletionShell::from_clap(shell) else {
         return Err(Error::msg(format!(
             "{shell} completions cannot be installed into a user directory"
@@ -391,11 +395,11 @@ pub fn install_completion_script(
             "ketch is not installed as a package; run `ketch self install` first",
         ));
     }
-    expose_self_docs(cfg, &mut state, docs)?;
+    expose_self_docs(cx, &mut state, docs)?;
     state.save(cfg)?;
     let platform = crate::platform::host()?;
     let dest = platform.completion_dir(want);
-    crate::ui::success(
+    report.success(
         "installed",
         &format!("{} completions in {}", want.as_str(), dest.display()),
     );
@@ -411,8 +415,9 @@ pub fn current_exe() -> Result<PathBuf> {
 
 /// Fetch the latest ketch release and install it: as an upgrade of the `ketch`
 /// package when there is one, otherwise by replacing this binary in place.
-pub fn update(cfg: &Config, force: bool, dry_run: bool, docs: SelfDocs) -> Result<SelfUpdate> {
-    let _lock = Lock::acquire(cfg)?;
+pub fn update(cx: &Ctx<'_>, force: bool, dry_run: bool, docs: SelfDocs) -> Result<SelfUpdate> {
+    let (cfg, report) = (cx.cfg, cx.report);
+    let _lock = Lock::acquire(cx)?;
     let mut state = State::load(cfg)?;
     // When ketch is a package, the package is what gets updated, so its
     // version is the one that counts — not this binary's, which a Homebrew
@@ -437,16 +442,17 @@ pub fn update(cfg: &Config, force: bool, dry_run: bool, docs: SelfDocs) -> Resul
 
     // Built-in sources only: a third-party plugin must never be in a position
     // to hand ketch its own replacement.
-    let sources = SourceRegistry::builtin_only(&crate::ui::ctx(cfg));
+    let sources = SourceRegistry::builtin_only(cx);
     let source = sources.get("github")?;
-    ui::step("checking", &cfg.self_repo);
-    let release = ui::activity("checking for updates", None)
-        .run(|_| source.resolve(&cfg.self_repo, &VersionSpec::Latest, &ListOpts::default()))?;
+    report.step("checking", &cfg.self_repo);
+    let release = report
+        .activity("checking for updates")
+        .run(|| source.resolve(&cfg.self_repo, &VersionSpec::Latest, &ListOpts::default()))?;
     let to = release.version.clone();
 
     if to <= from && !force {
         if !dry_run {
-            sweep_stale_asides(&cfg.bin_dir);
+            sweep_stale_asides(&cfg.bin_dir, report);
         }
         return Ok(SelfUpdate {
             from,
@@ -463,18 +469,18 @@ pub fn update(cfg: &Config, force: bool, dry_run: bool, docs: SelfDocs) -> Resul
             notes: release.notes.clone(),
         });
     }
-    sweep_stale_asides(&cfg.bin_dir);
+    sweep_stale_asides(&cfg.bin_dir, report);
 
     if installed.is_some() {
-        let sources = SourceRegistry::builtin_only(&crate::ui::ctx(cfg));
+        let sources = SourceRegistry::builtin_only(cx);
         let mut req = InstallRequest::new(PackageSpec::parse(&format!(
             "{}@{}",
             cfg.self_repo, release.tag
         )));
         req.force = force;
         req.require_checksum = true;
-        install::install(cfg, &sources, &mut state, &req)?;
-        expose_self_docs(cfg, &mut state, docs)?;
+        install::install(cx, &sources, &mut state, &req)?;
+        expose_self_docs(cx, &mut state, docs)?;
         state.save(cfg)?;
         return Ok(SelfUpdate {
             from,
@@ -502,17 +508,17 @@ pub fn update(cfg: &Config, force: bool, dry_run: bool, docs: SelfDocs) -> Resul
     let download = work
         .path()
         .join(crate::config::sanitize_component(&chosen.asset.name));
-    let progress = ui::progress();
+    let progress = report.download("download");
     let sha256 = source.download(
         &chosen.asset,
         &download,
-        progress.as_ref(),
+        &progress,
         &crate::cancel::Cancel::new(),
     )?;
 
     // `require` is hard-coded: for its own binary ketch does not accept the
     // trust-on-first-use path it allows for packages.
-    ui::activity("verifying", None).run(|_| {
+    report.activity("verifying").run(|| {
         install::verify_checksum(
             source.as_ref(),
             &cfg.self_repo,
@@ -520,16 +526,20 @@ pub fn update(cfg: &Config, force: bool, dry_run: bool, docs: SelfDocs) -> Resul
             &chosen.asset,
             &sha256,
             true,
+            report,
         )
     })?;
 
     let unpacked = work.path().join("payload");
-    ui::activity("extracting", None)
-        .run(|_| crate::extract::extract_auto(&download, &unpacked, &platform.extractors()))?;
+    report.activity("extracting").run(|| {
+        crate::extract::extract_auto(&download, &unpacked, &platform.extractors(), report)
+    })?;
     let fresh = find_binary(&unpacked)?;
 
     let exe = current_exe()?;
-    ui::activity("replacing", None).run(|_| replace_binary(&exe, &fresh))?;
+    report
+        .activity("replacing")
+        .run(|| replace_binary(&exe, &fresh, report))?;
     Ok(SelfUpdate {
         from,
         to,
@@ -548,12 +558,12 @@ const VERIFY_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Swap `fresh` into `exe`, keeping the old binary until the new one has shown
 /// it can run. A ketch that cannot start is a ketch that cannot fix itself.
-fn replace_binary(exe: &Path, fresh: &Path) -> Result<()> {
+fn replace_binary(exe: &Path, fresh: &Path, report: &Report) -> Result<()> {
     let backup = swap_backup(exe);
     // The previous swap's aside is this rename's destination. On Windows that
     // delete fails at the end of the swap, because this process is the image
     // just renamed onto it; by the next swap that process has exited.
-    sweep_aside(&backup);
+    sweep_aside(&backup, report);
     // Rename rather than overwrite: the running image stays valid, and a failed
     // copy leaves something to put back. A short antivirus lock is retried;
     // once those pauses are spent the error is returned as before.
@@ -618,11 +628,11 @@ fn aside_candidates(binary: &Path) -> Vec<PathBuf> {
 }
 
 /// Delete one previous aside. Missing is the usual case and not an error.
-fn sweep_aside(path: &Path) {
+fn sweep_aside(path: &Path, report: &Report) {
     match std::fs::remove_file(path) {
         Ok(()) => {}
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-        Err(err) => ui::warn(&format!(
+        Err(err) => report.warn(&format!(
             "could not remove previous binary {} ({err}); the next self-update tries again",
             path.display()
         )),
@@ -630,9 +640,9 @@ fn sweep_aside(path: &Path) {
 }
 
 /// Delete asides sitting in the bin dir before a self command changes anything.
-fn sweep_stale_asides(bin_dir: &Path) {
+fn sweep_stale_asides(bin_dir: &Path, report: &Report) {
     for path in aside_candidates(&bin_dir.join(bootstrap_binary_name())) {
-        sweep_aside(&path);
+        sweep_aside(&path, report);
     }
 }
 
@@ -843,17 +853,18 @@ pub fn uninstall_plan(cfg: &Config, keep_packages: bool, no_brew: bool) -> Resul
 /// Best effort past the first package: someone who has said yes to this wants
 /// ketch gone, and stopping halfway would leave a tree they now have to take
 /// apart by hand. Every failure is warned about instead.
-pub fn uninstall_self(cfg: &Config, plan: &UninstallPlan) -> Result<Vec<PathBuf>> {
+pub fn uninstall_self(cx: &Ctx<'_>, plan: &UninstallPlan) -> Result<Vec<PathBuf>> {
+    let (cfg, report) = (cx.cfg, cx.report);
     let mut removed = Vec::new();
 
     // Uninstall properly rather than deleting files: links and copied app
     // bundles live outside the root and would otherwise be left dangling.
-    let lock = Lock::acquire(cfg)?;
+    let lock = Lock::acquire(cx)?;
     let mut state = State::load(cfg)?;
     for name in &plan.packages {
-        match install::uninstall(cfg, &mut state, name) {
+        match install::uninstall(cx, &mut state, name) {
             Ok(pkg) => removed.push(pkg.prefix),
-            Err(e) => ui::warn(&format!("{name}: {e}")),
+            Err(e) => report.warn(&format!("{name}: {e}")),
         }
     }
     // Save first: if removing the tree fails, state still matches reality.
@@ -865,7 +876,7 @@ pub fn uninstall_self(cfg: &Config, plan: &UninstallPlan) -> Result<Vec<PathBuf>
     #[cfg(windows)]
     for entry in &plan.registry {
         if let Err(e) = crate::shell::remove_registry_entry(cfg, *entry) {
-            ui::warn(&format!("{}: {e}", entry.describe()));
+            report.warn(&format!("{}: {e}", entry.describe()));
         }
     }
 
@@ -878,14 +889,14 @@ pub fn uninstall_self(cfg: &Config, plan: &UninstallPlan) -> Result<Vec<PathBuf>
         && doskey_file_exists(cfg)
     {
         if let Err(e) = crate::shell::uninstall_cmd_macros(cfg) {
-            ui::warn(&format!("cmd macros: {e}"));
+            report.warn(&format!("cmd macros: {e}"));
         }
     }
     for file in &plan.powershell_profiles {
         match crate::shell::uninstall_powershell_profile(file) {
             Ok(true) => removed.push(file.clone()),
             Ok(false) => {}
-            Err(e) => ui::warn(&format!("{}: {e}", file.display())),
+            Err(e) => report.warn(&format!("{}: {e}", file.display())),
         }
     }
 
@@ -893,7 +904,7 @@ pub fn uninstall_self(cfg: &Config, plan: &UninstallPlan) -> Result<Vec<PathBuf>
     // running binary inside it is then that process's to delete, not ours.
     let mut finishing = None;
     if let Some(root) = &plan.root {
-        let (gone, later) = remove_root(cfg, root);
+        let (gone, later) = remove_root(cx, root);
         removed.extend(gone);
         finishing = later.then_some(root);
     }
@@ -901,7 +912,7 @@ pub fn uninstall_self(cfg: &Config, plan: &UninstallPlan) -> Result<Vec<PathBuf>
     // After the root, so the nested `ketch self uninstall` the cask runs on its
     // way out finds no binary and gives up harmlessly instead of recursing.
     if let Some(cask) = &plan.cask {
-        if remove_cask(cask) {
+        if remove_cask(cask, report) {
             removed.push(cask.clone());
         }
     }
@@ -910,7 +921,7 @@ pub fn uninstall_self(cfg: &Config, plan: &UninstallPlan) -> Result<Vec<PathBuf>
         match crate::shell::uninstall_file(file) {
             Ok(true) => removed.push(file.clone()),
             Ok(false) => {}
-            Err(e) => ui::warn(&format!("{}: {e}", file.display())),
+            Err(e) => report.warn(&format!("{}: {e}", file.display())),
         }
     }
 
@@ -930,7 +941,7 @@ pub fn uninstall_self(cfg: &Config, plan: &UninstallPlan) -> Result<Vec<PathBuf>
         None if mise_tool_dir().is_some() => {}
         None => {
             if let Ok(exe) = current_exe() {
-                ui::note(&format!(
+                report.note(&format!(
                     "{} is outside {} and was kept",
                     exe.display(),
                     cfg.root.display()
@@ -943,8 +954,8 @@ pub fn uninstall_self(cfg: &Config, plan: &UninstallPlan) -> Result<Vec<PathBuf>
     // fails outright while it runs, so everything else is done by then.
     if let Some(mise) = &plan.mise {
         #[cfg(windows)]
-        move_out_of(&mise.dir);
-        if unuse_mise(&mise.tool) {
+        move_out_of(&mise.dir, report);
+        if unuse_mise(&mise.tool, report) {
             removed.push(mise.dir.clone());
         }
     }
@@ -975,18 +986,21 @@ fn is_within(path: &Path, root: &Path) -> bool {
 
 /// Returns what was removed, and whether the rest is removed once this
 /// process has exited.
-fn remove_root(cfg: &Config, root: &Path) -> (Vec<PathBuf>, bool) {
-    remove_root_at(cfg, root, dirs::home_dir().as_deref(), finish_after_exit)
+fn remove_root(cx: &Ctx<'_>, root: &Path) -> (Vec<PathBuf>, bool) {
+    remove_root_at(cx, root, dirs::home_dir().as_deref(), |root, left| {
+        finish_after_exit(root, left, cx.report)
+    })
 }
 
 /// `finish` is handed what could not be removed now and says whether it will
 /// be removed later; see [`finish_after_exit`].
 fn remove_root_at(
-    cfg: &Config,
+    cx: &Ctx<'_>,
     root: &Path,
     home: Option<&Path>,
     finish: impl FnOnce(&Path, &[PathBuf]) -> bool,
 ) -> (Vec<PathBuf>, bool) {
+    let (cfg, report) = (cx.cfg, cx.report);
     let wipe = home.is_none_or(|h| cfg.root != h);
     let mut removed = Vec::new();
     let mut left = Vec::new();
@@ -1006,12 +1020,12 @@ fn remove_root_at(
         &cfg.registry_meta,
     ];
     for dir in dirs {
-        remove_owned_dir(dir, wipe, &mut removed, &mut left);
+        remove_owned_dir(dir, wipe, &mut removed, &mut left, report);
     }
     // The log directory holds the file being written to as this runs, so it
     // goes whole and last among the directories.
     if let Some(logs) = cfg.log_file.parent() {
-        remove_owned_dir(logs, wipe, &mut removed, &mut left);
+        remove_owned_dir(logs, wipe, &mut removed, &mut left, report);
     }
     for file in files {
         if !wipe {
@@ -1027,14 +1041,14 @@ fn remove_root_at(
         let paths: Vec<PathBuf> = left.iter().map(|(p, _)| p.clone()).collect();
         // Only a failure nobody will retry is worth a warning.
         if finish(root, &paths) {
-            ui::note(&format!(
+            report.note(&format!(
                 "{} is removed once this ketch has exited",
                 root.display()
             ));
             return (removed, true);
         }
         for (path, e) in &left {
-            ui::warn(&format!("{}: {e}", path.display()));
+            report.warn(&format!("{}: {e}", path.display()));
         }
     }
     if wipe {
@@ -1044,7 +1058,7 @@ fn remove_root_at(
             // Still holding what the warnings above named.
             Err(_) if !left.is_empty() => {}
             // Anything left is something ketch did not write. Say so and leave it.
-            Err(_) => ui::note(&format!(
+            Err(_) => report.note(&format!(
                 "{} was left in place: it holds files ketch did not put there",
                 root.display()
             )),
@@ -1058,6 +1072,7 @@ fn remove_owned_dir(
     wipe: bool,
     removed: &mut Vec<PathBuf>,
     left: &mut Vec<(PathBuf, std::io::Error)>,
+    report: &Report,
 ) {
     let result = if wipe {
         std::fs::remove_dir_all(dir)
@@ -1068,7 +1083,7 @@ fn remove_owned_dir(
         Ok(()) => removed.push(dir.to_path_buf()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(e) if wipe => left.push((dir.to_path_buf(), e)),
-        Err(_) => ui::note(&format!(
+        Err(_) => report.note(&format!(
             "{} was left in place: it holds files ketch did not put there",
             dir.display()
         )),
@@ -1085,7 +1100,7 @@ fn remove_owned_dir(
 /// never deleted with whatever else is in it. `unsafe_code = "forbid"` rules
 /// out `MoveFileExW`'s delay-until-reboot, which would also wait for a reboot.
 #[cfg(windows)]
-fn finish_after_exit(root: &Path, left: &[PathBuf]) -> bool {
+fn finish_after_exit(root: &Path, left: &[PathBuf], report: &Report) -> bool {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
@@ -1118,7 +1133,7 @@ fn finish_after_exit(root: &Path, left: &[PathBuf]) -> bool {
     match command.spawn() {
         Ok(_) => true,
         Err(e) => {
-            ui::warn(&format!(
+            report.warn(&format!(
                 "could not schedule the removal of {}: {e}",
                 root.display()
             ));
@@ -1130,7 +1145,7 @@ fn finish_after_exit(root: &Path, left: &[PathBuf]) -> bool {
 /// Elsewhere a running binary can be deleted, so what is left now stays left:
 /// the warnings already named it.
 #[cfg(not(windows))]
-fn finish_after_exit(_root: &Path, _left: &[PathBuf]) -> bool {
+fn finish_after_exit(_root: &Path, _left: &[PathBuf], _report: &Report) -> bool {
     false
 }
 
@@ -1188,9 +1203,9 @@ fn brew_binary(cask: &Path) -> PathBuf {
 ///
 /// Deleting the Caskroom directory would leave `brew` believing ketch is still
 /// installed, so this runs the real command and reports rather than guesses.
-fn remove_cask(cask: &Path) -> bool {
+fn remove_cask(cask: &Path, report: &Report) -> bool {
     let brew = brew_binary(cask);
-    ui::step("removing", "the Homebrew cask");
+    report.step("removing", "the Homebrew cask");
     // Inherited stdio: `brew` prints its own progress, and asking it to be
     // quiet would hide the sudo prompt it may need.
     match Command::new(&brew)
@@ -1199,14 +1214,14 @@ fn remove_cask(cask: &Path) -> bool {
     {
         Ok(status) if status.success() => true,
         Ok(status) => {
-            ui::warn(&format!(
+            report.warn(&format!(
                 "`brew uninstall --cask {SELF_NAME}` failed ({status}); \
                  run it by hand to finish removing the cask"
             ));
             false
         }
         Err(e) => {
-            ui::warn(&format!("could not run {}: {e}", brew.display()));
+            report.warn(&format!("could not run {}: {e}", brew.display()));
             false
         }
     }
@@ -1261,8 +1276,8 @@ fn mise_tool_name(dir: &Path, self_repo: &str) -> String {
 /// Hand the install back to mise, the only thing that can forget it: removing
 /// the directory would leave the tool in mise's config, to be reinstalled on
 /// the next `mise install`. `-g` because that is how the README installs it.
-fn unuse_mise(tool: &str) -> bool {
-    ui::step("removing", &format!("{tool} from mise"));
+fn unuse_mise(tool: &str, report: &Report) -> bool {
+    report.step("removing", &format!("{tool} from mise"));
     // Inherited stdio, as for brew: mise prints its own progress. `--yes`
     // because the user has just answered this very question, and mise would
     // otherwise ask it again for every version it prunes.
@@ -1272,13 +1287,13 @@ fn unuse_mise(tool: &str) -> bool {
     {
         Ok(status) if status.success() => true,
         Ok(status) => {
-            ui::warn(&format!(
+            report.warn(&format!(
                 "`mise unuse -g {tool}` failed ({status}); run it by hand to finish"
             ));
             false
         }
         Err(e) => {
-            ui::warn(&format!(
+            report.warn(&format!(
                 "could not run mise ({e}); run `mise unuse -g {tool}` by hand"
             ));
             false
@@ -1294,7 +1309,7 @@ fn unuse_mise(tool: &str) -> bool {
 /// a copy, and the file is left for the system's own temp cleanup — nothing
 /// else can delete it while this process is still running.
 #[cfg(windows)]
-fn move_out_of(dir: &Path) {
+fn move_out_of(dir: &Path, report: &Report) {
     let Ok(exe) = current_exe() else {
         return;
     };
@@ -1303,7 +1318,7 @@ fn move_out_of(dir: &Path) {
     }
     let aside = std::env::temp_dir().join(format!("ketch-uninstalled-{}.exe", std::process::id()));
     if let Err(e) = std::fs::rename(&exe, &aside) {
-        ui::warn(&format!(
+        report.warn(&format!(
             "could not move {} out of mise's tree ({e}); mise may fail to remove it",
             exe.display()
         ));
@@ -1451,7 +1466,12 @@ mod tests {
         std::fs::create_dir_all(&cfg.store_dir).expect("store");
         std::fs::write(cfg.store_dir.join("mine"), b"also").expect("store file");
 
-        remove_root_at(&cfg, &cfg.root, Some(&home), |_, _| false);
+        remove_root_at(
+            &Ctx::new(&cfg, &Report::silent()),
+            &cfg.root,
+            Some(&home),
+            |_, _| false,
+        );
 
         assert_eq!(
             std::fs::read(cfg.bin_dir.join("keep-me")).expect("kept bin file"),
@@ -1474,9 +1494,12 @@ mod tests {
         std::fs::create_dir_all(&cfg.bin_dir).expect("bin");
         std::fs::write(cfg.bin_dir.join("gone"), b"x").expect("bin file");
 
-        remove_root_at(&cfg, &cfg.root, Some(&home), |_, _| {
-            panic!("nothing was left to finish later")
-        });
+        remove_root_at(
+            &Ctx::new(&cfg, &Report::silent()),
+            &cfg.root,
+            Some(&home),
+            |_, _| panic!("nothing was left to finish later"),
+        );
 
         assert!(!cfg.bin_dir.exists(), "dedicated bin dir should be gone");
         assert!(!root.exists(), "an emptied root goes too");
@@ -1503,10 +1526,15 @@ mod tests {
             .expect("read-only");
 
         let mut handed = None;
-        remove_root_at(&cfg, &cfg.root, Some(&home), |root, left| {
-            handed = Some((root.to_path_buf(), left.to_vec()));
-            true
-        });
+        remove_root_at(
+            &Ctx::new(&cfg, &Report::silent()),
+            &cfg.root,
+            Some(&home),
+            |root, left| {
+                handed = Some((root.to_path_buf(), left.to_vec()));
+                true
+            },
+        );
         std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755))
             .expect("writable again");
 
@@ -1525,9 +1553,12 @@ mod tests {
         std::fs::create_dir_all(&cfg.store_dir).expect("store");
         std::fs::write(cfg.store_dir.join("mine"), b"x").expect("store file");
 
-        remove_root_at(&cfg, &cfg.root, Some(&home), |_, _| {
-            panic!("the home directory must never be scheduled for removal")
-        });
+        remove_root_at(
+            &Ctx::new(&cfg, &Report::silent()),
+            &cfg.root,
+            Some(&home),
+            |_, _| panic!("the home directory must never be scheduled for removal"),
+        );
     }
 
     fn installed_ketch(prefix: PathBuf) -> crate::model::InstalledPackage {
@@ -1570,7 +1601,7 @@ mod tests {
         let mut state = State::load(&cfg).unwrap();
         state.insert(installed_ketch(cfg.store_dir.join(SELF_NAME)));
         let bootstrap = tmp.path().join("bootstrap");
-        record_bootstrap_link(&cfg, &mut state, &bootstrap).unwrap();
+        record_bootstrap_link(&Ctx::new(&cfg, &Report::silent()), &mut state, &bootstrap).unwrap();
 
         let link = dunce::canonicalize(&bootstrap)
             .unwrap()
@@ -1614,7 +1645,12 @@ mod tests {
 
         let mut state = State::load(&cfg).unwrap();
         state.insert(installed_ketch(cfg.store_dir.join(SELF_NAME)));
-        record_bootstrap_link(&cfg, &mut state, &cfg.bin_dir.clone()).unwrap();
+        record_bootstrap_link(
+            &Ctx::new(&cfg, &Report::silent()),
+            &mut state,
+            &cfg.bin_dir.clone(),
+        )
+        .unwrap();
 
         assert!(
             std::fs::symlink_metadata(&bin)
@@ -1671,9 +1707,9 @@ mod tests {
         let exe = tmp.path().join(bootstrap_binary_name());
         let backup = swap_backup(&exe);
         std::fs::write(&backup, b"old").unwrap();
-        sweep_aside(&backup);
+        sweep_aside(&backup, &Report::silent());
         assert!(!backup.exists());
-        sweep_aside(&backup);
+        sweep_aside(&backup, &Report::silent());
     }
 
     #[test]

@@ -47,7 +47,7 @@ pub fn sync(cfg: &Config, args: SyncArgs) -> Result<()> {
     let path = lockfile::path(args.file.as_deref());
     let lock = Lockfile::load(&path)?;
 
-    let _guard = Lock::acquire(cfg)?;
+    let _guard = Lock::acquire(&crate::ui::ctx(cfg))?;
     let sources = SourceRegistry::load(&crate::ui::ctx(cfg));
     let mut state = State::load(cfg)?;
     let plan = lockfile::plan(&lock, &state);
@@ -90,10 +90,13 @@ pub fn sync(cfg: &Config, args: SyncArgs) -> Result<()> {
         .map(|entry| request_for(cfg, entry, &target))
         .collect::<Result<Vec<_>>>()?;
     let jobs = crate::cmd::pkg::jobs(cfg, args.jobs);
-    for (entry, outcome) in wanted
-        .iter()
-        .zip(install::batch(cfg, &sources, &mut state, &reqs, jobs))
-    {
+    for (entry, outcome) in wanted.iter().zip(install::batch(
+        &crate::ui::ctx(cfg),
+        &sources,
+        &mut state,
+        &reqs,
+        jobs,
+    )) {
         match outcome {
             Ok(out) => {
                 done += 1;
@@ -118,7 +121,7 @@ pub fn sync(cfg: &Config, args: SyncArgs) -> Result<()> {
 
     if prune {
         for name in &plan.extra {
-            match install::uninstall(cfg, &mut state, name) {
+            match install::uninstall(&crate::ui::ctx(cfg), &mut state, name) {
                 Ok(pkg) => {
                     done += 1;
                     ui::success("removed", &format!("{} {}", pkg.name, pkg.version));

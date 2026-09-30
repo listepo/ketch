@@ -19,8 +19,8 @@
 
 use crate::error::{Error, Result};
 use crate::model::{Provenance, Release, ReleaseAsset, TrustMode, TrustPolicy, Verifier};
+use crate::report::{Report, SilentProgress};
 use crate::source::Source;
-use crate::ui;
 use pgp::composed::{Deserializable, DetachedSignature, SignedPublicKey};
 use pgp::packet::{Signature, SignatureType};
 use pgp::types::KeyDetails;
@@ -83,13 +83,14 @@ pub fn verify(
     download: &Path,
     sha256: &str,
     staging: &Path,
+    report: &Report,
 ) -> Result<Option<Provenance>> {
     let Some(policy) = policy else {
         return Ok(None);
     };
     match check(policy, source, release, asset, download, sha256, staging) {
         Ok(provenance) => {
-            ui::step(
+            report.step(
                 "verified",
                 &format!(
                     "{} {} signature by {}",
@@ -98,20 +99,25 @@ pub fn verify(
             );
             Ok(Some(provenance))
         }
-        Err(reason) => refuse(policy, &asset.name, &reason.to_string()),
+        Err(reason) => refuse(policy, &asset.name, &reason.to_string(), report),
     }
 }
 
 /// A policy that could not be satisfied: an error, or a warning when the
-/// manifest asked for one.
-pub fn refuse(policy: &TrustPolicy, what: &str, reason: &str) -> Result<Option<Provenance>> {
+/// manifest asked for one, said on `report`.
+pub fn refuse(
+    policy: &TrustPolicy,
+    what: &str,
+    reason: &str,
+    report: &Report,
+) -> Result<Option<Provenance>> {
     match policy.mode {
         TrustMode::Require => Err(Error::msg(format!(
             "{what}: the {} signature the manifest requires could not be verified: {reason}",
             policy.verifier
         ))),
         TrustMode::Warn => {
-            ui::warn(&format!(
+            report.warn(&format!(
                 "{what}: {} signature not verified ({reason}); installing on its checksum alone",
                 policy.verifier
             ));
@@ -182,8 +188,8 @@ fn check(
     Ok(Provenance {
         verifier: policy.verifier,
         // Pinned by a manifest ketch did not write, and bound for the log
-        // file, which `ui` does not filter: cleaned once, here.
-        identity: ui::printable(&identity),
+        // file and every front end: cleaned once, here.
+        identity: crate::changelog::sanitize(&identity),
         signature: sidecar.name.clone(),
         signature_sha256: sidecar_sha256,
         signed,

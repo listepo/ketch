@@ -12,7 +12,7 @@ use std::process::Command;
 use std::sync::mpsc;
 use std::time::Duration;
 
-use crate::ui;
+use crate::report::Report;
 
 /// How long a listing subprocess may run before it is stopped. The listing
 /// is best-effort ("could not list" and "nobody" are the same answer), so a
@@ -30,11 +30,12 @@ pub struct Occupant {
 }
 
 /// Ask to stop processes using `paths`. `--yes` stops them without asking;
-/// a decline leaves them running and the caller continues as before.
-pub fn offer_to_stop(paths: &[PathBuf], yes: bool) {
+/// a decline leaves them running and the caller continues as before. The
+/// question is `report`'s to ask: a front end that cannot ask declines.
+pub fn offer_to_stop(paths: &[PathBuf], yes: bool, report: &Report) {
     let me = std::process::id();
     let mut seen = BTreeSet::new();
-    let occupants: Vec<Occupant> = using(paths)
+    let occupants: Vec<Occupant> = using(paths, report)
         .into_iter()
         .filter(|o| o.pid != me && seen.insert(o.pid))
         .collect();
@@ -42,7 +43,7 @@ pub fn offer_to_stop(paths: &[PathBuf], yes: bool) {
         return;
     }
     for occupant in &occupants {
-        ui::step(
+        report.step(
             "in use",
             &format!("pid {} {}", occupant.pid, occupant.path.display()),
         );
@@ -59,22 +60,23 @@ pub fn offer_to_stop(paths: &[PathBuf], yes: bool) {
             occupants.len()
         )
     };
-    if !(yes || ui::offer(&question, false)) {
+    if !(yes || report.offer(&question, false)) {
         return;
     }
     for occupant in occupants {
-        ui::step("stopping", &format!("pid {}", occupant.pid));
+        report.step("stopping", &format!("pid {}", occupant.pid));
         terminate(occupant.pid);
     }
 }
 
 /// Processes running from, or with a command line naming, one of `paths`.
-pub fn using(paths: &[PathBuf]) -> Vec<Occupant> {
+/// A listing that had to be stopped is a warning on `report`.
+pub fn using(paths: &[PathBuf], report: &Report) -> Vec<Occupant> {
     let keys = unique_keys(paths);
     if keys.is_empty() {
         return Vec::new();
     }
-    list(&keys)
+    list(&keys, report)
 }
 
 fn unique_keys(paths: &[PathBuf]) -> Vec<(PathBuf, String)> {
@@ -188,12 +190,16 @@ pub(crate) fn run_bounded(mut command: Command, timeout: Duration) -> Bounded {
 /// A listing is best-effort, so a child that does not finish is warned about,
 /// stopped, and reported as "no listing". Linux reads `/proc` instead.
 #[cfg(any(windows, target_os = "macos"))]
-fn output_bounded(command: Command, timeout: Duration) -> Option<std::process::Output> {
+fn output_bounded(
+    command: Command,
+    timeout: Duration,
+    report: &Report,
+) -> Option<std::process::Output> {
     match run_bounded(command, timeout) {
         Bounded::Done(out) => Some(out),
         Bounded::Failed(_) => None,
         Bounded::Stopped { program, pid } => {
-            ui::warn(&stopped_detail(&program, pid, timeout));
+            report.warn(&stopped_detail(&program, pid, timeout));
             None
         }
     }
@@ -343,7 +349,7 @@ fn cmd_hits(cmdline: &str, candidate: &Path, key: &str) -> bool {
 }
 
 #[cfg(target_os = "linux")]
-fn list(keys: &[(PathBuf, String)]) -> Vec<Occupant> {
+fn list(keys: &[(PathBuf, String)], _report: &Report) -> Vec<Occupant> {
     let mut found = Vec::new();
     let Ok(dir) = std::fs::read_dir("/proc") else {
         return found;
@@ -384,7 +390,7 @@ fn linux_fd_hits(proc_dir: &Path, candidate: &Path, key: &str) -> bool {
 }
 
 #[cfg(target_os = "macos")]
-fn list(keys: &[(PathBuf, String)]) -> Vec<Occupant> {
+fn list(keys: &[(PathBuf, String)], report: &Report) -> Vec<Occupant> {
     let mut found = Vec::new();
     for (path, _) in keys {
         let mut command = Command::new("lsof");
@@ -393,7 +399,7 @@ fn list(keys: &[(PathBuf, String)]) -> Vec<Occupant> {
             .arg(path)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null());
-        let Some(out) = output_bounded(command, LIST_TIMEOUT) else {
+        let Some(out) = output_bounded(command, LIST_TIMEOUT, report) else {
             continue;
         };
         for line in String::from_utf8_lossy(&out.stdout).lines() {
@@ -417,7 +423,7 @@ pub(crate) fn powershell_exe() -> PathBuf {
 }
 
 #[cfg(windows)]
-fn list(keys: &[(PathBuf, String)]) -> Vec<Occupant> {
+fn list(keys: &[(PathBuf, String)], report: &Report) -> Vec<Occupant> {
     let mut command = Command::new(powershell_exe());
     command
         .args([
@@ -428,7 +434,7 @@ fn list(keys: &[(PathBuf, String)]) -> Vec<Occupant> {
         ])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null());
-    let Some(out) = output_bounded(command, LIST_TIMEOUT) else {
+    let Some(out) = output_bounded(command, LIST_TIMEOUT, report) else {
         return Vec::new();
     };
     let mut found = Vec::new();
@@ -454,7 +460,7 @@ fn list(keys: &[(PathBuf, String)]) -> Vec<Occupant> {
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
-fn list(_keys: &[(PathBuf, String)]) -> Vec<Occupant> {
+fn list(_keys: &[(PathBuf, String)], _report: &Report) -> Vec<Occupant> {
     Vec::new()
 }
 
@@ -582,7 +588,7 @@ mod tests {
             if let Some(status) = child.0.try_wait().expect("poll sleeper") {
                 panic!("sleeper exited before it was listed: {status:?}");
             }
-            if let Some(found) = using(&paths).into_iter().next() {
+            if let Some(found) = using(&paths, &Report::silent()).into_iter().next() {
                 return found;
             }
             if std::time::Instant::now() >= deadline {
@@ -623,7 +629,16 @@ mod tests {
         let mut child = spawn_sleeper(&copy);
         let found = wait_for(&copy, &mut child);
         assert_eq!(found.pid, child.0.id());
-        offer_to_stop(&[copy], true);
+        let recorder = std::sync::Arc::new(crate::report::Recorder::default());
+        offer_to_stop(&[copy], true, &Report::shared(recorder.clone()));
+        let pid = format!("pid {}", found.pid);
+        assert!(
+            recorder.events().contains(&crate::report::Event::Status {
+                verb: "stopping".into(),
+                detail: pid,
+            }),
+            "`--yes` must say which process it stops"
+        );
         // Blocking, not polled: a child `offer_to_stop` missed runs out its
         // 30 s sleep and exits successfully, which the assertion rejects.
         let status = child.0.wait().unwrap();
@@ -673,7 +688,8 @@ mod tests {
     fn a_listing_that_finishes_is_returned() {
         let mut command = Command::new("cmd.exe");
         command.args(["/c", "echo found"]);
-        let out = output_bounded(command, Duration::from_secs(10)).expect("cmd finishes");
+        let out = output_bounded(command, Duration::from_secs(10), &Report::silent())
+            .expect("cmd finishes");
         assert!(String::from_utf8_lossy(&out.stdout).contains("found"));
     }
 

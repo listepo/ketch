@@ -186,8 +186,9 @@ pub trait Platform: Send + Sync {
         Vec::new()
     }
 
-    /// Undo `place`. Must tolerate links that are already gone.
-    fn unplace(&self, links: &[LinkRecord]) -> Result<()>;
+    /// Undo `place`. Must tolerate links that are already gone, and leaves a
+    /// link that is no longer ketch's, saying so on `report`.
+    fn unplace(&self, links: &[LinkRecord], report: &crate::report::Report) -> Result<()>;
 
     /// Inspect downloaded code before it is exposed to the user.
     fn verify_trust(&self, _path: &Path) -> Result<TrustVerdict> {

@@ -443,13 +443,13 @@ pub(crate) fn place_cli(platform: &dyn Platform, plan: &Placement<'_>) -> Result
 }
 
 /// Undo `place`. Must tolerate links that are already gone.
-pub(crate) fn unplace(links: &[LinkRecord]) -> Result<()> {
+pub(crate) fn unplace(links: &[LinkRecord], report: &crate::report::Report) -> Result<()> {
     for record in links {
         if std::fs::symlink_metadata(&record.link).is_err() {
             continue;
         }
         if !still_placed(record) {
-            crate::ui::debug(&format!(
+            report.debug(&format!(
                 "leaving {}: it is no longer what ketch placed there",
                 record.link.display()
             ));

@@ -1635,7 +1635,11 @@ mod tests {
     #[test]
     fn uninstalling_cmd_macros_removes_the_file_and_empty_dirs_only() {
         let tmp = tempfile::tempdir().expect("temp dir");
-        let cfg = Config::load(Some(tmp.path().to_path_buf())).expect("config");
+        let cfg = Config::load(
+            Some(tmp.path().to_path_buf()),
+            &crate::report::Report::silent(),
+        )
+        .expect("config");
         let file = doskey_file(&cfg);
         std::fs::create_dir_all(file.parent().expect("parent")).expect("dirs");
         std::fs::write(&file, DOSKEY_MACROS).expect("write");

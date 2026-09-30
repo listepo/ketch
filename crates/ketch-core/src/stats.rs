@@ -211,18 +211,18 @@ fn open(path: &Path) -> Result<SqliteConnection> {
 
 /// Records an event without allowing statistics failures to affect the caller.
 ///
-/// Database write failures are reported as warnings.
+/// Database write failures are warnings on `cx.report`.
 ///
 /// # Examples
 ///
 /// ```ignore
-/// # let cfg: Config = todo!();
+/// # let cx: Ctx<'_> = todo!();
 /// # let event: NewEvent<'_> = todo!();
-/// record(&cfg, &event);
+/// record(&cx, &event);
 /// ```
-pub fn record(cfg: &Config, event: &NewEvent<'_>) {
-    if let Err(e) = record_at(&cfg.stats_db, event) {
-        crate::ui::warn(&format!("could not record statistics: {e}"));
+pub fn record(cx: &crate::report::Ctx<'_>, event: &NewEvent<'_>) {
+    if let Err(e) = record_at(&cx.cfg.stats_db, event) {
+        cx.report.warn(&format!("could not record statistics: {e}"));
     }
 }
 

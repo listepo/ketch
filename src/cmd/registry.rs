@@ -316,7 +316,7 @@ fn install_from_fixture(
     let sources = SourceRegistry::load(&crate::ui::ctx(cfg));
     let mut state = State::default();
     install::install(
-        cfg,
+        &crate::ui::ctx(cfg),
         &sources,
         &mut state,
         &InstallRequest::new(PackageSpec::parse(&rewritten.name)),

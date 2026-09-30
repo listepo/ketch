@@ -27,13 +27,19 @@ pub trait Extractor: Send + Sync {
     fn extract(&self, src: &Path, dest: &Path) -> Result<()>;
 }
 
-/// Pick an extractor and run it. Returns the id of the one that ran.
-pub fn extract_auto(src: &Path, dest: &Path, extractors: &[Box<dyn Extractor>]) -> Result<String> {
+/// Pick an extractor and run it. Returns the id of the one that ran, and
+/// traces the choice on `report`.
+pub fn extract_auto(
+    src: &Path,
+    dest: &Path,
+    extractors: &[Box<dyn Extractor>],
+    report: &crate::report::Report,
+) -> Result<String> {
     let head = read_head(src)?;
     std::fs::create_dir_all(dest).map_err(|e| Error::io(dest, e))?;
     for extractor in extractors {
         if extractor.detect(src, &head) {
-            crate::ui::debug(&format!(
+            report.debug(&format!(
                 "extracting {} with `{}`",
                 src.display(),
                 extractor.id()

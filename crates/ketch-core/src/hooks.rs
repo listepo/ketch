@@ -10,8 +10,8 @@
 
 use crate::error::{Error, Result};
 use crate::model::{Hooks, ManifestOrigin};
+use crate::report::Report;
 use crate::source::plugin::run_with_deadline;
-use crate::ui;
 use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
@@ -68,6 +68,8 @@ pub struct Context<'a> {
     pub prefix: &'a Path,
     pub bin_dir: &'a Path,
     pub root: &'a Path,
+    /// Where the hook's announcement, its output and an `after_*` failure go.
+    pub report: &'a Report,
 }
 
 /// Whether a manifest of this origin may run hooks at all.
@@ -96,7 +98,7 @@ fn run_with(hooks: &Hooks, event: Event, ctx: &Context<'_>, timeout: Duration) -
         return Ok(());
     };
     let label = format!("{} hook for {}", event.key(), ctx.name);
-    ui::step("running", &label);
+    ctx.report.step("running", &label);
     let mut cmd = shell(script);
     cmd.env("KETCH_HOOK", event.key())
         .env("KETCH_PACKAGE", ctx.name)
@@ -121,7 +123,7 @@ fn run_with(hooks: &Hooks, event: Event, ctx: &Context<'_>, timeout: Duration) -
             stderr: String::from_utf8_lossy(&err).to_string(),
         })?;
     for line in String::from_utf8_lossy(&out).lines() {
-        ui::debug(&format!("{}: {line}", event.key()));
+        ctx.report.debug(&format!("{}: {line}", event.key()));
     }
     if status.success() {
         return Ok(());
@@ -137,9 +139,9 @@ fn run_with(hooks: &Hooks, event: Event, ctx: &Context<'_>, timeout: Duration) -
 /// `state` records it, so a hook failing now is reported, never propagated.
 pub fn run_or_warn(hooks: &Hooks, event: Event, ctx: &Context<'_>) {
     if let Err(e) = run(hooks, event, ctx) {
-        ui::warn(&e.to_string());
+        ctx.report.warn(&e.to_string());
         for line in e.details() {
-            ui::warn(&line);
+            ctx.report.warn(&line);
         }
     }
 }
@@ -177,6 +179,9 @@ pub(crate) fn fuzz_shell(script: &str) -> Command {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+    use std::sync::LazyLock;
+
+    static SILENT: LazyLock<Report> = LazyLock::new(Report::silent);
 
     fn hooks(after_install: &str) -> Hooks {
         Hooks {
@@ -193,6 +198,7 @@ mod tests {
             prefix,
             bin_dir: Path::new("bin"),
             root: Path::new("root"),
+            report: &SILENT,
         }
     }
 
@@ -286,5 +292,44 @@ mod tests {
         ))));
         assert!(!allowed(&ManifestOrigin::Builtin));
         assert!(!allowed(&ManifestOrigin::Inferred));
+    }
+
+    #[test]
+    fn a_hook_is_announced_and_its_output_is_traced() {
+        use crate::report::{Event as Said, Recorder};
+        let recorder = std::sync::Arc::new(Recorder::default());
+        let report = Report::shared(recorder.clone());
+        let ctx = Context {
+            report: &report,
+            ..context(Path::new("nowhere"), None)
+        };
+        run(&hooks("echo hello"), Event::AfterInstall, &ctx).unwrap();
+        assert_eq!(
+            recorder.events(),
+            [
+                Said::Status {
+                    verb: "running".into(),
+                    detail: "after_install hook for tool".into(),
+                },
+                Said::Debug {
+                    detail: "after_install: hello".into(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn a_failed_after_hook_is_a_warning_not_an_error() {
+        use crate::report::{Event as Said, Recorder};
+        let recorder = std::sync::Arc::new(Recorder::default());
+        let report = Report::shared(recorder.clone());
+        let ctx = Context {
+            report: &report,
+            ..context(Path::new("nowhere"), None)
+        };
+        run_or_warn(&hooks("exit 3"), Event::AfterInstall, &ctx);
+        assert!(recorder.events().iter().any(
+            |e| matches!(e, Said::Warn { detail } if detail.contains("after_install hook for tool"))
+        ));
     }
 }
