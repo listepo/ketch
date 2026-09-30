@@ -296,6 +296,22 @@ fn uninstall_removes_every_trace_of_a_tool() {
     assert!(sandbox.ok(&["list", "local"]).contains("nothing installed"));
 }
 
+#[test]
+fn uninstall_removes_the_package_folder_with_what_a_failed_swap_left_in_it() {
+    let sandbox = Sandbox::new();
+    publish_tool(&sandbox, "1.0.0");
+    sandbox.ok(&["install", "test:testtool", "--yes"]);
+    // What `move_into_store` leaves when its best-effort cleanup fails.
+    let folder = sandbox.store().join("testtool");
+    std::fs::create_dir_all(folder.join("1.0.0.old")).expect("plant .old");
+    std::fs::write(folder.join("1.0.0.old").join("stale"), b"x").expect("stale file");
+    std::fs::create_dir_all(folder.join("1.0.0.incoming")).expect("plant .incoming");
+
+    sandbox.ok(&["uninstall", "testtool", "--yes"]);
+
+    assert!(!folder.exists(), "{} survived", folder.display());
+}
+
 /// A user manifest whose every hook appends its name, the versions it saw and
 /// where it ran to one file, so a run of commands leaves an order to assert
 /// on. `replace` swaps one hook's command for another.

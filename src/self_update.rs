@@ -859,12 +859,20 @@ pub fn uninstall_self(cfg: &Config, plan: &UninstallPlan) -> Result<Vec<PathBuf>
 /// `store`, `cache`, …) are not emptied either — they are shared with the
 /// rest of the account. A dedicated root like `~/.ketch` is still wiped.
 fn remove_root(cfg: &Config, root: &Path) -> Vec<PathBuf> {
-    remove_root_at(cfg, root, dirs::home_dir().as_deref())
+    remove_root_at(cfg, root, dirs::home_dir().as_deref(), finish_after_exit)
 }
 
-fn remove_root_at(cfg: &Config, root: &Path, home: Option<&Path>) -> Vec<PathBuf> {
+/// `finish` is handed what could not be removed now and says whether it will
+/// be removed later; see [`finish_after_exit`].
+fn remove_root_at(
+    cfg: &Config,
+    root: &Path,
+    home: Option<&Path>,
+    finish: impl FnOnce(&Path, &[PathBuf]) -> bool,
+) -> Vec<PathBuf> {
     let wipe = home.is_none_or(|h| cfg.root != h);
     let mut removed = Vec::new();
+    let mut left = Vec::new();
     let dirs = [
         &cfg.bin_dir,
         &cfg.store_dir,
@@ -881,12 +889,12 @@ fn remove_root_at(cfg: &Config, root: &Path, home: Option<&Path>) -> Vec<PathBuf
         &cfg.registry_meta,
     ];
     for dir in dirs {
-        remove_owned_dir(dir, wipe, &mut removed);
+        remove_owned_dir(dir, wipe, &mut removed, &mut left);
     }
     // The log directory holds the file being written to as this runs, so it
     // goes whole and last among the directories.
     if let Some(logs) = cfg.log_file.parent() {
-        remove_owned_dir(logs, wipe, &mut removed);
+        remove_owned_dir(logs, wipe, &mut removed, &mut left);
     }
     for file in files {
         if !wipe {
@@ -895,13 +903,26 @@ fn remove_root_at(cfg: &Config, root: &Path, home: Option<&Path>) -> Vec<PathBuf
         match std::fs::remove_file(file) {
             Ok(()) => removed.push(file.clone()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => ui::warn(&format!("{}: {e}", file.display())),
+            Err(e) => {
+                ui::warn(&format!("{}: {e}", file.display()));
+                left.push(file.clone());
+            }
         }
     }
     if wipe {
         match std::fs::remove_dir(root) {
             Ok(()) => removed.push(root.to_path_buf()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            // What ketch failed to remove is still in there; the warnings above
+            // named it, and it may yet go once this process has exited.
+            Err(_) if !left.is_empty() => {
+                if finish(root, &left) {
+                    ui::note(&format!(
+                        "{} is removed once this ketch has exited",
+                        root.display()
+                    ));
+                }
+            }
             // Anything left is something ketch did not write. Say so and leave it.
             Err(_) => ui::note(&format!(
                 "{} was left in place: it holds files ketch did not put there",
@@ -912,7 +933,7 @@ fn remove_root_at(cfg: &Config, root: &Path, home: Option<&Path>) -> Vec<PathBuf
     removed
 }
 
-fn remove_owned_dir(dir: &Path, wipe: bool, removed: &mut Vec<PathBuf>) {
+fn remove_owned_dir(dir: &Path, wipe: bool, removed: &mut Vec<PathBuf>, left: &mut Vec<PathBuf>) {
     let result = if wipe {
         std::fs::remove_dir_all(dir)
     } else {
@@ -921,12 +942,74 @@ fn remove_owned_dir(dir: &Path, wipe: bool, removed: &mut Vec<PathBuf>) {
     match result {
         Ok(()) => removed.push(dir.to_path_buf()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) if wipe => ui::warn(&format!("{}: {e}", dir.display())),
+        Err(e) if wipe => {
+            ui::warn(&format!("{}: {e}", dir.display()));
+            left.push(dir.to_path_buf());
+        }
         Err(_) => ui::note(&format!(
             "{} was left in place: it holds files ketch did not put there",
             dir.display()
         )),
     }
+}
+
+/// Remove `left`, then `root` if that empties it, once this process exits.
+///
+/// Windows will not delete the image of a running process, and the ketch
+/// running `self uninstall` is usually `store/ketch/<version>/ketch.exe` —
+/// inside the root it is removing. A detached PowerShell waits for this PID
+/// and finishes the job. It removes only the paths ketch named, and the root
+/// with a non-recursive delete, so the rule above holds: the root itself is
+/// never deleted with whatever else is in it. `unsafe_code = "forbid"` rules
+/// out `MoveFileExW`'s delay-until-reboot, which would also wait for a reboot.
+#[cfg(windows)]
+fn finish_after_exit(root: &Path, left: &[PathBuf]) -> bool {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+    // The paths travel in environment variables so a quote or `$` in one
+    // cannot break out of the script.
+    const SCRIPT: &str = "$ErrorActionPreference = 'SilentlyContinue'; \
+        Wait-Process -Id $env:KETCH_WAIT_PID -Timeout 300; \
+        foreach ($p in ($env:KETCH_LEFTOVERS -split \"`n\")) { \
+            if ($p) { Remove-Item -LiteralPath $p -Recurse -Force } }; \
+        [IO.Directory]::Delete($env:KETCH_ROOT_DIR)";
+    let list = left
+        .iter()
+        .map(|p| p.to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut command = std::process::Command::new(crate::process::powershell_exe());
+    command
+        .args(["-NoProfile", "-NonInteractive", "-Command", SCRIPT])
+        .env("KETCH_WAIT_PID", std::process::id().to_string())
+        .env("KETCH_LEFTOVERS", list)
+        .env("KETCH_ROOT_DIR", root)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP);
+    // A working directory inside the root would itself keep it from going.
+    if let Some(parent) = root.parent() {
+        command.current_dir(parent);
+    }
+    match command.spawn() {
+        Ok(_) => true,
+        Err(e) => {
+            ui::warn(&format!(
+                "could not schedule the removal of {}: {e}",
+                root.display()
+            ));
+            false
+        }
+    }
+}
+
+/// Elsewhere a running binary can be deleted, so what is left now stays left:
+/// the warnings already named it.
+#[cfg(not(windows))]
+fn finish_after_exit(_root: &Path, _left: &[PathBuf]) -> bool {
+    false
 }
 
 /// The Homebrew cask's own directory, when ketch was installed with `brew`.
@@ -1245,7 +1328,7 @@ mod tests {
         std::fs::create_dir_all(&cfg.store_dir).expect("store");
         std::fs::write(cfg.store_dir.join("mine"), b"also").expect("store file");
 
-        remove_root_at(&cfg, &cfg.root, Some(&home));
+        remove_root_at(&cfg, &cfg.root, Some(&home), |_, _| false);
 
         assert_eq!(
             std::fs::read(cfg.bin_dir.join("keep-me")).expect("kept bin file"),
@@ -1267,9 +1350,55 @@ mod tests {
         std::fs::create_dir_all(&cfg.bin_dir).expect("bin");
         std::fs::write(cfg.bin_dir.join("gone"), b"x").expect("bin file");
 
-        remove_root_at(&cfg, &cfg.root, Some(&home));
+        remove_root_at(&cfg, &cfg.root, Some(&home), |_, _| {
+            panic!("nothing was left to finish later")
+        });
 
         assert!(!cfg.bin_dir.exists(), "dedicated bin dir should be gone");
+        assert!(!root.exists(), "an emptied root goes too");
+    }
+
+    /// Stands in for Windows refusing to delete the running `ketch.exe`: a
+    /// read-only package folder keeps its file, and so the store and the root.
+    #[cfg(unix)]
+    #[test]
+    fn what_cannot_be_removed_now_is_handed_on_to_finish_later() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let home = tmp.path().join("home");
+        let cfg = Config::load(Some(tmp.path().join(".ketch"))).expect("config");
+        let locked = cfg.store_dir.join(SELF_NAME);
+        std::fs::create_dir_all(&locked).expect("store");
+        std::fs::write(locked.join("ketch"), b"running").expect("binary");
+        std::fs::create_dir_all(&cfg.bin_dir).expect("bin");
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o555))
+            .expect("read-only");
+
+        let mut handed = None;
+        remove_root_at(&cfg, &cfg.root, Some(&home), |root, left| {
+            handed = Some((root.to_path_buf(), left.to_vec()));
+            true
+        });
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755))
+            .expect("writable again");
+
+        let (root, left) = handed.expect("the leftovers were handed on");
+        assert_eq!(root, cfg.root);
+        assert_eq!(left, vec![cfg.store_dir.clone()]);
+        assert!(!cfg.bin_dir.exists(), "everything else went now");
+    }
+
+    #[test]
+    fn a_root_that_is_home_is_never_handed_on() {
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let home = tmp.path().join("home");
+        let cfg = Config::load(Some(home.clone())).expect("config");
+        std::fs::create_dir_all(&cfg.store_dir).expect("store");
+        std::fs::write(cfg.store_dir.join("mine"), b"x").expect("store file");
+
+        remove_root_at(&cfg, &cfg.root, Some(&home), |_, _| {
+            panic!("the home directory must never be scheduled for removal")
+        });
     }
 
     fn installed_ketch(prefix: PathBuf) -> crate::model::InstalledPackage {

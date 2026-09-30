@@ -49,6 +49,8 @@ the release has that name, and when the package's manifest already has a `bin`
 
 Remove installed packages. Names resolve like `install` (installed name,
 binary, or `owner/repo`); a typo stops the command before anything is removed.
+The package's whole store folder goes, including anything an interrupted
+update left in it.
 
 ```bash
 ketch uninstall rg
@@ -516,6 +518,8 @@ Remove ketch and everything it installed, permanently. Lists what it is about
 to delete and asks first. `--keep-packages` removes only ketch. A ketch
 installed with mise also asks whether to run `mise unuse -g` for its own copy;
 `--yes` answers that too.
+On Windows the running `ketch.exe` cannot delete itself, so the rest of the
+root is removed by a background process once ketch has exited.
 
 ```bash
 ketch self uninstall --dry-run
