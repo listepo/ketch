@@ -53,7 +53,10 @@ filter_unconventional = false
 split_commits = false
 protect_breaking_commits = true
 filter_commits = false
-tag_pattern = "v[0-9].*"
+# Anchored: git-cliff matches this regex anywhere in a tag name, so an
+# unanchored `v[0-9]` would take the macOS app's `desktop-v*` tags for CLI
+# releases and cut those commits out of the next entry (desktop/cliff.toml).
+tag_pattern = "^v[0-9].*"
 topo_order = false
 sort_commits = "newest"
 # A squash merge ends its subject with `(#123)`; that becomes the link.
