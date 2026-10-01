@@ -29,7 +29,7 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | F13 | in progress | P3 | 4 | 80% | Claude Code / opus-5.5 |
 | F14 | in progress | P2 | 3 | 90% | Claude Code / opus-5.5 |
 | F16 | in progress | P2 | 3 | 90% | Claude Code / opus-5.5 |
-| F17 | in progress | P2 | 4 | 0% | Claude Code / opus-5.5 |
+| F17 | in progress | P2 | 4 | 90% | Claude Code / opus-5.5 |
 
 ### F1. Notarisation
 
@@ -483,6 +483,8 @@ Plan (stacked on F16's branch `f16-liquid-glass-tokens` until #197 merges):
 6. Tests: Swift Testing for new store logic (update count, busy state); the UI test navigates every sidebar item.
 
 Check: `xcodegen` + `xcodebuild test`, `just design-check`, screenshots of each screen in light and dark compared with the Figma frames.
+
+Status: PR https://github.com/pyrlyn/ketch/pull/200 (stacked on #197), CI green (manual `ci.yml` run). All nine screens in light and dark. Differs from Figma where the core has no data: no package sizes or changelog headlines, Discover without featured picks or categories, Doctor names each fix as text with no Fix buttons, monogram icons. Not verified: the real menu-bar popover's glass, and screenshots under Reduce Transparency and Increase Contrast.
 
 ### M14. JSON Schema for the package manifest
 
