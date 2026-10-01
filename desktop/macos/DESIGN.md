@@ -6,16 +6,17 @@
 # schema has no place for them.
 version: alpha
 name: ketch for macOS
-description: "Liquid Glass package manager: calm glass over a soft mesh, one Tide accent, clear status colours."
+description: "Liquid Glass package manager: clear glass over a soft ocean wash, one Blue accent, clear status colours."
 colors:
-  primary: "#07617a"
-  accent: "#07617a"
-  accent-pressed: "#054f63"
-  accent-subtle: "#07617a1f"
+  primary: "#0873e0"
+  accent: "#0873e0"
+  accent-pressed: "#0663c2"
+  accent-subtle: "#0a84ff26"
   accent-on: "#ffffff"
-  text-primary: "#0d1624"
-  text-secondary: "#465265"
-  text-tertiary: "#5d6879"
+  accent-ink: "#05509c"
+  text-primary: "#0d1b2a"
+  text-secondary: "#4a5a70"
+  text-tertiary: "#4a5a70"
   status-installed: "#12683a"
   status-installed-subtle: "#1f9d5724"
   status-update: "#9a3c06"
@@ -26,32 +27,52 @@ colors:
   status-warning-subtle: "#e0a1002e"
   status-error: "#a81e34"
   status-error-subtle: "#e0314b21"
-  background-base: "#eef2f7"
-  background-mesh-tide: "#b9e3ea"
-  background-mesh-iris: "#d9d3f6"
-  background-mesh-dawn: "#f6e0d2"
-  background-mesh-mist: "#e3ecf5"
-  glass-regular: "#ffffff8f"
-  glass-frost: "#f8fafdb8"
-  glass-elevated: "#ffffffbd"
-  glass-clear: "#ffffff38"
-  glass-stroke: "#ffffffb3"
-  glass-highlight: "#ffffffe6"
-  glass-shade: "#0d16240f"
+  background-base: "#f2f6fb"
+  background-wash-start: "#00c6ff"
+  background-wash-end: "#0072ff"
+  background-wash-hill: "#00e5a08c"
+  background-wash-deep: "#003a8c80"
+  glass-window: "#fafcff47"
+  glass-regular: "#fcfdff6b"
+  glass-frost: "#fcfdff47"
+  glass-control: "#ffffffbd"
+  glass-elevated: "#fcfdff94"
+  glass-clear: "#fafcff1f"
+  glass-stroke: "#ffffff80"
+  glass-highlight: "#ffffffe0"
+  glass-shade: "#00286e1f"
   glass-solid-regular: "#f7f9fc"
   glass-solid-elevated: "#ffffff"
-  separator: "#0d16241a"
-  fill-control: "#0d16240d"
-  fill-hover: "#0d162412"
-  fill-track: "#0d162414"
-  focus-ring: "#07617ae6"
-  accent-dark: "#5ad2e4"
-  accent-pressed-dark: "#86dfeb"
-  accent-subtle-dark: "#5ad2e429"
-  accent-on-dark: "#04222a"
-  text-primary-dark: "#f1f5fa"
-  text-secondary-dark: "#b7c2d1"
-  text-tertiary-dark: "#95a1b3"
+  shadow-drop: "#001e5a61"
+  shadow-window: "#001e5a99"
+  scrim: "#000f2d29"
+  separator: "#001e501a"
+  fill-control: "#001e500f"
+  fill-hover: "#001e5017"
+  fill-track: "#001e501a"
+  focus-ring: "#05509c"
+  preset-tint-sky: "#7cc4ff"
+  preset-tint-mint: "#6fe3c1"
+  preset-tint-sand: "#ffc98b"
+  preset-tint-rose: "#ff9ec0"
+  preset-tint-lilac: "#b9a6ff"
+  preset-tint-smoke: "#5b6577"
+  preset-accent-blue: "#0a84ff"
+  preset-accent-purple: "#bf5af2"
+  preset-accent-pink: "#ff375f"
+  preset-accent-red: "#ff453a"
+  preset-accent-orange: "#ff9f0a"
+  preset-accent-yellow: "#ffd60a"
+  preset-accent-green: "#30d158"
+  preset-accent-graphite: "#8e8e93"
+  accent-dark: "#0873e0"
+  accent-pressed-dark: "#2a8bf0"
+  accent-subtle-dark: "#0a84ff3d"
+  accent-on-dark: "#ffffff"
+  accent-ink-dark: "#6cb6ff"
+  text-primary-dark: "#eef2f8"
+  text-secondary-dark: "#a3adbf"
+  text-tertiary-dark: "#a3adbf"
   status-installed-dark: "#4fd98f"
   status-installed-subtle-dark: "#4fd98f2e"
   status-update-dark: "#ffa860"
@@ -62,38 +83,57 @@ colors:
   status-warning-subtle-dark: "#f2c14e2e"
   status-error-dark: "#ff8e9a"
   status-error-subtle-dark: "#ff75842e"
-  background-base-dark: "#0a101c"
-  background-mesh-tide-dark: "#0d4a58"
-  background-mesh-iris-dark: "#2b2563"
-  background-mesh-dawn-dark: "#3a1d3c"
-  background-mesh-mist-dark: "#101d33"
-  glass-regular-dark: "#1b243685"
-  glass-frost-dark: "#172033b3"
-  glass-elevated-dark: "#222c40ad"
-  glass-clear-dark: "#ffffff0f"
-  glass-stroke-dark: "#ffffff24"
+  background-base-dark: "#0b0f17"
+  background-wash-start-dark: "#053c5c"
+  background-wash-end-dark: "#0a2f73"
+  background-wash-hill-dark: "#006a4d8c"
+  background-wash-deep-dark: "#00163a80"
+  glass-window-dark: "#1a1e2847"
+  glass-regular-dark: "#292e3a6b"
+  glass-frost-dark: "#292e3a47"
+  glass-control-dark: "#ffffff24"
+  glass-elevated-dark: "#292e3a94"
+  glass-clear-dark: "#1a1e281f"
+  glass-stroke-dark: "#ffffff29"
   glass-highlight-dark: "#ffffff38"
   glass-shade-dark: "#00000059"
-  glass-solid-regular-dark: "#161e2d"
-  glass-solid-elevated-dark: "#1e2739"
-  separator-dark: "#ffffff1a"
+  glass-solid-regular-dark: "#1e222c"
+  glass-solid-elevated-dark: "#292e3a"
+  shadow-drop-dark: "#00000099"
+  shadow-window-dark: "#000000d9"
+  scrim-dark: "#00000047"
+  separator-dark: "#ffffff1f"
   fill-control-dark: "#ffffff14"
-  fill-hover-dark: "#ffffff1c"
+  fill-hover-dark: "#ffffff1f"
   fill-track-dark: "#ffffff1f"
-  focus-ring-dark: "#5ad2e4d9"
+  focus-ring-dark: "#54a9ff"
+  preset-tint-sky-dark: "#7cc4ff"
+  preset-tint-mint-dark: "#6fe3c1"
+  preset-tint-sand-dark: "#ffc98b"
+  preset-tint-rose-dark: "#ff9ec0"
+  preset-tint-lilac-dark: "#b9a6ff"
+  preset-tint-smoke-dark: "#5b6577"
+  preset-accent-blue-dark: "#0a84ff"
+  preset-accent-purple-dark: "#bf5af2"
+  preset-accent-pink-dark: "#ff375f"
+  preset-accent-red-dark: "#ff453a"
+  preset-accent-orange-dark: "#ff9f0a"
+  preset-accent-yellow-dark: "#ffd60a"
+  preset-accent-green-dark: "#30d158"
+  preset-accent-graphite-dark: "#8e8e93"
 typography:
   display:
     fontFamily: "SF Pro Display"
-    fontSize: 28px
-    fontWeight: 700
-    lineHeight: 1.15
-    letterSpacing: -0.4px
+    fontSize: 34px
+    fontWeight: 800
+    lineHeight: 1.05
+    letterSpacing: -1px
   title:
     fontFamily: "SF Pro Display"
-    fontSize: 22px
-    fontWeight: 600
-    lineHeight: 1.2
-    letterSpacing: -0.25px
+    fontSize: 26px
+    fontWeight: 700
+    lineHeight: 1.1
+    letterSpacing: -0.5px
   title2:
     fontFamily: "SF Pro Display"
     fontSize: 17px
@@ -102,7 +142,7 @@ typography:
     letterSpacing: -0.1px
   headline:
     fontFamily: "SF Pro Text"
-    fontSize: 13px
+    fontSize: 14px
     fontWeight: 600
     lineHeight: 1.3
     letterSpacing: 0px
@@ -120,16 +160,22 @@ typography:
     letterSpacing: 0px
   caption:
     fontFamily: "SF Pro Text"
-    fontSize: 11px
-    fontWeight: 500
-    lineHeight: 1.3
-    letterSpacing: 0.1px
+    fontSize: 12px
+    fontWeight: 400
+    lineHeight: 1.35
+    letterSpacing: 0px
   overline:
     fontFamily: "SF Pro Text"
-    fontSize: 10px
+    fontSize: 11px
     fontWeight: 600
     lineHeight: 1.2
-    letterSpacing: 0.6px
+    letterSpacing: 0px
+  badge:
+    fontFamily: "SF Pro Text"
+    fontSize: 11px
+    fontWeight: 700
+    lineHeight: 1.2
+    letterSpacing: 0px
   mono:
     fontFamily: "SF Mono"
     fontSize: 12px
@@ -139,8 +185,8 @@ typography:
 rounded:
   xs: 6px
   sm: 8px
-  md: 12px
-  lg: 18px
+  md: 16px
+  lg: 20px
   xl: 26px
   full: 999px
 spacing:
@@ -161,32 +207,32 @@ components:
     height: 28px
     padding: "{spacing.md}"
   button-secondary:
-    backgroundColor: "{colors.glass-solid-elevated}"
+    backgroundColor: "{colors.glass-control}"
     textColor: "{colors.text-primary}"
     rounded: "{rounded.full}"
     height: 28px
   package-row:
-    backgroundColor: "{colors.glass-solid-regular}"
+    backgroundColor: "{colors.glass-frost}"
     textColor: "{colors.text-primary}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.lg}"
     height: 56px
     padding: "{spacing.md}"
   card:
-    backgroundColor: "{colors.glass-solid-regular}"
+    backgroundColor: "{colors.glass-frost}"
     textColor: "{colors.text-primary}"
     rounded: "{rounded.lg}"
     padding: "{spacing.xl}"
   sheet:
-    backgroundColor: "{colors.glass-solid-elevated}"
+    backgroundColor: "{colors.glass-elevated}"
     textColor: "{colors.text-primary}"
     rounded: "{rounded.xl}"
     padding: "{spacing.xxl}"
   sidebar:
-    backgroundColor: "{colors.glass-solid-regular}"
+    backgroundColor: "{colors.glass-regular}"
     textColor: "{colors.text-secondary}"
     width: 232px
   menu-bar-extra:
-    backgroundColor: "{colors.glass-solid-elevated}"
+    backgroundColor: "{colors.glass-elevated}"
     textColor: "{colors.text-primary}"
     rounded: "{rounded.xl}"
     width: 340px
@@ -232,9 +278,11 @@ The look is macOS 26 **Liquid Glass**, used the way the platform intends:
   and empty states are cards on a standard material: matte, denser, no
   specular sheen. Apple's HIG asks for exactly this split: Liquid Glass for
   controls and navigation, not for content.
-- **Everything floats over a canvas**: a pale (or deep) base with a soft mesh
-  of four blobs — Tide, Iris, Dawn, Mist — so the glass has something rich to
-  refract without the canvas ever competing with text.
+- **Everything floats over a canvas**: a pale (or deep) base under a soft
+  ocean wash — a diagonal gradient with two low hills along the bottom, drawn
+  at 14 % opacity — so the glass has something to refract without the canvas
+  ever competing with text. The user may turn the wash down or off, and tint
+  the glass, in Settings → Appearance.
 
 Personality: precise, unhurried, trustworthy. The app verifies checksums and
 never guesses; the UI should look like it would.
@@ -243,7 +291,7 @@ Principles:
 
 1. **Content first, chrome second.** Glass exists to frame packages, not to be
    looked at. If a surface does not hold a control, it is not glossy glass.
-2. **One accent.** Tide (`color.accent.default`) is the only colour that means
+2. **One accent.** Blue (`color.accent.default`) is the only colour that means
    "you can press this" or "this is selected". Status colours mean state and are
    never used for actions (except destructive red text on Uninstall).
 3. **State is always visible.** Every package row shows exactly one status:
@@ -251,17 +299,19 @@ Principles:
    word, never as colour alone.
 4. **Depth is earned.** Higher elevation means closer to the user and more
    transient. A sheet sits above a card; a card never sits above a sheet.
-5. **Generous, not sparse.** 4-point spacing, 56 pt rows, 20 pt card padding.
+5. **Generous, not sparse.** 4-point spacing, 56 pt rows, 12 pt card padding.
    Density comes from typographic hierarchy, not from squeezing.
 
 ## Colors
 
 The palette is cool and quiet with one saturated signal.
 
-- **Tide (`color.accent.default`, light `#07617a`, dark `#5ad2e4`)** — a deep
-  sea teal: selection, primary buttons, progress fill, links, the focus ring.
-  `color.accent.on` is the text on a Tide fill. `color.accent.subtle` tints the
-  selected row and may tint a glass control (`Glass.regular.tint(_:)`).
+- **Blue (`color.accent.default`, `#0873e0` in light and dark)** — the system
+  blue `#0a84ff` deepened just enough that a white label on it reaches 4.5:1:
+  selection, primary buttons, progress fill. `color.accent.on` is the text on a
+  Blue fill. `color.accent.ink` (light `#05509c`, dark `#6cb6ff`) is Blue as
+  text and glyphs on glass: links, sidebar symbols, the focus ring.
+  `color.accent.subtle` (`#0a84ff` at 15 % / 24 %) tints the selected row.
 - **Ink (`color.text.*`)** — `primary` for names and body, `secondary` for
   supporting lines, `tertiary` for metadata and captions only. All three meet
   4.5:1 on every surface they are allowed on (see Accessibility).
@@ -272,19 +322,36 @@ The palette is cool and quiet with one saturated signal.
   - `busy` (iris violet) — an operation is running on this package.
   - `warning` (amber) — a doctor finding worth a look.
   - `error` (red) — a failed operation, a broken link, a destructive action.
-- **Canvas (`color.background.*`)** — `base` plus four mesh blobs. Only the
-  window background and the preview canvas use them.
-- **Materials (`color.glass.*`)** — `regular`, `elevated`, `clear` and `frost`
-  are tints that stand in for the system materials in the preview and in the
-  contrast check; natively the materials render themselves. `stroke`,
-  `highlight` and `shade` are the edge light. `solidRegular` and
-  `solidElevated` replace every material under Reduce Transparency.
+- **Canvas (`color.background.*`)** — `base`, and the wash over it:
+  `washStart` → `washEnd` is the diagonal gradient, `washHill` and `washDeep`
+  the near and far hills. The whole wash is drawn at `opacity.wash` (0.14) by
+  default; Settings → Appearance moves it between 0 and `opacity.washMax`
+  (0.2), the strongest the contrast check allows. Only the window background
+  and the preview canvas use these.
+- **Materials (`color.glass.*`)** — tints that stand in for the system
+  materials in the preview and in the contrast check; natively Liquid Glass
+  renders itself. From least to most opaque: `clear` (`Glass.clear`), `window`
+  (the window body), `frost` (content cards), `regular` (sidebar, toolbar
+  glass), `elevated` (sheets, the menu-bar extra) and `control` (buttons and
+  fields on glass). `stroke`, `highlight` and `shade` are the edge light.
+  `solidRegular` and `solidElevated` replace every material under Reduce
+  Transparency.
+- **Shadow and scrim** — `shadow.drop` under floating glass, `shadow.window`
+  under the window in the preview, `scrim` behind a sheet.
 - **Utility** — `separator`, `fill.control`, `fill.hover`, `fill.track`,
   `focusRing`.
+- **Presets (`color.preset.*`)** — the swatches in Settings → Appearance, not
+  colours for views: `tint.*` (Sky, Mint, Sand, Rose, Lilac, Smoke) and
+  `accent.*` (Blue, Purple, Pink, Red, Orange, Yellow, Green, Graphite).
 
 Every colour has four values: light, dark, and a high-contrast value for each,
 which AppKit selects when Increase Contrast is on. `Tokens.swift` builds them
-as dynamic colours; no asset catalog is involved.
+as dynamic colours; no asset catalog is involved. The wash and the presets have
+no high-contrast values: under Increase Contrast the wash is off and the
+presets are not applied (see Appearance).
+
+`opacity.*` holds the numbers the app applies itself: `wash`, `washMax`, and
+`tint` / `tintDark`, the opacity of a chosen tint on glass in light and dark.
 
 ## Typography
 
@@ -294,14 +361,15 @@ type or compare: versions, paths, commands, log lines.
 
 | Token | Size / weight / line height | Use |
 | --- | --- | --- |
-| `display` | 28 bold / 1.15 | The package name in the detail header |
-| `title` | 22 semibold / 1.2 | Section title in the toolbar (Installed, Discover) |
+| `display` | 34 heavy / 1.05, −1 tracking | The package name in the detail header |
+| `title` | 26 bold / 1.1, −0.5 tracking | Section title in the toolbar (Installed, Discover) |
 | `title2` | 17 semibold / 1.25 | Card, sheet and state titles |
-| `headline` | 13 semibold / 1.3 | Package name in a row, button labels |
+| `headline` | 14 semibold / 1.3 | Package name in a row, button labels |
 | `body` | 13 regular / 1.45 | Descriptions, changelog prose |
 | `callout` | 12 regular / 1.4 | The second line of a row, supporting text |
-| `caption` | 11 medium / 1.3 | Badges, timestamps, metadata |
-| `overline` | 10 semibold / 1.2, uppercase, +0.6 tracking | Sidebar section labels, metadata labels |
+| `caption` | 12 regular / 1.35 | Timestamps, metadata |
+| `overline` | 11 semibold / 1.2, sentence case | Sidebar section labels, metadata labels |
+| `badge` | 11 bold / 1.2 | Badge words |
 | `mono` | 12 medium / 1.4 | Versions, paths, commands |
 
 In SwiftUI: `.font(style.font)`, `.lineSpacing(style.lineSpacing)`,
@@ -319,8 +387,8 @@ callout, caption.
 - **Rows**: `size.rowHeight` (56) minimum, `space.md` horizontal padding, a
   40 pt package glyph (`size.appIcon`), `space.md` between glyph and text,
   trailing status column right-aligned.
-- **Cards**: `space.xl` padding, `space.lg` between blocks inside, `space.md`
-  between sibling cards.
+- **Cards**: `space.md` padding, `space.md` between blocks inside, `space.sm`
+  between sibling cards (`Theme.Spacing` in the app).
 - **Content width**: text blocks cap at `size.contentMaxWidth` (880).
 - **Toolbar**: the title on the leading side; search, then the primary action
   on the trailing side. At most one prominent button in a toolbar.
@@ -339,14 +407,18 @@ read as a physical, slightly convex slab rather than a blurred rectangle.
 | `elevation.level1` | Buttons, swatches, small custom controls | 0 1 2 · 0 4 12 | top highlight |
 | `elevation.level2` | Frosted cards | 0 2 4 · 0 12 28 −4 | highlight + shade |
 | `elevation.level3` | Custom popovers and panels | 0 4 8 · 0 24 48 −8 | highlight + shade |
-| `elevation.level4` | The window in the preview (macOS draws real window shadows) | 0 8 16 · 0 40 80 −12 | highlight + shade |
+| `elevation.level4` | Large custom panels | 0 8 16 · 0 40 80 −12 | highlight + shade |
+| `elevation.lift` | Glass cards and floating glass, as the mock draws them | 0 8 20 −12 in `shadow.drop` | `glass.highlight` + `glass.shade` |
+| `elevation.window` | The window in the preview (macOS draws real window shadows) | 0 34 70 −26 in `shadow.window` | `glass.highlight` + `glass.shade` |
 
 Dark mode keeps the geometry and deepens the shadow colour (black at
 0.25–0.6) while the highlight drops to 14–26 % white, so edges still catch
-light without glowing.
+light without glowing. `lift` and `window` take their colours from
+`color.glass.*` and `color.shadow.*`, so they follow the mode by themselves.
 
 In SwiftUI, outer layers map to `.shadow(color:radius:x:y:)` with
-`radius = blur / 2` (`KetchShadow.radius`); inset layers are drawn with
+`radius = blur / 2` (`KetchShadow.radius`); SwiftUI has no spread, so
+`Theme.Shadow` softens the `lift` drop to make up for it. Inset layers are drawn with
 `ShadowStyle.inner(color:radius:x:y:)` on the shape's fill, or as a 1 pt top
 stroke. Liquid Glass draws its own rim and shadow: **do not add elevation
 shadows to a view that has `.glassEffect`** — the levels are for frosted cards
@@ -361,8 +433,9 @@ Glossy Liquid Glass (`.glassEffect`, glass button styles, system chrome):
   `GlassEffectContainer`).
 - The floating activity bar at the bottom of the content while an operation
   runs: `.glassEffect(.regular.interactive(), in: .rect(cornerRadius: Tokens.Radius.lg))`.
-- Primary actions: `.buttonStyle(.glassProminent)` tinted Tide
-  (`.tint(Tokens.Colors.Accent.default)`); secondary actions `.buttonStyle(.glass)`.
+- Primary actions: `.buttonStyle(.glassProminent)` tinted with the accent
+  (`ketchAppearance()` sets `.tint` from Settings → Appearance, Blue by
+  default); secondary actions `.buttonStyle(.glass)`.
 - Sheets, popovers and the menu-bar extra window (system materials).
 
 Frosted (a standard material, `.background(.regularMaterial, in: …)`, plus
@@ -380,10 +453,13 @@ Limits:
   and morph together instead of stacking separate panes; give morphing pairs a
   shared `glassEffectID(_:in:)`.
 - `Glass.clear` only for small controls over rich content (over the canvas
-  mesh). `Glass.regular` everywhere else. No body text on `Glass.clear`.
+  wash), or everywhere when the user picks Clear glass in Settings →
+  Appearance. `Glass.regular` everywhere else. No body text on `Glass.clear`
+  outside that choice.
 - `.interactive()` on glass that responds to press.
-- Tint glass only with `color.accent.subtle` (selection) or a status `…Subtle`
-  fill (a busy activity bar may use `status.busySubtle`). No other tints.
+- Tint glass only with `color.accent.subtle` (selection), a status `…Subtle`
+  fill (a busy activity bar may use `status.busySubtle`), or the user's tint
+  from Settings → Appearance at `opacity.tint` / `tintDark`. No other tints.
 - Scroll views under the toolbar keep the system scroll edge effect
   (`scrollEdgeEffectStyle(_:for:)`); do not hide it, it is what keeps toolbar
   glass legible over scrolled rows.
@@ -398,8 +474,8 @@ does this for you inside a container shape).
 | --- | --- | --- |
 | `radius.xs` | 6 | Keyboard hints, inline code |
 | `radius.sm` | 8 | Sidebar items, fields, menu items |
-| `radius.md` | 12 | Package rows, findings |
-| `radius.lg` | 18 | Cards, the activity bar |
+| `radius.md` | 16 | Findings, small cards |
+| `radius.lg` | 20 | Package rows, cards, the activity bar |
 | `radius.xl` | 26 | Sheets, popovers, the menu-bar extra |
 | `radius.full` | capsule | Buttons, badges, progress, the search field |
 
@@ -453,9 +529,9 @@ states.
 
 System sidebar (glass). Sections: Library (Installed, Discover, Updates) and
 System (Activity, Doctor), labels in `overline`, `text.tertiary`. Items in
-`headline` with an SF Symbol in Tide and a trailing count in `caption` —
+`headline` with an SF Symbol in `accent.ink` and a trailing count in `caption` —
 `status.update` when it counts pending upgrades. Selection is the system
-selection, tinted Tide. The ketch root (`~/.ketch` or `KETCH_ROOT`) sits at the
+selection, tinted with the accent. The ketch root (`~/.ketch` or `KETCH_ROOT`) sits at the
 bottom in `mono`, `text.secondary`.
 
 ### Toolbar
@@ -466,7 +542,7 @@ nothing on Discover. Navigation arrows in a glass group.
 
 ### Package row
 
-56 pt, `radius.md`. Leading glyph (the package's own icon when it ships one,
+56 pt, `radius.lg`, on `glass.frost`. Leading glyph (the package's own icon when it ships one,
 else a monogram tile), name in `headline`, a second line in `callout`
 `text.secondary`: `owner/repo · version`, the version in `mono`. An update
 shows `current → latest` with `latest` in `status.update`. Trailing: exactly
@@ -476,8 +552,8 @@ Finder, Copy Path, Uninstall.
 
 ### Card (package detail)
 
-Frosted, `radius.lg`, `space.xl` padding, `elevation.level2`. Header: a 64 pt
-glyph, the name in `display`, the repository link in Tide. Description in
+Frosted, `radius.lg`, `space.md` padding, `elevation.lift`. Header: a 64 pt
+glyph, the name in `display`, the repository link in `accent.ink`. Description in
 `body`. Actions: `.glassProminent` primary (Install / Upgrade to X), `.glass`
 secondary (Reveal), and Uninstall in `status.error` text. A two-column
 metadata grid (`overline` labels, `mono` values) between separators. Then
@@ -486,14 +562,14 @@ metadata grid (`overline` labels, `mono` values) between separators. Then
 
 ### Badge
 
-Capsule, `size.badgeHeight` 20, `space.sm` padding, `caption`, a 6 pt dot in
+Capsule, `size.badgeHeight` 20, `space.sm` padding, `badge`, a 6 pt dot in
 the status colour, text in the status colour on its `…Subtle` fill. The word is
 mandatory: Installed, Update, Installing / Upgrading / Removing, Warning, or a
 short error ("Link broken").
 
 ### Progress
 
-Capsule track `fill.track`, `size.progressHeight` 6; fill Tide with a top-light
+Capsule track `fill.track`, `size.progressHeight` 6; fill Blue with a top-light
 gradient and, while indeterminate, a travelling sheen. Always paired with a
 percentage or byte count in `caption` — never a bar alone. Steps (Download,
 Verify, Unpack, Link) as `caption` labels: done `status.installed` with a
@@ -518,8 +594,8 @@ destructive role and is never the default.
 
 | Kind | SwiftUI | Look |
 | --- | --- | --- |
-| Primary | `.buttonStyle(.glassProminent)` + `.tint(Tokens.Colors.Accent.default)` | a Tide glass lozenge, `accent.on` label |
-| Secondary | `.buttonStyle(.glass)` | a clear glass capsule, `text.primary` label |
+| Primary | `.buttonStyle(.glassProminent)` + the accent tint | a Blue glass lozenge, `accent.on` label |
+| Secondary | `.buttonStyle(.glass)` | a `glass.control` capsule, `text.primary` label |
 | Plain | `.buttonStyle(.plain)` on `fill.control` | a quiet in-content action (Cancel) |
 | Destructive | `.buttonStyle(.glass)`, `role: .destructive` | `status.error` label |
 
@@ -534,8 +610,28 @@ system's glass window (`radius.xl`), `space.md` padding. Top: the ketch glyph,
 count. Then up to five pending upgrades as compact rows (28 pt glyph, name,
 `current → latest`, a small `.glass` Upgrade). Then the running operation with
 progress. Then a full-width `.glassProminent` "Upgrade all". Then menu items
-(Open ketch ⌘O, Settings… ⌘,, Quit ⌘Q) whose hover is a Tide fill with
+(Open ketch ⌘O, Settings… ⌘,, Quit ⌘Q) whose hover is a Blue fill with
 `accent.on` text, like a native menu.
+
+### Settings → Appearance
+
+A Settings tab next to General. Four choices, applied at once and kept in
+`AppSettings` (UserDefaults on this Mac):
+
+- **Tint** — Clear (none), the `preset.tint` swatches, or a custom colour. It
+  tints the glass at `opacity.tint` (light) or `opacity.tintDark` (dark).
+- **Glass** — Regular or Clear (`Glass.regular` / `Glass.clear`).
+- **Accent** — System, the `preset.accent` swatches, or a custom colour. It
+  becomes `.tint` for the whole scene: prominent buttons, selection, toggles.
+- **Backdrop wash** — a slider from off to `opacity.washMax`, shown as a
+  percentage of that maximum.
+
+Swatches are 22 pt circles with a hairline and a 2 pt ring on the chosen one;
+the standard choice is a slashed circle. A Reset button returns to the
+defaults. `ketchAppearance()` at each scene's root resolves the choice
+against the accessibility settings (below) and hands the result to every view
+as the `appearance` environment value; no view reads the stored settings
+directly.
 
 ### Empty and error states
 
@@ -562,18 +658,23 @@ The design is specified with its fallbacks, not retrofitted.
 - **Reduce Transparency** (`@Environment(\.accessibilityReduceTransparency)`):
   system glass turns opaque by itself. Custom surfaces swap to
   `color.glass.solidRegular` / `solidElevated`, drop the specular sheen and keep
-  their hairline and shadow, so depth survives without translucency.
+  their hairline and shadow, so depth survives without translucency. The
+  user's tint, Clear glass and the wash are paused; the accent stays.
 - **Increase Contrast** (`@Environment(\.colorSchemeContrast) == .increased`):
   AppKit picks each token's `highContrast` / `highContrastDark` value through
   the dynamic colours: darker ink and accent, near-opaque tints, an ink stroke
   instead of a white one. Custom glass and frost add a 1.5 pt border and hide
-  decorative sheen.
+  decorative sheen. Every Appearance choice is paused, the accent included:
+  the system accent has a high-contrast variant, a custom colour may not.
+  Settings → Appearance says so while either setting is on.
 - **Reduce Motion** (`@Environment(\.accessibilityReduceMotion)`): see Motion.
 - **Contrast**: `design/contrast.mjs` checks every text/background pair the
   components use, in all four appearances, against WCAG 2.2 AA (4.5:1 for text,
   3:1 for large text and UI glyphs). A pair's background is the colour the text
-  actually sits on: the material tint composited over the canvas base and over
-  each mesh blob, keeping the worst ratio. Real Liquid Glass also blurs and
+  actually sits on: the material tint composited over the canvas base, alone
+  and under the wash at `opacity.washMax` (each gradient stop, plain and under
+  each hill), keeping the worst ratio. Accent and tint presets and custom
+  colours are the user's choice and are not checked. Real Liquid Glass also blurs and
   adapts its luminance, which the check cannot model; the tints are
   deliberately conservative, and the running app still needs a pass with
   Accessibility Inspector.
@@ -587,14 +688,15 @@ The design is specified with its fallbacks, not retrofitted.
 
 ## Do's and Don'ts
 
-- Do use Tide for the one most important action and for selection, and nothing else.
+- Do use the accent for the one most important action and for selection, and nothing else.
 - Do show a status badge with a word on every package row.
 - Do keep Liquid Glass in the control layer and frosted cards in content.
 - Do group adjacent glass controls in a `GlassEffectContainer`.
-- Do use `Tokens.*` for every colour, size, radius, font and animation.
+- Do use `Tokens.*` for every colour, size, radius, font and animation, and the
+  `appearance` environment value for anything the user can change.
 - Don't stack glass on glass on glass: two layers above the canvas at most.
 - Don't add shadows or strokes to views that already have `.glassEffect`.
-- Don't tint glass with anything but `accent.subtle` or a status `…Subtle` fill.
+- Don't tint glass with anything but `accent.subtle`, a status `…Subtle` fill or the user's tint.
 - Don't put body text on `Glass.clear`.
 - Don't use status colours for actions (Uninstall's red text is the one exception).
 - Don't animate what Reduce Motion asks to keep still.
