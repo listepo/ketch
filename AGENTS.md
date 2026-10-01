@@ -239,8 +239,10 @@ conditional, multi-stage Rust automation.
 | `crates/ketch-core/src/listing.rs` | `ketch list`: installed and registry packages merged, `latest` looked up in parallel and cached |
 | `crates/ketch-core/src/push.rs` | `ketch registry push`: a project's `ketch.toml` as a registry pull request, via octocrab |
 | `crates/ketch-core/src/self_update.rs` | `ketch self`: installing, updating and removing the host as a package |
-| `crates/ketch-core/src/ui.rs` | all terminal output |
-| `crates/ketch-core/src/tui/` | the opt-in full-screen renderer (`tui` feature), driven by `ui.rs` |
+| `crates/ketch-core/src/report.rs` | how the core says what happens: `Event`, `Reporter`, the `Report` handle, `Ctx`, `LogReporter` and `Recorder` |
+| `crates/ketch-core/src/text.rs` | byte counts and truncation, spelled the same by the core and every renderer |
+| `src/ui.rs` | all terminal output, and `Terminal`: the `Reporter` that draws the core's events |
+| `src/tui/` | the opt-in full-screen renderer (`tui` feature), driven by `ui.rs` |
 | `crates/ketch-core/src/builtin.toml` | the manifests compiled into the binary, the offline registry tier |
 | `crates/ketch-core/migrations/` | the `stats.db` schema, embedded by `stats.rs` |
 | `ketch.toml` | the host's own package file, what `ketch registry push` sends |
@@ -336,11 +338,20 @@ These are observed throughout; match them rather than introducing your own.
 - **Comments explain *why*, never *what*.** The code already says what it does.
   A comment earns its place by recording a decision, a constraint, or a
   failure that motivated the shape of the code.
-- **All output goes through `ui::`.** There is no `println!` outside `ui.rs`.
-  Data goes to stdout via `ui::out`/`ui::table`; progress, warnings and errors
-  go to stderr, so output can be piped. `ui.rs` is also the only caller of
-  `log::record`, so a new command cannot forget to be logged, and a status line
-  written any other way is invisible to whoever reads the log afterwards.
+- **The core reports; only `ui.rs` prints.** `ketch-core` prints nothing and
+  never calls `ui::` — `ui.rs` lives in the binary. Code in the core takes a
+  `report::Ctx` (config plus `Report`) or a `&Report` and says what happens as
+  typed `report::Event`s: `stage`, `step`, `success`, `warn`, `note`, `debug`,
+  and `activity`/`download`/`batch`/`counter` handles for long work. A question
+  goes through `Report::choose`/`offer`, whose defaults answer like a script.
+  The binary hands in `ui::Terminal`, which draws each event through the same
+  `ui::` helper a command body calls, so its output is unchanged by who said
+  it. In the binary there is no `println!` outside `ui.rs`: data goes to
+  stdout via `ui::out`/`ui::table`; progress, warnings and errors go to
+  stderr, so output can be piped. `ui.rs` is also the binary's only caller of
+  `log::record` — `report::LogReporter` is the core's, for another front end —
+  so a new command cannot forget to be logged, and a status line written any
+  other way is invisible to whoever reads the log afterwards.
 - **Errors are `crate::error::Error`**, built with `Error::msg`/`io`/`parse`.
   The `Result<T>` alias is from the same module.
 - **No `unwrap`, `expect`, `panic!`, `todo!` or `unimplemented!` outside

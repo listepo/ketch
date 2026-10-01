@@ -48,8 +48,8 @@ pub fn install(cfg: &Config, args: InstallArgs) -> Result<()> {
         ));
     }
 
-    let _lock = Lock::acquire(cfg)?;
-    let sources = SourceRegistry::load(cfg);
+    let _lock = Lock::acquire(&crate::ui::ctx(cfg))?;
+    let sources = SourceRegistry::load(&crate::ui::ctx(cfg));
     let mut state = State::load(cfg)?;
 
     // --path synthesises a local: ref; otherwise the user-typed PKG list is
@@ -93,7 +93,13 @@ pub fn install(cfg: &Config, args: InstallArgs) -> Result<()> {
     let mut done = 0usize;
     let mut failed: Vec<String> = Vec::new();
 
-    let outcomes = install::batch(cfg, &sources, &mut state, &reqs, jobs(cfg, args.jobs));
+    let outcomes = install::batch(
+        &crate::ui::ctx(cfg),
+        &sources,
+        &mut state,
+        &reqs,
+        jobs(cfg, args.jobs),
+    );
     let mut updates: Vec<InstallRequest> = Vec::new();
     for (req, outcome) in reqs.iter().zip(outcomes) {
         let key = req.spec.label();
@@ -136,7 +142,13 @@ pub fn install(cfg: &Config, args: InstallArgs) -> Result<()> {
     // The same path `ketch upgrade` takes: prepare and commit the exact
     // release the question named, update hooks included.
     if !updates.is_empty() {
-        let outcomes = install::batch(cfg, &sources, &mut state, &updates, jobs(cfg, args.jobs));
+        let outcomes = install::batch(
+            &crate::ui::ctx(cfg),
+            &sources,
+            &mut state,
+            &updates,
+            jobs(cfg, args.jobs),
+        );
         for (req, outcome) in updates.iter().zip(outcomes) {
             let key = req.spec.label();
             match outcome {
@@ -170,7 +182,7 @@ pub fn install(cfg: &Config, args: InstallArgs) -> Result<()> {
 }
 
 pub fn uninstall(cfg: &Config, args: UninstallArgs) -> Result<()> {
-    let _lock = Lock::acquire(cfg)?;
+    let _lock = Lock::acquire(&crate::ui::ctx(cfg))?;
     let mut state = State::load(cfg)?;
 
     // Resolve every name up front: a typo should stop the command before it
@@ -188,7 +200,7 @@ pub fn uninstall(cfg: &Config, args: UninstallArgs) -> Result<()> {
         for name in missing {
             // A folder a failed uninstall left behind has no record to match,
             // so this is the only command that will ever take it away.
-            install::remove_package_dir(cfg, name);
+            install::remove_package_dir(cfg, name, crate::ui::report());
             ui::bare_error(&format!("{name}: not found"));
         }
         // Exit 4, `NotInstalled`'s code, so scripts branch the same as before.
@@ -201,7 +213,7 @@ pub fn uninstall(cfg: &Config, args: UninstallArgs) -> Result<()> {
 
     let mut removed = 0usize;
     for name in &targets {
-        match install::uninstall(cfg, &mut state, name) {
+        match install::uninstall(&crate::ui::ctx(cfg), &mut state, name) {
             Ok(pkg) => {
                 removed += 1;
                 ui::success("removed", &format!("{} {}", pkg.name, pkg.version));
@@ -226,8 +238,8 @@ pub fn upgrade(cfg: &Config, args: UpgradeArgs) -> Result<()> {
     if args.bin.is_some() && args.names.len() != 1 {
         return Err(Error::msg("--bin needs exactly one package name"));
     }
-    let _lock = Lock::acquire(cfg)?;
-    let sources = SourceRegistry::load(cfg);
+    let _lock = Lock::acquire(&crate::ui::ctx(cfg))?;
+    let sources = SourceRegistry::load(&crate::ui::ctx(cfg));
     let mut state = State::load(cfg)?;
 
     let names = select(&state, &args.names)?;
@@ -334,7 +346,7 @@ pub fn upgrade(cfg: &Config, args: UpgradeArgs) -> Result<()> {
                 .flat_map(|link| [link.link.clone(), link.target.clone()])
         })
         .collect();
-    crate::process::offer_to_stop(&files, args.yes);
+    crate::process::offer_to_stop(&files, args.yes, crate::ui::report());
 
     let reqs: Vec<InstallRequest> = plan
         .iter()
@@ -367,7 +379,13 @@ pub fn upgrade(cfg: &Config, args: UpgradeArgs) -> Result<()> {
 
     let mut done = 0usize;
     let mut failed = Vec::new();
-    let outcomes = install::batch(cfg, &sources, &mut state, &reqs, jobs(cfg, args.jobs));
+    let outcomes = install::batch(
+        &crate::ui::ctx(cfg),
+        &sources,
+        &mut state,
+        &reqs,
+        jobs(cfg, args.jobs),
+    );
     for ((pkg, _), outcome) in plan.iter().zip(outcomes) {
         match outcome {
             Ok(out) => {
@@ -396,9 +414,14 @@ pub fn upgrade(cfg: &Config, args: UpgradeArgs) -> Result<()> {
 }
 
 pub fn rollback(cfg: &Config, args: RollbackArgs) -> Result<()> {
-    let _lock = Lock::acquire(cfg)?;
+    let _lock = Lock::acquire(&crate::ui::ctx(cfg))?;
     let mut state = State::load(cfg)?;
-    let out = install::rollback(cfg, &mut state, &args.package, args.to.as_deref())?;
+    let out = install::rollback(
+        &crate::ui::ctx(cfg),
+        &mut state,
+        &args.package,
+        args.to.as_deref(),
+    )?;
     state.save(cfg)?;
     let pkg = &out.package;
     let detail = match &out.replaced {
@@ -411,7 +434,7 @@ pub fn rollback(cfg: &Config, args: RollbackArgs) -> Result<()> {
 }
 
 pub fn prune(cfg: &Config, args: PruneArgs) -> Result<()> {
-    let _lock = Lock::acquire(cfg)?;
+    let _lock = Lock::acquire(&crate::ui::ctx(cfg))?;
     let mut state = State::load(cfg)?;
     if let Some(keep) = args.keep {
         state.retention.keep = keep;
@@ -424,7 +447,7 @@ pub fn prune(cfg: &Config, args: PruneArgs) -> Result<()> {
     }
     let mut dropped = 0usize;
     for name in &names {
-        let versions = install::prune(cfg, &mut state, name, keep)?;
+        let versions = install::prune(&crate::ui::ctx(cfg), &mut state, name, keep)?;
         if versions.is_empty() {
             continue;
         }
@@ -453,7 +476,7 @@ pub fn prune(cfg: &Config, args: PruneArgs) -> Result<()> {
 
 /// `pin` and `unpin` — `pinned` selects which.
 pub fn pin(cfg: &Config, args: NameArgs, pinned: bool) -> Result<()> {
-    let _lock = Lock::acquire(cfg)?;
+    let _lock = Lock::acquire(&crate::ui::ctx(cfg))?;
     let mut state = State::load(cfg)?;
 
     for name in select(&state, &args.names)? {
@@ -471,15 +494,15 @@ pub fn pin(cfg: &Config, args: NameArgs, pinned: bool) -> Result<()> {
 
 /// `link` and `unlink` — `linked` selects which.
 pub fn link(cfg: &Config, args: NameArgs, linked: bool) -> Result<()> {
-    let _lock = Lock::acquire(cfg)?;
+    let _lock = Lock::acquire(&crate::ui::ctx(cfg))?;
     let mut state = State::load(cfg)?;
 
     for name in select(&state, &args.names)? {
         if linked {
-            install::relink(cfg, &mut state, &name)?;
+            install::relink(&crate::ui::ctx(cfg), &mut state, &name)?;
             ui::success("linked", &name);
         } else {
-            install::unlink(cfg, &mut state, &name)?;
+            install::unlink(&crate::ui::ctx(cfg), &mut state, &name)?;
             ui::success("unlinked", &name);
         }
     }

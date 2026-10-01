@@ -12,8 +12,8 @@ use crate::model::{
     glob_match, AssetSelector, Manifest, ManifestOrigin, PackageSpec, Release, ReleaseAsset,
 };
 use crate::platform::{AssetScore, Platform};
+use crate::report::Ctx;
 use crate::source::{ListOpts, RejectedRelease, Source, SourceRegistry};
-use crate::ui;
 use serde::Serialize;
 
 /// A release asset ranked for this platform.
@@ -237,28 +237,31 @@ pub fn list_opts(cfg: &Config, manifest: &Manifest, extra_prerelease: bool) -> L
 /// sidecars and trust inspection are described from config and the already
 /// fetched release, not performed.
 pub fn explain(
-    cfg: &Config,
+    cx: &Ctx<'_>,
     sources: &SourceRegistry,
     spec: &PackageSpec,
 ) -> Result<ResolutionTrace> {
-    let (manifest, origin) = Resolver::new(cfg)?.resolve(spec)?;
+    let (manifest, origin) = Resolver::new(cx)?.resolve(spec)?;
     let source = sources.for_ref(&manifest.source)?;
-    explain_with(cfg, source.as_ref(), spec, manifest, origin)
+    explain_with(cx, source.as_ref(), spec, manifest, origin)
 }
 
 fn explain_with(
-    cfg: &Config,
+    cx: &Ctx<'_>,
     source: &dyn Source,
     spec: &PackageSpec,
     manifest: Manifest,
     origin: ManifestOrigin,
 ) -> Result<ResolutionTrace> {
+    let cfg = cx.cfg;
     // Same helper install uses. `why` has no `--prerelease` flag, so the extra
     // bit is false; config and the manifest still match a default install.
     let opts = list_opts(cfg, &manifest, false);
     let include_prerelease = opts.include_prerelease;
-    let selected = match ui::activity(&format!("resolving {}", manifest.name), None)
-        .run(|_| source.resolve(&manifest.source.id, &spec.version, &opts))
+    let selected = match cx
+        .report
+        .activity(&format!("resolving {}", manifest.name))
+        .run(|| source.resolve(&manifest.source.id, &spec.version, &opts))
     {
         Ok(release) => Some(release),
         Err(crate::error::Error::NoRelease(_)) => None,
@@ -355,7 +358,7 @@ fn checksum_policy(cfg: &Config, asset: Option<&ReleaseAsset>) -> ChecksumPolicy
 }
 
 fn safe(text: &str) -> String {
-    ui::printable(text)
+    crate::changelog::sanitize(text)
 }
 
 #[cfg(test)]
@@ -396,7 +399,11 @@ mod tests {
         ) -> Result<Vec<crate::model::LinkRecord>> {
             Ok(Vec::new())
         }
-        fn unplace(&self, _links: &[crate::model::LinkRecord]) -> Result<()> {
+        fn unplace(
+            &self,
+            _links: &[crate::model::LinkRecord],
+            _report: &crate::report::Report,
+        ) -> Result<()> {
             Ok(())
         }
         fn is_executable(&self, _path: &Path) -> bool {
@@ -431,7 +438,11 @@ mod tests {
     }
 
     fn config() -> Config {
-        let mut cfg = Config::load(Some(std::env::temp_dir().join("ketch-why-test-root"))).unwrap();
+        let mut cfg = Config::load(
+            Some(std::env::temp_dir().join("ketch-why-test-root")),
+            &crate::report::Report::silent(),
+        )
+        .unwrap();
         cfg.target = TargetSpec {
             os: Os::MacOs,
             arch: Arch::Aarch64,
@@ -615,7 +626,11 @@ mod tests {
         ) -> Result<Vec<crate::model::LinkRecord>> {
             Ok(Vec::new())
         }
-        fn unplace(&self, _links: &[crate::model::LinkRecord]) -> Result<()> {
+        fn unplace(
+            &self,
+            _links: &[crate::model::LinkRecord],
+            _report: &crate::report::Report,
+        ) -> Result<()> {
             Ok(())
         }
         fn is_executable(&self, _path: &Path) -> bool {

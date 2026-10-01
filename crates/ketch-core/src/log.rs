@@ -9,8 +9,10 @@
 //! has; recording the answer would only make the log harder to search for the
 //! run that went wrong.
 //!
-//! It is wired in exactly one place, `ui.rs`, for the same reason every other
-//! byte of output is: one choke point means a new command cannot forget.
+//! It is wired in exactly one place, the `ketch` binary's `ui.rs`, for the same
+//! reason every other byte of output is: one choke point means a new command
+//! cannot forget. A front end that renders the core's events itself logs them
+//! through `report::LogReporter`.
 //!
 //! Nothing here is allowed to fail loudly. A package manager that refuses to
 //! install because it could not open its log is broken, so an unwritable log
@@ -127,7 +129,7 @@ struct Sink {
 static SINK: Mutex<Option<Sink>> = Mutex::new(None);
 
 /// File log level for this run. `--verbose` raises the sink to debug so
-/// `ui::debug` detail lands in the log even when the configured level is info.
+/// debug detail lands in the log even when the configured level is info.
 fn file_level(configured: Level, verbose: bool) -> Level {
     if configured == Level::Off {
         return Level::Off;
@@ -141,15 +143,16 @@ fn file_level(configured: Level, verbose: bool) -> Level {
 
 /// Open the log for this run. Called once, as soon as the config exists.
 ///
-/// The failure is deliberately soft: an unwritable log is a warning on stderr,
-/// not a reason for `ketch install` to stop working.
-pub fn init(cfg: &Config, verbose: bool) {
+/// The failure is deliberately soft: an unwritable log is returned for the
+/// host to warn about, not a reason for `ketch install` to stop working. The
+/// host must not log that warning — the log is what failed.
+pub fn init(cfg: &Config, verbose: bool) -> crate::error::Result<()> {
     let level = file_level(cfg.log_level, verbose);
     if level == Level::Off {
         // A host calls `init` once per operation: turning the log off must also
         // drop the sink an earlier operation opened, or it keeps writing.
         set(None);
-        return;
+        return Ok(());
     }
     match open(&cfg.log_file, level, cfg.log_format) {
         Ok(sink) => {
@@ -163,11 +166,14 @@ pub fn init(cfg: &Config, verbose: bool) {
                 ),
             );
         }
-        // Not `ui::warn`: that would try to log the failure to log.
         Err(e) => {
-            crate::ui::warn_unlogged(&format!("could not open {}: {e}", cfg.log_file.display()))
+            return Err(crate::error::Error::msg(format!(
+                "could not open {}: {e}",
+                cfg.log_file.display()
+            )))
         }
     }
+    Ok(())
 }
 
 /// Where this run is logging, once `init` has succeeded.
@@ -383,13 +389,17 @@ mod tests {
     fn turning_the_log_off_closes_the_sink_an_earlier_init_opened() {
         let dir = tempfile::tempdir().expect("temp dir");
         let previous = guard().take();
-        let mut cfg = Config::load(Some(dir.path().join("root"))).expect("config");
+        let mut cfg = Config::load(
+            Some(dir.path().join("root")),
+            &crate::report::Report::silent(),
+        )
+        .expect("config");
         cfg.log_level = Level::Info;
-        init(&cfg, false);
+        init(&cfg, false).expect("log");
         assert!(path().is_some(), "first operation logs");
 
         cfg.log_level = Level::Off;
-        init(&cfg, false);
+        init(&cfg, false).expect("log off");
         let closed = path().is_none();
         set(previous);
 

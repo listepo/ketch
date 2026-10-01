@@ -9,16 +9,17 @@ mod cmd;
 mod complete;
 mod man;
 mod self_docs;
+#[cfg(feature = "tui")]
+mod tui;
+mod ui;
 
 // The core's modules, imported at the crate root under the names they had
-// when they lived here, so `crate::config`, `crate::ui` and the rest keep
-// resolving in `cmd/` and the binary's own paths did not have to change.
-#[cfg(feature = "tui")]
-use ketch_core::tui;
+// when they lived here, so `crate::config` and the rest keep resolving in
+// `cmd/`, `ui` and `tui` and the binary's own paths did not have to change.
 use ketch_core::{
     cancel, changelog, config, diff, error, install, listing, lockfile, log, manifest, model,
-    platform, process, push, registry, resolve, self_update, shell, source, state, stats, ui,
-    wizard,
+    platform, process, push, registry, report, resolve, self_update, shell, source, state, stats,
+    text, wizard,
 };
 
 use clap::Parser;
@@ -93,7 +94,7 @@ fn run(cli: Cli) -> Result<()> {
             command: cli::ConfigCommand::Create { .. }
         }
     ) {
-        let cfg = config::Config::load(cli.global.root.clone())?;
+        let cfg = config::Config::load(cli.global.root.clone(), ui::report())?;
         ui::set_emoji(cfg.emoji && !cli.global.no_emoji);
         return match cli.command {
             Command::Config { command } => cmd::config::run(&cfg, command),
@@ -101,10 +102,13 @@ fn run(cli: Cli) -> Result<()> {
         };
     }
 
-    let cfg = config::Config::load(cli.global.root.clone())?;
+    let cfg = config::Config::load(cli.global.root.clone(), ui::report())?;
     ui::set_emoji(cfg.emoji && !cli.global.no_emoji);
     cfg.ensure_dirs()?;
-    log::init(&cfg, cli.global.verbose);
+    // Not `ui::warn`: that would try to log the failure to log.
+    if let Err(e) = log::init(&cfg, cli.global.verbose) {
+        ui::warn_unlogged(&e.to_string());
+    }
 
     #[cfg(feature = "tui")]
     let _tui = start_tui(&cli);

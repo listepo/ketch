@@ -14,7 +14,7 @@ use crate::http;
 use crate::model::{
     LocalKind, PackageRef, Release, ReleaseAsset, SourceInfo, Version, VersionSpec,
 };
-use crate::ui::ProgressSink;
+use crate::report::ProgressSink;
 use std::fs;
 use std::path::{Path, PathBuf};
 

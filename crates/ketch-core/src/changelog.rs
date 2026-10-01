@@ -124,8 +124,9 @@ pub fn from_release(notes: Option<&str>) -> Option<Entry> {
 /// where it is printed, which would leave every caller to remember.
 ///
 /// `ketch registry push` borrows it for the registry's copy of a package file,
-/// the other whole file someone else wrote that ketch prints, and `ui::` uses it
-/// on every status line, table cell and error that carries somebody else's text.
+/// the other whole file someone else wrote that ketch prints, and the binary's
+/// `ui` uses it on every status line, table cell and error that carries
+/// somebody else's text.
 pub fn sanitize(text: &str) -> String {
     text.chars()
         .filter(|&c| match c {

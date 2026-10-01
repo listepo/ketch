@@ -11,6 +11,7 @@
 use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::model::{normalize_name, Manifest, ManifestOrigin, PackageRef, PackageSpec};
+use crate::report::{Ctx, Report};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
@@ -64,13 +65,14 @@ pub struct Resolver {
 }
 
 impl Resolver {
-    pub fn new(cfg: &Config) -> Result<Self> {
+    pub fn new(cx: &Ctx<'_>) -> Result<Self> {
+        let cfg = cx.cfg;
         // A malformed built-in registry is a bug in ketch, not in the user's
         // setup, so it fails loudly rather than degrading to inference.
         let builtin = parse_registry(BUILTIN_TOML, "the built-in registry")?;
         Ok(Resolver {
-            user: load_user_manifests(&cfg.manifest_dir),
-            registry: crate::registry::load(cfg),
+            user: load_user_manifests(&cfg.manifest_dir, cx.report),
+            registry: crate::registry::load(cx),
             builtin,
         })
     }
@@ -217,7 +219,7 @@ pub(crate) fn same_source(a: &PackageRef, b: &PackageRef) -> bool {
 ///
 /// One unreadable file must not take down every command, so failures are
 /// reported and skipped rather than propagated.
-fn load_user_manifests(dir: &Path) -> Vec<(Manifest, PathBuf)> {
+fn load_user_manifests(dir: &Path, report: &Report) -> Vec<(Manifest, PathBuf)> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();
     };
@@ -235,9 +237,9 @@ fn load_user_manifests(dir: &Path) -> Vec<(Manifest, PathBuf)> {
         match std::fs::read_to_string(&path).map_err(|e| Error::io(&path, e)) {
             Ok(text) => match parse_registry(&text, &label) {
                 Ok(manifests) => out.extend(manifests.into_iter().map(|m| (m, path.clone()))),
-                Err(e) => crate::ui::warn(&format!("ignoring manifest: {e}")),
+                Err(e) => report.warn(&format!("ignoring manifest: {e}")),
             },
-            Err(e) => crate::ui::warn(&format!("ignoring manifest: {e}")),
+            Err(e) => report.warn(&format!("ignoring manifest: {e}")),
         }
     }
     out

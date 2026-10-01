@@ -5,6 +5,7 @@
 
 use crate::error::{Error, Result};
 use crate::model::TargetSpec;
+use crate::report::Report;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -93,16 +94,19 @@ impl Config {
     ///
     /// The optional `root_override` takes precedence over `KETCH_ROOT` and the configured default root.
     /// Configuration-file and environment values are validated before the resolved configuration is returned.
+    /// A setting that is ignored rather than wrong is a warning on `report`.
     ///
     /// # Examples
     ///
     /// ```ignore
     /// use ketch::config::Config;
     ///
-    /// let config = Config::load(None).unwrap();
+    /// use ketch_core::report::Report;
+    ///
+    /// let config = Config::load(None, &Report::silent()).unwrap();
     /// assert!(config.root.is_absolute());
     /// ```
-    pub fn load(root_override: Option<PathBuf>) -> Result<Self> {
+    pub fn load(root_override: Option<PathBuf>, report: &Report) -> Result<Self> {
         // A variable that is set but empty means "unset" here, as it does for
         // every other setting below. `KETCH_ROOT=` is what a CI job writes when
         // it clears a variable, and reading it literally makes the working
@@ -158,7 +162,7 @@ impl Config {
         // The file lives inside the root, so it cannot choose it. Saying so is
         // better than honouring the key nowhere and explaining it nowhere.
         if file.root.is_some() {
-            crate::ui::warn(&format!(
+            report.warn(&format!(
                 "`root` in {} has no effect; set KETCH_ROOT or pass --root",
                 config_file.display()
             ));
@@ -614,7 +618,11 @@ mod tests {
         std::env::set_var("KETCH_GITHUB_TOKEN", "");
         std::env::set_var("GITHUB_TOKEN", "ghp_fallback");
 
-        let cfg = Config::load(Some(std::env::temp_dir().join("ketch-empty-token-test"))).unwrap();
+        let cfg = Config::load(
+            Some(std::env::temp_dir().join("ketch-empty-token-test")),
+            &crate::report::Report::silent(),
+        )
+        .unwrap();
 
         std::env::remove_var("KETCH_GITHUB_TOKEN");
         std::env::remove_var("GITHUB_TOKEN");
@@ -664,7 +672,11 @@ mod tests {
     #[test]
     fn bin_dir_on_path_matches_folded_windows_entries() {
         let tmp = tempfile::tempdir().unwrap();
-        let cfg = Config::load(Some(tmp.path().to_path_buf())).unwrap();
+        let cfg = Config::load(
+            Some(tmp.path().to_path_buf()),
+            &crate::report::Report::silent(),
+        )
+        .unwrap();
         let mixed = cfg.bin_dir.to_string_lossy().replace('\\', "/");
         let with_slash = format!("{mixed}/");
         let path = std::env::join_paths([Path::new("/elsewhere"), Path::new(&with_slash)]).unwrap();
@@ -727,7 +739,7 @@ mod tests {
         let root = tmp.path().join("root");
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(root.join("config.toml"), Config::default_toml()).unwrap();
-        let cfg = Config::load(Some(root.clone())).unwrap();
+        let cfg = Config::load(Some(root.clone()), &crate::report::Report::silent()).unwrap();
         assert!(!cfg.prerelease);
         assert!(cfg.allow_emulation);
         assert!(!cfg.link_apps);
@@ -751,7 +763,12 @@ mod tests {
         }
         let tmp = tempfile::tempdir().unwrap();
         std::fs::write(tmp.path().join("config.toml"), body).unwrap();
-        Config::load(Some(tmp.path().to_path_buf())).unwrap().emoji
+        Config::load(
+            Some(tmp.path().to_path_buf()),
+            &crate::report::Report::silent(),
+        )
+        .unwrap()
+        .emoji
     }
 
     #[test]

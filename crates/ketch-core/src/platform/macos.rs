@@ -401,8 +401,8 @@ impl Platform for MacOsPlatform {
         Ok(links)
     }
 
-    fn unplace(&self, links: &[LinkRecord]) -> Result<()> {
-        super::unix::unplace(links)
+    fn unplace(&self, links: &[LinkRecord], report: &crate::report::Report) -> Result<()> {
+        super::unix::unplace(links, report)
     }
 
     fn verify_trust(&self, path: &Path) -> Result<TrustVerdict> {
@@ -614,13 +614,23 @@ mod tests {
 
         // The link ketch made is ketch's to remove.
         std::os::unix::fs::symlink(&target, &link).unwrap();
-        platform.unplace(std::slice::from_ref(&record)).unwrap();
+        platform
+            .unplace(
+                std::slice::from_ref(&record),
+                &crate::report::Report::silent(),
+            )
+            .unwrap();
         assert!(std::fs::symlink_metadata(&link).is_err());
 
         // The user replaced it with a copy of their own: the record is stale,
         // and removing what is there would delete their file.
         std::fs::write(&link, b"the user's own build").unwrap();
-        platform.unplace(std::slice::from_ref(&record)).unwrap();
+        platform
+            .unplace(
+                std::slice::from_ref(&record),
+                &crate::report::Report::silent(),
+            )
+            .unwrap();
         assert_eq!(
             std::fs::read(&link).unwrap(),
             b"the user's own build",
@@ -629,7 +639,9 @@ mod tests {
 
         // Already gone is not a failure: uninstall stays idempotent.
         std::fs::remove_file(&link).unwrap();
-        platform.unplace(&[record]).unwrap();
+        platform
+            .unplace(&[record], &crate::report::Report::silent())
+            .unwrap();
 
         // A copied `.app` whose store copy is gone: same stale-record class.
         let store = tmp.path().join("store/thing/1.0");
@@ -647,13 +659,23 @@ mod tests {
             role: LinkRole::Binary,
         };
 
-        platform.unplace(std::slice::from_ref(&app_record)).unwrap();
+        platform
+            .unplace(
+                std::slice::from_ref(&app_record),
+                &crate::report::Report::silent(),
+            )
+            .unwrap();
         assert!(!app_link.exists());
 
         std::fs::create_dir_all(app_link.join("Contents")).unwrap();
         std::fs::write(app_link.join("Contents/mine.txt"), b"the user's own copy").unwrap();
         std::fs::remove_dir_all(&store).unwrap();
-        platform.unplace(std::slice::from_ref(&app_record)).unwrap();
+        platform
+            .unplace(
+                std::slice::from_ref(&app_record),
+                &crate::report::Report::silent(),
+            )
+            .unwrap();
         assert!(
             app_link.join("Contents/mine.txt").is_file(),
             "a stale record must not authorize deleting the user's bundle"
@@ -776,7 +798,9 @@ mod tests {
             store.join("complete/rg.bash")
         );
 
-        MacOsPlatform::new().unplace(&links).unwrap();
+        MacOsPlatform::new()
+            .unplace(&links, &crate::report::Report::silent())
+            .unwrap();
         assert!(std::fs::symlink_metadata(&man_dest).is_err());
         assert!(std::fs::symlink_metadata(&comp_dest).is_err());
     }
@@ -906,12 +930,19 @@ mod tests {
             role: LinkRole::Binary,
         };
         let platform = MacOsPlatform::new();
-        platform.unplace(std::slice::from_ref(&record)).unwrap();
+        platform
+            .unplace(
+                std::slice::from_ref(&record),
+                &crate::report::Report::silent(),
+            )
+            .unwrap();
         assert!(link.symlink_metadata().is_ok(), "not ours to remove");
 
         std::fs::remove_file(&link).unwrap();
         std::os::unix::fs::symlink(&ours, &link).unwrap();
-        platform.unplace(&[record]).unwrap();
+        platform
+            .unplace(&[record], &crate::report::Report::silent())
+            .unwrap();
         assert!(link.symlink_metadata().is_err());
     }
 }

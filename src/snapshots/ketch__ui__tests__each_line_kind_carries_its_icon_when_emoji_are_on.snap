@@ -1,6 +1,5 @@
 ---
-source: crates/ketch-core/src/ui.rs
-assertion_line: 1408
+source: src/ui.rs
 expression: shown
 ---
 📦 installing ripgrep 14.1.0

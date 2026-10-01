@@ -75,8 +75,8 @@ impl Platform for LinuxPlatform {
         discover_executables(self, payload, package)
     }
 
-    fn unplace(&self, links: &[LinkRecord]) -> Result<()> {
-        unplace(links)
+    fn unplace(&self, links: &[LinkRecord], report: &crate::report::Report) -> Result<()> {
+        unplace(links, report)
     }
 
     fn is_executable(&self, path: &Path) -> bool {
@@ -208,11 +208,16 @@ mod tests {
             role: LinkRole::Binary,
         };
         let p = LinuxPlatform::new();
-        p.unplace(std::slice::from_ref(&record)).unwrap();
+        p.unplace(
+            std::slice::from_ref(&record),
+            &crate::report::Report::silent(),
+        )
+        .unwrap();
         assert!(std::fs::symlink_metadata(&link).is_err());
 
         std::fs::write(&link, b"mine").unwrap();
-        p.unplace(&[record]).unwrap();
+        p.unplace(&[record], &crate::report::Report::silent())
+            .unwrap();
         assert_eq!(std::fs::read(&link).unwrap(), b"mine");
     }
 

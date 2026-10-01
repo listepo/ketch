@@ -4,9 +4,9 @@
 //! while they stream, so verification costs no extra read of the file.
 
 use crate::cancel::Cancel;
-use crate::config::{Config, USER_AGENT};
+use crate::config::USER_AGENT;
 use crate::error::{Error, Result};
-use crate::ui::ProgressSink;
+use crate::report::{Ctx, ProgressSink, Report};
 use serde::de::DeserializeOwned;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -21,10 +21,12 @@ const MAX_API_BODY: u64 = 32 * 1024 * 1024;
 pub struct Http {
     agent: ureq::Agent,
     token: Option<String>,
+    /// Where each request is noted, for `--verbose` and the log.
+    report: Report,
 }
 
 impl Http {
-    pub fn new(cfg: &Config) -> Self {
+    pub fn new(cx: &Ctx<'_>) -> Self {
         let agent = ureq::AgentBuilder::new()
             .user_agent(USER_AGENT)
             .timeout_connect(Duration::from_secs(15))
@@ -32,24 +34,34 @@ impl Http {
             .build();
         Http {
             agent,
-            token: cfg.github_token.clone(),
+            token: cx.cfg.github_token.clone(),
+            report: cx.report.clone(),
         }
     }
 
     /// Without a token for hosts that are not GitHub.
-    pub fn anonymous() -> Self {
+    pub fn anonymous(report: &Report) -> Self {
         let agent = ureq::AgentBuilder::new()
             .user_agent(USER_AGENT)
             .timeout_connect(Duration::from_secs(15))
             .timeout_read(Duration::from_secs(120))
             .build();
-        Http { agent, token: None }
+        Http {
+            agent,
+            token: None,
+            report: report.clone(),
+        }
     }
 
     // Part of the public surface, with no caller in the tree yet.
     #[allow(dead_code)]
     pub fn has_token(&self) -> bool {
         self.token.is_some()
+    }
+
+    /// Where this client reports, for the source that owns it.
+    pub fn report(&self) -> &Report {
+        &self.report
     }
 
     fn request(&self, url: &str, accept: &str, authed: bool) -> ureq::Request {
@@ -75,7 +87,7 @@ impl Http {
     }
 
     fn get_string(&self, url: &str, accept: &str, authed: bool) -> Result<String> {
-        crate::ui::debug(&format!("GET {url}"));
+        self.report.debug(&format!("GET {url}"));
         let response = self
             .request(url, accept, authed)
             .call()
@@ -109,7 +121,8 @@ impl Http {
         cancel: &Cancel,
     ) -> Result<String> {
         cancel.check()?;
-        crate::ui::debug(&format!("GET {url} -> {}", dest.display()));
+        self.report
+            .debug(&format!("GET {url} -> {}", dest.display()));
         let mut req = self.request(url, "application/octet-stream", authed);
         for (key, value) in headers {
             req = req.set(key, value);
@@ -164,7 +177,7 @@ impl Http {
         }
 
         staged.persist(dest).map_err(|e| Error::io(dest, e.error))?;
-        progress.finish(&format!("{label} ({})", crate::ui::bytes(written)));
+        progress.finish(&format!("{label} ({})", crate::text::bytes(written)));
         Ok(hex::encode(hasher.finalize()))
     }
 }
@@ -222,7 +235,7 @@ fn extract_message(body: &str) -> Option<String> {
     if snippet.is_empty() {
         None
     } else {
-        Some(crate::ui::truncate(snippet, 200))
+        Some(crate::text::truncate(snippet, 200))
     }
 }
 
@@ -323,8 +336,14 @@ mod tests {
         let dest = dir.path().join("big.bin");
         let cancel = Cancel::new();
         let progress = StopAfterFirstChunk(cancel.clone());
-        let result =
-            Http::anonymous().download(&url, &dest, &BTreeMap::new(), false, &progress, &cancel);
+        let result = Http::anonymous(&crate::report::Report::silent()).download(
+            &url,
+            &dest,
+            &BTreeMap::new(),
+            false,
+            &progress,
+            &cancel,
+        );
 
         assert!(matches!(result, Err(Error::Cancelled)));
         assert!(!dest.exists(), "no destination file");

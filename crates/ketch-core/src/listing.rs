@@ -15,8 +15,8 @@ use crate::error::{Error, Result};
 use crate::install;
 use crate::manifest::same_source;
 use crate::model::{normalize_name, now_unix, InstalledPackage, Manifest, PackageRef, Version};
+use crate::report::{Ctx, Report};
 use crate::source::{ListOpts, SourceRegistry};
-use crate::ui;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -305,7 +305,8 @@ impl Outcome {
 /// cached answer is used instead of asking. A source that fails leaves its
 /// rows `Unreachable`; nothing here returns an error, because one missing
 /// version must not hide every other row.
-pub fn fill_latest(cfg: &Config, sources: &SourceRegistry, rows: &mut [Row]) -> Outcome {
+pub fn fill_latest(cx: &Ctx<'_>, sources: &SourceRegistry, rows: &mut [Row]) -> Outcome {
+    let cfg = cx.cfg;
     let mut lookups: BTreeMap<String, Lookup> = BTreeMap::new();
     for row in rows.iter() {
         if let Some(lookup) = row.lookup() {
@@ -318,7 +319,7 @@ pub fn fill_latest(cfg: &Config, sources: &SourceRegistry, rows: &mut [Row]) -> 
 
     let path = cache_path(cfg);
     let now = now_unix();
-    let mut cache = Cache::load(&path);
+    let mut cache = Cache::load(&path, cx.report);
     cache.expire(now);
 
     let mut answers: HashMap<String, Found> = HashMap::new();
@@ -332,7 +333,7 @@ pub fn fill_latest(cfg: &Config, sources: &SourceRegistry, rows: &mut [Row]) -> 
         }
     }
 
-    let fetched = ask_all(cfg, sources, &stale);
+    let fetched = ask_all(cx, sources, &stale);
     let mut changed = false;
     for (key, result) in fetched {
         match result {
@@ -343,11 +344,11 @@ pub fn fill_latest(cfg: &Config, sources: &SourceRegistry, rows: &mut [Row]) -> 
                 answers.insert(key, found);
                 changed = true;
             }
-            Err(e) => ui::debug(&format!("latest for {key}: {e}")),
+            Err(e) => cx.report.debug(&format!("latest for {key}: {e}")),
         }
     }
     if changed {
-        cache.save(&path);
+        cache.save(&path, cx.report);
     }
 
     for row in rows.iter_mut() {
@@ -367,15 +368,17 @@ pub fn fill_latest(cfg: &Config, sources: &SourceRegistry, rows: &mut [Row]) -> 
 /// The lookups that the cache could not answer, in parallel, with a counter
 /// on stderr while they run.
 fn ask_all(
-    cfg: &Config,
+    cx: &Ctx<'_>,
     sources: &SourceRegistry,
     stale: &[(&String, &Lookup)],
 ) -> Vec<(String, Result<Found>)> {
     if stale.is_empty() {
         return Vec::new();
     }
-    let counter = ui::counter("checking", stale.len() as u64, "packages");
-    let jobs = cfg.jobs.clamp(1, stale.len());
+    let counter = cx
+        .report
+        .counter("checking", stale.len() as u64, "packages");
+    let jobs = cx.cfg.jobs.clamp(1, stale.len());
     let next = AtomicUsize::new(0);
     let done = Mutex::new(Vec::new());
     std::thread::scope(|scope| {
@@ -447,12 +450,12 @@ impl CacheEntry {
 impl Cache {
     /// The cache is a convenience: unreadable or malformed means empty, and
     /// the next listing simply asks the sources again.
-    fn load(path: &Path) -> Cache {
+    fn load(path: &Path, report: &Report) -> Cache {
         let Ok(text) = std::fs::read_to_string(path) else {
             return Cache::default();
         };
         serde_json::from_str(&text).unwrap_or_else(|e| {
-            ui::debug(&format!("ignoring {}: {e}", path.display()));
+            report.debug(&format!("ignoring {}: {e}", path.display()));
             Cache::default()
         })
     }
@@ -463,9 +466,9 @@ impl Cache {
 
     /// Written whole and swapped in, so two listings at once cannot leave a
     /// torn file; a failure costs the next listing a lookup, nothing more.
-    fn save(&self, path: &Path) {
+    fn save(&self, path: &Path, report: &Report) {
         if let Err(e) = self.try_save(path) {
-            ui::debug(&format!("could not write {}: {e}", path.display()));
+            report.debug(&format!("could not write {}: {e}", path.display()));
         }
     }
 
@@ -535,13 +538,17 @@ pub fn remote_cells(rows: &[Row], width: Option<usize>) -> Vec<Vec<String>> {
                 .as_ref()
                 .and_then(|a| a.description.as_deref())
                 .map(|d| {
-                    ui::printable(d)
+                    crate::changelog::sanitize(d)
                         .split_whitespace()
                         .collect::<Vec<_>>()
                         .join(" ")
                 })
                 .unwrap_or_default();
-            (ui::printable(&row.name), row.latest_cell(), description)
+            (
+                crate::changelog::sanitize(&row.name),
+                row.latest_cell(),
+                description,
+            )
         })
         .collect();
     let name_width = cells
@@ -563,7 +570,7 @@ pub fn remote_cells(rows: &[Row], width: Option<usize>) -> Vec<Vec<String>> {
         .into_iter()
         .map(|(name, latest, description)| {
             let description = match room {
-                Some(room) => ui::truncate(&description, room),
+                Some(room) => crate::text::truncate(&description, room),
                 None => description,
             };
             vec![name, latest, description]
@@ -835,14 +842,14 @@ mod tests {
             "test:alpha#stable".into(),
             CacheEntry::new(&found("1.2.3"), 5),
         );
-        cache.save(&path);
-        let back = Cache::load(&path);
+        cache.save(&path, &Report::silent());
+        let back = Cache::load(&path, &Report::silent());
         assert_eq!(
             back.entries.get("test:alpha#stable").map(CacheEntry::found),
             Some(found("1.2.3"))
         );
         std::fs::write(&path, "not json").expect("write");
-        assert!(Cache::load(&path).entries.is_empty());
+        assert!(Cache::load(&path, &Report::silent()).entries.is_empty());
     }
 
     #[test]

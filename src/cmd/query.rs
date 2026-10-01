@@ -100,7 +100,7 @@ fn print_local_table(rows: &[Row]) {
 }
 
 fn list_remote(cfg: &Config, args: &ListArgs) -> Result<()> {
-    let resolver = Resolver::new(cfg)?;
+    let resolver = Resolver::new(&crate::ui::ctx(cfg))?;
     let mut rows: Vec<Row> = resolver
         .listed()
         .into_iter()
@@ -125,8 +125,8 @@ fn list_remote(cfg: &Config, args: &ListArgs) -> Result<()> {
         ui::note(EMPTY_REGISTRY);
     }
 
-    let sources = SourceRegistry::load(cfg);
-    if listing::fill_latest(cfg, &sources, &mut rows).offline() {
+    let sources = SourceRegistry::load(&crate::ui::ctx(cfg));
+    if listing::fill_latest(&crate::ui::ctx(cfg), &sources, &mut rows).offline() {
         return Err(Error::msg(
             "could not reach any package source to check the latest versions; \
              `ketch list local` works offline",
@@ -158,7 +158,7 @@ fn list_remote(cfg: &Config, args: &ListArgs) -> Result<()> {
 
 fn list_all(cfg: &Config, args: &ListArgs) -> Result<()> {
     let state = State::load(cfg)?;
-    let resolver = Resolver::new(cfg)?;
+    let resolver = Resolver::new(&crate::ui::ctx(cfg))?;
     let locals = state
         .iter()
         .map(|p| Local::from_installed(cfg, p))
@@ -182,8 +182,8 @@ fn list_all(cfg: &Config, args: &ListArgs) -> Result<()> {
         ui::note(EMPTY_REGISTRY);
     }
 
-    let sources = SourceRegistry::load(cfg);
-    let offline = listing::fill_latest(cfg, &sources, &mut rows).offline();
+    let sources = SourceRegistry::load(&crate::ui::ctx(cfg));
+    let offline = listing::fill_latest(&crate::ui::ctx(cfg), &sources, &mut rows).offline();
     // No source answered: the network is missing, not one package. What is
     // installed is still known, so that much is the answer.
     if offline {
@@ -268,7 +268,7 @@ fn list_all(cfg: &Config, args: &ListArgs) -> Result<()> {
 /// exits non-zero, matching the text "N could not be checked".
 pub fn outdated(cfg: &Config, args: OutdatedArgs) -> Result<()> {
     let state = State::load(cfg)?;
-    let sources = SourceRegistry::load(cfg);
+    let sources = SourceRegistry::load(&crate::ui::ctx(cfg));
     let prerelease = args.prerelease || cfg.prerelease;
     // Local packages have no upstream release stream; skipping them keeps
     // `outdated` from treating the synthetic tag as something to refresh.
@@ -377,7 +377,7 @@ pub fn info(cfg: &Config, args: InfoArgs) -> Result<()> {
 
     // An installed package always has an answer, even when the registry has
     // forgotten the name it was installed under.
-    let manifest = match Resolver::new(cfg)?.resolve(&spec) {
+    let manifest = match Resolver::new(&crate::ui::ctx(cfg))?.resolve(&spec) {
         Ok((m, origin)) => {
             ui::debug(&format!("manifest from {}", describe_origin(&origin)));
             m
@@ -391,7 +391,7 @@ pub fn info(cfg: &Config, args: InfoArgs) -> Result<()> {
         },
     };
 
-    let sources = SourceRegistry::load(cfg);
+    let sources = SourceRegistry::load(&crate::ui::ctx(cfg));
     let source = match sources.for_ref(&manifest.source) {
         Ok(s) => Some(s),
         Err(e) => {
@@ -663,7 +663,7 @@ fn published_notes(
     installed: Option<InstalledPackage>,
     latest: bool,
 ) -> Result<(String, String, Entry)> {
-    let manifest = match Resolver::new(cfg)?.resolve(spec) {
+    let manifest = match Resolver::new(&crate::ui::ctx(cfg))?.resolve(spec) {
         Ok((m, _)) => m,
         Err(e) => match &installed {
             Some(pkg) => pkg
@@ -683,7 +683,7 @@ fn published_notes(
             .unwrap_or(VersionSpec::Latest),
     };
 
-    let sources = SourceRegistry::load(cfg);
+    let sources = SourceRegistry::load(&crate::ui::ctx(cfg));
     let source = sources.for_ref(&manifest.source)?;
     let opts = ListOpts {
         include_prerelease: cfg.prerelease || manifest.prerelease,
@@ -741,7 +741,7 @@ pub fn search(cfg: &Config, args: SearchArgs) -> Result<()> {
 
     // Curated manifests first: they install with better names and known
     // binaries, so they are the answer whenever one matches.
-    let resolver = Resolver::new(cfg)?;
+    let resolver = Resolver::new(&crate::ui::ctx(cfg))?;
     let known = resolver.search(query);
     if !known.is_empty() {
         ui::out(&ui::bold("known packages"));
@@ -765,7 +765,7 @@ pub fn search(cfg: &Config, args: SearchArgs) -> Result<()> {
         return Ok(());
     }
 
-    let sources = SourceRegistry::load(cfg);
+    let sources = SourceRegistry::load(&crate::ui::ctx(cfg));
     let mut rows = Vec::new();
     let mut unreachable = 0usize;
     for source in sources.all() {
@@ -959,8 +959,8 @@ fn installed_for_spec(state: &State, spec: &PackageSpec, raw: &str) -> Option<In
 /// successful explanation.
 pub fn why(cfg: &Config, args: WhyArgs) -> Result<()> {
     let spec = PackageSpec::parse(&args.package);
-    let sources = SourceRegistry::load(cfg);
-    let trace = crate::resolve::explain(cfg, &sources, &spec)?;
+    let sources = SourceRegistry::load(&crate::ui::ctx(cfg));
+    let trace = crate::resolve::explain(&crate::ui::ctx(cfg), &sources, &spec)?;
     if args.json {
         print_json(&trace)?;
     } else {

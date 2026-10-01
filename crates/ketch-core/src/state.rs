@@ -181,12 +181,12 @@ fn held() -> std::sync::MutexGuard<'static, Vec<PathBuf>> {
 
 impl Lock {
     /// Take the lock, or fail with `Error::Busy` without waiting.
-    pub fn acquire(cfg: &Config) -> Result<Lock> {
-        Self::acquire_path(&cfg.lock_file)
+    pub fn acquire(cx: &crate::report::Ctx<'_>) -> Result<Lock> {
+        Self::acquire_path(&cx.cfg.lock_file, cx.report)
     }
 
-    /// Like `acquire`, for an explicit lock file path.
-    pub fn acquire_path(path: &Path) -> Result<Lock> {
+    /// `acquire` for a lock file anywhere; `report` hears about a stale one cleared.
+    pub fn acquire_path(path: &Path, report: &crate::report::Report) -> Result<Lock> {
         let parent = path.parent().unwrap_or(Path::new("."));
         std::fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
         let me = std::process::id();
@@ -240,7 +240,7 @@ impl Lock {
                         // they would then both proceed.
                         other => {
                             if attempt == 0 {
-                                crate::ui::debug(&format!(
+                                report.debug(&format!(
                                     "clearing stale lock {} ({})",
                                     path.display(),
                                     other
@@ -375,7 +375,7 @@ mod tests {
         // Above the pid ceiling, so it can never name a running process.
         std::fs::write(&path, "999999").unwrap();
 
-        let lock = Lock::acquire_path(&path).unwrap();
+        let lock = Lock::acquire_path(&path, &crate::report::Report::silent()).unwrap();
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),
             std::process::id().to_string()
@@ -398,7 +398,10 @@ mod tests {
         // pid 1 is running and is not ours to signal — the case that reads as
         // "process is gone" if aliveness is judged by `kill -0` alone.
         std::fs::write(&path, "1").unwrap();
-        assert!(matches!(Lock::acquire_path(&path), Err(Error::Busy { .. })));
+        assert!(matches!(
+            Lock::acquire_path(&path, &crate::report::Report::silent()),
+            Err(Error::Busy { .. })
+        ));
     }
 
     #[test]
@@ -571,9 +574,9 @@ mod tests {
     fn a_second_lock_in_this_process_is_busy_until_the_first_drops() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(".lock");
-        let held = Lock::acquire_path(&path).unwrap();
+        let held = Lock::acquire_path(&path, &crate::report::Report::silent()).unwrap();
         assert!(path.exists());
-        match Lock::acquire_path(&path) {
+        match Lock::acquire_path(&path, &crate::report::Report::silent()) {
             Err(Error::Busy { pid, .. }) => assert_eq!(pid, Some(std::process::id())),
             other => panic!("expected Busy, got {:?}", other.map(|_| ())),
         }
@@ -581,14 +584,16 @@ mod tests {
         assert!(path.exists());
         drop(held);
         assert!(!path.exists());
-        drop(Lock::acquire_path(&path).unwrap());
+        drop(Lock::acquire_path(&path, &crate::report::Report::silent()).unwrap());
     }
 
     #[test]
     fn a_lock_held_under_one_path_does_not_block_another_path() {
         let dir = tempfile::tempdir().unwrap();
-        let _a = Lock::acquire_path(&dir.path().join("a")).unwrap();
-        let _b = Lock::acquire_path(&dir.path().join("b")).unwrap();
+        let _a =
+            Lock::acquire_path(&dir.path().join("a"), &crate::report::Report::silent()).unwrap();
+        let _b =
+            Lock::acquire_path(&dir.path().join("b"), &crate::report::Report::silent()).unwrap();
     }
 
     #[test]
@@ -599,10 +604,10 @@ mod tests {
         {
             // A live foreign holder: busy, and must not poison later attempts.
             std::fs::write(&path, "1").unwrap();
-            assert!(Lock::acquire_path(&path).is_err());
+            assert!(Lock::acquire_path(&path, &crate::report::Report::silent()).is_err());
             std::fs::remove_file(&path).unwrap();
         }
-        drop(Lock::acquire_path(&path).unwrap());
+        drop(Lock::acquire_path(&path, &crate::report::Report::silent()).unwrap());
     }
 
     #[test]
@@ -610,7 +615,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("lock");
         std::fs::write(&path, std::process::id().to_string()).unwrap();
-        drop(Lock::acquire_path(&path).unwrap());
+        drop(Lock::acquire_path(&path, &crate::report::Report::silent()).unwrap());
         assert!(!path.exists());
     }
 
@@ -618,10 +623,12 @@ mod tests {
     fn a_held_lock_can_be_contended_from_another_thread() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("lock");
-        let _held = Lock::acquire_path(&path).unwrap();
-        let other = std::thread::spawn(move || Lock::acquire_path(&path).map(|_| ()))
-            .join()
-            .unwrap();
+        let _held = Lock::acquire_path(&path, &crate::report::Report::silent()).unwrap();
+        let other = std::thread::spawn(move || {
+            Lock::acquire_path(&path, &crate::report::Report::silent()).map(|_| ())
+        })
+        .join()
+        .unwrap();
         assert!(matches!(other, Err(Error::Busy { .. })));
     }
 }

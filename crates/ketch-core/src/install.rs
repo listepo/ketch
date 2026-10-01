@@ -17,9 +17,9 @@ use crate::model::{
     PackageSpec, Release, ReleaseAsset, RetainedVersion, TrustResult, Version, VersionSpec,
 };
 use crate::platform::{AssetScore, Placement, Platform, TrustVerdict};
+use crate::report::{Ctx, ProgressSink, Report, Stage};
 use crate::source::{ListOpts, SourceRegistry};
 use crate::state::State;
-use crate::ui;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
@@ -142,15 +142,14 @@ pub struct Prepared {
 /// Run the pipeline. Mutates `state` in memory; the caller saves it, so a batch
 /// install writes `state.json` once.
 pub fn install(
-    cfg: &Config,
+    cx: &Ctx<'_>,
     sources: &SourceRegistry,
     state: &mut State,
     req: &InstallRequest,
 ) -> Result<Installed> {
-    let label = req.spec.label();
-    let progress = ui::progress_for(&label);
-    let prepared = prepare(cfg, sources, state, req, progress.as_ref())?;
-    commit(cfg, state, prepared)
+    let progress = cx.report.download(&req.spec.label());
+    let prepared = prepare(cx, sources, state, req, &progress)?;
+    commit(cx, state, prepared)
 }
 
 /// Resolves, downloads, verifies, and unpacks a package for installation.
@@ -166,14 +165,16 @@ pub fn install(
 /// # use crate::model::PackageSpec;
 /// # use crate::source::SourceRegistry;
 /// # use crate::state::State;
-/// # use crate::ui;
-/// # let cfg: Config = Config::load(None)?;
-/// # let sources: SourceRegistry = SourceRegistry::load(&cfg);
+/// # use crate::report::{Ctx, Report};
+/// # let report = Report::silent();
+/// # let cfg: Config = Config::load(None, &report)?;
+/// # let cx = Ctx::new(&cfg, &report);
+/// # let sources: SourceRegistry = SourceRegistry::load(&cx);
 /// # let mut state: State = State::default();
 /// # let request: InstallRequest = InstallRequest::new(PackageSpec::parse("ripgrep"));
-/// # let progress: Box<dyn ui::ProgressSink> = ui::progress();
-/// let prepared = prepare(&cfg, &sources, &state, &request, progress.as_ref())?;
-/// let installed = commit(&cfg, &mut state, prepared)?;
+/// # let progress = report.download("ripgrep");
+/// let prepared = prepare(&cx, &sources, &state, &request, &progress)?;
+/// let installed = commit(&cx, &mut state, prepared)?;
 /// # let _: Installed = installed;
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
@@ -185,7 +186,7 @@ pub fn install(
 ///
 /// # Parameters
 ///
-/// * `cfg` - Installation configuration.
+/// * `cx` - Installation configuration, and where progress is reported.
 /// * `sources` - Registered package sources.
 /// * `state` - Current installation state used to reject pinned or already-installed packages.
 /// * `req` - Package and installation options.
@@ -195,18 +196,19 @@ pub fn install(
 ///
 /// The verified and unpacked package data required by `commit`.
 pub fn prepare(
-    cfg: &Config,
+    cx: &Ctx<'_>,
     sources: &SourceRegistry,
     state: &State,
     req: &InstallRequest,
-    progress: &dyn ui::ProgressSink,
+    progress: &dyn ProgressSink,
 ) -> Result<Prepared> {
     req.cancel.check()?;
+    let (cfg, report) = (cx.cfg, cx.report);
     let started = std::time::Instant::now();
     let platform = crate::platform::host()?;
     let label = req.spec.label();
-    ui::stage(&label, ui::ProgressStage::Resolving);
-    let (mut manifest, origin) = Resolver::new(cfg)?.resolve(&req.spec)?;
+    report.stage(&label, Stage::Resolving);
+    let (mut manifest, origin) = Resolver::new(cx)?.resolve(&req.spec)?;
 
     // Local refs are recorded with an absolute path so list/info survive a
     // later change of working directory. Classification also needs the path
@@ -252,12 +254,13 @@ pub fn prepare(
     let source = sources.for_ref(&manifest.source)?;
 
     let opts = crate::resolve::list_opts(cfg, &manifest, req.prerelease);
-    ui::step(
+    report.step(
         "resolving",
         &format!("{} ({})", manifest.name, manifest.source),
     );
-    let release = ui::activity(&format!("resolving {}", manifest.name), None)
-        .run(|_| source.resolve(&manifest.source.id, &req.spec.version, &opts))?;
+    let release = report
+        .activity(&format!("resolving {}", manifest.name))
+        .run(|| source.resolve(&manifest.source.id, &req.spec.version, &opts))?;
 
     // Nothing is downloaded until we know the install is actually wanted.
     let existing = state.get(&manifest.name).cloned();
@@ -295,12 +298,12 @@ pub fn prepare(
 
     let chosen = choose_asset(cfg, platform.as_ref(), &release, &manifest, req)?;
     let asset = chosen.asset;
-    ui::debug(&format!(
+    report.debug(&format!(
         "selected {} — {}",
         asset.name, chosen.score.reason
     ));
     if chosen.score.emulated {
-        ui::warn(&format!(
+        report.warn(&format!(
             "{} is an {} build and will run under emulation",
             asset.name, chosen.score.arch
         ));
@@ -316,7 +319,7 @@ pub fn prepare(
             let app_path = local_path.as_ref().ok_or_else(|| {
                 Error::msg("internal error: local .app install without a recorded path")
             })?;
-            ui::stage(&label, ui::ProgressStage::Downloading);
+            report.stage(&label, Stage::Downloading);
             let dest_name = app_path
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
@@ -328,7 +331,7 @@ pub fn prepare(
             // checksum to require, but a lockfile's hash still holds it.
             let sha256 = crate::source::local::sha256_tree(&dest)?;
             progress.finish("copied");
-            ui::stage(&label, ui::ProgressStage::Verifying);
+            report.stage(&label, Stage::Verifying);
             check_locked(req, &manifest.name, &dest_name, &sha256)?;
             // A bundle on disk has no release to carry a signature, so a policy
             // that requires one cannot be met.
@@ -337,6 +340,7 @@ pub fn prepare(
                     policy,
                     &dest_name,
                     "a local app bundle has no published signature",
+                    report,
                 )?,
                 None => None,
             };
@@ -344,7 +348,7 @@ pub fn prepare(
             (sha256, dest_name, false, provenance, payload)
         } else {
             // --- download -------------------------------------------------------
-            ui::stage(&label, ui::ProgressStage::Downloading);
+            report.stage(&label, Stage::Downloading);
             // A directory of its own, not a name under the cache. Two `prepare`s
             // run side by side, and an alias and a repo path naming the same
             // package would pick the same file name: they would overwrite each
@@ -367,7 +371,7 @@ pub fn prepare(
             // --- checksum -------------------------------------------------------
             check_locked(req, &manifest.name, &asset.name, &sha256)?;
 
-            ui::stage(&label, ui::ProgressStage::Verifying);
+            report.stage(&label, Stage::Verifying);
             // Local packages never publish a checksum; requiring one would make
             // every `local:` install fail for a reason the user cannot fix.
             let require = if local_kind.is_some() {
@@ -382,6 +386,7 @@ pub fn prepare(
                 &asset,
                 &sha256,
                 require,
+                report,
             )?;
 
             // --- signature ------------------------------------------------------
@@ -395,20 +400,28 @@ pub fn prepare(
                 &download_path,
                 &sha256,
                 staging.path(),
+                report,
             )?;
 
             // --- extract --------------------------------------------------------
-            ui::stage(&label, ui::ProgressStage::Extracting);
-            let format = ui::activity(&format!("extracting {}", asset.name), None).run(|_| {
-                crate::extract::extract_auto(&download_path, unpack.path(), &platform.extractors())
-            })?;
-            ui::debug(&format!("unpacked {} as {format}", asset.name));
+            report.stage(&label, Stage::Extracting);
+            let format = report
+                .activity(&format!("extracting {}", asset.name))
+                .run(|| {
+                    crate::extract::extract_auto(
+                        &download_path,
+                        unpack.path(),
+                        &platform.extractors(),
+                        report,
+                    )
+                })?;
+            report.debug(&format!("unpacked {} as {format}", asset.name));
             let payload = payload_root(unpack.path(), manifest.strip_prefix)?;
             (sha256, asset.name, checksum_verified, provenance, payload)
         };
 
-    ui::stage(&label, ui::ProgressStage::Trusting);
-    let trust = check_trust(platform.as_ref(), cfg, &payload, &manifest.name);
+    report.stage(&label, Stage::Trusting);
+    let trust = check_trust(platform.as_ref(), cfg, &payload, &manifest.name, report);
 
     Ok(Prepared {
         label,
@@ -454,7 +467,7 @@ struct BinPick {
 /// checked either way, so a name that matches nothing is an error, not a
 /// silent no-op.
 fn pick_bin(
-    cfg: &Config,
+    cx: &Ctx<'_>,
     platform: &dyn Platform,
     payload: &Path,
     manifest: Option<&crate::model::Manifest>,
@@ -462,6 +475,7 @@ fn pick_bin(
     known: bin_choice::Known<'_>,
     interactive: bool,
 ) -> Result<Option<BinPick>> {
+    let (cfg, report) = (cx.cfg, cx.report);
     if manifest.is_some_and(|m| !m.bin.is_empty()) {
         if let Some(flag) = known.flag {
             return Err(Error::msg(format!(
@@ -496,7 +510,7 @@ fn pick_bin(
     let question = format!("{name} ships several binaries sharing its name; which one to link?");
     let mut ask = |candidates: &[String]| {
         if interactive {
-            ui::select(&question, candidates)
+            report.choose(&question, candidates)
         } else {
             None
         }
@@ -541,7 +555,12 @@ fn remembered_choice(pick: Option<&BinPick>, remembered: Option<&str>) -> Option
 /// binaries from now on: the chosen one and every other it links. Best
 /// effort: the install has already succeeded, and state remembers the choice
 /// even when the file cannot be written.
-fn record_in_manifest(path: &Path, manifest: &mut crate::model::Manifest, pick: &BinPick) {
+fn record_in_manifest(
+    path: &Path,
+    manifest: &mut crate::model::Manifest,
+    pick: &BinPick,
+    report: &Report,
+) {
     let commands: Vec<String> = pick
         .specs
         .iter()
@@ -554,7 +573,7 @@ fn record_in_manifest(path: &Path, manifest: &mut crate::model::Manifest, pick: 
                 .iter()
                 .map(|c| format!("{{ name = \"{c}\" }}"))
                 .collect();
-            ui::note(&format!(
+            report.note(&format!(
                 "{} now names its binaries: bin = [{}]",
                 path.display(),
                 listed.join(", ")
@@ -568,7 +587,7 @@ fn record_in_manifest(path: &Path, manifest: &mut crate::model::Manifest, pick: 
                 .collect();
         }
         Ok(false) => {}
-        Err(e) => ui::warn(&format!(
+        Err(e) => report.warn(&format!(
             "could not record the chosen binary in {}: {e}",
             path.display()
         )),
@@ -595,10 +614,10 @@ fn extra_placements(
 ///
 /// ```ignore
 /// let mut state = todo!();
-/// let cfg = todo!();
+/// let cx = todo!();
 /// let prepared = todo!();
 ///
-/// let installed = commit(&cfg, &mut state, prepared)?;
+/// let installed = commit(&cx, &mut state, prepared)?;
 /// # let _: Installed = installed;
 /// # Ok::<(), anyhow::Error>(())
 /// ```
@@ -607,7 +626,8 @@ fn extra_placements(
 ///
 /// Returns an error if the host platform cannot be resolved or the payload cannot
 /// be placed.
-pub fn commit(cfg: &Config, state: &mut State, prepared: Prepared) -> Result<Installed> {
+pub fn commit(cx: &Ctx<'_>, state: &mut State, prepared: Prepared) -> Result<Installed> {
+    let (cfg, report) = (cx.cfg, cx.report);
     let Prepared {
         label,
         manifest,
@@ -634,7 +654,7 @@ pub fn commit(cfg: &Config, state: &mut State, prepared: Prepared) -> Result<Ins
     cancel.check()?;
     let mut manifest = manifest;
     let platform = crate::platform::host()?;
-    ui::stage(&label, ui::ProgressStage::Installing);
+    report.stage(&label, Stage::Installing);
 
     // Read again rather than trusting what `prepare` saw: in a batch, another
     // package may have been placed since.
@@ -675,6 +695,7 @@ pub fn commit(cfg: &Config, state: &mut State, prepared: Prepared) -> Result<Ins
             prefix: &store_dir,
             bin_dir: &cfg.bin_dir,
             root: &cfg.root,
+            report,
         },
     )?;
 
@@ -695,7 +716,7 @@ pub fn commit(cfg: &Config, state: &mut State, prepared: Prepared) -> Result<Ins
     };
     let pick = if link || known.flag.is_some() {
         pick_bin(
-            cfg,
+            cx,
             platform.as_ref(),
             &payload,
             Some(&manifest),
@@ -737,14 +758,14 @@ pub fn commit(cfg: &Config, state: &mut State, prepared: Prepared) -> Result<Ins
             .collect();
         // A failure here leaves a dangling link, not a broken install, so it is
         // reported rather than propagated.
-        if let Err(e) = platform.unplace(&stale) {
-            ui::warn(&format!("could not remove old links for {}: {e}", old.name));
+        if let Err(e) = platform.unplace(&stale, report) {
+            report.warn(&format!("could not remove old links for {}: {e}", old.name));
         }
         retain_replaced(cfg, old, &store_dir, &mut retained);
     }
 
     if let (Some(pick), crate::model::ManifestOrigin::User(path)) = (&pick, &origin) {
-        record_in_manifest(path, &mut manifest, pick);
+        record_in_manifest(path, &mut manifest, pick, report);
     }
     let bin_choice = remembered_choice(pick.as_ref(), remembered);
 
@@ -784,6 +805,7 @@ pub fn commit(cfg: &Config, state: &mut State, prepared: Prepared) -> Result<Ins
                 prefix: &package.prefix,
                 bin_dir: &cfg.bin_dir,
                 root: &cfg.root,
+                report,
             },
         );
     }
@@ -797,7 +819,7 @@ pub fn commit(cfg: &Config, state: &mut State, prepared: Prepared) -> Result<Ins
     let source = package.source.to_string();
     let target = package.target.to_string();
     crate::stats::record(
-        cfg,
+        cx,
         &crate::stats::install_event(
             &package,
             previous.as_deref(),
@@ -823,7 +845,7 @@ pub fn commit(cfg: &Config, state: &mut State, prepared: Prepared) -> Result<Ins
 /// A worker holds its slot until its package is placed, so at most `jobs`
 /// unpacked payloads sit in the cache at once rather than the whole batch.
 pub fn batch(
-    cfg: &Config,
+    cx: &Ctx<'_>,
     sources: &SourceRegistry,
     state: &mut State,
     reqs: &[InstallRequest],
@@ -832,7 +854,7 @@ pub fn batch(
     if jobs <= 1 || reqs.len() <= 1 {
         return reqs
             .iter()
-            .map(|req| install(cfg, sources, state, req))
+            .map(|req| install(cx, sources, state, req))
             .collect();
     }
 
@@ -841,7 +863,7 @@ pub fn batch(
     // the live state again before it places anything.
     let snapshot = state.clone();
     let live = Mutex::new(state);
-    let bars = ui::bars();
+    let bars = cx.report.batch();
     let next = AtomicUsize::new(0);
     let done: Mutex<Vec<(usize, Result<Installed>)>> = Mutex::new(Vec::with_capacity(reqs.len()));
 
@@ -852,10 +874,10 @@ pub fn batch(
             scope.spawn(|| loop {
                 let i = next.fetch_add(1, Ordering::Relaxed);
                 let Some(req) = reqs.get(i) else { return };
-                let sink = bars.sink(&req.spec.label());
-                let result = prepare(cfg, sources, &snapshot, req, sink.as_ref()).and_then(|p| {
+                let sink = bars.download(&req.spec.label());
+                let result = prepare(cx, sources, &snapshot, req, &sink).and_then(|p| {
                     let mut live = live.lock().unwrap_or_else(|e| e.into_inner());
-                    commit(cfg, &mut live, p)
+                    commit(cx, &mut live, p)
                 });
                 done.lock()
                     .unwrap_or_else(|e| e.into_inner())
@@ -902,7 +924,8 @@ fn recorded_hooks(pkg: &InstalledPackage) -> Result<Option<&crate::model::Hooks>
 /// assert_eq!(removed.name, "example");
 /// # Ok::<(), anyhow::Error>(())
 /// ```
-pub fn uninstall(cfg: &Config, state: &mut State, name: &str) -> Result<InstalledPackage> {
+pub fn uninstall(cx: &Ctx<'_>, state: &mut State, name: &str) -> Result<InstalledPackage> {
+    let (cfg, report) = (cx.cfg, cx.report);
     let pkg = state
         .find(name)
         .cloned()
@@ -916,11 +939,12 @@ pub fn uninstall(cfg: &Config, state: &mut State, name: &str) -> Result<Installe
         prefix: &pkg.prefix,
         bin_dir: &cfg.bin_dir,
         root: &cfg.root,
+        report,
     };
     // Skipped rather than refused, unlike install and rollback: an uninstall
     // must stay possible whatever the recorded manifest says.
     let pkg_hooks = recorded_hooks(&pkg).unwrap_or_else(|_| {
-        ui::warn(&format!(
+        report.warn(&format!(
             "{}: skipping hooks from a {} manifest",
             pkg.name,
             pkg.origin.tier()
@@ -930,11 +954,11 @@ pub fn uninstall(cfg: &Config, state: &mut State, name: &str) -> Result<Installe
     if let Some(h) = pkg_hooks {
         hooks::run(h, hooks::Event::BeforeUninstall, &hook_ctx)?;
     }
-    platform.unplace(&pkg.links)?;
+    platform.unplace(&pkg.links, report)?;
     // The whole `store/<name>/` goes, not just the prefixes state knows of:
     // a `.incoming` or `.old` sibling a failed swap left behind would
     // otherwise keep the package's folder alive forever.
-    let package_dir = remove_package_dir(cfg, &pkg.name);
+    let package_dir = remove_package_dir(cfg, &pkg.name, report);
     for prefix in std::iter::once(&pkg.prefix).chain(pkg.retained.iter().map(|r| &r.prefix)) {
         // Already attempted as part of the package folder; a second try
         // would only repeat its warning.
@@ -944,7 +968,7 @@ pub fn uninstall(cfg: &Config, state: &mut State, name: &str) -> Result<Installe
         {
             continue;
         }
-        remove_store_dir(cfg, prefix);
+        remove_store_dir(cfg, prefix, report);
     }
     state.remove(&pkg.name);
     if let Some(h) = pkg_hooks {
@@ -957,7 +981,7 @@ pub fn uninstall(cfg: &Config, state: &mut State, name: &str) -> Result<Installe
     let source = pkg.source.to_string();
     let target = pkg.target.to_string();
     crate::stats::record(
-        cfg,
+        cx,
         &crate::stats::uninstall_event(&pkg, &version, &source, &target),
     );
 
@@ -965,7 +989,8 @@ pub fn uninstall(cfg: &Config, state: &mut State, name: &str) -> Result<Installe
 }
 
 /// Re-create links for an already-installed package.
-pub fn relink(cfg: &Config, state: &mut State, name: &str) -> Result<()> {
+pub fn relink(cx: &Ctx<'_>, state: &mut State, name: &str) -> Result<()> {
+    let (cfg, report) = (cx.cfg, cx.report);
     let pkg = state
         .find(name)
         .cloned()
@@ -988,7 +1013,7 @@ pub fn relink(cfg: &Config, state: &mut State, name: &str) -> Result<()> {
     )?;
     let remembered = pkg.bin_choice.as_deref();
     let pick = pick_bin(
-        cfg,
+        cx,
         platform.as_ref(),
         &pkg.prefix,
         manifest.as_ref(),
@@ -1025,8 +1050,8 @@ pub fn relink(cfg: &Config, state: &mut State, name: &str) -> Result<()> {
         .filter(|l| !links.iter().any(|new| new.link == l.link))
         .cloned()
         .collect();
-    if let Err(e) = platform.unplace(&stale) {
-        ui::warn(&format!("could not remove old links for {}: {e}", pkg.name));
+    if let Err(e) = platform.unplace(&stale, report) {
+        report.warn(&format!("could not remove old links for {}: {e}", pkg.name));
     }
 
     if let Some(entry) = state.get_mut(&pkg.name) {
@@ -1037,12 +1062,13 @@ pub fn relink(cfg: &Config, state: &mut State, name: &str) -> Result<()> {
 }
 
 /// Remove links but keep the package installed.
-pub fn unlink(_cfg: &Config, state: &mut State, name: &str) -> Result<()> {
+pub fn unlink(cx: &Ctx<'_>, state: &mut State, name: &str) -> Result<()> {
+    let report = cx.report;
     let pkg = state
         .find(name)
         .cloned()
         .ok_or_else(|| Error::NotInstalled(name.to_string()))?;
-    crate::platform::host()?.unplace(&pkg.links)?;
+    crate::platform::host()?.unplace(&pkg.links, report)?;
     if let Some(entry) = state.get_mut(&pkg.name) {
         entry.links.clear();
     }
@@ -1055,11 +1081,12 @@ pub fn unlink(_cfg: &Config, state: &mut State, name: &str) -> Result<()> {
 /// current links are retired, so a blocked path leaves the working version
 /// in place.
 pub fn rollback(
-    cfg: &Config,
+    cx: &Ctx<'_>,
     state: &mut State,
     name: &str,
     to: Option<&str>,
 ) -> Result<Installed> {
+    let (cfg, report) = (cx.cfg, cx.report);
     let pkg = state
         .find(name)
         .cloned()
@@ -1102,6 +1129,7 @@ pub fn rollback(
                 prefix: &target.prefix,
                 bin_dir: &cfg.bin_dir,
                 root: &cfg.root,
+                report,
             },
         )?;
     }
@@ -1116,7 +1144,7 @@ pub fn rollback(
     let remembered = pkg.bin_choice.as_deref();
     let pick = if linked {
         pick_bin(
-            cfg,
+            cx,
             platform.as_ref(),
             &target.prefix,
             manifest.as_ref(),
@@ -1156,8 +1184,8 @@ pub fn rollback(
         .filter(|l| !links.iter().any(|new| new.link == l.link))
         .cloned()
         .collect();
-    if let Err(e) = platform.unplace(&stale) {
-        ui::warn(&format!("could not remove old links for {}: {e}", pkg.name));
+    if let Err(e) = platform.unplace(&stale, report) {
+        report.warn(&format!("could not remove old links for {}: {e}", pkg.name));
     }
 
     let replaced = pkg.version.clone();
@@ -1197,13 +1225,14 @@ pub fn rollback(
                 prefix: &package.prefix,
                 bin_dir: &cfg.bin_dir,
                 root: &cfg.root,
+                report,
             },
         );
     }
     let source = package.source.to_string();
     let target_spec = package.target.to_string();
     crate::stats::record(
-        cfg,
+        cx,
         &crate::stats::rollback_event(&package, &previous, &version, &source, &target_spec),
     );
 
@@ -1244,7 +1273,8 @@ fn select_retained(pkg: &InstalledPackage, to: Option<&str>) -> Result<usize> {
 
 /// Drop retained prefixes beyond `keep`, oldest first. The current version
 /// is never removed. Missing prefixes are dropped from state too.
-pub fn prune(cfg: &Config, state: &mut State, name: &str, keep: u32) -> Result<Vec<Version>> {
+pub fn prune(cx: &Ctx<'_>, state: &mut State, name: &str, keep: u32) -> Result<Vec<Version>> {
+    let (cfg, report) = (cx.cfg, cx.report);
     let pkg = state
         .find(name)
         .cloned()
@@ -1257,7 +1287,7 @@ pub fn prune(cfg: &Config, state: &mut State, name: &str, keep: u32) -> Result<V
             kept.push(previous);
         } else {
             if previous.prefix.exists() {
-                remove_store_dir(cfg, &previous.prefix);
+                remove_store_dir(cfg, &previous.prefix, report);
             }
             dropped.push(previous.version);
         }
@@ -1363,6 +1393,7 @@ pub(crate) fn verify_checksum(
     asset: &ReleaseAsset,
     actual: &str,
     require: bool,
+    report: &Report,
 ) -> Result<bool> {
     let published = match &asset.digest {
         Some(digest) => Some(digest.hex.clone()),
@@ -1370,7 +1401,7 @@ pub(crate) fn verify_checksum(
         None => source
             .checksums(id, release, &asset.name)
             .unwrap_or_else(|e| {
-                ui::debug(&format!("could not read published checksums: {e}"));
+                report.debug(&format!("could not read published checksums: {e}"));
                 Default::default()
             })
             .get(&asset.name)
@@ -1386,7 +1417,7 @@ pub(crate) fn verify_checksum(
         }),
         None if require => Err(Error::ChecksumMissing(asset.name.clone())),
         None => {
-            ui::debug(&format!(
+            report.debug(&format!(
                 "{} publishes no checksum; recording {} on first use",
                 asset.name,
                 &actual[..actual.len().min(12)]
@@ -1433,23 +1464,29 @@ fn check_locked(req: &InstallRequest, name: &str, asset: &str, sha256: &str) -> 
 /// Inspect the payload and strip quarantine only when the platform says the
 /// code is genuinely trusted. A failed check never blocks an install the user
 /// explicitly asked for; it is reported instead.
-fn check_trust(platform: &dyn Platform, cfg: &Config, payload: &Path, name: &str) -> TrustResult {
+fn check_trust(
+    platform: &dyn Platform,
+    cfg: &Config,
+    payload: &Path,
+    name: &str,
+    report: &Report,
+) -> TrustResult {
     let verdict = match platform.verify_trust(payload) {
         Ok(v) => v,
         Err(e) => {
-            ui::debug(&format!("trust check failed for {name}: {e}"));
+            report.debug(&format!("trust check failed for {name}: {e}"));
             return TrustResult::NotApplicable;
         }
     };
     match &verdict {
-        TrustVerdict::Trusted { authority } => ui::debug(&format!("signed by {authority}")),
-        TrustVerdict::Weak { detail } => ui::debug(&format!("weak signature: {detail}")),
-        TrustVerdict::Untrusted { detail } => ui::debug(&format!("unsigned: {detail}")),
+        TrustVerdict::Trusted { authority } => report.debug(&format!("signed by {authority}")),
+        TrustVerdict::Weak { detail } => report.debug(&format!("weak signature: {detail}")),
+        TrustVerdict::Untrusted { detail } => report.debug(&format!("unsigned: {detail}")),
         TrustVerdict::NotApplicable => {}
     }
     if cfg.strip_quarantine && verdict.may_strip_quarantine() {
         if let Err(e) = platform.clear_quarantine(payload) {
-            ui::debug(&format!("could not clear quarantine: {e}"));
+            report.debug(&format!("could not clear quarantine: {e}"));
         }
     }
     trust_result(verdict)
@@ -1490,9 +1527,9 @@ fn retain_replaced(
 /// is not enough — `store/pkg/../../outside` starts with `store`, and a
 /// symlink planted inside the store can point anywhere — so the check
 /// resolves both paths when it can and rejects `..` components otherwise.
-fn remove_store_dir(cfg: &Config, prefix: &Path) {
+fn remove_store_dir(cfg: &Config, prefix: &Path, report: &Report) {
     if !is_inside_store(&cfg.store_dir, prefix) {
-        ui::warn(&format!(
+        report.warn(&format!(
             "refusing to remove {} — it is not inside the ketch store",
             prefix.display()
         ));
@@ -1500,7 +1537,7 @@ fn remove_store_dir(cfg: &Config, prefix: &Path) {
     }
     if let Err(e) = std::fs::remove_dir_all(prefix) {
         if e.kind() != std::io::ErrorKind::NotFound {
-            ui::warn(&format!("could not remove {}: {e}", prefix.display()));
+            report.warn(&format!("could not remove {}: {e}", prefix.display()));
         }
     }
     if let Some(parent) = prefix.parent().filter(|p| *p != cfg.store_dir) {
@@ -1583,11 +1620,11 @@ fn package_dir_candidate(cfg: &Config, name: &str) -> Option<PathBuf> {
 /// named exactly like the package, and inside it after symlinks resolve — so
 /// the caller knows which prefixes it already covered. A name that is not one
 /// plain path component is never joined onto the store.
-pub fn remove_package_dir(cfg: &Config, name: &str) -> Option<PathBuf> {
+pub fn remove_package_dir(cfg: &Config, name: &str, report: &Report) -> Option<PathBuf> {
     let dir = package_dir_candidate(cfg, name)?;
     if let Err(e) = std::fs::remove_dir_all(&dir) {
         if e.kind() != std::io::ErrorKind::NotFound {
-            ui::warn(&format!("could not remove {}: {e}", dir.display()));
+            report.warn(&format!("could not remove {}: {e}", dir.display()));
         }
     }
     Some(dir)
@@ -1687,7 +1724,7 @@ mod tests {
         fn place(&self, _plan: &Placement<'_>) -> Result<Vec<LinkRecord>> {
             Ok(Vec::new())
         }
-        fn unplace(&self, _links: &[LinkRecord]) -> Result<()> {
+        fn unplace(&self, _links: &[LinkRecord], _report: &crate::report::Report) -> Result<()> {
             Ok(())
         }
         fn is_executable(&self, _path: &Path) -> bool {
@@ -1722,7 +1759,11 @@ mod tests {
     }
 
     fn config() -> Config {
-        let mut cfg = Config::load(Some(std::env::temp_dir().join("ketch-test-root"))).unwrap();
+        let mut cfg = Config::load(
+            Some(std::env::temp_dir().join("ketch-test-root")),
+            &crate::report::Report::silent(),
+        )
+        .unwrap();
         cfg.target = TargetSpec {
             os: Os::MacOs,
             arch: Arch::Aarch64,
@@ -1787,7 +1828,7 @@ mod tests {
         let cfg = config();
         let outside = std::env::temp_dir().join("ketch-not-the-store");
         std::fs::create_dir_all(&outside).unwrap();
-        remove_store_dir(&cfg, &outside);
+        remove_store_dir(&cfg, &outside, &Report::silent());
         assert!(outside.is_dir(), "a path outside the store must survive");
         std::fs::remove_dir_all(&outside).ok();
     }
@@ -1795,7 +1836,11 @@ mod tests {
     #[test]
     fn inside_store_accepts_ascii_case_folded_prefix() {
         let root = tempfile::tempdir().unwrap();
-        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        let cfg = Config::load(
+            Some(root.path().join("ketch")),
+            &crate::report::Report::silent(),
+        )
+        .unwrap();
         cfg.ensure_dirs().unwrap();
         let payload = cfg.store_dir.join("rg").join("1.0.0");
         std::fs::create_dir_all(&payload).unwrap();
@@ -1839,7 +1884,11 @@ mod tests {
     #[test]
     fn refuses_dotdot_escape_out_of_the_store() {
         let root = tempfile::tempdir().unwrap();
-        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        let cfg = Config::load(
+            Some(root.path().join("ketch")),
+            &crate::report::Report::silent(),
+        )
+        .unwrap();
         cfg.ensure_dirs().unwrap();
         let victim = root.path().join("victim");
         std::fs::create_dir_all(&victim).unwrap();
@@ -1858,7 +1907,7 @@ mod tests {
             escape.starts_with(&cfg.store_dir),
             "precondition: lexical starts_with alone would allow this"
         );
-        remove_store_dir(&cfg, &escape);
+        remove_store_dir(&cfg, &escape, &Report::silent());
         assert!(
             victim.join("keep").is_file(),
             "`..` must not let uninstall delete outside the store"
@@ -1869,7 +1918,11 @@ mod tests {
     #[test]
     fn refuses_a_store_symlink_that_points_outside() {
         let root = tempfile::tempdir().unwrap();
-        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        let cfg = Config::load(
+            Some(root.path().join("ketch")),
+            &crate::report::Report::silent(),
+        )
+        .unwrap();
         cfg.ensure_dirs().unwrap();
         let victim = root.path().join("victim");
         std::fs::create_dir_all(&victim).unwrap();
@@ -1877,7 +1930,7 @@ mod tests {
 
         let decoy = cfg.store_dir.join("decoy");
         std::os::unix::fs::symlink(&victim, &decoy).unwrap();
-        remove_store_dir(&cfg, &decoy);
+        remove_store_dir(&cfg, &decoy, &Report::silent());
         assert!(
             victim.join("keep").is_file(),
             "a symlink inside the store must not delete its outside target"
@@ -1889,13 +1942,20 @@ mod tests {
     #[test]
     fn the_package_folder_goes_whole_with_stale_swap_siblings() {
         let root = tempfile::tempdir().unwrap();
-        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        let cfg = Config::load(
+            Some(root.path().join("ketch")),
+            &crate::report::Report::silent(),
+        )
+        .unwrap();
         cfg.ensure_dirs().unwrap();
         let folder = cfg.store_dir.join("tool");
         std::fs::create_dir_all(folder.join("1.0.0.old")).unwrap();
         std::fs::write(folder.join("1.0.0.old").join("stale"), b"x").unwrap();
 
-        assert_eq!(remove_package_dir(&cfg, "tool"), Some(folder.clone()));
+        assert_eq!(
+            remove_package_dir(&cfg, "tool", &Report::silent()),
+            Some(folder.clone())
+        );
         assert!(!folder.exists());
         assert!(cfg.store_dir.is_dir(), "the store itself stays");
     }
@@ -1903,7 +1963,7 @@ mod tests {
     #[test]
     fn the_sweep_takes_swap_leftovers_and_keeps_every_version() {
         let root = tempfile::tempdir().unwrap();
-        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        let cfg = Config::load(Some(root.path().join("ketch")), &Report::silent()).unwrap();
         cfg.ensure_dirs().unwrap();
         let folder = cfg.store_dir.join("tool");
         std::fs::create_dir_all(folder.join("1.0.0")).unwrap();
@@ -1925,7 +1985,7 @@ mod tests {
     #[test]
     fn the_sweep_never_takes_a_prefix_the_package_records() {
         let root = tempfile::tempdir().unwrap();
-        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        let cfg = Config::load(Some(root.path().join("ketch")), &Report::silent()).unwrap();
         cfg.ensure_dirs().unwrap();
         // A release really versioned like a leftover.
         let prefix = cfg.store_dir.join("tool").join("2.old");
@@ -1940,7 +2000,7 @@ mod tests {
     #[test]
     fn the_sweep_is_a_no_op_without_a_package_folder() {
         let root = tempfile::tempdir().unwrap();
-        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        let cfg = Config::load(Some(root.path().join("ketch")), &Report::silent()).unwrap();
         cfg.ensure_dirs().unwrap();
         sweep_swap_leftovers(&cfg, "tool", None).unwrap();
         sweep_swap_leftovers(&cfg, "../outside", None).unwrap();
@@ -1951,7 +2011,7 @@ mod tests {
     fn a_leftover_the_sweep_cannot_remove_stops_the_install_and_is_named() {
         use std::os::unix::fs::PermissionsExt;
         let root = tempfile::tempdir().unwrap();
-        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        let cfg = Config::load(Some(root.path().join("ketch")), &Report::silent()).unwrap();
         cfg.ensure_dirs().unwrap();
         let folder = cfg.store_dir.join("tool");
         std::fs::create_dir_all(folder.join("1.0.0.old")).unwrap();
@@ -1967,13 +2027,21 @@ mod tests {
     #[test]
     fn a_package_name_that_is_not_one_component_is_never_removed() {
         let root = tempfile::tempdir().unwrap();
-        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        let cfg = Config::load(
+            Some(root.path().join("ketch")),
+            &crate::report::Report::silent(),
+        )
+        .unwrap();
         cfg.ensure_dirs().unwrap();
         let nested = cfg.store_dir.join("a").join("b");
         std::fs::create_dir_all(&nested).unwrap();
 
         for name in ["a/b", "..", ".", "", "a/../a"] {
-            assert_eq!(remove_package_dir(&cfg, name), None, "{name:?}");
+            assert_eq!(
+                remove_package_dir(&cfg, name, &Report::silent()),
+                None,
+                "{name:?}"
+            );
         }
         assert!(nested.is_dir());
         assert!(cfg.store_dir.is_dir());
@@ -1982,23 +2050,31 @@ mod tests {
     #[test]
     fn a_missing_package_folder_is_not_a_candidate() {
         let root = tempfile::tempdir().unwrap();
-        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        let cfg = Config::load(
+            Some(root.path().join("ketch")),
+            &crate::report::Report::silent(),
+        )
+        .unwrap();
         cfg.ensure_dirs().unwrap();
-        assert_eq!(remove_package_dir(&cfg, "tool"), None);
+        assert_eq!(remove_package_dir(&cfg, "tool", &Report::silent()), None);
     }
 
     #[cfg(unix)]
     #[test]
     fn a_package_folder_linked_outside_the_store_is_left_alone() {
         let root = tempfile::tempdir().unwrap();
-        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        let cfg = Config::load(
+            Some(root.path().join("ketch")),
+            &crate::report::Report::silent(),
+        )
+        .unwrap();
         cfg.ensure_dirs().unwrap();
         let victim = root.path().join("victim");
         std::fs::create_dir_all(&victim).unwrap();
         std::fs::write(victim.join("keep"), b"safe").unwrap();
         std::os::unix::fs::symlink(&victim, cfg.store_dir.join("tool")).unwrap();
 
-        assert_eq!(remove_package_dir(&cfg, "tool"), None);
+        assert_eq!(remove_package_dir(&cfg, "tool", &Report::silent()), None);
         assert!(victim.join("keep").is_file());
     }
 
@@ -2010,13 +2086,17 @@ mod tests {
         // `KETCH_ROOT=../ketch` keeps the `..` in the root path, and so in
         // every store prefix below it. Those are the root's components, not the
         // state file's, and refusing them disables every cleanup there is.
-        let cfg = Config::load(Some(work.join("../ketch"))).unwrap();
+        let cfg = Config::load(
+            Some(work.join("../ketch")),
+            &crate::report::Report::silent(),
+        )
+        .unwrap();
         cfg.ensure_dirs().unwrap();
         let prefix = cfg.store_dir.join("tool").join("1.0.0");
         std::fs::create_dir_all(&prefix).unwrap();
         std::fs::write(prefix.join("tool"), b"x").unwrap();
 
-        remove_store_dir(&cfg, &prefix);
+        remove_store_dir(&cfg, &prefix, &Report::silent());
 
         assert!(
             !prefix.exists(),
@@ -2052,7 +2132,11 @@ mod tests {
     #[test]
     fn retain_replaced_keeps_an_eligible_prefix_and_skips_the_same_one() {
         let root = tempfile::tempdir().unwrap();
-        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        let cfg = Config::load(
+            Some(root.path().join("ketch")),
+            &crate::report::Report::silent(),
+        )
+        .unwrap();
         cfg.ensure_dirs().unwrap();
         let old_prefix = cfg.package_dir("tool", "1.0.0");
         std::fs::create_dir_all(&old_prefix).unwrap();
@@ -2095,7 +2179,7 @@ mod tests {
     #[cfg(unix)]
     fn local_fixture(dir: &Path, name: &str) -> (Config, PathBuf) {
         use std::os::unix::fs::PermissionsExt;
-        let cfg = Config::load(Some(dir.join("root"))).unwrap();
+        let cfg = Config::load(Some(dir.join("root")), &Report::silent()).unwrap();
         let program = dir.join(name);
         std::fs::write(&program, "#!/bin/sh\necho hi\n").unwrap();
         std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -2115,16 +2199,18 @@ mod tests {
     fn an_install_cancelled_before_it_commits_leaves_no_store_folder_or_state_entry() {
         let dir = tempfile::tempdir().unwrap();
         let (cfg, program) = local_fixture(dir.path(), "canceltool");
-        let sources = SourceRegistry::load(&cfg);
+        let report = Report::silent();
+        let cx = Ctx::new(&cfg, &report);
+        let sources = SourceRegistry::load(&cx);
         let mut state = State::default();
         let cancel = Cancel::new();
         let req = local_request(&program, &cancel);
 
-        let prepared =
-            prepare(&cfg, &sources, &state, &req, &ui::SilentProgress).expect("prepare succeeds");
+        let prepared = prepare(&cx, &sources, &state, &req, &crate::report::SilentProgress)
+            .expect("prepare succeeds");
         // The host pressed Stop after the download, before anything was placed.
         cancel.cancel();
-        let err = commit(&cfg, &mut state, prepared).expect_err("commit must stop");
+        let err = commit(&cx, &mut state, prepared).expect_err("commit must stop");
 
         assert!(matches!(err, Error::Cancelled), "got {err}");
         assert!(state.packages.is_empty(), "no state entry");
@@ -2142,7 +2228,9 @@ mod tests {
     fn a_cancelled_token_stops_a_batch_before_any_package_is_prepared() {
         let dir = tempfile::tempdir().unwrap();
         let (cfg, program) = local_fixture(dir.path(), "batchtool");
-        let sources = SourceRegistry::load(&cfg);
+        let report = Report::silent();
+        let cx = Ctx::new(&cfg, &report);
+        let sources = SourceRegistry::load(&cx);
         let mut state = State::default();
         let cancel = Cancel::new();
         cancel.cancel();
@@ -2152,7 +2240,7 @@ mod tests {
         ];
 
         for jobs in [1, 2] {
-            let outcomes = batch(&cfg, &sources, &mut state, &reqs, jobs);
+            let outcomes = batch(&cx, &sources, &mut state, &reqs, jobs);
             assert_eq!(outcomes.len(), 2);
             assert!(outcomes.iter().all(|o| matches!(o, Err(Error::Cancelled))));
         }
@@ -2166,14 +2254,16 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (cfg, first) = local_fixture(dir.path(), "firsttool");
         let (_, second) = local_fixture(dir.path(), "secondtool");
-        let sources = SourceRegistry::load(&cfg);
+        let report = Report::silent();
+        let cx = Ctx::new(&cfg, &report);
+        let sources = SourceRegistry::load(&cx);
         let mut state = State::default();
 
         for program in [&first, &second] {
             // What a host does per operation: lock, run, release.
-            let _lock = crate::state::Lock::acquire(&cfg).unwrap();
+            let _lock = crate::state::Lock::acquire(&cx).unwrap();
             install(
-                &cfg,
+                &cx,
                 &sources,
                 &mut state,
                 &local_request(program, &Cancel::new()),
@@ -2181,5 +2271,75 @@ mod tests {
             .unwrap();
         }
         assert_eq!(state.packages.len(), 2);
+    }
+
+    /// The event sequence a front end draws an install from: every stage in
+    /// order, the download as one task that ends, and nothing printed.
+    #[cfg(unix)]
+    #[test]
+    fn a_local_install_reports_each_stage_through_the_reporter() {
+        use crate::report::{Event, Recorder, Task};
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let recorder = std::sync::Arc::new(Recorder::default());
+        let report = Report::shared(recorder.clone());
+        let cfg = Config::load(Some(tmp.path().join("root")), &report).unwrap();
+        let cx = Ctx::new(&cfg, &report);
+        let tool = tmp.path().join("tool");
+        std::fs::write(&tool, "#!/bin/sh\necho tool\n").unwrap();
+        std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let sources = SourceRegistry::builtin_only(&cx);
+        let mut state = State::default();
+        let spec = PackageSpec::parse(&format!("local:{}", tool.display()));
+
+        install(&cx, &sources, &mut state, &InstallRequest::new(spec)).unwrap();
+
+        let events = recorder.events();
+        let stages: Vec<Stage> = events
+            .iter()
+            .filter_map(|e| match e {
+                Event::Step { stage, .. } => Some(*stage),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            stages,
+            [
+                Stage::Resolving,
+                Stage::Downloading,
+                Stage::Verifying,
+                Stage::Extracting,
+                Stage::Trusting,
+                Stage::Installing,
+            ]
+        );
+        let download = events
+            .iter()
+            .find_map(|e| match e {
+                Event::Began {
+                    id,
+                    task: Task::Download { batch: None, .. },
+                } => Some(*id),
+                _ => None,
+            })
+            .expect("the download is announced");
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, Event::Ended { id, .. } if *id == download)),
+            "a download that arrived ends rather than being abandoned: {events:#?}"
+        );
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                Event::Status { verb, detail } if verb == "resolving" && detail.starts_with("tool ")
+            )),
+            "{events:#?}"
+        );
+        assert!(
+            !events.iter().any(|e| matches!(e, Event::Warn { .. })),
+            "a clean install warns about nothing: {events:#?}"
+        );
     }
 }

@@ -185,12 +185,16 @@ pub fn man(args: &ManArgs) -> Result<()> {
 /// Write one shell's completion script into the platform destination and
 /// record it on the installed `ketch` package so uninstall can take it back.
 pub fn install_completions(cfg: &Config, args: CompletionsArgs) -> Result<()> {
-    crate::self_update::install_completion_script(cfg, args.shell, crate::self_docs::SELF_DOCS)
+    crate::self_update::install_completion_script(
+        &crate::ui::ctx(cfg),
+        args.shell,
+        crate::self_docs::SELF_DOCS,
+    )
 }
 
 /// Refresh the local copy of the package registry.
 pub fn update(cfg: &Config) -> Result<()> {
-    let count = match registry::update(cfg) {
+    let count = match registry::update(&crate::ui::ctx(cfg)) {
         Ok(count) => count,
         Err(error) => {
             ui::completed("registry", false);
@@ -244,7 +248,7 @@ fn registry_check(cfg: &Config) -> DoctorCheck {
             "Run `ketch update`.",
         );
     }
-    let count = registry::load(cfg).len();
+    let count = registry::load(&crate::ui::ctx(cfg)).len();
     match registry::load_meta(cfg) {
         Ok(Some(meta)) => {
             let age = registry::age_phrase(meta.fetched_at);
@@ -637,7 +641,7 @@ pub fn plugin(cfg: &Config, command: PluginCommand) -> Result<()> {
         PluginCommand::List { json } => {
             let mut rows = Vec::new();
             let mut found = Vec::new();
-            for result in plugin::discover(cfg) {
+            for result in plugin::discover(&crate::ui::ctx(cfg)) {
                 match result {
                     Ok(p) => {
                         rows.push(vec![
@@ -676,7 +680,7 @@ pub fn zelf(cfg: &Config, command: SelfCommand) -> Result<()> {
         SelfCommand::Install { force, link_dir } => {
             let version = self_update::current_version();
             match self_update::install_self(
-                cfg,
+                &crate::ui::ctx(cfg),
                 force,
                 link_dir.as_deref(),
                 crate::self_docs::SELF_DOCS,
@@ -720,9 +724,18 @@ pub fn zelf(cfg: &Config, command: SelfCommand) -> Result<()> {
             yes,
         } => {
             if !dry_run {
-                crate::process::offer_to_stop(&self_replacement_paths(cfg), yes);
+                crate::process::offer_to_stop(
+                    &self_replacement_paths(cfg),
+                    yes,
+                    crate::ui::report(),
+                );
             }
-            let out = self_update::update(cfg, force, dry_run, crate::self_docs::SELF_DOCS)?;
+            let out = self_update::update(
+                &crate::ui::ctx(cfg),
+                force,
+                dry_run,
+                crate::self_docs::SELF_DOCS,
+            )?;
             // `replaced` is false both when already current and on dry-run, so
             // the verb has to look at whether an upgrade is actually needed.
             let needs_update = out.to > out.from || force;
@@ -785,7 +798,7 @@ pub fn zelf(cfg: &Config, command: SelfCommand) -> Result<()> {
                     ui::note(&format!("mise still has this ketch; `{run}` removes it"));
                 }
             }
-            for path in self_update::uninstall_self(cfg, &plan)? {
+            for path in self_update::uninstall_self(&crate::ui::ctx(cfg), &plan)? {
                 ui::success("removed", &path.display().to_string());
             }
             Ok(())
@@ -916,7 +929,11 @@ mod tests {
     #[test]
     fn registry_check_reports_age_from_meta_without_a_network() {
         let tmp = tempfile::tempdir().unwrap();
-        let cfg = Config::load(Some(tmp.path().to_path_buf())).unwrap();
+        let cfg = Config::load(
+            Some(tmp.path().to_path_buf()),
+            &ketch_core::report::Report::silent(),
+        )
+        .unwrap();
         std::fs::create_dir_all(&cfg.registry_dir).unwrap();
         let pkg = cfg.registry_dir.join("jq");
         std::fs::create_dir_all(&pkg).unwrap();
@@ -936,7 +953,11 @@ mod tests {
     #[test]
     fn path_binary_check_is_silent_when_the_store_link_wins() {
         let tmp = tempfile::tempdir().unwrap();
-        let cfg = Config::load(Some(tmp.path().to_path_buf())).unwrap();
+        let cfg = Config::load(
+            Some(tmp.path().to_path_buf()),
+            &ketch_core::report::Report::silent(),
+        )
+        .unwrap();
         std::fs::create_dir_all(&cfg.bin_dir).unwrap();
         let linked = store_ketch_link(&cfg);
         std::fs::write(&linked, b"store").unwrap();
@@ -970,7 +991,11 @@ mod tests {
     #[test]
     fn path_binary_check_warns_when_an_earlier_ketch_shadows_the_store() {
         let tmp = tempfile::tempdir().unwrap();
-        let cfg = Config::load(Some(tmp.path().to_path_buf())).unwrap();
+        let cfg = Config::load(
+            Some(tmp.path().to_path_buf()),
+            &ketch_core::report::Report::silent(),
+        )
+        .unwrap();
         std::fs::create_dir_all(&cfg.bin_dir).unwrap();
         let linked = store_ketch_link(&cfg);
         std::fs::write(&linked, b"store").unwrap();

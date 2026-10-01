@@ -1,5 +1,5 @@
 ---
-source: crates/ketch-core/src/ui.rs
+source: src/ui.rs
 expression: shown
 ---
 \e[34minstalling\e[0m ripgrep 14.1.0

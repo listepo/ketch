@@ -15,6 +15,8 @@ use crate::error::{Error, Result};
 use crate::extract::{archive::TarGzExtractor, unwrap_single_dir, Extractor};
 use crate::http::Http;
 use crate::model::{normalize_name, Manifest};
+// `Report` here is `validate`'s answer; the reporter is `reporting::Report`.
+use crate::report::{self as reporting, Ctx, ProgressSink, Stage};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -29,18 +31,19 @@ pub fn exists(cfg: &Config) -> bool {
 }
 
 /// Every package in the local copy, each paired with the file it came from.
-pub fn load(cfg: &Config) -> Vec<(Manifest, PathBuf)> {
-    load_dir(&cfg.registry_dir)
+pub fn load(cx: &Ctx<'_>) -> Vec<(Manifest, PathBuf)> {
+    load_dir(&cx.cfg.registry_dir, cx.report)
 }
 
 /// Fetch the registry and swap it in, returning how many packages it holds.
 ///
 /// The download is staged and only moved into place once it parses, so a bad
 /// or truncated fetch leaves the working copy alone.
-pub fn update(cfg: &Config) -> Result<usize> {
+pub fn update(cx: &Ctx<'_>) -> Result<usize> {
+    let cfg = cx.cfg;
     let repo = &cfg.registry;
-    crate::ui::stage("registry", crate::ui::ProgressStage::Downloading);
-    crate::ui::step("updating", &format!("registry {repo}"));
+    cx.report.stage("registry", Stage::Downloading);
+    cx.report.step("updating", &format!("registry {repo}"));
 
     let staging = tempfile::tempdir_in(&cfg.root).map_err(|e| Error::io(&cfg.root, e))?;
     let tarball = staging.path().join("registry.tar.gz");
@@ -54,26 +57,29 @@ pub fn update(cfg: &Config) -> Result<usize> {
         "application/vnd.github+json".to_string(),
     )];
     let headers = BTreeMap::from(accept);
-    Http::new(cfg).download(
+    let progress = cx.report.download("download");
+    Http::new(cx).download(
         &url,
         &tarball,
         &headers,
         true,
-        crate::ui::progress().as_ref(),
+        &progress as &dyn ProgressSink,
         &crate::cancel::Cancel::new(),
     )?;
+    drop(progress);
 
     let unpacked = staging.path().join("tree");
     std::fs::create_dir_all(&unpacked).map_err(|e| Error::io(&unpacked, e))?;
-    crate::ui::stage("registry", crate::ui::ProgressStage::Extracting);
+    cx.report.stage("registry", Stage::Extracting);
     // The tarball download already drew a byte bar. Unpacking has no member
     // count ahead of time, so this is a spinner rather than a second bar.
-    crate::ui::activity("extracting registry", None)
-        .run(|_| TarGzExtractor.extract(&tarball, &unpacked))?;
+    cx.report
+        .activity("extracting registry")
+        .run(|| TarGzExtractor.extract(&tarball, &unpacked))?;
     // GitHub wraps the tree in one `owner-repo-<sha>` directory.
     let root = unwrap_single_dir(&unpacked)?;
 
-    swap_in(cfg, &root, repo)
+    swap_in(cx, &root, repo)
 }
 
 /// Where the registry's tarball is fetched from: the same API base every
@@ -87,10 +93,11 @@ fn tarball_url(repo: &str) -> String {
 ///
 /// A tree with no packages is refused: a repository that moved, emptied or
 /// answered with something unexpected must not wipe a working registry.
-fn swap_in(cfg: &Config, tree: &Path, repo: &str) -> Result<usize> {
-    let packages = load_dir(tree);
+fn swap_in(cx: &Ctx<'_>, tree: &Path, repo: &str) -> Result<usize> {
+    let cfg = cx.cfg;
+    let packages = load_dir(tree, cx.report);
     for problem in collisions(&packages) {
-        crate::ui::warn(&problem);
+        cx.report.warn(&problem);
     }
     let count = packages.len();
     if count == 0 {
@@ -400,7 +407,7 @@ pub fn fixture_payload(fixture: &Path, name: &str) -> Result<PathBuf> {
     }
 }
 
-fn load_dir(dir: &Path) -> Vec<(Manifest, PathBuf)> {
+fn load_dir(dir: &Path, report: &reporting::Report) -> Vec<(Manifest, PathBuf)> {
     let mut out = Vec::new();
     for folder in candidate_package_dirs(dir) {
         let path = folder.join(PACKAGE_FILE);
@@ -410,7 +417,7 @@ fn load_dir(dir: &Path) -> Vec<(Manifest, PathBuf)> {
             .to_string_lossy()
             .to_string();
         if !is_package_file(&path) {
-            crate::ui::warn(&format!(
+            report.warn(&format!(
                 "ignoring registry package `{}`: `{PACKAGE_FILE}` is not a regular file",
                 changelog::sanitize(&name)
             ));
@@ -419,7 +426,7 @@ fn load_dir(dir: &Path) -> Vec<(Manifest, PathBuf)> {
         match read_package(&path, &name) {
             Ok(manifest) => out.push((manifest, path)),
             // One broken entry must not hide the rest of the registry.
-            Err(e) => crate::ui::warn(&format!(
+            Err(e) => report.warn(&format!(
                 "ignoring registry package `{}`: {e}",
                 changelog::sanitize(&name)
             )),
@@ -546,7 +553,7 @@ mod tests {
             "ripgrep",
             "source = \"github:BurntSushi/ripgrep\"\n",
         );
-        let found = load_dir(tmp.path());
+        let found = load_dir(tmp.path(), &reporting::Report::silent());
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].0.name, "ripgrep");
         assert_eq!(found[0].0.source.id, "BurntSushi/ripgrep");
@@ -560,7 +567,7 @@ mod tests {
             "fzf",
             "name = \"fzy\"\nsource = \"github:junegunn/fzf\"\n",
         );
-        assert!(load_dir(tmp.path()).is_empty());
+        assert!(load_dir(tmp.path(), &reporting::Report::silent()).is_empty());
     }
 
     #[test]
@@ -570,7 +577,7 @@ mod tests {
         std::fs::write(tmp.path().join("README.md"), "hi").unwrap();
         write(tmp.path(), "broken", "source = 12\n");
         write(tmp.path(), "jq", "source = \"github:jqlang/jq\"\n");
-        let found = load_dir(tmp.path());
+        let found = load_dir(tmp.path(), &reporting::Report::silent());
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].0.name, "jq");
     }
@@ -585,14 +592,14 @@ mod tests {
             "source = \"github:sharkdp/fd\"\nprovides = [\"fd\"]\n",
         );
         write(tmp.path(), "rg", "source = \"github:BurntSushi/ripgrep\"\n");
-        assert!(collisions(&load_dir(tmp.path())).is_empty());
+        assert!(collisions(&load_dir(tmp.path(), &reporting::Report::silent())).is_empty());
 
         write(
             tmp.path(),
             "zfd",
             "source = \"github:someone/zfd\"\nprovides = [\"fd\"]\n",
         );
-        let found = collisions(&load_dir(tmp.path()));
+        let found = collisions(&load_dir(tmp.path(), &reporting::Report::silent()));
         assert_eq!(found.len(), 1);
         assert!(found[0].contains("both `fd` and `zfd`"), "{}", found[0]);
     }
@@ -600,20 +607,22 @@ mod tests {
     #[test]
     fn an_empty_tree_never_replaces_a_working_registry() {
         let tmp = tempfile::tempdir().unwrap();
-        let cfg = Config::load(Some(tmp.path().to_path_buf())).unwrap();
+        let silent = reporting::Report::silent();
+        let cfg = Config::load(Some(tmp.path().to_path_buf()), &silent).unwrap();
+        let cx = Ctx::new(&cfg, &silent);
         std::fs::create_dir_all(&cfg.registry_dir).unwrap();
         write(&cfg.registry_dir, "jq", "source = \"github:jqlang/jq\"\n");
 
         let empty = tmp.path().join("empty");
         std::fs::create_dir_all(&empty).unwrap();
-        assert!(swap_in(&cfg, &empty, "someone/registry").is_err());
-        assert_eq!(load(&cfg).len(), 1, "the old registry must still be there");
+        assert!(swap_in(&cx, &empty, "someone/registry").is_err());
+        assert_eq!(load(&cx).len(), 1, "the old registry must still be there");
 
         let fresh = tmp.path().join("fresh");
         write(&fresh, "fd", "source = \"github:sharkdp/fd\"\n");
         write(&fresh, "rg", "source = \"github:BurntSushi/ripgrep\"\n");
-        assert_eq!(swap_in(&cfg, &fresh, "someone/registry").unwrap(), 2);
-        let names: Vec<String> = load(&cfg).into_iter().map(|(m, _)| m.name).collect();
+        assert_eq!(swap_in(&cx, &fresh, "someone/registry").unwrap(), 2);
+        let names: Vec<String> = load(&cx).into_iter().map(|(m, _)| m.name).collect();
         assert_eq!(names, ["fd", "rg"]);
     }
 
@@ -632,7 +641,7 @@ mod tests {
             "source = \"github:a/b\"\nbinary = \"x\"\n",
         );
         write(tmp.path(), "ok", "source = \"github:a/b\"\n");
-        let found = load_dir(tmp.path());
+        let found = load_dir(tmp.path(), &reporting::Report::silent());
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].0.name, "ok");
     }
@@ -831,11 +840,13 @@ mod tests {
     #[test]
     fn a_successful_swap_records_fetch_metadata_beside_the_tree() {
         let tmp = tempfile::tempdir().unwrap();
-        let cfg = Config::load(Some(tmp.path().to_path_buf())).unwrap();
+        let silent = reporting::Report::silent();
+        let cfg = Config::load(Some(tmp.path().to_path_buf()), &silent).unwrap();
+        let cx = Ctx::new(&cfg, &silent);
         let sha = "abcdef0123456789abcdef0123456789abcdef01";
         let fresh = tmp.path().join(format!("owner-registry-{sha}"));
         write(&fresh, "jq", "source = \"github:jqlang/jq\"\n");
-        assert_eq!(swap_in(&cfg, &fresh, "someone/registry").unwrap(), 1);
+        assert_eq!(swap_in(&cx, &fresh, "someone/registry").unwrap(), 1);
         let meta = load_meta(&cfg).unwrap().expect("meta written");
         assert_eq!(meta.repo, "someone/registry");
         assert_eq!(meta.revision.as_deref(), Some(sha));
