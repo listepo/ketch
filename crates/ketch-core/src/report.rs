@@ -51,6 +51,12 @@ pub enum Stage {
 pub struct TaskId(u64);
 
 impl TaskId {
+    /// The number behind the id, for a front end that keys its own rows by
+    /// it or hands it across a language boundary.
+    pub fn get(self) -> u64 {
+        self.0
+    }
+
     fn next() -> TaskId {
         static NEXT: AtomicU64 = AtomicU64::new(1);
         TaskId(NEXT.fetch_add(1, Ordering::Relaxed))

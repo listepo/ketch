@@ -17,9 +17,9 @@ mod ui;
 // when they lived here, so `crate::config` and the rest keep resolving in
 // `cmd/`, `ui` and `tui` and the binary's own paths did not have to change.
 use ketch_core::{
-    cancel, changelog, config, decide, diff, error, install, listing, lockfile, log, manifest,
-    model, platform, process, push, registry, report, resolve, self_update, shell, source, state,
-    stats, text, wizard,
+    cancel, changelog, config, decide, diff, doctor, error, install, listing, lockfile, log,
+    manifest, model, platform, process, push, registry, report, resolve, self_update, shell,
+    source, state, stats, text, wizard,
 };
 
 use clap::Parser;

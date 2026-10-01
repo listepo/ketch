@@ -12,7 +12,7 @@
 
 use crate::config::Config;
 use crate::error::{Error, Result};
-use crate::model::{InstalledPackage, RetentionPolicy};
+use crate::model::{InstalledPackage, PackageSpec, RetentionPolicy};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::io::Write;
@@ -149,6 +149,21 @@ impl State {
                 || p.binaries()
                     .any(|b| b.link.file_name().is_some_and(|n| n == query))
         })
+    }
+
+    /// Look up the package `spec` names. `pkg@version` is not a state key, so
+    /// this falls back to its alias and its source ref, which lets a request
+    /// for another version still find the payload on disk.
+    pub fn find_spec(&self, spec: &PackageSpec) -> Option<&InstalledPackage> {
+        if let Some(pkg) = self.find(&spec.raw) {
+            return Some(pkg);
+        }
+        if let Some(pkg) = spec.alias.as_deref().and_then(|alias| self.find(alias)) {
+            return Some(pkg);
+        }
+        let reference = spec.reference.as_ref()?;
+        self.find(&reference.to_string())
+            .or_else(|| self.find(&reference.id))
     }
 }
 
@@ -355,6 +370,17 @@ mod tests {
             provenance: None,
             bin_choice: None,
         }
+    }
+
+    #[test]
+    fn a_versioned_spec_finds_the_package_by_name_or_source() {
+        let mut state = State::default();
+        state.insert(pkg("tool"));
+        for raw in ["tool", "tool@2.0.0", "o/r@2.0.0", "github:o/r"] {
+            let found = state.find_spec(&PackageSpec::parse(raw));
+            assert_eq!(found.map(|p| p.name.as_str()), Some("tool"), "{raw}");
+        }
+        assert!(state.find_spec(&PackageSpec::parse("other")).is_none());
     }
 
     #[test]

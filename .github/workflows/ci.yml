@@ -147,7 +147,7 @@ jobs:
           install_args: xcodegen
 
       - name: Format
-        run: xcrun swift-format lint --strict -r Ketch KetchTests KetchUITests
+        run: xcrun swift-format lint --strict -r Ketch KetchTests KetchUITests KetchCore/Package.swift KetchCore/Tests
 
       - name: Generate the project
         run: |
@@ -170,6 +170,29 @@ jobs:
       # with a throwaway key: `just macos-appcast`.
       - name: Update feed round trip
         run: sh ../../tests/desktop-appcast.sh
+
+  # ketch-ffi as the macOS app will link it: the XCFramework for both
+  # architectures, the Swift bindings UniFFI generates from it, and the Swift
+  # test that runs the real core against a scratch root through them. What
+  # `just ffi-test` runs. On every gate run, not only when crates/ changes:
+  # nearly every change to the core can change the bindings, and a path filter
+  # would need another action. Kept cheap: the dev profile, one runner, and
+  # rust-cache; it does not block the Rust jobs.
+  ketch-ffi:
+    if: github.event.pull_request.draft != true
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ./.github/actions/rust
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: XCFramework and bindings
+        run: scripts/xcframework.sh --debug
+
+      - name: Swift test
+        run: swift test --package-path desktop/macos/KetchCore
 
   # The macOS app's design tokens: every generated copy is what
   # desktop/macos/design/build.mjs writes from tokens.json, DESIGN.md passes

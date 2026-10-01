@@ -609,7 +609,7 @@ pub fn info(cfg: &Config, args: InfoArgs) -> Result<()> {
 pub fn changelog(cfg: &Config, args: ChangelogArgs) -> Result<()> {
     let state = State::load(cfg)?;
     let spec = PackageSpec::parse(&args.package);
-    let installed = installed_for_spec(&state, &spec, &args.package);
+    let installed = state.find_spec(&spec).cloned();
     // Only the installed version has a file; any other release is the source's
     // to answer for. `--file` always reads the payload on disk when installed.
     let elsewhere = !args.file && (args.latest || matches!(spec.version, VersionSpec::Exact(_)));
@@ -644,7 +644,7 @@ pub fn changelog(cfg: &Config, args: ChangelogArgs) -> Result<()> {
         }));
     }
 
-    match published_notes(cfg, &spec, installed, args.latest) {
+    match changelog::published(&crate::ui::ctx(cfg), &spec, installed, args.latest) {
         Ok((name, version, entry)) => show(&entry, &name, &version),
         Err(e) => match whole_file {
             Some((entry, name, version)) => {
@@ -654,51 +654,6 @@ pub fn changelog(cfg: &Config, args: ChangelogArgs) -> Result<()> {
             None => Err(e),
         },
     }
-}
-
-/// The notes the source published for the release being asked about.
-fn published_notes(
-    cfg: &Config,
-    spec: &PackageSpec,
-    installed: Option<InstalledPackage>,
-    latest: bool,
-) -> Result<(String, String, Entry)> {
-    let manifest = match Resolver::new(&crate::ui::ctx(cfg))?.resolve(spec) {
-        Ok((m, _)) => m,
-        Err(e) => match &installed {
-            Some(pkg) => pkg
-                .manifest
-                .clone()
-                .unwrap_or_else(|| Manifest::inferred(pkg.source.clone())),
-            None => return Err(e),
-        },
-    };
-    // Without `--latest` or an explicit version, the notes wanted are the ones
-    // for the release that is installed, not whatever is newest.
-    let want = match &spec.version {
-        VersionSpec::Exact(v) => VersionSpec::Exact(v.clone()),
-        VersionSpec::Latest if latest => VersionSpec::Latest,
-        VersionSpec::Latest => installed
-            .map(|pkg| VersionSpec::Exact(pkg.tag))
-            .unwrap_or(VersionSpec::Latest),
-    };
-
-    let sources = SourceRegistry::load(&crate::ui::ctx(cfg));
-    let source = sources.for_ref(&manifest.source)?;
-    let opts = ListOpts {
-        include_prerelease: cfg.prerelease || manifest.prerelease,
-        ..Default::default()
-    };
-    let release = source.resolve(&manifest.source.id, &want, &opts)?;
-    let version = release.version.to_string();
-    changelog::from_release(release.notes.as_deref())
-        .map(|entry| (manifest.name.clone(), version.clone(), entry))
-        .ok_or_else(|| {
-            Error::msg(format!(
-                "{} {version} published no release notes",
-                manifest.name
-            ))
-        })
 }
 
 /// The changelog itself goes to stdout; where it came from goes to stderr, so
@@ -928,28 +883,6 @@ pub fn stats(cfg: &Config, args: StatsArgs) -> Result<()> {
     }
     ui::table(&["statistic", "value"], &rows);
     Ok(())
-}
-
-/// `pkg@version` is not a state key. Look up by alias or source ref so
-/// `--file` still finds the payload on disk.
-fn installed_for_spec(state: &State, spec: &PackageSpec, raw: &str) -> Option<InstalledPackage> {
-    if let Some(pkg) = state.find(raw) {
-        return Some(pkg.clone());
-    }
-    if let Some(alias) = &spec.alias {
-        if let Some(pkg) = state.find(alias) {
-            return Some(pkg.clone());
-        }
-    }
-    if let Some(reference) = &spec.reference {
-        if let Some(pkg) = state.find(&reference.to_string()) {
-            return Some(pkg.clone());
-        }
-        if let Some(pkg) = state.find(&reference.id) {
-            return Some(pkg.clone());
-        }
-    }
-    None
 }
 
 /// Explain how a package would be resolved, without installing it.

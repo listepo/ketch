@@ -15,9 +15,9 @@ categories = ["command-line-utilities", "development-tools"]
 # `crates/ketch-core` holds everything the binary does besides parsing the
 # command line, so another front end can link it without clap.
 [workspace]
-members = [".", "crates/ketch-core"]
+members = [".", "crates/ketch-core", "crates/ketch-ffi"]
 # A bare `cargo test` or `cargo clippy` at the root covers the core too.
-default-members = [".", "crates/ketch-core"]
+default-members = [".", "crates/ketch-core", "crates/ketch-ffi"]
 
 # One version for both crates: the core reports it (user agent, `--version`,
 # the statistics database), so it can never be allowed to drift from the
@@ -118,3 +118,12 @@ panic = "abort"
 # What `dist build` compiles the release tarballs with: exactly `release`.
 [profile.dist]
 inherits = "release"
+
+# The ketch-ffi static library inside the macOS app's XCFramework
+# (scripts/xcframework.sh). A panic must unwind so UniFFI can turn it into an
+# error at the boundary instead of aborting the app that linked it, and the
+# symbols stay for the app's own link to strip.
+[profile.ffi]
+inherits = "release"
+panic = "unwind"
+strip = false

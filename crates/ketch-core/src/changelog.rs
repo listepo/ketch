@@ -15,7 +15,11 @@
 //! recognises nothing, rather than guessing a range and printing the wrong
 //! release's history.
 
-use crate::error::Result;
+use crate::error::{Error, Result};
+use crate::manifest::Resolver;
+use crate::model::{InstalledPackage, Manifest, PackageSpec, VersionSpec};
+use crate::report::Ctx;
+use crate::source::{ListOpts, SourceRegistry};
 use std::path::{Path, PathBuf};
 
 /// File names worth looking for, most conventional first.
@@ -279,6 +283,57 @@ fn normalise(text: &str) -> String {
         .filter(|rest| rest.starts_with(|c: char| c.is_ascii_digit()))
         .unwrap_or(trimmed)
         .to_ascii_lowercase()
+}
+
+/// The notes the source published for the release `spec` asks about.
+///
+/// Without an explicit version or `latest`, that is the release `installed`
+/// came from, not whatever is newest. The manifest is resolved afresh and
+/// falls back to the one recorded at install time, so a package the registry
+/// has since dropped still has notes. Returns the package name, the release's
+/// version and the entry.
+pub fn published(
+    cx: &Ctx<'_>,
+    spec: &PackageSpec,
+    installed: Option<InstalledPackage>,
+    latest: bool,
+) -> Result<(String, String, Entry)> {
+    let manifest = match Resolver::new(cx)?.resolve(spec) {
+        Ok((m, _)) => m,
+        Err(e) => match &installed {
+            Some(pkg) => pkg
+                .manifest
+                .clone()
+                .unwrap_or_else(|| Manifest::inferred(pkg.source.clone())),
+            None => return Err(e),
+        },
+    };
+    // Without `--latest` or an explicit version, the notes wanted are the ones
+    // for the release that is installed, not whatever is newest.
+    let want = match &spec.version {
+        VersionSpec::Exact(v) => VersionSpec::Exact(v.clone()),
+        VersionSpec::Latest if latest => VersionSpec::Latest,
+        VersionSpec::Latest => installed
+            .map(|pkg| VersionSpec::Exact(pkg.tag))
+            .unwrap_or(VersionSpec::Latest),
+    };
+
+    let sources = SourceRegistry::load(cx);
+    let source = sources.for_ref(&manifest.source)?;
+    let opts = ListOpts {
+        include_prerelease: cx.cfg.prerelease || manifest.prerelease,
+        ..Default::default()
+    };
+    let release = source.resolve(&manifest.source.id, &want, &opts)?;
+    let version = release.version.to_string();
+    from_release(release.notes.as_deref())
+        .map(|entry| (manifest.name.clone(), version.clone(), entry))
+        .ok_or_else(|| {
+            Error::msg(format!(
+                "{} {version} published no release notes",
+                manifest.name
+            ))
+        })
 }
 
 #[cfg(test)]

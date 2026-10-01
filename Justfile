@@ -104,6 +104,7 @@ lint-shell:
     bash -n scripts/desktop-version.sh
     bash -n scripts/desktop-dmg.sh
     bash -n scripts/desktop-appcast.sh
+    bash -n scripts/xcframework.sh
     bash -n fuzz/seed.sh
     sh tests/crate-version.sh
     sh tests/release-sh.sh
@@ -257,6 +258,20 @@ macos-test: macos-project
 # key: what desktop-release.yml runs, minus signing and notarisation
 macos-appcast: macos-app
     sh tests/desktop-appcast.sh
+
+# Built into desktop/macos/KetchCore with the `ffi` profile the app ships.
+#
+# ketch-ffi's XCFramework (arm64 + x86_64) and its Swift bindings
+xcframework:
+    scripts/xcframework.sh
+
+# The dev profile, then a Swift test that drives the real core through the
+# bindings against a scratch root: what CI's ketch-ffi job runs.
+#
+# debug XCFramework and bindings, then their Swift test
+ffi-test:
+    scripts/xcframework.sh --debug
+    swift test --package-path {{macos_dir}}/KetchCore
 
 # libFuzzer targets in fuzz/ (fuzz/README.md), on nightly and never part of `check`.
 # `just fuzz` lists them, `just fuzz <target> [secs]` runs one, `just fuzz all [secs]` each in turn.
