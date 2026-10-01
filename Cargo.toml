@@ -6,7 +6,7 @@ edition = "2021"
 # database. Nothing else in the tree needs it.
 rust-version = "1.86"
 description = "Catch releases straight from GitHub — a package manager for GitHub-released binaries and apps."
-license = "MIT"
+license = "GPL-3.0-only OR LicenseRef-Ketch-Royalty-free-1.0 OR LicenseRef-Ketch-Commercial"
 repository = "https://github.com/listepo/ketch"
 readme = "README.md"
 keywords = ["package-manager", "github", "releases", "installer", "macos"]
