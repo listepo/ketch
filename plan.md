@@ -28,6 +28,9 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | F12 | in progress | P3 | 5 | 50% | Claude Code / opus-5.5 |
 | F13 | in progress | P3 | 4 | 80% | Claude Code / opus-5.5 |
 | F14 | in progress | P2 | 3 | 90% | Claude Code / opus-5.5 |
+| F15 | in progress | P2 | 4 | 0% | Claude Code / opus-5.5 |
+| F16 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
+| F17 | todo | P2 | 4 | 0% | |
 
 ### F1. Notarisation
 
@@ -453,6 +456,34 @@ Plan:
 Check: the generator reproduces `Tokens.swift` byte-for-byte; the preview renders both themes; text colours meet WCAG AA contrast on their glass backgrounds (checked by the script or documented per pair).
 
 Status: PR https://github.com/pyrlyn/ketch/pull/188, CI green (new `design` job). Google Labs DESIGN.md spec (alpha, `@google/design.md` 0.4.0) with generated front matter; tokens in W3C DTCG 2025.10; Style Dictionary 5.5.5 with custom formats for Swift (four appearances), CSS and the front matter; `just design-check` covers drift, WCAG AA and lint. Research in `docs/research-design-system.md`. Remaining: an Accessibility Inspector pass on the real Liquid Glass material, and the F12 switch of `Theme.swift` to `Tokens.swift`.
+
+### F15. Liquid glass design in Figma
+
+The creator chose variant 6, "Liquid glass", from the design explorations as the app's design (2026-10-01), and Figma as the design tool. The Figma file becomes the source the tokens and the screens follow.
+
+Plan:
+1. A Figma design file "ketch for macOS — Liquid glass" in the creator's team: a `Color` variable collection with Light and Dark modes (glass, glass-hi, glass-lo, glass-top, glass-sheet, ink, ink-2, hair, edge, rim-hi, rim-lo, drop, scrim, accent, accent-soft, accent-ink, on-accent, status colours), number variables for radius and spacing, text styles (Large title, Title, Headline, Body, Caption, Badge, Mono), effect styles for the glass elevations (drop shadow plus inner rim light and shade, background blur).
+2. Components: window chrome, capsule navigation, package row, app card, shelf, badge, button (primary, glass), segmented control, progress bar, sheet, menu-bar extra.
+3. Screens on a Light page and a Dark page, 1180×760: Installed, Discover, Updates, Package detail, Activity, Doctor, Settings (with Appearance), binary-choice sheet, menu-bar extra; prototype links between them.
+4. The file link and the variable-to-token mapping go into `desktop/macos/DESIGN.md` and `desktop/macos/design/README.md`.
+
+Check: every colour, radius and text style on the screens is bound to a variable or style; screenshots of both pages reviewed; the mapping table lists every variable.
+
+### F16. Tokens and Appearance settings for Liquid glass
+
+The app moves to F15's palette and gets Appearance settings. Liquid Glass stays the system material (`.glassEffect`), so what the user can change is what the material allows: tint, regular or clear glass, accent, and the strength of the backdrop wash (creator, 2026-10-01).
+
+Plan:
+1. `desktop/macos/design/tokens.json`: the Liquid glass palette for light, dark and their increased-contrast variants (values from F15's variables), regenerated with `just design-tokens`; `DESIGN.md` prose updated; `just design-check` passes (drift, WCAG AA, lint).
+2. `Theme.swift` reads `Tokens.swift` instead of literals; `project.yml` compiles the generated file.
+3. Settings → Appearance: tint (clear plus presets plus custom), glass style (regular, clear), accent (system or a preset), backdrop wash strength; stored in `AppSettings`, applied through one environment value; Reduce Transparency and Increase Contrast still win over the user's choice.
+4. Tests: Swift Testing for the settings model (defaults, persistence, accessibility overrides).
+
+Check: `just design-check`, `xcodebuild test` for the app, a screenshot of both appearances.
+
+### F17. Screens rebuilt on the Liquid glass design
+
+The SwiftUI views follow F15's screens: capsule navigation in the toolbar, an Updates screen, Discover as shelves of app cards, the detail page, Activity, Doctor, the binary-choice sheet and the menu-bar extra. Starts after F15's screens and F16's tokens land.
 
 ### M14. JSON Schema for the package manifest
 
