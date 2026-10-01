@@ -282,7 +282,10 @@ fn a_bin_glob_matching_several_files_with_no_name_refuses_and_lists_them_sorted(
 fn a_bin_glob_matching_several_files_links_the_one_named_like_the_entry() {
     let sandbox = Sandbox::new();
     publish(&sandbox, "1.0.0", &["rtok-hook", "rtok"]);
-    glob_manifest(&sandbox, ", name = \"rtok\"");
+    // Windows links a bare name as `.exe`, so the script's entry keeps its suffix;
+    // the stem still names the file to prefer.
+    let name = if cfg!(windows) { "rtok.cmd" } else { "rtok" };
+    glob_manifest(&sandbox, &format!(", name = \"{name}\""));
 
     sandbox.ok(&["install", "rtok", "--yes"]);
 
