@@ -1,9 +1,11 @@
 // The app's look: macOS 26 Liquid Glass from the system (`glassEffect`,
 // `GlassEffectContainer`, the glass button styles), with depth from the
-// backdrop wash behind the glass and a soft shadow under it. Only system
-// materials are used, so Reduce Transparency and Increase Contrast keep working
-// without code here; on top of that, `ketchAppearance()` drops the user's tint,
-// clear glass and wash under either (Store/Appearance.swift).
+// backdrop wash behind the glass and a soft shadow under it. Glass stays the
+// system material; `ketchAppearance()` drops the user's tint, clear glass and
+// wash under Reduce Transparency and Increase Contrast (Store/Appearance.swift),
+// and `glassSurface` swaps the glass for the design's solid fills under Reduce
+// Transparency and outlines it under Increase Contrast, so a card never depends
+// on what shows through it.
 
 import SwiftUI
 
@@ -23,8 +25,27 @@ extension View {
 
     /// A floating glass card: the content padded, on the chosen glass in a
     /// rounded rectangle, lifted off the backdrop by a shadow.
-    func glassCard(cornerRadius: CGFloat = Theme.Radius.card, interactive: Bool = false) -> some View {
-        modifier(GlassCard(cornerRadius: cornerRadius, interactive: interactive))
+    func glassCard(
+        cornerRadius: CGFloat = Theme.Radius.card, padding: CGFloat = Theme.Spacing.cardPadding,
+        interactive: Bool = false
+    ) -> some View {
+        self.padding(padding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .glassSurface(.rect(cornerRadius: cornerRadius), interactive: interactive)
+            .liftShadow()
+    }
+
+    /// The content on the chosen glass in `shape`, optionally tinted, with no
+    /// padding or shadow: the building block of cards, fields and capsules.
+    func glassSurface(
+        _ shape: some Shape, level: SurfaceLevel = .content, tint: Color? = nil, interactive: Bool = false
+    ) -> some View {
+        modifier(GlassSurface(shape: shape, level: level, tint: tint, interactive: interactive))
+    }
+
+    /// The soft shadow that lifts a surface off the backdrop.
+    func liftShadow() -> some View {
+        shadow(color: Theme.Shadow.color, radius: Theme.Shadow.radius, y: Theme.Shadow.y)
     }
 
     /// Puts the section's content over the app backdrop, so the glass has
@@ -48,21 +69,58 @@ private struct AppearanceRoot: ViewModifier {
     }
 }
 
-private struct GlassCard: ViewModifier {
-    let cornerRadius: CGFloat
+/// Which solid fill stands in for the glass under Reduce Transparency.
+enum SurfaceLevel {
+    /// Cards, rows, fields: `glass.solidRegular`.
+    case content
+    /// Raised controls, sheets, the menu-bar extra: `glass.solidElevated`.
+    case elevated
+
+    var solid: Color {
+        switch self {
+        case .content: Tokens.Colors.Glass.solidRegular
+        case .elevated: Tokens.Colors.Glass.solidElevated
+        }
+    }
+}
+
+private struct GlassSurface<S: Shape>: ViewModifier {
+    let shape: S
+    let level: SurfaceLevel
+    let tint: Color?
     let interactive: Bool
     @Environment(\.appearance) private var appearance
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
 
+    @ViewBuilder
     func body(content: Content) -> some View {
-        content
-            .padding(Theme.Spacing.cardPadding)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .glassEffect(
-                appearance.glass(dark: colorScheme == .dark).interactive(interactive),
-                in: .rect(cornerRadius: cornerRadius)
-            )
-            .shadow(color: Theme.Shadow.color, radius: Theme.Shadow.radius, y: Theme.Shadow.y)
+        if reduceTransparency {
+            content
+                .background {
+                    ZStack {
+                        shape.fill(level.solid)
+                        if let tint { shape.fill(tint) }
+                    }
+                }
+                .overlay { edge }
+        } else {
+            content
+                .glassEffect(glass.interactive(interactive), in: shape)
+                .overlay { if contrast == .increased { edge } }
+        }
+    }
+
+    /// `glass.stroke`, whose high-contrast variant is what Increase Contrast
+    /// needs to find the surface's edge without the glass's own highlight.
+    private var edge: some View {
+        shape.stroke(Tokens.Colors.Glass.stroke, lineWidth: Tokens.Size.hairline).allowsHitTesting(false)
+    }
+
+    private var glass: Glass {
+        guard let tint else { return appearance.glass(dark: colorScheme == .dark) }
+        return (appearance.glassStyle == .clear ? Glass.clear : .regular).tint(tint)
     }
 }
 

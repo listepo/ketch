@@ -9,7 +9,9 @@ struct SettingsView: View {
             Tab("General", systemImage: "gearshape") { GeneralSettingsView() }
             Tab("Appearance", systemImage: "paintpalette") { AppearanceSettingsView() }
         }
-        .frame(width: 520)
+        // Shown in the Settings window and as the main window's Settings
+        // section, where the backdrop shows through the grouped forms.
+        .scrollContentBackground(.hidden)
     }
 }
 

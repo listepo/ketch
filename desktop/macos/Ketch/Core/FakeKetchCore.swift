@@ -12,6 +12,8 @@ final class FakeKetchCore: KetchCoreProtocol {
         var registry: [RegistryPackage]
         /// Packages that ship several binaries, so linking asks the decider.
         var binaries: [String: [String]]
+        /// Package name to the `ketch.lock` that pins it.
+        var pins: [String: String]
         /// The pid holding the ketch lock, or `nil` when it is free.
         var lockHolder: UInt32?
         /// Every operation called, in order, for tests to assert on.
@@ -27,11 +29,12 @@ final class FakeKetchCore: KetchCoreProtocol {
         stepDelay: Duration = .zero,
         installed: [InstalledPackage] = FakeKetchCore.sampleInstalled,
         registry: [RegistryPackage] = FakeKetchCore.sampleRegistry,
-        binaries: [String: [String]] = ["uv": ["uv", "uvx"]]
+        binaries: [String: [String]] = ["uv": ["uv", "uvx"]],
+        pins: [String: String] = FakeKetchCore.samplePins
     ) {
         self.root = root
         self.stepDelay = stepDelay
-        state = Mutex(State(installed: installed, registry: registry, binaries: binaries))
+        state = Mutex(State(installed: installed, registry: registry, binaries: binaries, pins: pins))
     }
 
     // MARK: Test switches
@@ -71,7 +74,8 @@ final class FakeKetchCore: KetchCoreProtocol {
                 guard let latest = state.registry.first(where: { $0.name == package.name })?.latest,
                     latest != package.version
                 else { return nil }
-                return Upgrade(name: package.name, from: package.version, to: latest)
+                return Upgrade(
+                    name: package.name, from: package.version, to: latest, heldBy: state.pins[package.name])
             }
         }
     }
@@ -108,7 +112,7 @@ final class FakeKetchCore: KetchCoreProtocol {
         reporter: any Reporter, decider: any Decider, cancel: CancelToken
     ) throws {
         try checkLock("upgrade \(names.joined(separator: " "))")
-        let targets = try outdated().filter { names.isEmpty || names.contains($0.name) }
+        let targets = try outdated().filter { $0.heldBy == nil && (names.isEmpty || names.contains($0.name)) }
         if targets.isEmpty { reporter.event(.status("Everything is up to date")) }
         for target in targets {
             try runPipeline(target.name, reporter: reporter, decider: decider, cancel: cancel)
@@ -226,7 +230,14 @@ extension FakeKetchCore {
         InstalledPackage(
             name: "bat", version: "0.24.0", source: "github", repo: "sharkdp/bat",
             description: "A cat clone with wings", path: "/tmp/ketch-fake/store/bat"),
+        InstalledPackage(
+            name: "jq", version: "1.7.1", source: "github", repo: "jqlang/jq",
+            description: "Command-line JSON processor", path: "/tmp/ketch-fake/store/jq"),
     ]
+
+    /// jq is held back by a project's lockfile, so the Updates screen has a
+    /// pinned package to show.
+    static let samplePins: [String: String] = ["jq": "~/work/site/ketch.lock"]
 
     static let sampleRegistry: [RegistryPackage] = [
         RegistryPackage(
