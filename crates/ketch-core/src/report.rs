@@ -20,6 +20,7 @@
 //! on every signature.
 
 use crate::config::Config;
+use crate::decide::{Decider, NoDecider};
 use crate::log;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -122,22 +123,6 @@ pub enum Event {
 pub trait Reporter: Send + Sync {
     /// Handle one event.
     fn event(&self, event: Event);
-
-    /// Ask a person to pick one of `options`; the index of the pick, or `None`
-    /// when nobody can answer. The one decision the install pipeline still
-    /// asks mid-run — which of several binaries sharing a package's name to
-    /// link. Moving decisions out of the pipeline altogether is a separate
-    /// change; until then this hook keeps it narrow. The default answers
-    /// nothing, which is what a host without a person in front of it wants.
-    fn choose(&self, _question: &str, _options: &[String]) -> Option<usize> {
-        None
-    }
-
-    /// Offer to do something optional, such as stopping a process that holds
-    /// a file being replaced. The default takes `default`, as a script would.
-    fn offer(&self, _question: &str, default: bool) -> bool {
-        default
-    }
 }
 
 /// Discards every event.
@@ -180,19 +165,6 @@ impl Reporter for LogReporter {
         }
         if let Some(inner) = &self.inner {
             inner.event(event);
-        }
-    }
-
-    fn choose(&self, question: &str, options: &[String]) -> Option<usize> {
-        self.inner
-            .as_ref()
-            .and_then(|r| r.choose(question, options))
-    }
-
-    fn offer(&self, question: &str, default: bool) -> bool {
-        match &self.inner {
-            Some(r) => r.offer(question, default),
-            None => default,
         }
     }
 }
@@ -336,29 +308,32 @@ impl Report {
             total,
         }
     }
-
-    /// See [`Reporter::choose`].
-    pub fn choose(&self, question: &str, options: &[String]) -> Option<usize> {
-        self.0.choose(question, options)
-    }
-
-    /// See [`Reporter::offer`].
-    pub fn offer(&self, question: &str, default: bool) -> bool {
-        self.0.offer(question, default)
-    }
 }
 
-/// What a core operation runs with: the configuration and where to report.
+/// What a core operation runs with: the configuration, where to report and
+/// who answers its questions.
 #[derive(Clone, Copy)]
 pub struct Ctx<'a> {
     pub cfg: &'a Config,
     pub report: &'a Report,
+    /// Asked what inference cannot decide. [`NoDecider`] unless a front end
+    /// with a person in front of it says otherwise.
+    pub decider: &'a dyn Decider,
 }
 
 impl<'a> Ctx<'a> {
-    /// Pair a configuration with a reporter.
+    /// Pair a configuration with a reporter; nobody answers questions.
     pub fn new(cfg: &'a Config, report: &'a Report) -> Self {
-        Ctx { cfg, report }
+        Ctx {
+            cfg,
+            report,
+            decider: &NoDecider,
+        }
+    }
+
+    /// The same context, with `decider` answering the pipeline's questions.
+    pub fn with_decider(self, decider: &'a dyn Decider) -> Self {
+        Ctx { decider, ..self }
     }
 }
 
@@ -669,14 +644,6 @@ mod tests {
             })
             .collect();
         assert_eq!(done, vec![1, 2]);
-    }
-
-    #[test]
-    fn the_default_decisions_answer_like_a_script() {
-        let report = Report::silent();
-        assert_eq!(report.choose("which?", &["a".into(), "b".into()]), None);
-        assert!(report.offer("stop it?", true));
-        assert!(!report.offer("stop it?", false));
     }
 
     #[test]

@@ -727,7 +727,7 @@ pub fn zelf(cfg: &Config, command: SelfCommand) -> Result<()> {
                 crate::process::offer_to_stop(
                     &self_replacement_paths(cfg),
                     yes,
-                    crate::ui::report(),
+                    &crate::ui::ctx_asking(cfg, !yes),
                 );
             }
             let out = self_update::update(
