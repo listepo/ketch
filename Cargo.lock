@@ -2671,6 +2671,7 @@ dependencies = [
  "terminal_size",
  "toml 1.1.6+spec-1.1.0",
  "trycmd",
+ "unicode-width",
  "zip",
 ]
 
@@ -2710,7 +2711,6 @@ dependencies = [
  "toml 1.1.6+spec-1.1.0",
  "toml_edit",
  "typed-path",
- "unicode-width",
  "ureq",
  "walkdir",
  "zip",

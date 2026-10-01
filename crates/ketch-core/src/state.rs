@@ -590,8 +590,10 @@ mod tests {
     #[test]
     fn a_lock_held_under_one_path_does_not_block_another_path() {
         let dir = tempfile::tempdir().unwrap();
-        let _a = Lock::acquire_path(&dir.path().join("a"), &crate::report::Report::silent()).unwrap();
-        let _b = Lock::acquire_path(&dir.path().join("b"), &crate::report::Report::silent()).unwrap();
+        let _a =
+            Lock::acquire_path(&dir.path().join("a"), &crate::report::Report::silent()).unwrap();
+        let _b =
+            Lock::acquire_path(&dir.path().join("b"), &crate::report::Report::silent()).unwrap();
     }
 
     #[test]
@@ -625,8 +627,8 @@ mod tests {
         let other = std::thread::spawn(move || {
             Lock::acquire_path(&path, &crate::report::Report::silent()).map(|_| ())
         })
-            .join()
-            .unwrap();
+        .join()
+        .unwrap();
         assert!(matches!(other, Err(Error::Busy { .. })));
     }
 }

@@ -763,7 +763,12 @@ mod tests {
         }
         let tmp = tempfile::tempdir().unwrap();
         std::fs::write(tmp.path().join("config.toml"), body).unwrap();
-        Config::load(Some(tmp.path().to_path_buf())).unwrap().emoji
+        Config::load(
+            Some(tmp.path().to_path_buf()),
+            &crate::report::Report::silent(),
+        )
+        .unwrap()
+        .emoji
     }
 
     #[test]

@@ -1963,7 +1963,7 @@ mod tests {
     #[test]
     fn the_sweep_takes_swap_leftovers_and_keeps_every_version() {
         let root = tempfile::tempdir().unwrap();
-        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        let cfg = Config::load(Some(root.path().join("ketch")), &Report::silent()).unwrap();
         cfg.ensure_dirs().unwrap();
         let folder = cfg.store_dir.join("tool");
         std::fs::create_dir_all(folder.join("1.0.0")).unwrap();
@@ -1985,7 +1985,7 @@ mod tests {
     #[test]
     fn the_sweep_never_takes_a_prefix_the_package_records() {
         let root = tempfile::tempdir().unwrap();
-        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        let cfg = Config::load(Some(root.path().join("ketch")), &Report::silent()).unwrap();
         cfg.ensure_dirs().unwrap();
         // A release really versioned like a leftover.
         let prefix = cfg.store_dir.join("tool").join("2.old");
@@ -2000,7 +2000,7 @@ mod tests {
     #[test]
     fn the_sweep_is_a_no_op_without_a_package_folder() {
         let root = tempfile::tempdir().unwrap();
-        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        let cfg = Config::load(Some(root.path().join("ketch")), &Report::silent()).unwrap();
         cfg.ensure_dirs().unwrap();
         sweep_swap_leftovers(&cfg, "tool", None).unwrap();
         sweep_swap_leftovers(&cfg, "../outside", None).unwrap();
@@ -2011,7 +2011,7 @@ mod tests {
     fn a_leftover_the_sweep_cannot_remove_stops_the_install_and_is_named() {
         use std::os::unix::fs::PermissionsExt;
         let root = tempfile::tempdir().unwrap();
-        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        let cfg = Config::load(Some(root.path().join("ketch")), &Report::silent()).unwrap();
         cfg.ensure_dirs().unwrap();
         let folder = cfg.store_dir.join("tool");
         std::fs::create_dir_all(folder.join("1.0.0.old")).unwrap();
@@ -2179,7 +2179,7 @@ mod tests {
     #[cfg(unix)]
     fn local_fixture(dir: &Path, name: &str) -> (Config, PathBuf) {
         use std::os::unix::fs::PermissionsExt;
-        let cfg = Config::load(Some(dir.join("root"))).unwrap();
+        let cfg = Config::load(Some(dir.join("root")), &Report::silent()).unwrap();
         let program = dir.join(name);
         std::fs::write(&program, "#!/bin/sh\necho hi\n").unwrap();
         std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -2199,16 +2199,18 @@ mod tests {
     fn an_install_cancelled_before_it_commits_leaves_no_store_folder_or_state_entry() {
         let dir = tempfile::tempdir().unwrap();
         let (cfg, program) = local_fixture(dir.path(), "canceltool");
-        let sources = SourceRegistry::load(&cfg);
+        let report = Report::silent();
+        let cx = Ctx::new(&cfg, &report);
+        let sources = SourceRegistry::load(&cx);
         let mut state = State::default();
         let cancel = Cancel::new();
         let req = local_request(&program, &cancel);
 
-        let prepared =
-            prepare(&cfg, &sources, &state, &req, &ui::SilentProgress).expect("prepare succeeds");
+        let prepared = prepare(&cx, &sources, &state, &req, &crate::report::SilentProgress)
+            .expect("prepare succeeds");
         // The host pressed Stop after the download, before anything was placed.
         cancel.cancel();
-        let err = commit(&cfg, &mut state, prepared).expect_err("commit must stop");
+        let err = commit(&cx, &mut state, prepared).expect_err("commit must stop");
 
         assert!(matches!(err, Error::Cancelled), "got {err}");
         assert!(state.packages.is_empty(), "no state entry");
@@ -2226,7 +2228,9 @@ mod tests {
     fn a_cancelled_token_stops_a_batch_before_any_package_is_prepared() {
         let dir = tempfile::tempdir().unwrap();
         let (cfg, program) = local_fixture(dir.path(), "batchtool");
-        let sources = SourceRegistry::load(&cfg);
+        let report = Report::silent();
+        let cx = Ctx::new(&cfg, &report);
+        let sources = SourceRegistry::load(&cx);
         let mut state = State::default();
         let cancel = Cancel::new();
         cancel.cancel();
@@ -2236,7 +2240,7 @@ mod tests {
         ];
 
         for jobs in [1, 2] {
-            let outcomes = batch(&cfg, &sources, &mut state, &reqs, jobs);
+            let outcomes = batch(&cx, &sources, &mut state, &reqs, jobs);
             assert_eq!(outcomes.len(), 2);
             assert!(outcomes.iter().all(|o| matches!(o, Err(Error::Cancelled))));
         }
@@ -2250,14 +2254,16 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (cfg, first) = local_fixture(dir.path(), "firsttool");
         let (_, second) = local_fixture(dir.path(), "secondtool");
-        let sources = SourceRegistry::load(&cfg);
+        let report = Report::silent();
+        let cx = Ctx::new(&cfg, &report);
+        let sources = SourceRegistry::load(&cx);
         let mut state = State::default();
 
         for program in [&first, &second] {
             // What a host does per operation: lock, run, release.
-            let _lock = crate::state::Lock::acquire(&cfg).unwrap();
+            let _lock = crate::state::Lock::acquire(&cx).unwrap();
             install(
-                &cfg,
+                &cx,
                 &sources,
                 &mut state,
                 &local_request(program, &Cancel::new()),

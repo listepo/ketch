@@ -389,13 +389,17 @@ mod tests {
     fn turning_the_log_off_closes_the_sink_an_earlier_init_opened() {
         let dir = tempfile::tempdir().expect("temp dir");
         let previous = guard().take();
-        let mut cfg = Config::load(Some(dir.path().join("root"))).expect("config");
+        let mut cfg = Config::load(
+            Some(dir.path().join("root")),
+            &crate::report::Report::silent(),
+        )
+        .expect("config");
         cfg.log_level = Level::Info;
-        init(&cfg, false);
+        init(&cfg, false).expect("log");
         assert!(path().is_some(), "first operation logs");
 
         cfg.log_level = Level::Off;
-        init(&cfg, false);
+        init(&cfg, false).expect("log off");
         let closed = path().is_none();
         set(previous);
 

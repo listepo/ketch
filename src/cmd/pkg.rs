@@ -142,7 +142,13 @@ pub fn install(cfg: &Config, args: InstallArgs) -> Result<()> {
     // The same path `ketch upgrade` takes: prepare and commit the exact
     // release the question named, update hooks included.
     if !updates.is_empty() {
-        let outcomes = install::batch(cfg, &sources, &mut state, &updates, jobs(cfg, args.jobs));
+        let outcomes = install::batch(
+            &crate::ui::ctx(cfg),
+            &sources,
+            &mut state,
+            &updates,
+            jobs(cfg, args.jobs),
+        );
         for (req, outcome) in updates.iter().zip(outcomes) {
             let key = req.spec.label();
             match outcome {

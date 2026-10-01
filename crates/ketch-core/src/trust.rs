@@ -230,12 +230,7 @@ fn fetch(source: &dyn Source, asset: &ReleaseAsset, dir: &Path) -> Result<(PathB
         )));
     }
     let path = dir.join(crate::config::sanitize_component(&asset.name));
-    let sha256 = source.download(
-        asset,
-        &path,
-        &ui::SilentProgress,
-        &crate::cancel::Cancel::new(),
-    )?;
+    let sha256 = source.download(asset, &path, &SilentProgress, &crate::cancel::Cancel::new())?;
     Ok((path, sha256))
 }
 

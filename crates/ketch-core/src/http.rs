@@ -336,8 +336,14 @@ mod tests {
         let dest = dir.path().join("big.bin");
         let cancel = Cancel::new();
         let progress = StopAfterFirstChunk(cancel.clone());
-        let result =
-            Http::anonymous().download(&url, &dest, &BTreeMap::new(), false, &progress, &cancel);
+        let result = Http::anonymous(&crate::report::Report::silent()).download(
+            &url,
+            &dest,
+            &BTreeMap::new(),
+            false,
+            &progress,
+            &cancel,
+        );
 
         assert!(matches!(result, Err(Error::Cancelled)));
         assert!(!dest.exists(), "no destination file");
