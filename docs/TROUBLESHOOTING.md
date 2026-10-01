@@ -22,6 +22,29 @@ answers: a `?` is asked again on the next run, while a version found a minute
 ago is not. Delete the file to look everything up again now. The `ketch list`
 section of [the command reference](COMMANDS.md) has the details.
 
+## "another ketch process holds the lock"
+
+Commands that change the install tree (`install`, `upgrade`, `uninstall`,
+`rollback`, `prune`, `pin`, `link`, `lock`'s sync, `self ...`) take one lock
+per ketch root, and a second one does not wait: it fails at once with exit
+code 8.
+
+```text
+$ ketch install ripgrep
+error: another ketch process holds the lock (pid 4242)
+```
+
+The pid is the holder: another terminal, a script, or an app that calls ketch
+in-process (then it is that app's pid, and the operation is still running).
+Wait for it to finish and run the command again. Two ketch processes writing
+`state.json` together would each save a view that omits the other's package,
+so the lock is never skipped.
+
+A crash leaves `~/.ketch/.lock` behind. ketch reads the pid in it and takes the
+file over when that process is gone, so nothing needs deleting by hand. If the
+pid is still running, the lock is real; `ketch doctor` reports a lock file and
+says whether its holder is alive or stale.
+
 ## A Windows executable is locked mid-upgrade
 
 Another process is running from a file ketch is about to replace. ketch lists

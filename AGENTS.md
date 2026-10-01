@@ -64,7 +64,8 @@ cargo build                      # debug binary at target/debug/ketch
 The Justfile wraps the same commands with `--locked`: `just fmt`, `just clippy`
 (or `just lint`), `just test`, and `just check` runs what CI runs on this
 host — format, clippy, `cargo nextest run --all-targets`, commitlint fixtures, shell
-syntax on `install.sh` and the release scripts, whether `release.yml` is what
+syntax on `install.sh` and the release scripts, `mandoc -Tlint` on the
+generated man pages when mandoc is present, whether `release.yml` is what
 `dist generate` produces, `dist build` for the host target, and on macOS
 `brew style` on the generated cask. Cross-target
 builds and the Linux/Windows jobs are CI-only.
@@ -204,6 +205,7 @@ conditional, multi-stage Rust automation.
 | Path | Owns |
 | --- | --- |
 | `src/main.rs` | argument parsing, config construction, dispatch — nothing else |
+| `src/lib.rs` | empty except under `cfg(fuzzing)`: the same modules again, and the entry points `fuzz/` drives |
 | `src/cli.rs` | the clap surface, kept separate so `cmd/` takes its args directly |
 | `src/cmd/` | thin command bodies: arguments, output, confirmations |
 | `src/install.rs` | the install/uninstall/relink pipeline every command shares |
@@ -214,7 +216,7 @@ conditional, multi-stage Rust automation.
 | `src/source/` | where releases come from: GitHub built in, plugins external |
 | `src/extract/` | archive formats, selected by sniffing content not file names |
 | `src/platform/` | OS-specific placement, linking, trust checks (`macos.rs`, `linux.rs`, `windows.rs`) |
-| `src/shell.rs` | putting the bin dir on PATH in bash, zsh and fish, and on Windows the user environment |
+| `src/shell.rs` | putting the bin dir on PATH in bash, zsh and fish, and on Windows the user environment; on Windows also the PowerShell profile blocks and cmd AutoRun that switch completion on |
 | `src/registry.rs` | the fetched package registry (see `docs/REGISTRY.md`) |
 | `src/manifest.rs` | resolving a name to a `Manifest` across four tiers |
 | `src/model.rs` | every type that crosses a module boundary |
@@ -222,6 +224,7 @@ conditional, multi-stage Rust automation.
 | `src/stats.rs` | `stats.db`: the history of what was installed, in SQLite |
 | `src/log.rs` | the log file, in text or JSON Lines |
 | `src/changelog.rs` | finding and slicing a client app's changelog |
+| `src/man.rs` | the host's own man pages, one per visible command, rendered from `Cli::command()` |
 | `src/lockfile.rs` | `ketch.lock`: what is installed, pinned to exact releases |
 | `src/listing.rs` | `ketch list`: installed and registry packages merged, `latest` looked up in parallel and cached |
 | `src/push.rs` | `ketch registry push`: a project's `ketch.toml` as a registry pull request, via octocrab |
@@ -229,6 +232,7 @@ conditional, multi-stage Rust automation.
 | `ketch.toml` | the host's own package file, what `ketch registry push` sends |
 | `src/ui.rs` | all terminal output |
 | `tests/` | end-to-end tests that drive the real binary |
+| `fuzz/` | cargo-fuzz targets, its own workspace on nightly; `just fuzz`, see `fuzz/README.md` |
 | `dist-workspace.toml` | what cargo-dist builds, signs and publishes; the source of `release.yml` |
 | `scripts/dist-generate.sh` | `dist generate` plus the patches to `release.yml` dist has no setting for |
 | `.github/build-setup.yml`, `.github/build-check.yml` | steps dist splices into each release build: before it, and before upload |
@@ -244,6 +248,8 @@ conditional, multi-stage Rust automation.
 | `install.ps1` | the `irm | iex` installer for Windows; same bootstrap as `install.sh` |
 | `.github/dependabot.yml` | weekly `chore(deps)` pull requests for cargo, npm and GitHub Actions; not `mise.toml` |
 | `desktop/macos/` | the SwiftUI macOS app: `project.yml` (XcodeGen), `Ketch/` sources, `KetchTests/`, `KetchUITests/`; see its `README.md` |
+| `desktop/macos/DESIGN.md` | the macOS app's design system in the DESIGN.md format; its front matter is generated |
+| `desktop/macos/design/` | `tokens.json`, the one source of design tokens, and `build.mjs`, which generates `generated/Tokens.swift`, the DESIGN.md front matter and `preview.html`'s CSS (`just design-tokens`) |
 | `.github/workflows/desktop-release.yml` | the macOS app's release: signed, notarised `.dmg` under a `desktop-v*` tag, and its Sparkle appcast |
 | `scripts/desktop-version.sh`, `scripts/desktop-dmg.sh`, `scripts/desktop-appcast.sh` | the app release's version check, disk image and appcast, shared with `tests/desktop-appcast.sh` |
 | `desktop/cliff.toml` | the app's release notes: commits under `desktop/` and `crates/ketch-ffi/` since the last `desktop-v*` tag |
@@ -262,7 +268,9 @@ can take them back. `src/shell.rs` edits shell startup files and the user PATH
 only when asked: `ketch path install`, `ketch doctor --fix` and `ketch self
 uninstall`, which takes the block back out of every startup file that has one
 rather than only the shell running now, and on Windows takes the bin dir out of
-the user PATH. It edits a shell startup file between two
+the user PATH. On Windows, `self install` and `completions --install` also
+put a completion block in the PowerShell profiles and append ketch's doskey
+line to cmd's `AutoRun`; `self uninstall` takes back exactly those. It edits a shell startup file between two
 markers, so the block can be found again, rewritten when the root moves, and
 removed without guessing which line was ketch's. It follows a symlinked
 startup file to its target before writing, because that file is very often a
@@ -298,7 +306,9 @@ These are observed throughout; match them rather than introducing your own.
 - **A generated file says so in its first lines**, and the generator writes
   that header, not a person or a second script: `ketch lock` for `ketch.lock`,
   `site/sync-docs.py` for `site/content/docs/`, `scripts/cask.sh` for the
-  tap's `Casks/ketch.rb`. To change such a file, change its generator.
+  tap's `Casks/ketch.rb`, `desktop/macos/design/build.mjs` for `Tokens.swift`
+  and the generated blocks of `DESIGN.md` and `preview.html`. To change such a
+  file, change its generator.
 - **Comments explain *why*, never *what*.** The code already says what it does.
   A comment earns its place by recording a decision, a constraint, or a
   failure that motivated the shape of the code.
@@ -320,6 +330,31 @@ These are observed throughout; match them rather than introducing your own.
   throwaway root, fixture archives and a source plugin that serves them, so the
   suite stays offline. Add a case there when a bug could pass every unit test
   in the tree — most of them could.
+- **Core calls are callable from any thread and from a host that outlives
+  the operation.** No `Rc`, thread-local or once-per-process initialisation
+  sits in the install pipeline. Two rules bind whoever calls it:
+  - *Lock.* A mutating operation holds `state::Lock` for its whole run. The
+    lock is non-blocking and exclusive per lock file across processes *and*
+    within this one (a static set of held paths), so a second acquire fails
+    with the typed `Error::Busy { pid, lock }`, never waits and never adopts
+    the lock because the file names our own pid. A lock file naming our own
+    pid with no holder in the set is a stale leftover and is reclaimed. Do not
+    acquire the lock inside an operation that already holds it; it would be
+    `Busy` against itself. The CLI prints the same `another ketch process
+    holds the lock (pid N)` and exits 8.
+  - *Cancel.* `cancel::Cancel` is a cloneable shared flag. A host puts one
+    clone in `InstallRequest::cancel` and keeps another; `cancel()` makes the
+    pipeline return `Error::Cancelled` (exit 130) at its next check: before a
+    package is prepared, between download chunks (`Http::download`,
+    `Source::download` take the token), and before `commit` places anything.
+    A cancelled install has removed its temp dirs and written no state entry.
+    New long-running steps must take the token and check it, not loop without
+    one. The CLI passes tokens that nothing cancels.
+  - *Per operation.* Build `Config` per operation (`Config::load` re-reads
+    `config.toml` and the environment) and call `log::init` per operation; do
+    not cache either across operations. `push.rs` owns a tokio runtime and
+    blocks on it, so call it from a plain worker thread, not from inside an
+    async task.
 - **Best-effort where a partial answer beats no answer.** A broken plugin, an
   unreadable manifest or one unreachable source is warned about and skipped,
   never fatal. A malformed *built-in* registry is a ketch bug and does fail.

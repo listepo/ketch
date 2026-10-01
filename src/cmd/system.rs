@@ -1,7 +1,8 @@
 //! Commands about ketch itself and its environment.
 
 use crate::cli::{
-    CompletionsArgs, DoctorArgs, PathArgs, PathCommand, PathInstallArgs, PluginCommand, SelfCommand,
+    CompletionsArgs, DoctorArgs, ManArgs, PathArgs, PathCommand, PathInstallArgs, PluginCommand,
+    SelfCommand,
 };
 use crate::config::Config;
 use crate::error::{Error, Result};
@@ -30,6 +31,9 @@ pub fn doctor(cfg: &Config, args: DoctorArgs) -> Result<()> {
     // Not a platform check: every shell reads the same startup files wherever
     // it runs, so a second platform would only duplicate this.
     checks.push(shell::path_check(cfg));
+    if let Some(check) = shell::stale_registry_check(cfg) {
+        checks.push(check);
+    }
     if let Some(check) = path_binary_check(cfg) {
         checks.push(check);
     }
@@ -166,6 +170,16 @@ fn fix(cfg: &Config) {
             }
         }
     }
+}
+
+/// `ketch man --out <dir>`: every page, for a package to ship.
+pub fn man(args: &ManArgs) -> Result<()> {
+    let written = crate::man::write_to(&args.out)?;
+    ui::success(
+        "Wrote",
+        &format!("{} man pages to {}", written.len(), args.out.display()),
+    );
+    Ok(())
 }
 
 /// Write one shell's completion script into the platform destination and
@@ -574,8 +588,11 @@ fn plan_lines(plan: &self_update::UninstallPlan) -> Vec<String> {
     for file in &plan.shell_files {
         lines.push(format!("the PATH block in {}", file.display()));
     }
-    if plan.user_path {
-        lines.push("the user PATH".to_string());
+    for entry in &plan.registry {
+        lines.push(entry.describe().to_string());
+    }
+    for file in &plan.powershell_profiles {
+        lines.push(format!("the completion block in {}", file.display()));
     }
     if plan.cask.is_some() {
         lines.push("the Homebrew cask".to_string());

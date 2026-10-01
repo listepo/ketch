@@ -24,3 +24,7 @@
 /site/content/docs/plan.md
 /site/content/docs/contributing.md
 site/__pycache__/
+
+# insta: pending snapshots and their run log, never committed
+*.pending-snap
+*.snap.new

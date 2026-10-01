@@ -39,6 +39,7 @@ pub const LOCK_FILE: &str = "ketch.lock";
 
 /// A whole lockfile.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Lockfile {
     pub version: u32,
@@ -51,11 +52,14 @@ pub struct Lockfile {
 
 /// One package, pinned.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct LockedPackage {
     /// The name it was installed under. Used to find the same manifest again,
     /// never to build a path.
     pub name: String,
+    /// `scheme:id`, e.g. `github:BurntSushi/ripgrep`.
+    #[cfg_attr(test, schemars(with = "String"))]
     pub source: PackageRef,
     /// Human-readable version. `tag` is what actually gets resolved.
     pub version: String,
@@ -313,10 +317,25 @@ fn is_sha256(text: &str) -> bool {
     text.len() == 64 && text.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
+/// What `Lockfile::load` does after reading the file, for the `lockfile` fuzz
+/// target (`src/lib.rs`).
+#[cfg(fuzzing)]
+pub(crate) fn fuzz_parse(text: &str) -> Result<Lockfile> {
+    let lock: Lockfile =
+        toml::from_str(text).map_err(|e| Error::parse("fuzz".to_string(), e.to_string()))?;
+    lock.validate(Path::new("ketch.lock"))?;
+    Ok(lock)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::model::{Arch, ManifestOrigin, RetainedVersion, TargetSpec, Version};
+
+    #[test]
+    fn committed_lock_schema_matches_lockfile() {
+        crate::config::assert_schema_current::<Lockfile>("docs/lock.schema.json");
+    }
 
     fn installed(name: &str, repo: &str, tag: &str) -> InstalledPackage {
         InstalledPackage {

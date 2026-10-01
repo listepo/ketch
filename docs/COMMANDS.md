@@ -5,7 +5,15 @@ working example. `PKG` below is an installed name, an alias, or
 `owner/repo` — most commands that take one also accept `@version` on the end
 (`sharkdp/fd@v10.2.0`). Global flags work everywhere: `--root <DIR>` points at
 a different ketch tree, `-v/--verbose` shows what ketch is doing, `-q/--quiet`
-prints only errors and requested data, and `--no-color` disables colour.
+prints only errors and requested data, `--no-color` disables colour, and
+`--no-emoji` drops the icons in front of status lines.
+
+**Icons.** On a terminal, each status line starts with an icon for what it
+reports: 📦 install, ⬆️ upgrade or update, 🗑️ uninstall or remove, ⬇️ download,
+🔗 link, ⏪ rollback, 🔍 search, 🩺 doctor, and otherwise ✅ success, ⚠️ warning,
+❌ error, ℹ️ note. They are on by default (`emoji` in `config.toml`,
+`KETCH_EMOJI`) and never appear in a pipe or a file, under `TERM=dumb`, in
+`--json` or `--names-only` output, in table data, or in the log.
 
 ## Install and remove
 
@@ -20,6 +28,15 @@ ketch install rg                  # or a name the registry knows
 ketch install sharkdp/fd@v10.2.0  # or an exact version
 ketch install --path ./mytool     # a local binary, archive, symlink, or .app
 ```
+
+A package that is already installed is not updated behind your back. With a
+newer release, `install` asks `<pkg> <installed> is installed; update to
+<latest>?` (default no) and, on yes, updates it the way `ketch upgrade` does;
+`--yes` answers yes, and without a terminal it stops with exit 5 and says to
+pass `--yes` or run `ketch upgrade`. With nothing newer it fails with exit 5:
+`cannot install <pkg>: <version> is already installed and no update is
+available` (`--force` reinstalls). An exact version (`pkg@1.2.0`) and a pinned
+package behave as before.
 
 Options: `--path <PATH>` installs a local file (equivalent to
 `local:<PATH>`); `--name <NAME>` sets the installed name for a single
@@ -51,6 +68,8 @@ Remove installed packages. Names resolve like `install` (installed name,
 binary, or `owner/repo`); a typo stops the command before anything is removed.
 The package's whole store folder goes, including anything an interrupted
 update left in it.
+A name that is not installed prints `<name>: not found` and exits 4; every
+missing name is listed and nothing is removed.
 
 ```bash
 ketch uninstall rg
@@ -63,6 +82,11 @@ Aliased as `ketch remove` and `ketch rm`.
 
 Upgrade installed packages to their latest release. Empty means every
 unpinned package. Shows a `from -> to` table, asks, then installs.
+
+Each version is unpacked into a fresh folder of its own, so nothing the old
+version shipped can linger in the new one, and a leftover from an interrupted
+upgrade is removed first — or the upgrade stops, naming it. The previous
+version's folder is kept beside it for `ketch rollback` until `ketch prune`.
 
 ```bash
 ketch upgrade              # everything unpinned
@@ -427,7 +451,8 @@ ketch plugin dir
 
 Check the environment and the install tree: version, PATH setup, platform
 checks, log, registry age, store against `state.json`. Exits non-zero when a
-check fails.
+check fails. On Windows it also warns about user PATH entries that name a ketch
+bin dir whose folder is gone — this root's, or any `.ketch\bin`.
 
 ```bash
 ketch doctor
@@ -482,7 +507,7 @@ ketch completions zsh > _ketch
 ketch completions bash --install
 ```
 
-The bash script also completes package names: installed ones after
+The bash and PowerShell scripts also complete package names: installed ones after
 `uninstall`, `upgrade`, `pin`, `unpin`, `link`, `unlink`, `info`, `why`,
 `changelog` and `rollback`, and names from the local registry copy after
 `install` and `search`. It asks the binary for them with the internal
@@ -499,6 +524,30 @@ Install a current bash and bash-completion 2 (with Homebrew:
 source bash-completion's `bash_completion` from `~/.bashrc` as its caveats
 say. The script itself also runs under bash
 3.2, so `eval "$(ketch completions bash)"` in `~/.bashrc` works without either.
+
+On Windows, `--install` (and `ketch self install`, which installs every
+shell's script) also switches completion on, since neither shell loads a
+completion directory by itself:
+
+- **PowerShell.** The script goes to `Documents\PowerShell\Completions\ketch.ps1`,
+  and a block between `# >>> ketch >>>` and `# <<< ketch <<<` in the
+  CurrentUserAllHosts profile of PowerShell 7 (`Documents\PowerShell\profile.ps1`)
+  and Windows PowerShell 5.1 (`Documents\WindowsPowerShell\profile.ps1`)
+  dot-sources it. Documents is the folder PowerShell reports, so a OneDrive
+  redirect is followed. A profile that does not exist yet is created only when
+  that edition is installed and its execution policy runs local scripts;
+  otherwise ketch says why it left it alone.
+- **cmd.** cmd has no programmable completion, so it gets doskey macros:
+  `ki` (`ketch install`), `ku` (`ketch upgrade`), `kl` (`ketch list`) and `kun`
+  (`ketch uninstall`), each passing its arguments on. They live in
+  `<root>\share\ketch\ketch.doskey`, loaded by
+  `doskey /macrofile="…"` appended to
+  `HKCU\Software\Microsoft\Command Processor\AutoRun` with ` & ` after
+  whatever AutoRun already runs.
+
+`ketch self uninstall` takes the profile blocks out (deleting a profile that
+held nothing else) and removes exactly its own command from AutoRun, leaving
+the earlier value as it was, or deleting the value when it held only ketch's.
 
 ## ketch itself
 
@@ -538,6 +587,18 @@ installed with mise also asks whether to run `mise unuse -g` for its own copy;
 `--yes` answers that too.
 On Windows the running `ketch.exe` cannot delete itself, so the rest of the
 root is removed by a background process once ketch has exited.
+
+On Windows it also removes what ketch wrote to the registry. Today that is
+only the bin dir in the user PATH (`HKCU\Environment\Path`), written by
+`install.ps1` or `ketch path install`. The entry is matched however it is
+spelled: case, quotes, `/` or `\`, a trailing separator, or an 8.3 short
+name. `--keep-packages` leaves it, as it leaves the shell blocks, because the
+packages still in the bin dir need it. ketch never registers itself in Apps &
+Features, so there is no entry there to remove.
+
+It also removes the PowerShell profile blocks and the cmd AutoRun addition
+that switch completion on — those with `--keep-packages` too, since both
+load ketch itself.
 
 ```bash
 ketch self uninstall --dry-run

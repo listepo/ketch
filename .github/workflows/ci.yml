@@ -171,6 +171,37 @@ jobs:
       - name: Update feed round trip
         run: sh ../../tests/desktop-appcast.sh
 
+  # The macOS app's design tokens: every generated copy is what
+  # desktop/macos/design/build.mjs writes from tokens.json, DESIGN.md passes
+  # the DESIGN.md linter, and text meets WCAG AA on its glass backgrounds.
+  # Offline after npm ci; the same steps as `just design-check`.
+  design:
+    if: github.event.pull_request.draft != true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Read the Node pin from mise.toml
+        id: node_pin
+        run: |
+          version=$(grep '^node = ' mise.toml | cut -d '"' -f2)
+          [ -n "$version" ] || { echo "no node pin found in mise.toml" >&2; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ steps.node_pin.outputs.version }}
+
+      - name: Design tokens
+        run: |
+          npm ci
+          node desktop/macos/design/build.mjs
+          git diff --exit-code -- desktop/macos \
+              || { echo "design tokens are stale: run just design-tokens and commit" >&2; exit 1; }
+          node desktop/macos/design/contrast.mjs
+          npx --no-install designmd lint desktop/macos/DESIGN.md > lint.json \
+              || { cat lint.json; exit 1; }
+
   # Packaging is exercised on every pull request, so it breaks here rather than
   # halfway through a release, after the merge that started one.
   package:

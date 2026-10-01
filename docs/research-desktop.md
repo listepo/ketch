@@ -14,7 +14,9 @@ recommendation is kept as the rejected alternative. The core preparation
 (workspace split, reporter, decisions out of the pipeline, a tryable lock) is
 the same either way. Tasks: R5–R9, F12, F13 in `plan.md`; Windows and Linux
 in `roadmap.md`. The app shares the ketch root with the CLI: one state, one
-lock, one store. It has a menu-bar extra and targets macOS 26 and later. Licence: the project's triple
+lock, one store. It has a menu-bar extra and targets macOS 26 and later. The UI is frosted or
+glossy glass with a 3D effect: macOS 26's Liquid Glass material, with depth
+from layering, shadows and highlights (creator, 2026-10-01). Licence: the project's triple
 licence; `Cargo.toml` now says `GPL-3.0-only OR LicenseRef-Ketch-Royalty-free-1.0
 OR LicenseRef-Ketch-Commercial`.
 

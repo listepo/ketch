@@ -211,3 +211,88 @@ fn path_install_puts_the_bin_dir_on_the_user_path() {
         "user PATH should be empty of this bin dir:\n{status}"
     );
 }
+
+fn user_path() -> String {
+    let out = std::process::Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "[Environment]::GetEnvironmentVariable('Path','User')",
+        ])
+        .output()
+        .expect("read the user PATH");
+    String::from_utf8_lossy(&out.stdout).trim().to_string()
+}
+
+fn set_user_path(value: &str) {
+    let status = std::process::Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "[Environment]::SetEnvironmentVariable('Path', $env:TEST_USER_PATH, 'User')",
+        ])
+        .env("TEST_USER_PATH", value)
+        .status()
+        .expect("write the user PATH");
+    assert!(status.success(), "could not write the user PATH");
+}
+
+/// Entries of the user PATH that name anything under `root`, however spelled.
+fn entries_under(root: &std::path::Path) -> Vec<String> {
+    let root = root.display().to_string().to_ascii_lowercase();
+    user_path()
+        .split(';')
+        .filter(|e| {
+            e.trim_matches('"')
+                .replace('/', "\\")
+                .to_ascii_lowercase()
+                .starts_with(&root)
+        })
+        .map(str::to_string)
+        .collect()
+}
+
+/// B66: `self uninstall` takes the bin dir back out of HKCU\Environment\Path
+/// even when the entry is not spelled the way ketch spells the bin dir —
+/// `install.ps1` writes whatever `Resolve-Path` gave it.
+#[test]
+fn self_uninstall_removes_the_user_path_entry_however_it_is_spelled() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.root();
+    struct Restore(std::path::PathBuf);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let left = entries_under(&self.0);
+            if !left.is_empty() {
+                let kept: Vec<String> = user_path()
+                    .split(';')
+                    .filter(|e| !left.iter().any(|l| l == e))
+                    .map(str::to_string)
+                    .collect();
+                set_user_path(&kept.join(";"));
+            }
+        }
+    }
+    let _restore = Restore(root.clone());
+
+    let spelled = format!(
+        "\"{}\\\"",
+        sandbox.bin().display().to_string().to_ascii_uppercase()
+    );
+    let before = user_path();
+    set_user_path(&if before.is_empty() {
+        spelled.clone()
+    } else {
+        format!("{spelled};{before}")
+    });
+    assert_eq!(entries_under(&root), vec![spelled]);
+
+    sandbox.ok(&["self", "uninstall", "--yes"]);
+    assert!(
+        entries_under(&root).is_empty(),
+        "the user PATH still names the bin dir: {}",
+        user_path()
+    );
+}

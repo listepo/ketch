@@ -537,6 +537,61 @@ Model: ZCode / glm-5.3
 
 Status: done 2026-09-27 (PR #150)
 
+### M11. Bash completion for every command
+
+Today clap_complete generates a static bash script (`ketch completions bash`, installed at `self install` as `share/ketch/completions/ketch`). It knows commands and flags, but not values.
+
+Plan:
+1. Test coverage: a test walks `Cli::command()` and asserts every visible subcommand, alias and flag appears in the generated script.
+2. Dynamic values: installed package names for `uninstall`, `upgrade`, `pin`, `unpin`, `link`, `unlink`, `info`, `why`, `changelog` and `rollback`, read from the state file; registry names for `install` and `search`, read from the local registry copy. No network in completion. Use clap_complete `CompleteEnv` (`unstable-dynamic`) or a hidden `ketch __complete <kind>`; decide after checking how stable the feature is.
+3. Docs: the bash ≥ 4 and bash-completion 2 note for macOS.
+
+Check: bash smoke on Linux and macOS CI (`COMP_WORDS=(ketch un) COMP_CWORD=1` → `uninstall unlink unpin`; `ketch uninstall r<TAB>` → an installed name from a scratch root); `just check`.
+
+Execution plan (as carried out):
+1. Decision: a hidden `ketch __complete <installed|registry> [PREFIX]` command, not `CompleteEnv`. clap_complete 4.6's `unstable-dynamic` sits outside semver and its docs say the shell-to-binary protocol may change between releases, while ketch writes its bash script to disk at `self install`; a cargo patch update could break every installed script.
+2. New `src/complete.rs`: the shell-agnostic candidate lists (state file, local registry copy, no network) and the bash script: clap_complete's static script plus a wrapper, generated from `Cli::command()`, that asks `ketch __complete` for positional package names. `main.rs` and `extra::write_ketch_docs` both call it.
+3. Tests in `src/complete.rs`: every visible subcommand, alias and flag appears in the script; candidate filtering. `tests/`: bash smoke (`ketch un` → `uninstall unlink unpin`; `ketch uninstall r` → an installed fixture name) with `KETCH_ROOT` and `HOME` in a temp dir, skipped when no bash ≥ 4 is found.
+4. Docs: `docs/COMMANDS.md` completions section, the bash ≥ 4 + bash-completion 2 note for macOS.
+
+Result: `src/complete.rs` owns the completion scripts and `ketch __complete [--root DIR] <installed|registry> [PREFIX]`, intercepted in `main` before clap parses so no generated script, help or man page lists it. The bash script is clap_complete's plus `_ketch_packages`, registered in its place; the value-taking options it skips come from the clap tree, and names reach the command line only when they are plain (`[A-Za-z0-9._+@-]`), since registry folder names are someone else's input and `compgen -W` would expand them. Tests: unit tests in `src/complete.rs` (every visible subcommand, alias and flag in the script; candidate filtering; `self install` writes the same script); `tests/completion.rs` drives the script through the `bash` on PATH (3.2 on macOS) against a sandbox root. Docs: `docs/COMMANDS.md`.
+
+Status: done 2026-09-30
+Model: Claude Code / opus-5.5
+
+### M12. Windows completion: PowerShell `Register-ArgumentCompleter` and doskey macros for cmd
+
+Today clap_complete emits `Register-ArgumentCompleter -Native -CommandName 'ketch'`, and `ketch completions powershell --install` writes it to `Documents\PowerShell\Completions`. PowerShell does not load that directory by itself, so nothing is active until the user dot-sources it.
+
+Plan:
+1. PowerShell: a managed block in the CurrentUserAllHosts profile that dot-sources the script, for both PowerShell 7 (`Documents\PowerShell`) and Windows PowerShell 5.1 (`Documents\WindowsPowerShell`). Resolve Documents through the shell, not a fixed path, because OneDrive may redirect it. Use the same managed-block mechanism as the PATH blocks in `src/shell.rs`, so `self uninstall` removes it. Dynamic values come from M11's completer.
+2. cmd: cmd.exe has no programmable argument completion, so ship doskey macros. Generate `share/ketch/ketch.doskey` (the macro list is for Ivan to choose; for example `ki=ketch install $*`, `ku=ketch upgrade $*`, `kl=ketch list $*`) and load it through `HKCU\Software\Microsoft\Command Processor\AutoRun` (`doskey /macrofile=<file>`). Append to an existing AutoRun value rather than replace it. Register the value in B66's inventory so `self uninstall` restores the old value.
+3. Optional, only if Ivan wants real Tab completion in cmd: a clink Lua script generated from the CLI.
+
+Check: Windows CI: `pwsh -c "TabExpansion2 'ketch ins' 9"` returns `install`; after install, AutoRun contains the doskey line and `ki` expands in a new cmd; after `self uninstall`, the profile block and the AutoRun addition are gone and an earlier AutoRun value is intact; `just check`.
+
+Creator decisions: the macros are exactly `ki=ketch install $*`, `ku=ketch upgrade $*`, `kl=ketch list $*`, `kun=ketch uninstall $*`; no clink (step 3 skipped).
+
+Result: the PowerShell script `ketch completions powershell` prints is clap_complete's with a package lookup spliced into its completer (`src/complete.rs`): the same command table as bash, answered by `ketch __complete`, written to run on Windows PowerShell 5.1 as well as 7. On Windows, `expose_self_docs` (run by `self install`, `self upgrade` and `completions --install`) now also calls `shell::install_powershell_profiles`, which puts a `# >>> ketch >>>` block dot-sourcing `Documents\PowerShell\Completions\ketch.ps1` into both editions' CurrentUserAllHosts profiles (Documents as PowerShell reports it; a new profile only when that edition is installed and its execution policy runs local scripts; a BOM for a new profile naming a non-ASCII path), and `shell::install_cmd_macros`, which writes `<root>\share\ketch\ketch.doskey` and appends ` & doskey /macrofile="…"` to `HKCU\Software\Microsoft\Command Processor\AutoRun`, keeping the value's kind and `%VAR%`s. Registry values reach PowerShell through environment variables. `self uninstall` (also with `--keep-packages`) lists and removes both: `shell::uninstall_powershell_profile` and `shell::uninstall_cmd_macros`, which removes exactly ketch's command and restores the earlier value or deletes the value when it held only ketch's. The AutoRun functions are small and named so B66's registry inventory can fold them in. Tests: AutoRun add/remove/round-trip, block rendering, quoting, BOM and policy as unit tests in `src/shell.rs`; the spliced script in `src/complete.rs`; `tests/completion_windows.rs` runs `TabExpansion2` in `pwsh` and `powershell`, and checks AutoRun, `doskey /macros` in a new cmd and the profiles after install and after `self uninstall`, saving and restoring the real AutoRun and profiles in a drop guard. Docs: `docs/COMMANDS.md`.
+
+Status: done 2026-09-30
+Model: Claude Code / opus-5.5
+
+### M10. Man pages in roff for every command
+
+Today `extra::render_manpage` writes one hand-rolled `ketch.1`, listing top-level commands with no options and no nested subcommands. `write_ketch_docs` places it under `share/man/man1/` at `self install`.
+
+Plan:
+1. Add `clap_mangen` (rtok already uses it for `rtok man`, a working reference). Generate `ketch.1` plus `ketch-<cmd>.1` for every visible subcommand, recursively (`ketch-config-create.1`, `ketch-self-uninstall.1`, …), with options, defaults, env vars and examples from the clap definitions. Replace `render_manpage`.
+2. Write every page through `write_ketch_docs` as `ExtraPath` records, so uninstall and relink remove them with the same ownership proof as today's page.
+3. A hidden `ketch man --out <dir>` (or a `just man` recipe) for packaging; the Homebrew cask may ship them.
+
+Check: a test walks `Cli::command()` and asserts one page per visible command; `mandoc -Tlint` clean on macOS and Linux CI; `man ketch-install` works after `self install` in a scratch root; `just check`.
+
+Execution: `src/man.rs` renders every page with `clap_mangen` 0.3 (`env` feature) from `Cli::command()`: `ketch.1`, then `ketch-<cmd>[-<sub>…].1` depth first for each subcommand that is not hidden and not clap's generated `help`. Titles are upper case, the source is `ketch <version>`, the date is `SOURCE_DATE_EPOCH` when set (reproducible packaging) or today. Two clap_mangen layouts that `mandoc -Tlint` warns about (a break beside a blank line before "Possible values") are tidied into one `.sp`. `extra::write_ketch_docs` writes every page under `share/man/man1/` of the store prefix and records each as an `ExtraPath`; `extra::render_manpage` is gone. A hidden `ketch man --out <DIR>` writes the same pages without a ketch root, for packaging. `just lint-man` (part of `just check`) runs `mandoc -Tlint -Wwarning` on them when mandoc is present and says it skipped otherwise; the Linux CI job does not install mandoc.
+
+Tests: `src/man.rs` walks `Cli::command()` and asserts one page per visible command in order, nested pages exist (`ketch-self-uninstall.1`), hidden commands and `help` get none, a subcommand page names its full invocation and options, the tidy step, and `write_to`. `src/extra.rs` asserts every page is written into the prefix and recorded as a man extra. Verified by hand: `mandoc -Tlint -Wwarning` clean on all 42 pages on macOS; `self install` in a scratch root (KETCH_ROOT, HOME and XDG_* under `target/`, a local mock of the GitHub API serving the built binary) linked 42 pages into `$XDG_DATA_HOME/man/man1`, `man ketch-install` rendered, and `self uninstall` removed them all.
+
 ### B67. Uninstall deletes the package's install folder
 
 Ivan: uninstall must delete the program's folder (for example the `ketch` folder).
@@ -577,6 +632,43 @@ Execution plan (done):
 
 Result: `ui::Tone` names the meaning of status text (step, success, warning, error, note, hint) and is the one place a meaning picks its colour. Success lines are green end to end, warnings yellow, error headlines red; details stay dim and the hint cyan. Prompts (`confirm`, `answer`, `choose`, `cancelled`), the `fetched` line, the counter label, `list`'s update marker, `doctor`'s ok/warn/fail and `lock`'s +/~/- markers go through the same helpers; the log-open warning no longer bypasses `ui`. On Windows `console` switches on virtual terminal processing, and colour falls back to plain text when it cannot. `completed` prints nothing outside the TUI, whose status colours already honour `--no-color`, so it was left as is.
 
+### F11. Emoji icons per operation, `emoji` config key (default true)
+
+Plan:
+1. One table in `src/ui.rs` maps each operation to an icon (proposal: install 📦, upgrade ⬆️, uninstall 🗑️, download ⬇️, link 🔗, rollback ⏪, search 🔍, doctor 🩺, success ✅, warning ⚠️, error ❌, note ℹ️). Ivan picks the final set.
+2. Config: `emoji = true` in `Config` / `Config::default_toml()`, the `KETCH_EMOJI` env var, and a `--no-emoji` global flag if wanted. Document it in the Configuration table in `README.md` and `docs/COMMANDS.md`, and in the `config reset` defaults test.
+3. Icons appear only on human-facing status lines going to a terminal. They never appear in `--json`, `--names-only`, `ui::out` data, the log file, or when `TERM=dumb`.
+4. Width: emoji are double-width, so pad the verb column with `unicode-width` and keep columns aligned with and without icons.
+
+Check: snapshots with emoji on and off; JSON and piped output contain no emoji; `emoji = false` and `KETCH_EMOJI=0` turn them off; `just check`.
+
+Execution plan (Claude Code / opus-5.5, done), with Ivan's final set: the proposal above as written.
+
+1. `src/ui.rs`: an `EMOJI` switch beside `COLOR`, set by `ui::set_emoji` once the config is loaded; on only when wanted and stderr is a terminal whose `TERM` is not `dumb`. One icon table next to `Tone`: operation icons matched on the verb, then the tone's own icon (success, warning, error, note). The icon is padded to two columns with `unicode-width`, and lines without an icon get the same blank gutter, so every column stays aligned.
+2. `src/config.rs`: `emoji` in `ConfigFile`, `Config` and `default_toml()`, `KETCH_EMOJI` through `env_bool`. `src/cli.rs`: global `--no-emoji`. `src/main.rs`: call `ui::set_emoji` after each `Config::load`.
+3. Tests: insta snapshots of every line kind with emoji on and off; the resolver as a pure function (config off, `KETCH_EMOJI=0`, flag, pipe, `TERM=dumb`); e2e: piped stderr and `--json` carry no emoji; `config reset` defaults include `emoji = true`.
+4. Docs: `README.md` Configuration table, `docs/COMMANDS.md` global flags. `Cargo.toml`: `unicode-width` as a direct dependency (already locked through indicatif), `toolchain.md` and `rust.md` rows.
+
+Result: `src/ui.rs` holds one icon table beside `Tone`: an operation icon picked from the verb (install 📦, upgrade/update ⬆️, uninstall/remove/prune 🗑️, download/fetch ⬇️, link 🔗, rollback ⏪, search 🔍, doctor 🩺), else the tone's icon (success ✅, warning ⚠️, error ❌, note ℹ️); steps, debug lines and prompts get a blank gutter of the same width, measured with `unicode-width` (now a direct dependency), so the verb column stays aligned with and without icons. `emoji` (default `true`) is in `Config` and `default_toml()`, `KETCH_EMOJI` overrides it, and the global `--no-emoji` turns it off. `ui::set_emoji` runs after the config loads and keeps icons off a pipe and `TERM=dumb`; they never touch `ui::out`, tables, `--json`, `--names-only` or the log. Tests: insta snapshots of every line kind with emoji on and off, the resolver cases, icon widths and column alignment, config file and env tests, `config reset` writing `emoji = true`, and an end-to-end install whose piped output, `--json` and log carry no icon. Skipped: a schemars schema for `config.toml`, which the repository does not have for any key yet. `search` and `doctor` print data rather than status lines today, so their icons have no line to appear on until one is added.
+
+### B66. Windows self-uninstall removes the registry entries ketch wrote at install
+
+Ivan: uninstalling ketch on Windows must remove the registry entry that was added at install.
+
+What ketch writes to the registry today: only `HKCU\Environment\Path`. `install.ps1` adds the bin dir there, and so does `ketch path install` (`shell::install_user`, through `[Environment]::SetEnvironmentVariable(..., 'User')`). There is no Apps & Features (`...\CurrentVersion\Uninstall\ketch`) key, because `dist-workspace.toml` sets `installers = []`. `self uninstall` removes the Path entry only when `UninstallPlan.user_path` is true (`shell::user_path_configured(cfg)`). That is false under `--keep-packages`, and it may miss an entry written by `install.ps1 -InstallDir <dir>` for a bin dir that is not `cfg.bin_dir`.
+
+Plan:
+1. Reproduce on a Windows runner: `install.ps1` (default and with `-InstallDir`), then `ketch self uninstall --yes`, then read `HKCU\Environment\Path` and list what is left.
+2. Keep one inventory of every registry value ketch writes (a function in `src/shell.rs`, for example `registry_entries(cfg)`): the user Path entry today, and M12's `HKCU\Software\Microsoft\Command Processor\AutoRun` addition later. `self uninstall` removes each entry it finds, matching Path entries the way `install.ps1`'s `Normalize-PathKey` does (quotes, slashes, trailing separator, case).
+3. `ketch doctor` warns when an inventory entry points into a ketch root that no longer exists.
+4. Ask Ivan whether he also expects an Apps & Features entry. That would be new (register at `self install`, remove at uninstall), not a fix.
+
+Check: Windows e2e (`tests/install_windows.rs` or `tests/install_ps1.rs`): after `install.ps1` + `ketch self uninstall --yes`, the user Path holds no entry for the ketch bin dir, with and without `-InstallDir`; `just check` green on all three OSes.
+
+Decisions (Ivan): no Apps & Features entry; only clean up what ketch writes.
+
+Result: `shell::registry_entries(cfg)` is the one inventory of registry values ketch writes (`RegistryEntry::UserPath` today; M12's AutoRun joins it), and `self uninstall` removes each one through `shell::remove_registry_entry`, before the root so the bin dir can still be resolved. A Path entry now matches the bin dir by spelling (case, quotes, slashes, trailing separator — as `install.ps1`'s `Normalize-PathKey`) or, while the folder exists, by resolving both paths, which covers 8.3 short names. `install.ps1 -InstallDir` never puts that dir on the user PATH — it always adds `<root>\bin` — so there was no second entry to chase. `--keep-packages` keeps the entry, like the shell blocks, because the packages left in the bin dir still need it. `ketch doctor` warns about user PATH entries that name a ketch bin dir whose folder is gone. Tests: unit tests for resolution matching, stale detection and the empty inventory off Windows; `tests/install_windows.rs` writes a quoted, upper-case, trailing-backslash entry for the sandbox bin dir and checks `self uninstall --yes` removes it. The Windows parts were verified only in CI.
+
 ### M11. Bash completion for every command
 
 Today clap_complete generates a static bash script (`ketch completions bash`, installed at `self install` as `share/ketch/completions/ketch`). It knows commands and flags, but not values.
@@ -598,3 +690,88 @@ Result: `src/complete.rs` owns the completion scripts and `ketch __complete [--r
 
 Status: done 2026-09-30
 Model: Claude Code / opus-5.5
+
+
+### B68. Update installs into a fresh folder so stale files cannot interfere
+
+Ivan: update must clean or delete the program folder and install into a fresh one.
+
+Today the per-version prefix is already fresh. `move_into_store` stages the payload as `<version>.incoming` and swaps it in through `<version>.old`, so a new version and a `--force` reinstall of the same version both replace the directory whole. Gaps: (a) stale `.incoming` / `.old` siblings survive when their best-effort removal fails; (b) old links and copied files the new version no longer has are removed by `platform.unplace(&stale)`, and a failure there is only a warning; (c) retained prefixes of earlier versions stay on purpose, because `ketch rollback` (M6) needs them.
+
+Plan:
+1. Sweep stale siblings (B67's helper) at the start of every install and upgrade, before hooks run.
+2. If a stale sibling or a stale link cannot be removed, fail the update before anything is placed, naming the path. Do not warn and continue.
+3. Decision for Ivan: "delete the program folder" must not break rollback. Proposal: keep retained prefixes (they are separate directories, so they cannot leak files into the new one) and say so in `docs/COMMANDS.md`. The alternative is to drop retention by default (`retain = 0`).
+4. `ketch self upgrade` replaces the binary in place (`replace_binary`). Its leftovers are covered by B60, and nothing more is needed here.
+
+Check: e2e: a file present in 1.0.0 and absent from 1.1.0 is gone after upgrade, and a same-version `--force` reinstall leaves no stale file; a planted `1.1.0.incoming` does not end up inside the new prefix; `just check`.
+
+Done (Claude Code / opus-5.5): Ivan chose to keep retained prefixes (step 3), now stated in `docs/COMMANDS.md` under `ketch upgrade`. `install::commit` runs `sweep_swap_leftovers` before the hooks and before anything is placed: every `*.incoming` / `*.old` entry in `store/<name>/` goes, except a prefix the package still records; one that cannot be removed fails the install or upgrade with its path. `package_dir_candidate` is the guard shared with B67's `remove_package_dir`. Step 2's stale *links* stay a warning: they are only known after the new placement, which is placed first on purpose so a failed placement keeps the working links, and a leftover link points at a retained prefix, never into the new one. Tests: unit tests for the sweep (leftovers go, versions and recorded prefixes stay, a failure names the path), e2e `upgrade_installs_into_a_fresh_prefix_that_nothing_stale_reaches` and `a_forced_reinstall_of_the_same_version_leaves_no_stale_file` (macOS).
+
+### B69. Uninstalling a package that is not installed prints only "not found"
+
+Ivan: uninstalling an already-removed program prints only "program not found".
+
+Today `cmd::pkg::uninstall` resolves every name first and fails with `Error::NotInstalled` (`` `<name>` is not installed ``, exit 4), rendered by `ui::error` with the `error` label.
+
+Plan:
+1. A missing name prints one line, `<name>: not found`, with no hint, no detail lines and no summary. Exit code 4 stays for scripts. Wording: ketch's docs say "package"; Ivan's phrase was "program not found". Confirm the final text with Ivan.
+2. Several names: every missing one is reported, and nothing is removed (the up-front resolution stays, so a typo still stops the command).
+3. After B67: a name with no state record but a leftover `store/<name>/` gets the leftover removed and still reports not found.
+
+Check: e2e: uninstall twice → the second run prints exactly one line and exits 4; trycmd snapshot; `just check`.
+
+Done (Claude Code / opus-5.5): wording confirmed by Ivan as `<name>: not found`. `cmd::pkg::uninstall` collects every name state cannot find, prints one `ui::bare_error` line per name (no label, hint or detail, logged at error level) and returns `Error::Reported(4)`, which `main` exits with without printing anything else — not even the log-path note. No installed package is removed when any name is missing. A missing name's leftover `store/<name>/` is removed through B67's `install::remove_package_dir`. Tests: `tests/uninstall_not_found.rs` (one name, several names, a leftover folder; all OSes).
+
+Status: done 2026-09-30
+
+### M13. JSON Schema for the TOML files ketch owns
+
+`AGENTS.md` requires every config file this project owns to have a schema generated from its types with `schemars`, committed and checked by a drift test. There was none. Requested by the creator in chat.
+
+Done when `config.toml` (`ConfigFile`) and `ketch.lock` (`Lockfile`) each have a committed JSON Schema generated from their types, and a test fails when a committed schema differs from the generated one.
+
+Done (Claude Code / opus-5.5):
+
+1. `schemars` 1.2 as a dev-dependency: only the tests export a schema, so the derives are `cfg_attr(test, ...)` and the binary does not change. Row in `toolchain.md`.
+2. Derive `JsonSchema` on `ConfigFile`, `Lockfile`, `LockedPackage`; `PackageRef` is stored as a `scheme:id` string, so its fields use `#[schemars(with = "String")]`.
+3. Commit `docs/config.schema.json` and `docs/lock.schema.json`.
+4. Drift tests beside the types (the crate has no library target, so `tests/` cannot reach them): `config::assert_schema_current` generates the schema, drops `null` from `type` (TOML has none), and compares with the committed file; `KETCH_BLESS=1 cargo nextest run schema` rewrites it.
+5. Checked: `cargo nextest run` (709 passed), `cargo clippy --all-targets -D warnings`, `cargo fmt --check`; a hand edit to a schema fails its test.
+
+Not in scope: the package manifest (`ketch.toml`, `Manifest` in `model.rs`) — noted in `ideas.md`.
+
+Status: done 2026-09-30
+Model: Claude Code / opus-5.5
+
+### F9. `ketch install <pkg>` on an installed package offers the update
+
+Ivan: `ketch install <program>` when it is already installed asks "update?". Yes updates. With no update available, it says it cannot install because the package is already installed.
+
+Today `install::prepare` returns `Error::AlreadyInstalled` (exit 5, hint "Use --force to reinstall.") only when the resolved tag equals the installed one. When a newer release exists, `ketch install` upgrades silently.
+
+Plan:
+1. Installed and a newer release resolves, with an unversioned spec: ask through `ui::confirm`: `<pkg> <installed> is installed; update to <latest>?`. The default answer is a decision for Ivan; the proposal is No, matching the other confirms. Yes runs the same path as `ketch upgrade <pkg>`, including the update hooks. No exits 0 with a note.
+2. Installed and nothing newer: fail with `cannot install <pkg>: <version> is already installed and no update is available`, still exit 5. `--force` still reinstalls; whether its hint stays is a decision for Ivan.
+3. `--yes` answers yes. Without a TTY and without `--yes`, fail and name `--yes` / `ketch upgrade`, instead of upgrading silently. This is a behaviour change, so it goes in `CHANGELOG.md`.
+4. Pinned packages keep `Error::Pinned`. An explicit version (`pkg@1.2.0`) keeps today's behaviour. In a batch, each installed package is asked separately. `ketch sync` is unaffected.
+
+Check: e2e with the mock release API: newer + yes → upgraded; newer + no → unchanged, exit 0; nothing newer → the message and exit 5; non-TTY without `--yes` → error; `docs/COMMANDS.md` updated; `just check`.
+
+Done (Claude Code / opus-5.5): Ivan chose default No and to keep the `--force` hint. `InstallRequest.offer_update` (set by `ketch install` unless `--yes`) makes `install::prepare` stop an unversioned install of an installed package with `Error::UpdateAvailable` (newer release) or `Error::NoUpdate` (same release), both exit 5, before anything is downloaded; pinned packages and `pkg@version` keep their old errors. `cmd::pkg::install` asks after the parallel batch, one package at a time, and runs the approved ones as a second batch pinned to the exact tag the question named — the same prepare/commit path as `ketch upgrade`, update hooks included. Without a terminal the `UpdateAvailable` error stands, and its hint names `--yes` and `ketch upgrade <pkg>`. `ketch sync` and `self install` are unaffected (they never set the flag). Tests: e2e yes / no (on a pseudo-terminal through BSD `script`, macOS), `--yes`, no terminal, nothing newer; `docs/COMMANDS.md` updated.
+
+Status: done 2026-09-30
+
+### B70. Flaky `upgrade_stops_a_process_holding_the_binary_when_yes`
+
+`tests/auto_update.rs` starts the installed sleeper, sleeps a fixed 400 ms, then runs `ketch upgrade --yes` and expects it to report the process as `in use`. On macOS under load (several cargo builds in parallel) it failed on 2026-09-30 and 2026-10-01 and passed when run alone. Done means the test waits on a condition, not a delay, and survives a stress loop.
+
+Plan (Claude Code / opus-5.5):
+1. Reproduce: run the built `auto_update` test binary 64-way in parallel for several rounds.
+2. `tests/support/mod.rs`: `Entry::sleeper` creates the file named by `KETCH_TEST_SLEEPER_READY`, when set, before it starts waiting (sh and cmd).
+3. `tests/auto_update.rs`: set that variable on the child and wait for the file (bounded at 60 s so a sleeper that never starts fails instead of hanging) in place of the 400 ms sleep.
+4. Verify: the same stress loop, then `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo nextest run`.
+
+Done (Claude Code / opus-5.5): reproduced with the prebuilt test binary run 64-way in parallel — 2 of 192 runs failed with no `in use` line, because the shell had not opened the script within 400 ms, so `lsof` found nobody. After the fix: 0 of 800 runs failed (64- and 96-way), and the full suite passes. Running `cargo nextest` several times at once was no use as a reproducer: concurrent runs relink the binaries and macOS SIGKILLs them.
+
+Status: done 2026-10-01

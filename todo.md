@@ -10,14 +10,10 @@ Empty: F1/F2/M3/F5 and the 2026-09-20 audit follow-ups (A2) are in `done.md`; th
 - R3. Cross-platform CI
 - F8. Spinner and progress bar
 - M9. `ketch list` refactor: `local`, `remote`, and both by default
-- B66. Windows self-uninstall removes the registry entries ketch wrote at install
-- B68. Update installs into a fresh folder so stale files cannot interfere
-- F9. `ketch install <pkg>` on an installed package offers the update
-- B69. Uninstalling a package that is not installed prints only "not found"
-- M10. Man pages in roff for every command
-- M12. Windows completion: PowerShell `Register-ArgumentCompleter` and doskey macros for cmd
-- F11. Emoji icons per operation, `emoji` config key (default true)
 - R4. Fuzz testing with cargo-fuzz / libFuzzer
+- M14. JSON Schema for the package manifest
+- M15. `log_level` and `log_format` as enums in `config.toml`
+- M16. One module owns config file I/O
 - R5. Workspace split: `ketch-core` library crate
 - R6. A reporter instead of the global `ui::` sink
 - R7. Decisions out of the pipeline
@@ -25,3 +21,4 @@ Empty: F1/F2/M3/F5 and the 2026-09-20 audit follow-ups (A2) are in `done.md`; th
 - R9. `ketch-ffi`: the core exported through UniFFI
 - F12. Native macOS app (SwiftUI) on `ketch-ffi`
 - F13. macOS app release pipeline
+- F14. Design system for the macOS app: `DESIGN.md` and tokens

@@ -1,6 +1,6 @@
 [package]
 name = "ketch"
-version = "0.8.1"
+version = "0.9.0"
 edition = "2021"
 # Raised from 1.82 by Diesel 2.3, which is the floor for the statistics
 # database. Nothing else in the tree needs it.
@@ -24,6 +24,8 @@ tui = ["dep:crossterm", "dep:ratatui"]
 [dependencies]
 clap = { version = "4", features = ["derive", "env", "wrap_help"] }
 clap_complete = "4"
+# `env` lists each option's environment variable on its man page.
+clap_mangen = { version = "0.3", features = ["env"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "1.1"
@@ -53,6 +55,9 @@ indicatif = "0.18"
 # The terminal width `ketch list remote` fits descriptions to. Already in the
 # tree through clap's `wrap_help`, so it costs the binary nothing.
 terminal_size = "0.4"
+# How many columns a status-line icon takes, so the verb column stays aligned.
+# Already in the tree through indicatif, so it costs the binary nothing.
+unicode-width = "0.2"
 crossterm = { version = "0.29", optional = true }
 ratatui = { version = "0.30", optional = true }
 diesel = { version = "2.3", features = ["sqlite", "returning_clauses_for_sqlite_3_35"] }
@@ -95,11 +100,16 @@ predicates = "3"
 pretty_assertions = "1.4.1"
 proptest = "1.11"
 rstest = "0.26"
+# Only the schema drift tests use it; the derives are `cfg_attr(test, ...)`.
+schemars = "1.2"
 trycmd = "1.2"
 
 # There is no unsafe code in ketch and there is no reason for any to appear.
 [lints.rust]
 unsafe_code = "forbid"
+# `cargo fuzz` builds with `--cfg fuzzing`; only then does `src/lib.rs` hold
+# anything (see `fuzz/README.md`).
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(fuzzing)"] }
 
 [profile.release]
 opt-level = "z"

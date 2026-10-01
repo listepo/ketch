@@ -11,11 +11,15 @@ use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::io::{IsTerminal, Write};
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Mutex;
+use unicode_width::UnicodeWidthStr;
 
 #[cfg(feature = "tui")]
 use std::sync::Arc;
 
 static COLOR: AtomicBool = AtomicBool::new(false);
+/// Off until the config says otherwise: an error raised while the config is
+/// still loading is printed without an icon rather than with a guessed one.
+static EMOJI: AtomicBool = AtomicBool::new(false);
 static LEVEL: AtomicU8 = AtomicU8::new(1); // 0 quiet, 1 normal, 2 verbose
 
 /// The bars currently sharing the terminal, while a batch is running.
@@ -217,6 +221,30 @@ fn windows_vt() -> bool {
     true
 }
 
+/// Turn the status-line icons on or off, once the config is known.
+///
+/// `wanted` is the `emoji` setting (`KETCH_EMOJI`, `config.toml`) with
+/// `--no-emoji` already applied. It is only a wish: see [`emoji_allowed`].
+pub fn set_emoji(wanted: bool) {
+    let term = std::env::var("TERM").ok();
+    EMOJI.store(
+        emoji_allowed(wanted, std::io::stderr().is_terminal(), term.as_deref()),
+        Ordering::Relaxed,
+    );
+}
+
+/// Icons are for a person reading a terminal. A pipe or a file is read by a
+/// program, which would have to strip them, and `TERM=dumb` is a terminal that
+/// has said it cannot draw them. Unlike colour, nothing forces them into a
+/// pipe: `CLICOLOR_FORCE` asks for escape codes, not for glyphs.
+fn emoji_allowed(wanted: bool, stderr_is_terminal: bool, term: Option<&str>) -> bool {
+    wanted && stderr_is_terminal && term != Some("dumb")
+}
+
+fn emoji_enabled() -> bool {
+    EMOJI.load(Ordering::Relaxed)
+}
+
 pub fn color_enabled() -> bool {
     COLOR.load(Ordering::Relaxed)
 }
@@ -292,13 +320,87 @@ pub fn tone(tone: Tone, text: &str) -> String {
     }
 }
 
-/// The right-aligned verb column every status line starts with.
-fn label(verb: &str) -> String {
-    format!("{verb:>10}")
+/// Icons for what a verb is doing, looked up before the [`Tone`]'s own.
+///
+/// Matched as substrings of the verb, in order, so `installing`, `installed`
+/// and `already installed` share one entry. `uninstall` comes before `install`
+/// because it contains it.
+const OPERATION_ICONS: &[(&str, &str)] = &[
+    ("uninstall", "🗑️"),
+    ("remov", "🗑️"),
+    ("prun", "🗑️"),
+    ("install", "📦"),
+    ("upgrad", "⬆️"),
+    ("updat", "⬆️"),
+    ("download", "⬇️"),
+    ("fetch", "⬇️"),
+    ("link", "🔗"),
+    ("roll", "⏪"),
+    ("search", "🔍"),
+    ("doctor", "🩺"),
+];
+
+/// The icon a line carries: its operation's when the verb names one, else its
+/// meaning's. Work in progress and questions have no icon of their own.
+fn icon(verb: &str, kind: Tone) -> Option<&'static str> {
+    let verb = verb.to_ascii_lowercase();
+    if let Some((_, icon)) = OPERATION_ICONS.iter().find(|(key, _)| verb.contains(key)) {
+        return Some(icon);
+    }
+    match kind {
+        Tone::Success => Some("✅"),
+        Tone::Warning => Some("⚠️"),
+        Tone::Error => Some("❌"),
+        Tone::Note => Some("ℹ️"),
+        Tone::Step | Tone::Hint => None,
+    }
+}
+
+/// Columns every icon is padded to. Every icon in the table is two columns
+/// wide, the ones built from a narrow symbol and a presentation selector
+/// (`ℹ️`, `⚠️`) included; each is still measured rather than assumed, so a
+/// narrower icon added later pads out instead of pulling its line left.
+const ICON_WIDTH: usize = 2;
+
+/// The icon gutter in front of the verb column: the icon and a space, or as
+/// many blanks when the line has none, so lines with and without icons align.
+/// Empty when icons are off.
+fn gutter(icon: Option<&str>) -> String {
+    if !emoji_enabled() {
+        return String::new();
+    }
+    let icon = icon.unwrap_or("");
+    let pad = ICON_WIDTH.saturating_sub(UnicodeWidthStr::width(icon));
+    format!("{icon}{} ", " ".repeat(pad))
+}
+
+/// The width of the verb column, icon gutter included: where the text after
+/// the verb starts, for lines that continue under it.
+fn label_width() -> usize {
+    if emoji_enabled() {
+        10 + ICON_WIDTH + 1
+    } else {
+        10
+    }
+}
+
+/// The right-aligned verb column every status line starts with, behind the
+/// icon its verb and [`Tone`] pick.
+fn label(verb: &str, kind: Tone) -> String {
+    format!("{}{verb:>10}", gutter(icon(verb, kind)))
+}
+
+/// The verb column with no icon, but the same width as one that has it.
+fn bare_label(verb: &str) -> String {
+    format!("{}{verb:>10}", gutter(None))
 }
 
 fn step_line(verb: &str, detail: &str) -> String {
-    format!("{} {}", tone(Tone::Step, &label(verb)), printable(detail))
+    format!(
+        "{} {}",
+        tone(Tone::Step, &label(verb, Tone::Step)),
+        printable(detail)
+    )
 }
 
 /// The whole line is green, not only the verb: a finished step should read as
@@ -306,7 +408,7 @@ fn step_line(verb: &str, detail: &str) -> String {
 fn success_line(verb: &str, detail: &str) -> String {
     tone(
         Tone::Success,
-        &format!("{} {}", label(verb), printable(detail)),
+        &format!("{} {}", label(verb, Tone::Success), printable(detail)),
     )
 }
 
@@ -315,21 +417,21 @@ fn success_line(verb: &str, detail: &str) -> String {
 fn warn_line(detail: &str) -> String {
     tone(
         Tone::Warning,
-        &format!("{} {}", label("warning"), printable(detail)),
+        &format!("{} {}", label("warning", Tone::Warning), printable(detail)),
     )
 }
 
 fn note_line(detail: &str) -> String {
     tone(
         Tone::Note,
-        &format!("{} {}", label("note"), printable(detail)),
+        &format!("{} {}", label("note", Tone::Note), printable(detail)),
     )
 }
 
 fn debug_line(detail: &str) -> String {
     tone(
         Tone::Note,
-        &format!("{} {}", label("debug"), printable(detail)),
+        &format!("{} {}", bare_label("debug"), printable(detail)),
     )
 }
 
@@ -338,19 +440,19 @@ fn debug_line(detail: &str) -> String {
 fn error_lines(headline: &str, details: &[String], hint: Option<&str>) -> Vec<String> {
     let mut lines = vec![tone(
         Tone::Error,
-        &format!("{} {}", label("error"), printable(headline)),
+        &format!("{} {}", label("error", Tone::Error), printable(headline)),
     )];
     for line in details {
         lines.push(format!(
             "{} {}",
-            " ".repeat(10),
+            " ".repeat(label_width()),
             tone(Tone::Note, &printable(line))
         ));
     }
     if let Some(hint) = hint {
         lines.push(format!(
             "{} {}",
-            tone(Tone::Hint, &label("hint")),
+            tone(Tone::Hint, &label("hint", Tone::Hint)),
             printable(hint)
         ));
     }
@@ -360,7 +462,7 @@ fn error_lines(headline: &str, details: &[String], hint: Option<&str>) -> Vec<St
 /// The start of a question: a coloured label, then the question itself. The
 /// question can name a client app's asset or package, so it is filtered too.
 fn prompt_line(kind: Tone, verb: &str, question: &str) -> String {
-    format!("{} {}", tone(kind, &label(verb)), printable(question))
+    format!("{} {}", tone(kind, &bare_label(verb)), printable(question))
 }
 
 fn confirm_line(question: &str, default: bool) -> String {
@@ -413,6 +515,14 @@ pub fn warn(detail: &str) {
     emit(&warn_line(detail));
 }
 
+/// A failure that is the whole message, with no `error` label, hint or
+/// detail lines: `<name>: not found`. Printed even under `--quiet`, like
+/// every other error.
+pub fn bare_error(line: &str) {
+    log::record(log::Level::Error, line);
+    emit(&tone(Tone::Error, &printable(line)));
+}
+
 /// An aside: true, worth saying once, and not a problem.
 pub fn note(detail: &str) {
     log::record(log::Level::Info, detail);
@@ -459,6 +569,11 @@ pub fn out(line: &str) {
     let stdout = std::io::stdout();
     let mut lock = stdout.lock();
     let _ = writeln!(lock, "{line}");
+}
+
+/// Whether a question can be put to a person: stdin is a terminal.
+pub fn can_ask() -> bool {
+    std::io::stdin().is_terminal()
 }
 
 /// Ask a yes/no question. Returns `default` when stdin is not a terminal, so
@@ -595,7 +710,12 @@ pub fn select(question: &str, options: &[String]) -> Option<usize> {
         // and would otherwise swallow the options into its activity pane.
         eprintln!("{}", prompt_line(Tone::Hint, "choose", question));
         for (i, option) in options.iter().enumerate() {
-            eprintln!("{:>11} {}", format!("{})", i + 1), printable(option));
+            eprintln!(
+                "{:>width$} {}",
+                format!("{})", i + 1),
+                printable(option),
+                width = label_width() + 1
+            );
         }
         loop {
             eprint!(
@@ -1103,7 +1223,7 @@ pub fn counter(verb: &str, total: u64, unit: &str) -> Counter {
     let style = ProgressStyle::with_template(&format!("{{msg}} {{pos}}/{{len}} {unit}"))
         .unwrap_or_else(|_| ProgressStyle::default_bar());
     bar.set_style(style);
-    bar.set_message(tone(Tone::Step, &label(verb)));
+    bar.set_message(tone(Tone::Step, &label(verb, Tone::Step)));
     bar.enable_steady_tick(std::time::Duration::from_millis(120));
     Counter { bar }
 }
@@ -1279,6 +1399,80 @@ mod tests {
         init(Some(true), false, true);
         let shown = every_line_kind().join("\n").replace('\u{1b}', "\\e");
         insta::assert_snapshot!(shown);
+    }
+
+    #[test]
+    fn each_line_kind_carries_its_icon_when_emoji_are_on() {
+        init(Some(false), false, true);
+        EMOJI.store(true, Ordering::Relaxed);
+        let shown = every_line_kind().join("\n");
+        EMOJI.store(false, Ordering::Relaxed);
+        insta::assert_snapshot!(shown);
+    }
+
+    #[test]
+    fn no_line_kind_carries_an_icon_when_emoji_are_off() {
+        init(Some(false), false, true);
+        EMOJI.store(false, Ordering::Relaxed);
+        let shown = every_line_kind().join("\n");
+        insta::assert_snapshot!(shown);
+        for (_, icon) in OPERATION_ICONS {
+            assert!(!shown.contains(icon), "{shown}");
+        }
+    }
+
+    #[test]
+    fn every_icon_fills_the_same_gutter() {
+        for (_, icon) in OPERATION_ICONS {
+            assert_eq!(UnicodeWidthStr::width(*icon), ICON_WIDTH, "{icon}");
+        }
+        for kind in [Tone::Success, Tone::Warning, Tone::Error, Tone::Note] {
+            let icon = icon("", kind).unwrap_or_default();
+            assert_eq!(UnicodeWidthStr::width(icon), ICON_WIDTH, "{icon}");
+        }
+    }
+
+    #[test]
+    fn text_after_the_verb_starts_in_one_column_with_or_without_an_icon() {
+        init(Some(false), false, true);
+        EMOJI.store(true, Ordering::Relaxed);
+        let lines = [
+            step_line("installing", "ripgrep"),
+            step_line("resolving", "ripgrep"),
+            success_line("up to date", "ripgrep"),
+            warn_line("ripgrep"),
+            debug_line("ripgrep"),
+        ];
+        let detail = error_lines("x", &["ripgrep".to_string()], None)[1].clone();
+        EMOJI.store(false, Ordering::Relaxed);
+        for line in lines.iter().chain([&detail]) {
+            let at = line.find("ripgrep").unwrap_or_default();
+            assert_eq!(UnicodeWidthStr::width(&line[..at]), 14, "{line:?}");
+        }
+    }
+
+    #[test]
+    fn an_operation_icon_outranks_the_meaning_icon() {
+        assert_eq!(icon("installed", Tone::Success), Some("📦"));
+        assert_eq!(icon("uninstalled", Tone::Success), Some("🗑️"));
+        assert_eq!(icon("rolled back", Tone::Success), Some("⏪"));
+        assert_eq!(icon("up to date", Tone::Success), Some("✅"));
+        assert_eq!(icon("resolving", Tone::Step), None);
+    }
+
+    #[rstest::rstest]
+    #[case::wanted_on_a_terminal(true, true, Some("xterm-256color"), true)]
+    #[case::wanted_with_no_term_set(true, true, None, true)]
+    #[case::turned_off_by_config_env_or_flag(false, true, Some("xterm"), false)]
+    #[case::piped(true, false, Some("xterm"), false)]
+    #[case::dumb_terminal(true, true, Some("dumb"), false)]
+    fn emoji_show_only_when_wanted_on_a_capable_terminal(
+        #[case] wanted: bool,
+        #[case] terminal: bool,
+        #[case] term: Option<&str>,
+        #[case] shown: bool,
+    ) {
+        assert_eq!(emoji_allowed(wanted, terminal, term), shown);
     }
 
     #[test]
