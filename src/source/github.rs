@@ -4,6 +4,7 @@
 //! private repositories.
 
 use super::{ListOpts, Source};
+use crate::cancel::Cancel;
 use crate::config::validate_repo;
 use crate::error::{Error, Result};
 use crate::http::Http;
@@ -446,6 +447,7 @@ impl Source for GitHubSource {
         asset: &ReleaseAsset,
         dest: &Path,
         progress: &dyn ProgressSink,
+        cancel: &Cancel,
     ) -> Result<String> {
         // The token goes on the request, not on the redirect: ureq is built
         // with `RedirectAuthHeaders::Never`, so the cross-host hop to the CDN
@@ -453,7 +455,7 @@ impl Source for GitHubSource {
         // it does carry is the difference between a private repository
         // installing and answering 404.
         self.http
-            .download(&asset.url, dest, &asset.headers, true, progress)
+            .download(&asset.url, dest, &asset.headers, true, progress, cancel)
     }
 
     fn search(&self, query: &str, limit: usize) -> Result<Vec<SourceInfo>> {
@@ -513,6 +515,12 @@ fn urlencode_path_segment(raw: &str) -> String {
         }
     }
     out
+}
+
+/// `parse_digest` for the `checksum_file` fuzz target (`src/lib.rs`).
+#[cfg(fuzzing)]
+pub(crate) fn fuzz_parse_digest(raw: &str) -> Option<String> {
+    parse_digest(raw)
 }
 
 #[cfg(test)]

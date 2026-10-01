@@ -3,6 +3,7 @@
 //! Each one takes the lock for the whole batch and writes `state.json` once at
 //! the end, so an interrupted run leaves the file either fully old or fully new.
 
+use crate::cancel::Cancel;
 use crate::cli::{InstallArgs, NameArgs, PruneArgs, RollbackArgs, UninstallArgs, UpgradeArgs};
 use crate::config::Config;
 use crate::error::{Error, Result};
@@ -82,6 +83,7 @@ pub fn install(cfg: &Config, args: InstallArgs) -> Result<()> {
             interactive: !args.yes,
             bin: args.bin.clone(),
             locked_bin: None,
+            cancel: Cancel::new(),
         })
         .collect();
 
@@ -318,6 +320,7 @@ pub fn upgrade(cfg: &Config, args: UpgradeArgs) -> Result<()> {
             interactive: !args.yes,
             bin: args.bin.clone(),
             locked_bin: None,
+            cancel: Cancel::new(),
         })
         .collect();
 

@@ -1432,3 +1432,30 @@ fn self_uninstall_can_keep_the_packages_and_leave_the_cask_to_homebrew() {
     assert!(!brew_log.exists(), "brew was run despite --no-brew");
     assert!(sandbox.homebrew().join("Caskroom").join("ketch").exists());
 }
+
+/// A second ketch must not wait on, or steal, a live run's lock: a GUI host
+/// and the CLI share one root, and each has to be told the other is working.
+#[test]
+fn a_command_run_while_another_process_holds_the_lock_reports_it_busy() {
+    let sandbox = Sandbox::new();
+    std::fs::create_dir_all(sandbox.root()).expect("root");
+    // This test process is alive and is not the ketch about to run.
+    let holder = std::process::id();
+    std::fs::write(sandbox.root().join(".lock"), holder.to_string()).expect("lock");
+
+    let out = sandbox.ketch(&["install", "--path", "/nonexistent", "-y"]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert_eq!(out.status.code(), Some(8), "{stderr}");
+    assert!(
+        stderr.contains(&format!(
+            "another ketch process holds the lock (pid {holder})"
+        )),
+        "{stderr}"
+    );
+    // The holder's lock file survives the refused run.
+    assert_eq!(
+        std::fs::read_to_string(sandbox.root().join(".lock")).unwrap(),
+        holder.to_string()
+    );
+}

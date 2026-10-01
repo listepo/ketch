@@ -5,6 +5,7 @@
 //! single place decides how errors are shown and what the process exits with.
 
 mod bin_choice;
+mod cancel;
 mod changelog;
 mod cli;
 mod cmd;
