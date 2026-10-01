@@ -6,6 +6,11 @@ separate file like `docs/research-design-system.md`: that page records choices
 already made for the macOS app (F12, F13), while this one is an open proposal
 for a roadmap item, so the two can be reviewed and revised independently.
 
+R11 follows this page up with the creator's choices applied (C# + WinUI 3;
+Vala on Linux): the capability matrix, the shared and per-platform parts and
+the interfaces are in
+[`docs/research-desktop-platforms.md`](research-desktop-platforms.md).
+
 Status: research only. Nothing here is approved; the recommendations are
 proposals and the open decisions at the end belong to the creator.
 
