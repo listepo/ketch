@@ -1370,21 +1370,49 @@ pub fn glob_match(pattern: &str, text: &str) -> bool {
 
 /// The payload file to link when one `bin` glob matched several: the one whose
 /// stem is the spec's link `name` — `rtok.exe` for `rtok*`, never the
-/// `rtok-hook.exe` a release ships beside it — else the first match. Without
-/// the preference the pick is whatever order the directory lists, and NTFS
-/// puts `rtok-hook.exe` ahead of `rtok.exe` (B62).
-pub fn glob_preferred<'a>(matched: &[&'a Path], name: Option<&str>) -> Option<&'a Path> {
+/// `rtok-hook.exe` a release ships beside it. When several share that stem the
+/// sorted-first one wins. With several matches and none named like the link,
+/// the manifest is ambiguous and this refuses, listing the candidates sorted
+/// and relative to `root` so the message reads the same on every OS: taking
+/// the first match would link whatever the directory lists first, and NTFS
+/// lists `rtok-hook.exe` ahead of `rtok.exe` where ext4 and APFS do not
+/// (B62, B71).
+pub fn glob_preferred<'a>(
+    root: &Path,
+    pattern: &str,
+    matched: &[&'a Path],
+    name: Option<&str>,
+) -> Result<Option<&'a Path>> {
+    let mut sorted: Vec<&'a Path> = matched.to_vec();
+    sorted.sort();
+    if sorted.len() <= 1 {
+        return Ok(sorted.first().copied());
+    }
     let want = name
         .and_then(|n| Path::new(n).file_stem())
         .map(|s| s.to_string_lossy().into_owned());
-    matched
+    let named = sorted.iter().copied().find(|p| {
+        want.as_deref()
+            .is_some_and(|w| p.file_stem().is_some_and(|s| s.eq_ignore_ascii_case(w)))
+    });
+    if named.is_some() {
+        return Ok(named);
+    }
+    let listed = sorted
         .iter()
-        .copied()
-        .find(|p| {
-            want.as_deref()
-                .is_some_and(|w| p.file_stem().is_some_and(|s| s.eq_ignore_ascii_case(w)))
+        .map(|p| {
+            let rel = p.strip_prefix(root).unwrap_or(p);
+            let parts: Vec<_> = rel.iter().map(|c| c.to_string_lossy()).collect();
+            format!("  {}", parts.join("/"))
         })
-        .or_else(|| matched.first().copied())
+        .collect::<Vec<_>>()
+        .join("\n");
+    Err(Error::msg(format!(
+        "the manifest's `bin` path `{pattern}` matches {} files and none is named like the link:\n\
+         {listed}\n\
+         set the entry's `name` to the one to link, or narrow its `path` to a single file",
+        sorted.len()
+    )))
 }
 
 #[cfg(test)]
@@ -1548,16 +1576,40 @@ mod tests {
         let hook = PathBuf::from("payload/rtok-hook.exe");
         let main = PathBuf::from("payload/rtok.exe");
         let matched = [hook.as_path(), main.as_path()];
+        fn pick<'a>(m: &[&'a Path], n: Option<&str>) -> Option<&'a Path> {
+            glob_preferred(Path::new("payload"), "rtok*", m, n).unwrap()
+        }
         // NTFS lists rtok-hook.exe first; the stem preference must win anyway.
-        assert_eq!(glob_preferred(&matched, Some("rtok")), Some(main.as_path()));
+        assert_eq!(pick(&matched, Some("rtok")), Some(main.as_path()));
         // Case-insensitive like glob_match; a name carrying its own suffix still stems.
-        assert_eq!(
-            glob_preferred(&matched, Some("RTOK.EXE")),
-            Some(main.as_path())
-        );
-        // No name to prefer, or nothing matched: the old first-match / None answer.
-        assert_eq!(glob_preferred(&matched, None), Some(hook.as_path()));
-        assert_eq!(glob_preferred(&[], Some("rtok")), None);
+        assert_eq!(pick(&matched, Some("RTOK.EXE")), Some(main.as_path()));
+        // One match is not ambiguous, whatever it is called; nothing matched is None.
+        assert_eq!(pick(&[hook.as_path()], None), Some(hook.as_path()));
+        assert_eq!(pick(&[], Some("rtok")), None);
+    }
+
+    #[test]
+    fn glob_preferred_refuses_several_matches_none_named_like_the_link() {
+        let root = Path::new("payload");
+        let hook = PathBuf::from("payload/bin/rtok-hook.exe");
+        let main = PathBuf::from("payload/bin/rtok.exe");
+        // Both directory orders must give the same message.
+        for matched in [
+            [hook.as_path(), main.as_path()],
+            [main.as_path(), hook.as_path()],
+        ] {
+            for name in [None, Some("other")] {
+                let err = glob_preferred(root, "bin/rtok*", &matched, name)
+                    .unwrap_err()
+                    .to_string();
+                assert!(err.contains("`bin/rtok*` matches 2 files"), "{err}");
+                assert!(
+                    err.contains("  bin/rtok-hook.exe\n  bin/rtok.exe\n"),
+                    "candidates sorted and root-relative: {err}"
+                );
+                assert!(err.contains("set the entry's `name`"), "{err}");
+            }
+        }
     }
 
     #[test]

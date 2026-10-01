@@ -302,7 +302,7 @@ pub(crate) fn resolve_bin_specs(root: &Path, specs: &[BinSpec]) -> Result<Vec<(P
                     })
                     .map(|p| p.as_path())
                     .collect();
-                glob_preferred(&matched, spec.name.as_deref())
+                glob_preferred(root, pattern, &matched, spec.name.as_deref())?
             }
             None => {
                 let want = spec.name.as_deref().unwrap_or_default();

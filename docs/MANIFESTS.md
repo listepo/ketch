@@ -125,6 +125,13 @@ bin = [
 `path` is a glob (`*` and `?`) matched against the path relative to the payload
 root. `name` is the file name of the symlink in `~/.ketch/bin`.
 
+A glob that matches several files links the one whose stem is `name`
+(case-insensitive, `.exe` ignored): `rtok*` with `name = "rtok"` takes `rtok`,
+not `rtok-hook`. When several files match and none is named like `name` — or
+the entry has no `name` — the install refuses and lists the candidates, because
+directory order differs between operating systems and would link a different
+file on each. Set `name` or narrow `path` to one file.
+
 With no `bin` at all, ketch discovers executables itself: it looks up to four
 levels deep, ignores documentation directories and bundle internals, and prefers
 a `bin/` directory when the payload has one. A single executable whose name
