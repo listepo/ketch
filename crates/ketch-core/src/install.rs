@@ -1286,6 +1286,41 @@ pub fn latest_release(
     latest_of(sources, &pkg.source, &installed_list_opts(pkg, prerelease))
 }
 
+/// The request that moves installed `pkg` to `release`, as `ketch upgrade`
+/// makes it: the exact tag that was reported, so nothing can change between
+/// the plan a person approved and what is installed.
+pub fn upgrade_request(
+    cfg: &Config,
+    pkg: &InstalledPackage,
+    release: &Release,
+    prerelease: bool,
+    bin: Option<String>,
+    cancel: Cancel,
+) -> InstallRequest {
+    InstallRequest {
+        spec: PackageSpec {
+            raw: format!("{}@{}", pkg.source, release.tag),
+            reference: Some(pkg.source.clone()),
+            alias: None,
+            version: VersionSpec::Exact(release.tag.clone()),
+        },
+        force: true,
+        prerelease,
+        // A package installed with --no-link stays unlinked.
+        link: !pkg.links.is_empty(),
+        require_checksum: cfg.require_checksums,
+        asset_override: None,
+        expected_sha256: None,
+        // The installed name, which `--name` may have chosen. Resolving the
+        // source alone would infer another and install a second copy.
+        name_override: Some(pkg.name.clone()),
+        bin,
+        locked_bin: None,
+        offer_update: false,
+        cancel,
+    }
+}
+
 /// The listing options `latest_release` asks an installed package's source
 /// with; `ketch list` needs them apart from the lookup, to key its cache.
 pub fn installed_list_opts(pkg: &InstalledPackage, prerelease: bool) -> ListOpts {

@@ -349,29 +349,15 @@ pub fn upgrade(cfg: &Config, args: UpgradeArgs) -> Result<()> {
 
     let reqs: Vec<InstallRequest> = plan
         .iter()
-        .map(|(pkg, release)| InstallRequest {
-            spec: PackageSpec {
-                raw: format!("{}@{}", pkg.source, release.tag),
-                reference: Some(pkg.source.clone()),
-                alias: None,
-                // The exact tag that was reported, so nothing can change
-                // between the plan the user approved and what is installed.
-                version: VersionSpec::Exact(release.tag.clone()),
-            },
-            force: true,
-            prerelease,
-            // A package installed with --no-link stays unlinked.
-            link: !pkg.links.is_empty(),
-            require_checksum: cfg.require_checksums,
-            asset_override: None,
-            expected_sha256: None,
-            // The installed name, which `--name` may have chosen. Resolving
-            // the source alone would infer another and install a second copy.
-            name_override: Some(pkg.name.clone()),
-            bin: args.bin.clone(),
-            locked_bin: None,
-            offer_update: false,
-            cancel: Cancel::new(),
+        .map(|(pkg, release)| {
+            install::upgrade_request(
+                cfg,
+                pkg,
+                release,
+                prerelease,
+                args.bin.clone(),
+                Cancel::new(),
+            )
         })
         .collect();
 
