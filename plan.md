@@ -610,9 +610,9 @@ Done when new upgrades since the last notice post one `UNUserNotificationCenter`
 
 ### D8. macOS: `ketch://` links
 
-A link on a web page or in the registry could open a package in the app. Whatever a link carries is untrusted input, so it is validated by the core and never installs without a confirmation. Research: section 1, "Deep links".
+A link on a web page or in the registry could open a package in the app. Whatever a link carries is untrusted input, so it is validated by the core. A link only opens a package page and never starts an install (creator, 2026-10-01, open decision 10). Research: section 1, "Deep links".
 
-Done when `CFBundleURLTypes` registers `ketch`, `onOpenURL` routes the actions the creator allowed (open decision 10) through the core's validation, an install from a link always shows a confirmation, and tests cover malformed and hostile links.
+Done when `CFBundleURLTypes` registers `ketch`, `onOpenURL` opens the package page a valid link names, through the core's validation, any other action is refused, and tests cover malformed and hostile links.
 
 ### D9. macOS: VoiceOver pass
 

@@ -395,8 +395,9 @@ already names as the pattern.
    triple licence) is kept in `ideas.md`.
 9. **Crash reporting.** Decided by the creator (2026-10-01): none for now;
    no crash-reporting SDK in any app.
-10. **Deep links.** Which `ketch://` actions exist: open a package page only,
-    or also start an install after a confirmation in the app.
+10. **Deep links.** Decided by the creator (2026-10-01): a `ketch://` link
+    only opens a package page; it never starts an install, even with a
+    confirmation.
 
 R10's open decisions on Windows distribution, the Windows App SDK licence
 against the GPL build, and Flatpak against distribution packages still stand
