@@ -370,7 +370,8 @@ already names as the pattern.
 
 1. **Linux toolkit, given Vala.** Decided by the creator (2026-10-01): Vala
    with GTK 4 + libadwaita, following the GNOME HIG; KDE/Qt is not pursued.
-2. **Linux markup.** Blueprint (experimental, pinned) or GtkBuilder XML.
+2. **Linux markup.** Decided by the creator (2026-10-01): Blueprint, pinned
+   as a Meson subproject; GtkBuilder XML is not used.
 3. **Linux core access.** `ketch-capi` with JSON records and a hand-written
    VAPI (recommended) or typed C structs; and the `unsafe_code` exception for
    that one crate.
