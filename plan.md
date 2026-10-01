@@ -24,7 +24,7 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | R6 | in progress | P2 | 4 | 90% | Claude Code / opus-5.5 |
 | R7 | in progress | P2 | 2 | 90% | Claude Code / sonnet-5.5 |
 | R8 | in progress | P3 | 3 | 90% | Claude Code / sonnet-5.5 |
-| R9 | in progress | P3 | 3 | 0% | Claude Code / opus-5.5 |
+| R9 | in progress | P3 | 3 | 90% | Claude Code / opus-5.5 |
 | R10 | in progress | P3 | 3 | 90% | Claude Code / opus-5.5 |
 | F12 | in progress | P3 | 5 | 50% | Claude Code / opus-5.5 |
 | F13 | in progress | P3 | 4 | 80% | Claude Code / opus-5.5 |
@@ -403,12 +403,14 @@ Check: `just xcframework` builds on a clean checkout; `swift test` passes; `carg
 
 Execution plan (Claude Code / opus-5.5), after surveying the merged R6/R7/R8 code:
 
-1. `crates/ketch-ffi` as above, with uniffi 0.32.2 (latest on crates.io, 2026-09-23). The crate cannot inherit `[workspace.lints]` and override one lint, so it declares its own `[lints.rust]`; the `uniffi-bindgen` binary sits behind a `bindgen` feature so the static library does not compile the generator.
+1. `crates/ketch-ffi` as above, with uniffi 0.32.2 (latest on crates.io, 2026-09-23). It inherits `[workspace.lints]` with `unsafe_code` still `forbid`: UniFFI's generated `unsafe` comes from external-macro expansions, which rustc does not lint, so no relaxation is needed (the reason is in its `//!` header); the `uniffi-bindgen` binary sits behind a `bindgen` feature so the static library does not compile the generator.
 2. `ketch doctor`'s checks live in the binary (`src/cmd/system.rs`), out of an FFI's reach: move the check gathering into a core `doctor` module, unchanged; the command keeps `--fix` and the rendering. A `TaskId::get` accessor in `report.rs` so events cross the boundary with their ids.
 3. `KetchCore` methods build `Config` and call `log::init` per operation, take `state::Lock` for the mutating ones, and compose existing core calls (`listing`, `Resolver::search`, `install::batch`/`uninstall`/`latest_release`, `changelog`); no install logic in the FFI crate. Each mutating call takes an optional `CancelToken` that is passed into every `InstallRequest`.
 4. Reporter and decider are callback interfaces handed to the constructor; Rust adapters implement the core traits.
 5. `scripts/xcframework.sh` + `just xcframework` + `just ffi-test`: both Darwin targets (`rustup target add` for the missing one), `lipo`, bindings from the arm64 library, `xcodebuild -create-xcframework` into `desktop/macos/KetchCore/` (gitignored output, committed `Package.swift` and Swift test). The Swift test installs a `local:` fixture into a scratch root.
-6. CI: one macOS job running `just ffi-test`, only when `crates/` or the package changed.
+6. CI: one macOS job (`ketch-ffi`) running what `just ffi-test` runs, on every gate run: almost any core change can change the bindings, and a path filter would need another action.
+
+Status: PR https://github.com/pyrlyn/ketch/pull/208. Surface: `KetchCore` (installed, search, outdated, install, upgrade, uninstall, changelog, doctor), records, `Reporter`/`Decider` callbacks, `CancelToken`, `KetchError`. `changelog` returns a structured `Changelog` for one version rather than a from–to string; the SwiftUI adapter maps it in F12.
 
 ### R10. Toolkit choice for the Windows and Linux desktop apps
 
