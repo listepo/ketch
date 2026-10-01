@@ -1,0 +1,355 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Manifest",
+  "description": "How to install one package.\n\n`deny_unknown_fields` is deliberate: a manifest is hand-written, often by\nsomeone else, and a misspelt key that is silently ignored produces a package\nthat installs the wrong thing with no complaint anywhere.",
+  "type": "object",
+  "properties": {
+    "asset": {
+      "description": "Narrows which release asset is chosen.",
+      "$ref": "#/$defs/AssetSelector",
+      "default": {
+        "exclude": [],
+        "include": [],
+        "target": {}
+      }
+    },
+    "bin": {
+      "description": "Which executables to link, and under what names. Empty means discover.",
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/BinSpec"
+      }
+    },
+    "description": {
+      "description": "One line, shown by `ketch info` and `ketch search`.",
+      "type": "string"
+    },
+    "extra_paths": {
+      "description": "Man pages and completions to expose from the payload. A string is\nclassified by the path rules in `docs/MANIFESTS.md`; a table sets `kind`.",
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/ExtraPath"
+      }
+    },
+    "homepage": {
+      "description": "A URL for humans.",
+      "type": "string"
+    },
+    "hooks": {
+      "description": "Commands to run around install, update and uninstall. See `crate::hooks`.",
+      "$ref": "#/$defs/Hooks"
+    },
+    "kind": {
+      "description": "What the payload is.",
+      "$ref": "#/$defs/PackageKind",
+      "default": "auto"
+    },
+    "name": {
+      "description": "The install name: a directory in the store and the key in\n`state.json`. A registry package folder supplies it; elsewhere it is\nrequired.",
+      "type": "string",
+      "pattern": "^[^/\\\\:\\x00-\\x1f\\x7f-\\x9f\\u202a-\\u202e\\u2066-\\u2069. \\-]([^/\\\\:\\x00-\\x1f\\x7f-\\x9f\\u202a-\\u202e\\u2066-\\u2069]*[^/\\\\:\\x00-\\x1f\\x7f-\\x9f\\u202a-\\u202e\\u2066-\\u2069. \\-])?$"
+    },
+    "notes": {
+      "description": "Printed after a successful install.",
+      "type": "string"
+    },
+    "prerelease": {
+      "description": "Consider prereleases when resolving `latest`.",
+      "type": "boolean",
+      "default": false
+    },
+    "provides": {
+      "description": "Alternate names this package answers to.",
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "string",
+        "pattern": "^[^\\x09-\\x0d \\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+$"
+      }
+    },
+    "source": {
+      "description": "Where releases come from.",
+      "$ref": "#/$defs/PackageRef"
+    },
+    "strip_prefix": {
+      "description": "Leading path components to drop when extracting.",
+      "type": "integer",
+      "format": "uint",
+      "maximum": 8,
+      "minimum": 0
+    },
+    "trust": {
+      "description": "Whose signature a release must carry. See `crate::trust`.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/TrustPolicy"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "$comment": "Generated from the Rust types by `KETCH_BLESS=1 cargo nextest run schema`. Do not edit.",
+  "additionalProperties": false,
+  "required": [
+    "source"
+  ],
+  "$defs": {
+    "AssetSelector": {
+      "description": "Which release asset to pick. Empty means \"let the platform decide\".",
+      "type": "object",
+      "properties": {
+        "exclude": {
+          "description": "Asset must match none of these.",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "include": {
+          "description": "Asset must match at least one of these (glob: `*` and `?`).",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "target": {
+          "description": "Per-target override, keyed by `TargetSpec` display form, e.g.\n`\"macos-aarch64\" = \"*-aarch64-apple-darwin.tar.gz\"`.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {}
+        }
+      }
+    },
+    "BinSpec": {
+      "description": "One executable to expose on PATH.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Name of the symlink. Defaults to the file name of `path`.",
+          "type": "string",
+          "pattern": "^[^/\\\\:\\x00-\\x1f\\x7f-\\x9f\\u202a-\\u202e\\u2066-\\u2069. \\-]([^/\\\\:\\x00-\\x1f\\x7f-\\x9f\\u202a-\\u202e\\u2066-\\u2069]*[^/\\\\:\\x00-\\x1f\\x7f-\\x9f\\u202a-\\u202e\\u2066-\\u2069. \\-])?$"
+        },
+        "path": {
+          "description": "Path inside the extracted payload. Globs allowed; when a glob matches\nseveral files, the one whose stem is `name` is linked. When absent,\nketch discovers executables automatically.",
+          "type": "string"
+        }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "name"
+          ]
+        },
+        {
+          "required": [
+            "path"
+          ]
+        }
+      ]
+    },
+    "CompletionShell": {
+      "description": "Shell whose user completion directory an extra path should land in.",
+      "type": "string",
+      "enum": [
+        "bash",
+        "zsh",
+        "fish",
+        "elvish",
+        "powershell"
+      ]
+    },
+    "ExtraKind": {
+      "description": "What an `extra_paths` entry is for. Required in the table form; inferred\nfrom path rules when the entry is a bare string.",
+      "oneOf": [
+        {
+          "description": "A man page, linked into the user man root.",
+          "type": "string",
+          "const": "man"
+        },
+        {
+          "description": "A shell completion script, linked into that shell's user directory.",
+          "type": "string",
+          "const": "completion"
+        }
+      ]
+    },
+    "ExtraPath": {
+      "description": "One `extra_paths` entry: a payload-relative string, or a table with `kind`.",
+      "anyOf": [
+        {
+          "description": "Classified by the path rules in `docs/MANIFESTS.md`.",
+          "type": "string"
+        },
+        {
+          "description": "Explicit kind; path rules are not consulted except to fill `shell`/`section`.",
+          "$ref": "#/$defs/ExtraPathSpec"
+        }
+      ]
+    },
+    "ExtraPathSpec": {
+      "description": "Table form of `extra_paths`: an explicit kind, so path rules are not guessed.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/ExtraKind"
+        },
+        "path": {
+          "description": "Path inside the extracted payload. Same containment rules as a string entry.",
+          "type": "string"
+        },
+        "section": {
+          "description": "Man section (`1`, `8`, `1p`). Inferred from a `*.N` file name when absent.",
+          "type": "string"
+        },
+        "shell": {
+          "description": "Required for a completion when the file name does not name a shell.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CompletionShell"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "kind"
+      ]
+    },
+    "Hooks": {
+      "description": "Commands a manifest runs around its own install, update and uninstall.\n\nEach is one line for the platform shell. `crate::hooks` runs them, and\nonly from a manifest in the user's own manifest directory: anywhere else\nthe manifest is someone else's file, and a command in it is their code.",
+      "type": "object",
+      "properties": {
+        "after_install": {
+          "type": "string",
+          "pattern": "[^\\x09-\\x0d \\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]"
+        },
+        "after_uninstall": {
+          "type": "string",
+          "pattern": "[^\\x09-\\x0d \\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]"
+        },
+        "after_update": {
+          "type": "string",
+          "pattern": "[^\\x09-\\x0d \\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]"
+        },
+        "before_install": {
+          "type": "string",
+          "pattern": "[^\\x09-\\x0d \\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]"
+        },
+        "before_uninstall": {
+          "type": "string",
+          "pattern": "[^\\x09-\\x0d \\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]"
+        },
+        "before_update": {
+          "type": "string",
+          "pattern": "[^\\x09-\\x0d \\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]"
+        }
+      },
+      "additionalProperties": false
+    },
+    "PackageKind": {
+      "oneOf": [
+        {
+          "description": "Decide from what the payload actually contains.",
+          "type": "string",
+          "const": "auto"
+        },
+        {
+          "description": "Command-line executables linked into the bin dir.",
+          "type": "string",
+          "const": "binary"
+        },
+        {
+          "description": "A macOS `.app` bundle placed in the applications dir.",
+          "type": "string",
+          "const": "app"
+        }
+      ]
+    },
+    "PackageRef": {
+      "description": "`scheme:id` (`github:BurntSushi/ripgrep`, `myplugin:some-id`), or a bare `owner/repo`, which means GitHub.",
+      "type": "string",
+      "pattern": "^[\\x09-\\x0d \\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]*[A-Za-z0-9-]+:[\\s\\S]*[^\\x09-\\x0d \\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]|/"
+    },
+    "TrustMode": {
+      "description": "What an unverifiable signature does to the install.",
+      "oneOf": [
+        {
+          "description": "Refuse it. Fail closed.",
+          "type": "string",
+          "const": "require"
+        },
+        {
+          "description": "Install on the checksum alone, and say so.",
+          "type": "string",
+          "const": "warn"
+        }
+      ]
+    },
+    "TrustPolicy": {
+      "description": "A manifest's `trust` table: whose signature a release must carry.\n\nWhich keys a verifier reads is checked by `crate::trust::check_policy`,\ncalled from [`Manifest::validate`]; `docs/MANIFESTS.md` is the reference.",
+      "type": "object",
+      "properties": {
+        "fingerprint": {
+          "description": "gpg: the primary key's full fingerprint.",
+          "type": "string"
+        },
+        "identity": {
+          "description": "sigstore: the certificate's exact identity.",
+          "type": "string"
+        },
+        "issuer": {
+          "description": "sigstore: the OIDC issuer of the signing certificate.",
+          "type": "string"
+        },
+        "mode": {
+          "$ref": "#/$defs/TrustMode",
+          "default": "require"
+        },
+        "public_key": {
+          "description": "minisign: the key. gpg: the armored key block.",
+          "type": "string"
+        },
+        "repository": {
+          "description": "sigstore: any GitHub Actions workflow in this `owner/repo`.",
+          "type": "string"
+        },
+        "signature": {
+          "description": "The sidecar's name; `{file}` is the signed file's name.",
+          "type": "string"
+        },
+        "signed": {
+          "description": "A glob naming a checksum list the signature covers instead of the asset.",
+          "type": "string"
+        },
+        "verifier": {
+          "$ref": "#/$defs/Verifier"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "verifier"
+      ]
+    },
+    "Verifier": {
+      "description": "Which kind of publisher signature a `trust` table asks for.",
+      "type": "string",
+      "enum": [
+        "sigstore",
+        "minisign",
+        "gpg"
+      ]
+    }
+  }
+}
