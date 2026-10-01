@@ -24,7 +24,7 @@ permissions:
 
 jobs:
   bump:
-    uses: pyrlyn/infra/.github/workflows/bump.yml@0139bdcb95d4e021540743f8fe2c83529a8f676e
+    uses: pyrlyn/infra/.github/workflows/bump.yml@d709124d53dd4923eff8f594b3155842508b0049
     permissions:
       contents: write # push the version commit
       actions: write # dispatch release.yml, cancel-run

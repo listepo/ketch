@@ -503,7 +503,7 @@ jobs:
       "actions": "read"
       "issues": "write"
     steps:
-      - uses: pyrlyn/infra/.github/actions/notify-release-failure@0139bdcb95d4e021540743f8fe2c83529a8f676e
+      - uses: pyrlyn/infra/.github/actions/notify-release-failure@d709124d53dd4923eff8f594b3155842508b0049
         with:
           ref: ${{ inputs.tag }}
           needs: ${{ toJSON(needs) }}
