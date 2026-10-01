@@ -47,6 +47,9 @@ Options:
       --no-color
           Never emit ANSI colour
 
+      --no-emoji
+          Never put an emoji icon in front of a status line
+
   -h, --help
           Print help (see a summary with '-h')
 

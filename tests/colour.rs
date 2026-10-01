@@ -64,3 +64,10 @@ fn the_no_color_flag_outranks_a_forced_colour() {
     let stderr = uninstall_ghost(&["--no-color"], &[("CLICOLOR_FORCE", "1")]);
     assert!(!stderr.contains('\u{1b}'), "{stderr:?}");
 }
+
+#[test]
+fn the_no_emoji_flag_is_accepted_everywhere_and_a_pipe_gets_no_icon() {
+    let stderr = uninstall_ghost(&["--no-emoji"], &[("KETCH_EMOJI", "1")]);
+    assert!(stderr.starts_with("ghost: not found"), "{stderr:?}");
+    assert!(!stderr.contains('❌'), "{stderr:?}");
+}

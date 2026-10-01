@@ -18,6 +18,7 @@
 //! ```
 
 use super::{ListOpts, Source};
+use crate::cancel::Cancel;
 use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::http::{self, Http};
@@ -146,11 +147,20 @@ impl Source for PluginSource {
         asset: &ReleaseAsset,
         dest: &Path,
         progress: &dyn ProgressSink,
+        cancel: &Cancel,
     ) -> Result<String> {
+        cancel.check()?;
         if !self.downloads {
             // No token is ever handed to a plugin's URLs: whatever credentials
             // an asset needs must come from the plugin's own headers.
-            return Http::anonymous().download(&asset.url, dest, &asset.headers, false, progress);
+            return Http::anonymous().download(
+                &asset.url,
+                dest,
+                &asset.headers,
+                false,
+                progress,
+                cancel,
+            );
         }
         let dest_str = dest.to_string_lossy().to_string();
         output(&self.path, &["download", &asset.url, &dest_str])?;
@@ -440,6 +450,23 @@ fn parse<T: serde::de::DeserializeOwned>(path: &Path, body: &str) -> Result<T> {
         detail: format!("returned JSON ketch cannot read: {e}"),
         stderr: String::new(),
     })
+}
+
+/// Every reply shape a plugin can send, through the same `parse` and the same
+/// filtering `list_releases` applies, for the `plugin_protocol` fuzz target
+/// (`src/lib.rs`).
+#[cfg(fuzzing)]
+pub(crate) fn fuzz_parse(body: &str) {
+    let path = Path::new("ketch-source-fuzz");
+    let _ = parse::<Capabilities>(path, body);
+    let _ = parse::<Option<SourceInfo>>(path, body);
+    let _ = parse::<Vec<SourceInfo>>(path, body);
+    if let Ok(mut releases) = parse::<Vec<Release>>(path, body) {
+        releases.retain(|r| !r.draft);
+        if releases.iter().any(|r| !r.prerelease) {
+            releases.retain(|r| !r.prerelease);
+        }
+    }
 }
 
 #[cfg(test)]

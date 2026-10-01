@@ -130,6 +130,78 @@ jobs:
           if ($errors) { $errors | Format-List *; exit 1 }
           ./install.ps1 --help
 
+  # The macOS app (desktop/macos) is Swift only: its own job beside the Rust
+  # ones, not in front of them. XcodeGen at the mise.toml pin; the runner's
+  # default Xcode (26.x on macos-26) is new enough for the macOS 26 target.
+  macos-app:
+    if: github.event.pull_request.draft != true
+    runs-on: macos-26
+    defaults:
+      run:
+        working-directory: desktop/macos
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install_args: xcodegen
+
+      - name: Format
+        run: xcrun swift-format lint --strict -r Ketch KetchTests KetchUITests
+
+      - name: Generate the project
+        run: |
+          xcodebuild -version
+          xcodegen generate --spec project.yml
+
+      # Both architectures, unsigned: what `just macos-app` builds.
+      - name: Build
+        run: >-
+          xcodebuild -project Ketch.xcodeproj -scheme Ketch -derivedDataPath build
+          -configuration Debug -destination 'generic/platform=macOS'
+          ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO build
+
+      - name: Test
+        run: >-
+          xcodebuild -project Ketch.xcodeproj -scheme Ketch -derivedDataPath build
+          -destination 'platform=macOS' test
+
+      # The release's disk image and appcast scripts on the app just built,
+      # with a throwaway key: `just macos-appcast`.
+      - name: Update feed round trip
+        run: sh ../../tests/desktop-appcast.sh
+
+  # The macOS app's design tokens: every generated copy is what
+  # desktop/macos/design/build.mjs writes from tokens.json, DESIGN.md passes
+  # the DESIGN.md linter, and text meets WCAG AA on its glass backgrounds.
+  # Offline after npm ci; the same steps as `just design-check`.
+  design:
+    if: github.event.pull_request.draft != true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Read the Node pin from mise.toml
+        id: node_pin
+        run: |
+          version=$(grep '^node = ' mise.toml | cut -d '"' -f2)
+          [ -n "$version" ] || { echo "no node pin found in mise.toml" >&2; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ steps.node_pin.outputs.version }}
+
+      - name: Design tokens
+        run: |
+          npm ci
+          node desktop/macos/design/build.mjs
+          git diff --exit-code -- desktop/macos \
+              || { echo "design tokens are stale: run just design-tokens and commit" >&2; exit 1; }
+          node desktop/macos/design/contrast.mjs
+          npx --no-install designmd lint desktop/macos/DESIGN.md > lint.json \
+              || { cat lint.json; exit 1; }
+
   # Packaging is exercised on every pull request, so it breaks here rather than
   # halfway through a release, after the merge that started one.
   package:
@@ -169,10 +241,14 @@ jobs:
           bash -n install.sh
           bash -n scripts/release.sh
           bash -n scripts/dist-generate.sh
+          bash -n scripts/desktop-version.sh
+          bash -n scripts/desktop-dmg.sh
+          bash -n scripts/desktop-appcast.sh
           sh tests/release-sh.sh
           sh tests/crate-version.sh
           sh tests/release-workflows.sh
           sh tests/ci-yml-triggers.sh
+          sh tests/desktop-release.sh
 
       # release.yml is generated; a dist-workspace.toml or build-*.yml change
       # without `just dist-generate` would ship a workflow nobody reviewed.

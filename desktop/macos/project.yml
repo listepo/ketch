@@ -1,0 +1,95 @@
+# XcodeGen spec for the macOS app. Ketch.xcodeproj is generated from this file
+# (`just macos-app`) and is not committed, so the project is reviewed here.
+name: Ketch
+options:
+  bundleIdPrefix: io.github.pyrlyn
+  deploymentTarget:
+    macOS: "26.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: false
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
+    MACOSX_DEPLOYMENT_TARGET: "26.0"
+    # Unsigned local builds only; signing and notarisation belong to the
+    # release pipeline (F13).
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGN_STYLE: Manual
+    DEVELOPMENT_TEAM: ""
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    DEAD_CODE_STRIPPING: YES
+# The app's own updater (docs/research-desktop.md, "macOS app updates").
+# Pinned exactly: the release workflow runs the generate_appcast that ships in
+# this same package, so the feed and the framework reading it are one version.
+packages:
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    exactVersion: 2.10.0
+targets:
+  Ketch:
+    type: application
+    platform: macOS
+    sources:
+      - path: Ketch
+        excludes:
+          - Info.plist
+    dependencies:
+      - package: Sparkle
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.pyrlyn.ketch
+        PRODUCT_NAME: Ketch
+        # Local builds only. A release sets both from the workflow's `version`
+        # input (.github/workflows/desktop-release.yml): Sparkle compares
+        # CFBundleVersion, so it has to grow with every release.
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "0.1.0"
+        GENERATE_INFOPLIST_FILE: YES
+        # Sparkle's keys, which have no INFOPLIST_KEY_ build setting; Xcode
+        # merges this file into the generated Info.plist.
+        INFOPLIST_FILE: Ketch/Info.plist
+        INFOPLIST_KEY_CFBundleDisplayName: Ketch
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
+        INFOPLIST_KEY_NSHumanReadableCopyright: "GPL-3.0-only OR royalty-free OR commercial licence"
+        # Not sandboxed: the app manages ~/.ketch (or KETCH_ROOT), links into
+        # /Applications and shares the CLI's lock, none of which a sandbox
+        # container allows.
+        ENABLE_APP_SANDBOX: NO
+        ENABLE_HARDENED_RUNTIME: YES
+  KetchTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: KetchTests
+    dependencies:
+      - target: Ketch
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.pyrlyn.ketch.tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Ketch.app/Contents/MacOS/Ketch"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+  KetchUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - path: KetchUITests
+    dependencies:
+      - target: Ketch
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.pyrlyn.ketch.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: Ketch
+schemes:
+  Ketch:
+    build:
+      targets:
+        Ketch: all
+    test:
+      config: Debug
+      targets:
+        - KetchTests
+        - KetchUITests

@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 /// Bumped only when the on-disk shape changes incompatibly.
 pub const STATE_VERSION: u32 = 1;
@@ -158,25 +159,53 @@ impl State {
 /// Exclusive access to the install tree, released on drop.
 ///
 /// Two `ketch install` runs writing the same `state.json` would each save a
-/// view that omits the other's package, silently losing an install. The lock is
-/// advisory between ketch processes only — nothing else writes this tree.
+/// view that omits the other's package, silently losing an install. Two layers
+/// enforce it: a lock file excludes other ketch processes, and `HELD` excludes
+/// other threads of this one. A long-running host (a GUI) calls the core
+/// concurrently from one process, so a lock file naming our own pid proves
+/// nothing about who inside the process holds it: only `HELD` does. Nothing
+/// nests a second acquire inside a held one, so a second acquire in this
+/// process is always a different operation and fails as `Error::Busy`.
 pub struct Lock {
     path: PathBuf,
-    /// False when we adopted our own process's existing lock (re-entrancy),
-    /// in which case dropping must not delete it.
-    owned: bool,
+    /// Whether this `Lock` wrote the lock file, and so must delete it.
+    wrote_file: bool,
+}
+
+/// Lock files currently held by this process.
+static HELD: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+
+fn held() -> std::sync::MutexGuard<'static, Vec<PathBuf>> {
+    HELD.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 impl Lock {
-    /// Take the lock, or fail with the pid currently holding it.
+    /// Take the lock, or fail with `Error::Busy` without waiting.
     pub fn acquire(cfg: &Config) -> Result<Lock> {
         Self::acquire_path(&cfg.lock_file)
     }
 
+    /// Like `acquire`, for an explicit lock file path.
     pub fn acquire_path(path: &Path) -> Result<Lock> {
         let parent = path.parent().unwrap_or(Path::new("."));
         std::fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
         let me = std::process::id();
+
+        {
+            let mut held = held();
+            if held.iter().any(|p| p == path) {
+                return Err(Error::Busy {
+                    pid: Some(me),
+                    lock: path.to_path_buf(),
+                });
+            }
+            held.push(path.to_path_buf());
+        }
+        // From here `lock` releases the in-process claim on every early return.
+        let mut lock = Lock {
+            path: path.to_path_buf(),
+            wrote_file: false,
+        };
 
         for attempt in 0..2 {
             match std::fs::OpenOptions::new()
@@ -186,24 +215,21 @@ impl Lock {
             {
                 Ok(mut file) => {
                     let _ = write!(file, "{me}");
-                    return Ok(Lock {
-                        path: path.to_path_buf(),
-                        owned: true,
-                    });
+                    lock.wrote_file = true;
+                    return Ok(lock);
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
                     let holder = std::fs::read_to_string(path)
                         .ok()
                         .and_then(|t| t.trim().parse::<u32>().ok());
                     match holder {
-                        Some(pid) if pid == me => {
-                            return Ok(Lock {
-                                path: path.to_path_buf(),
-                                owned: false,
+                        // Our own pid with no in-process claim (checked above)
+                        // is a leftover: a crashed run whose pid was reused.
+                        Some(pid) if pid != me && process_alive(pid) => {
+                            return Err(Error::Busy {
+                                pid: Some(pid),
+                                lock: path.to_path_buf(),
                             })
-                        }
-                        Some(pid) if process_alive(pid) => {
-                            return Err(Error::Locked(format!("pid {pid}")))
                         }
                         // A crashed run left the file behind. Reclaim it by
                         // renaming rather than unlinking: `rename` fails if the
@@ -227,22 +253,31 @@ impl Lock {
                                 }
                                 continue;
                             }
-                            return Err(Error::Locked(path.display().to_string()));
+                            return Err(Error::Busy {
+                                pid: None,
+                                lock: path.to_path_buf(),
+                            });
                         }
                     }
                 }
                 Err(e) => return Err(Error::io(path, e)),
             }
         }
-        Err(Error::Locked(path.display().to_string()))
+        Err(Error::Busy {
+            pid: None,
+            lock: path.to_path_buf(),
+        })
     }
 }
 
 impl Drop for Lock {
     fn drop(&mut self) {
-        if self.owned {
+        if self.wrote_file {
             let _ = std::fs::remove_file(&self.path);
         }
+        // After the file is gone, so a waiting thread never finds the claim
+        // released while the file still names us.
+        held().retain(|p| p != &self.path);
     }
 }
 
@@ -363,7 +398,7 @@ mod tests {
         // pid 1 is running and is not ours to signal — the case that reads as
         // "process is gone" if aliveness is judged by `kill -0` alone.
         std::fs::write(&path, "1").unwrap();
-        assert!(matches!(Lock::acquire_path(&path), Err(Error::Locked(_))));
+        assert!(matches!(Lock::acquire_path(&path), Err(Error::Busy { .. })));
     }
 
     #[test]
@@ -533,15 +568,60 @@ mod tests {
     }
 
     #[test]
-    fn lock_is_exclusive_and_released_on_drop() {
+    fn a_second_lock_in_this_process_is_busy_until_the_first_drops() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(".lock");
-        {
-            let _held = Lock::acquire_path(&path).unwrap();
-            assert!(path.exists());
-            // Same process re-entering must not deadlock against itself.
-            let _again = Lock::acquire_path(&path).unwrap();
+        let held = Lock::acquire_path(&path).unwrap();
+        assert!(path.exists());
+        match Lock::acquire_path(&path) {
+            Err(Error::Busy { pid, .. }) => assert_eq!(pid, Some(std::process::id())),
+            other => panic!("expected Busy, got {:?}", other.map(|_| ())),
         }
+        // The refused attempt must not have released the holder's lock file.
+        assert!(path.exists());
+        drop(held);
         assert!(!path.exists());
+        drop(Lock::acquire_path(&path).unwrap());
+    }
+
+    #[test]
+    fn a_lock_held_under_one_path_does_not_block_another_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let _a = Lock::acquire_path(&dir.path().join("a")).unwrap();
+        let _b = Lock::acquire_path(&dir.path().join("b")).unwrap();
+    }
+
+    #[test]
+    fn a_failed_acquire_leaves_no_claim_behind() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("lock");
+        #[cfg(unix)]
+        {
+            // A live foreign holder: busy, and must not poison later attempts.
+            std::fs::write(&path, "1").unwrap();
+            assert!(Lock::acquire_path(&path).is_err());
+            std::fs::remove_file(&path).unwrap();
+        }
+        drop(Lock::acquire_path(&path).unwrap());
+    }
+
+    #[test]
+    fn a_lock_file_naming_this_process_without_a_holder_is_stale() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("lock");
+        std::fs::write(&path, std::process::id().to_string()).unwrap();
+        drop(Lock::acquire_path(&path).unwrap());
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn a_held_lock_can_be_contended_from_another_thread() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("lock");
+        let _held = Lock::acquire_path(&path).unwrap();
+        let other = std::thread::spawn(move || Lock::acquire_path(&path).map(|_| ()))
+            .join()
+            .unwrap();
+        assert!(matches!(other, Err(Error::Busy { .. })));
     }
 }

@@ -1,0 +1,101 @@
+# cargo-fuzz (libFuzzer) targets for ketch; see README.md. Its own workspace, so
+# the root package never builds it: `cargo build`, `cargo nextest run` and
+# `just check` stay on stable and never compile this directory. Nightly only:
+# `cargo +nightly fuzz run <target>`, or `just fuzz`.
+[package]
+name = "ketch-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+members = ["."]
+
+[dependencies]
+arbitrary = { version = "1.4", features = ["derive"] } # structured argv and extra_paths entries
+libfuzzer-sys = "0.4"
+# The entry points in `src/lib.rs`, which exist only under `cfg(fuzzing)`.
+ketch = { path = ".." }
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "cli-argv"
+path = "fuzz_targets/cli-argv.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "package-spec"
+path = "fuzz_targets/package-spec.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "manifest-toml"
+path = "fuzz_targets/manifest-toml.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "lockfile"
+path = "fuzz_targets/lockfile.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "state"
+path = "fuzz_targets/state.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "checksum-file"
+path = "fuzz_targets/checksum-file.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "archive-extract"
+path = "fuzz_targets/archive-extract.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "extra-paths"
+path = "fuzz_targets/extra-paths.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "plugin-protocol"
+path = "fuzz_targets/plugin-protocol.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "hook-line"
+path = "fuzz_targets/hook-line.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "printable"
+path = "fuzz_targets/printable.rs"
+test = false
+doc = false
+bench = false

@@ -8,6 +8,7 @@ pub mod github;
 pub mod local;
 pub mod plugin;
 
+use crate::cancel::Cancel;
 use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::http::Http;
@@ -80,11 +81,15 @@ pub trait Source: Send + Sync {
     }
 
     /// Download one asset to `dest`, returning its SHA-256 as lowercase hex.
+    ///
+    /// Stops with `Error::Cancelled`, leaving nothing at `dest`, once `cancel`
+    /// fires.
     fn download(
         &self,
         asset: &ReleaseAsset,
         dest: &Path,
         progress: &dyn ProgressSink,
+        cancel: &Cancel,
     ) -> Result<String>;
 
     /// Free-text search. Sources that cannot search return an empty list.
@@ -213,6 +218,28 @@ pub fn select_release(
             } else {
                 considered
             };
+            // A tag that is not a version at all cannot be "the highest"
+            // next to ones that are: compared as text, `desktop-v1.0.0` or
+            // `nightly` outranks `v2.0.0` on its first letter. One repository
+            // can release two products — ketch's own tags the macOS app
+            // `desktop-v*` — and only the versioned tags are this package's.
+            let pool = if pool.iter().any(|r| r.version.sem.is_some()) {
+                let mut versioned = Vec::with_capacity(pool.len());
+                for release in pool {
+                    if release.version.sem.is_some() {
+                        versioned.push(release);
+                    } else {
+                        rejected.push(RejectedRelease {
+                            tag: release.tag,
+                            version: release.version.to_string(),
+                            reason: "not a version".into(),
+                        });
+                    }
+                }
+                versioned
+            } else {
+                pool
+            };
             let selected = pool
                 .iter()
                 .max_by(|a, b| a.version.cmp(&b.version))
@@ -335,6 +362,43 @@ mod tests {
         };
         let got = pick("x", releases, &VersionSpec::Latest, &opts).unwrap();
         assert_eq!(got.tag, "v2.0.0-rc.1");
+    }
+
+    #[test]
+    fn latest_never_picks_a_tag_that_is_not_a_version_over_one_that_is() {
+        let releases = vec![
+            release("v0.8.1", false),
+            release("desktop-v1.0.0", false),
+            release("desktop-appcast", true),
+        ];
+        let opts = ListOpts {
+            include_prerelease: true,
+            ..Default::default()
+        };
+        let traced = select_release("x", releases, &VersionSpec::Latest, &opts).unwrap();
+        assert_eq!(traced.selected.tag, "v0.8.1");
+        assert_eq!(
+            traced.rejected,
+            vec![
+                RejectedRelease {
+                    tag: "desktop-v1.0.0".into(),
+                    version: "desktop-v1.0.0".into(),
+                    reason: "not a version".into(),
+                },
+                RejectedRelease {
+                    tag: "desktop-appcast".into(),
+                    version: "desktop-appcast".into(),
+                    reason: "not a version".into(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn latest_still_picks_among_tags_none_of_which_is_a_version() {
+        let releases = vec![release("nightly", false), release("stable", false)];
+        let got = pick("x", releases, &VersionSpec::Latest, &ListOpts::default()).unwrap();
+        assert_eq!(got.tag, "stable");
     }
 
     #[test]

@@ -49,6 +49,9 @@ pathdiff = "0.2"
 typed-path = "0.12"
 thiserror = "2"
 indicatif = "0.18"
+# How many columns a status-line icon takes, so the verb column stays aligned.
+# Already in the tree through indicatif, so it costs the binary nothing.
+unicode-width = "0.2"
 # The terminal width `ketch list remote` fits descriptions to. Already in the
 # tree through clap's `wrap_help`, so it costs the binary nothing.
 terminal_size = "0.4"
@@ -84,6 +87,8 @@ insta = "1.48"
 pretty_assertions = "1.4.1"
 proptest = "1.11"
 rstest = "0.26"
+# Only the schema drift tests use it; the derives are `cfg_attr(test, ...)`.
+schemars = "1.2"
 
 [lints]
 workspace = true

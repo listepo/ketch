@@ -17,6 +17,7 @@ pub const USER_AGENT: &str = concat!("ketch/", env!("CARGO_PKG_VERSION"));
 
 /// On-disk settings. Every field optional so a partial file is valid.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct ConfigFile {
     pub root: Option<PathBuf>,
@@ -33,6 +34,8 @@ pub struct ConfigFile {
     pub strip_quarantine: Option<bool>,
     /// Refresh the package registry before `install` and `upgrade`.
     pub auto_update: Option<bool>,
+    /// Put an emoji icon in front of status lines on a terminal.
+    pub emoji: Option<bool>,
     pub self_repo: Option<String>,
     /// `owner/repo` of the package registry.
     pub registry: Option<String>,
@@ -69,6 +72,9 @@ pub struct Config {
     pub strip_quarantine: bool,
     /// Refresh the package registry before `install` and `upgrade`.
     pub auto_update: bool,
+    /// Put an emoji icon in front of status lines on a terminal. A wish, not
+    /// a decision: `ui::set_emoji` still keeps them off a pipe and `TERM=dumb`.
+    pub emoji: bool,
     pub self_repo: String,
     pub registry: String,
     pub registry_dir: PathBuf,
@@ -238,6 +244,7 @@ impl Config {
             auto_update: env_bool("KETCH_AUTO_UPDATE")?
                 .or(file.auto_update)
                 .unwrap_or(true),
+            emoji: env_bool("KETCH_EMOJI")?.or(file.emoji).unwrap_or(true),
             self_repo,
             registry,
             // Deliberately not in `ensure_dirs`: the directory existing is how
@@ -288,6 +295,7 @@ impl Config {
             require_checksums: Some(false),
             strip_quarantine: Some(true),
             auto_update: Some(true),
+            emoji: Some(true),
             self_repo: Some(SELF_REPO.to_string()),
             registry: Some(REGISTRY_REPO.to_string()),
             jobs: Some(4),
@@ -455,9 +463,61 @@ pub fn sanitize_component(raw: &str) -> String {
     }
 }
 
+/// Fails when the JSON Schema committed at `relative` (from the repository
+/// root) is not what `T` generates. `KETCH_BLESS=1` rewrites the file
+/// instead: the types are the source, the file only publishes them.
+///
+/// The schema files stay next to the other docs, while this crate's manifest
+/// is `crates/ketch-core`, so the repository root is two directories up.
+#[cfg(test)]
+pub(crate) fn assert_schema_current<T: schemars::JsonSchema>(relative: &str) {
+    // TOML has no null: an absent key is how an `Option` says `None`, so a
+    // schema allowing `null` would describe a file ketch cannot read.
+    let drop_null = schemars::transform::RecursiveTransform(|s: &mut schemars::Schema| {
+        if let Some(serde_json::Value::Array(types)) = s.get_mut("type") {
+            types.retain(|t| t != "null");
+            if let [only] = types.as_slice() {
+                let only = only.clone();
+                s.insert("type".into(), only);
+            }
+        }
+    });
+    let mut schema = schemars::generate::SchemaSettings::draft2020_12()
+        .with_transform(drop_null)
+        .into_generator()
+        .into_root_schema_for::<T>();
+    schema.insert(
+        "$comment".into(),
+        "Generated from the Rust types by `KETCH_BLESS=1 cargo nextest run schema`. Do not edit."
+            .into(),
+    );
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join(relative);
+    let rendered = serde_json::to_string_pretty(&schema).expect("render schema") + "\n";
+    if std::env::var_os("KETCH_BLESS").is_some() {
+        std::fs::write(&path, &rendered).expect("write schema");
+        return;
+    }
+    // A Windows checkout may have turned LF into CRLF; the schema is the same.
+    let committed = std::fs::read_to_string(&path)
+        .unwrap_or_default()
+        .replace("\r\n", "\n");
+    pretty_assertions::assert_eq!(
+        committed,
+        rendered,
+        "{relative} is stale; regenerate it with KETCH_BLESS=1 cargo nextest run schema"
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn committed_config_schema_matches_config_file() {
+        assert_schema_current::<ConfigFile>("docs/config.schema.json");
+    }
 
     #[test]
     fn only_owner_repo_is_accepted_as_a_repository() {
@@ -627,6 +687,7 @@ mod tests {
         assert_eq!(file.require_checksums, Some(false));
         assert_eq!(file.strip_quarantine, Some(true));
         assert_eq!(file.auto_update, Some(true));
+        assert_eq!(file.emoji, Some(true));
         assert_eq!(file.self_repo.as_deref(), Some(SELF_REPO));
         assert_eq!(file.registry.as_deref(), Some(REGISTRY_REPO));
         assert_eq!(file.jobs, Some(4));
@@ -659,6 +720,7 @@ mod tests {
             "KETCH_REQUIRE_CHECKSUMS",
             "KETCH_STRIP_QUARANTINE",
             "KETCH_AUTO_UPDATE",
+            "KETCH_EMOJI",
         ];
         let _env = CleanEnv::take(KEYS);
         let tmp = tempfile::tempdir().unwrap();
@@ -672,10 +734,39 @@ mod tests {
         assert!(!cfg.require_checksums);
         assert!(cfg.strip_quarantine);
         assert!(cfg.auto_update);
+        assert!(cfg.emoji);
         assert_eq!(cfg.self_repo, SELF_REPO);
         assert_eq!(cfg.registry, REGISTRY_REPO);
         assert_eq!(cfg.jobs, 4);
         assert_eq!(cfg.log_level.to_string(), "info");
         assert_eq!(cfg.log_format.to_string(), "text");
+    }
+
+    /// Load a root whose `config.toml` is `body`, with `KETCH_EMOJI` as given.
+    fn emoji_with(body: &str, env: Option<&str>) -> bool {
+        let _lock = ENV_GUARD.lock().unwrap();
+        let _env = CleanEnv::take(&["KETCH_ROOT", "KETCH_EMOJI"]);
+        if let Some(value) = env {
+            std::env::set_var("KETCH_EMOJI", value);
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("config.toml"), body).unwrap();
+        Config::load(Some(tmp.path().to_path_buf())).unwrap().emoji
+    }
+
+    #[test]
+    fn emoji_are_wanted_unless_something_says_otherwise() {
+        assert!(emoji_with("", None));
+    }
+
+    #[test]
+    fn emoji_false_in_the_file_turns_them_off() {
+        assert!(!emoji_with("emoji = false\n", None));
+    }
+
+    #[test]
+    fn ketch_emoji_0_turns_them_off_over_the_file() {
+        assert!(!emoji_with("emoji = true\n", Some("0")));
+        assert!(emoji_with("emoji = false\n", Some("1")));
     }
 }

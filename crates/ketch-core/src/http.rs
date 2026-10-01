@@ -3,6 +3,7 @@
 //! One agent for the whole process so connections are reused. Downloads hash
 //! while they stream, so verification costs no extra read of the file.
 
+use crate::cancel::Cancel;
 use crate::config::{Config, USER_AGENT};
 use crate::error::{Error, Result};
 use crate::ui::ProgressSink;
@@ -92,7 +93,8 @@ impl Http {
         }
     }
 
-    /// Stream a URL to `dest`, hashing as it goes.
+    /// Stream a URL to `dest`, hashing as it goes. Checks `cancel` before every
+    /// chunk and fails with `Error::Cancelled` once it fires.
     ///
     /// Returns the lowercase hex SHA-256 of the bytes written. The file is
     /// written in full or not at all: we stage next to the destination and
@@ -104,7 +106,9 @@ impl Http {
         headers: &BTreeMap<String, String>,
         authed: bool,
         progress: &dyn ProgressSink,
+        cancel: &Cancel,
     ) -> Result<String> {
+        cancel.check()?;
         crate::ui::debug(&format!("GET {url} -> {}", dest.display()));
         let mut req = self.request(url, "application/octet-stream", authed);
         for (key, value) in headers {
@@ -134,6 +138,8 @@ impl Http {
         let mut buffer = vec![0u8; 128 * 1024];
         let mut written: u64 = 0;
         loop {
+            // `staged` deletes itself on drop, so stopping here leaves no file.
+            cancel.check()?;
             let n = reader.read(&mut buffer).map_err(|e| Error::io(url, e))?;
             if n == 0 {
                 break;
@@ -283,5 +289,50 @@ mod tests {
             sha256_file(&path).unwrap(),
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
+    }
+
+    /// Counts chunks and cancels after the first, standing in for a host that
+    /// presses Stop mid-download.
+    struct StopAfterFirstChunk(Cancel);
+
+    impl ProgressSink for StopAfterFirstChunk {
+        fn start(&self, _total: Option<u64>, _label: &str) {}
+        fn advance(&self, _n: u64) {
+            self.0.cancel();
+        }
+        fn finish(&self, _msg: &str) {}
+    }
+
+    #[test]
+    fn a_cancelled_download_leaves_no_file_behind() {
+        use std::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/big.bin", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut conn, _) = listener.accept().unwrap();
+            let mut request = [0u8; 2048];
+            let _ = conn.read(&mut request);
+            let body = vec![7u8; 1024 * 1024];
+            let head = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", body.len());
+            // The client hangs up mid-body once cancelled; that error is fine.
+            let _ = conn.write_all(head.as_bytes());
+            let _ = conn.write_all(&body);
+        });
+
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("big.bin");
+        let cancel = Cancel::new();
+        let progress = StopAfterFirstChunk(cancel.clone());
+        let result =
+            Http::anonymous().download(&url, &dest, &BTreeMap::new(), false, &progress, &cancel);
+
+        assert!(matches!(result, Err(Error::Cancelled)));
+        assert!(!dest.exists(), "no destination file");
+        assert_eq!(
+            std::fs::read_dir(dir.path()).unwrap().count(),
+            0,
+            "no staging file"
+        );
+        server.join().unwrap();
     }
 }

@@ -5,7 +5,15 @@ working example. `PKG` below is an installed name, an alias, or
 `owner/repo` — most commands that take one also accept `@version` on the end
 (`sharkdp/fd@v10.2.0`). Global flags work everywhere: `--root <DIR>` points at
 a different ketch tree, `-v/--verbose` shows what ketch is doing, `-q/--quiet`
-prints only errors and requested data, and `--no-color` disables colour.
+prints only errors and requested data, `--no-color` disables colour, and
+`--no-emoji` drops the icons in front of status lines.
+
+**Icons.** On a terminal, each status line starts with an icon for what it
+reports: 📦 install, ⬆️ upgrade or update, 🗑️ uninstall or remove, ⬇️ download,
+🔗 link, ⏪ rollback, 🔍 search, 🩺 doctor, and otherwise ✅ success, ⚠️ warning,
+❌ error, ℹ️ note. They are on by default (`emoji` in `config.toml`,
+`KETCH_EMOJI`) and never appear in a pipe or a file, under `TERM=dumb`, in
+`--json` or `--names-only` output, in table data, or in the log.
 
 ## Install and remove
 
@@ -20,6 +28,15 @@ ketch install rg                  # or a name the registry knows
 ketch install sharkdp/fd@v10.2.0  # or an exact version
 ketch install --path ./mytool     # a local binary, archive, symlink, or .app
 ```
+
+A package that is already installed is not updated behind your back. With a
+newer release, `install` asks `<pkg> <installed> is installed; update to
+<latest>?` (default no) and, on yes, updates it the way `ketch upgrade` does;
+`--yes` answers yes, and without a terminal it stops with exit 5 and says to
+pass `--yes` or run `ketch upgrade`. With nothing newer it fails with exit 5:
+`cannot install <pkg>: <version> is already installed and no update is
+available` (`--force` reinstalls). An exact version (`pkg@1.2.0`) and a pinned
+package behave as before.
 
 Options: `--path <PATH>` installs a local file (equivalent to
 `local:<PATH>`); `--name <NAME>` sets the installed name for a single
@@ -65,6 +82,11 @@ Aliased as `ketch remove` and `ketch rm`.
 
 Upgrade installed packages to their latest release. Empty means every
 unpinned package. Shows a `from -> to` table, asks, then installs.
+
+Each version is unpacked into a fresh folder of its own, so nothing the old
+version shipped can linger in the new one, and a leftover from an interrupted
+upgrade is removed first — or the upgrade stops, naming it. The previous
+version's folder is kept beside it for `ketch rollback` until `ketch prune`.
 
 ```bash
 ketch upgrade              # everything unpinned

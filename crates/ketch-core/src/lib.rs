@@ -10,13 +10,14 @@
 //! front end supplies is a later step, and this crate is a move only.
 
 pub(crate) mod bin_choice;
+pub mod cancel;
 pub mod changelog;
 pub mod config;
 pub mod diff;
 pub mod error;
 pub mod extra;
-pub(crate) mod extract;
-pub(crate) mod hooks;
+pub mod extract;
+pub mod hooks;
 pub(crate) mod http;
 pub mod install;
 pub mod listing;

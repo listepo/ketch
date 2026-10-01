@@ -152,6 +152,174 @@ fn an_upgrade_replaces_the_payload_and_the_link_still_works() {
         .contains(r#""installed": "2.0.0""#));
 }
 
+/// Every icon `ui.rs` can put in front of a status line.
+const ICONS: &[&str] = &[
+    "📦", "⬆️", "🗑️", "⬇️", "🔗", "⏪", "🔍", "🩺", "✅", "⚠️", "❌", "ℹ️",
+];
+
+fn assert_no_icon(what: &str, text: &str) {
+    for icon in ICONS {
+        assert!(!text.contains(icon), "{what} carries {icon}: {text}");
+    }
+}
+
+#[test]
+fn piped_output_json_and_the_log_carry_no_emoji_even_when_they_are_wanted() {
+    let sandbox = Sandbox::new();
+    publish_tool(&sandbox, "1.0.0");
+    let out = sandbox.ketch_overrides(
+        &["install", "test:testtool@1.0.0", "--yes"],
+        &[("KETCH_EMOJI", "1")],
+    );
+    assert!(out.status.success(), "{out:?}");
+    assert_no_icon("stderr", &String::from_utf8_lossy(&out.stderr));
+    assert_no_icon("stdout", &String::from_utf8_lossy(&out.stdout));
+    let json = sandbox.ok_env(&["list", "local", "--json"], &[("KETCH_EMOJI", "1")]);
+    assert!(json.contains(r#""installed": "1.0.0""#), "{json}");
+    assert_no_icon("--json", &json);
+    assert_no_icon("the log", &sandbox.log());
+}
+
+/// Every file name anywhere under `dir`.
+fn names_under(dir: &std::path::Path) -> Vec<String> {
+    let mut names = Vec::new();
+    for entry in std::fs::read_dir(dir).expect("read dir").flatten() {
+        let path = entry.path();
+        names.push(entry.file_name().to_string_lossy().into_owned());
+        if path.is_dir() {
+            names.extend(names_under(&path));
+        }
+    }
+    names
+}
+
+#[test]
+fn upgrade_installs_into_a_fresh_prefix_that_nothing_stale_reaches() {
+    let sandbox = Sandbox::new();
+    let arch = host_arch();
+    let first = sandbox.asset(
+        &format!("testtool-1.0.0-{arch}-apple-darwin.tar.gz"),
+        Archive::TarGz(vec![
+            Entry::program("testtool-1.0.0/bin/testtool", "testtool 1.0.0"),
+            Entry::file("testtool-1.0.0/only-in-1.0.txt", "gone in 2.0\n"),
+        ]),
+    );
+    sandbox.publish("testtool", &[Release::new("1.0.0", vec![first])]);
+    sandbox.ok(&["install", "test:testtool", "--yes"]);
+    // An interrupted earlier swap to 2.0.0: its staging folder is exactly
+    // where the next swap stages the new payload.
+    let folder = sandbox.store().join("testtool");
+    std::fs::create_dir_all(folder.join("2.0.0.incoming")).expect("plant .incoming");
+    std::fs::write(folder.join("2.0.0.incoming").join("planted"), b"x").expect("planted file");
+
+    publish_tool(&sandbox, "2.0.0");
+    sandbox.ok(&["upgrade", "--yes"]);
+
+    let names = names_under(&folder.join("2.0.0"));
+    assert!(names.contains(&"testtool".to_string()), "{names:?}");
+    assert!(!names.contains(&"only-in-1.0.txt".to_string()), "{names:?}");
+    assert!(!names.contains(&"planted".to_string()), "{names:?}");
+    assert!(!folder.join("2.0.0.incoming").exists());
+}
+
+#[test]
+fn a_forced_reinstall_of_the_same_version_leaves_no_stale_file() {
+    let sandbox = Sandbox::new();
+    publish_tool(&sandbox, "1.0.0");
+    sandbox.ok(&["install", "test:testtool", "--yes"]);
+    let prefix = sandbox.store().join("testtool").join("1.0.0");
+    std::fs::write(prefix.join("stale.txt"), b"x").expect("plant stale file");
+
+    sandbox.ok(&["install", "test:testtool", "--force", "--yes"]);
+
+    assert!(!prefix.join("stale.txt").exists());
+    assert_eq!(run(&sandbox.bin().join("testtool")), "testtool 1.0.0");
+}
+
+/// Installed at 1.0.0 with 2.0.0 published since: the state every
+/// `install`-offers-the-update case starts from.
+fn installed_with_an_update(sandbox: &Sandbox) {
+    publish_tool(sandbox, "1.0.0");
+    sandbox.ok(&["install", "test:testtool", "--yes"]);
+    publish_tool(sandbox, "2.0.0");
+}
+
+fn installed_version(sandbox: &Sandbox) -> String {
+    run(&sandbox.bin().join("testtool"))
+}
+
+#[test]
+fn install_of_an_installed_package_updates_it_when_the_answer_is_yes() {
+    let sandbox = Sandbox::new();
+    installed_with_an_update(&sandbox);
+
+    let out = sandbox.ketch_on_tty(&["install", "test:testtool"], "y\n");
+    let shown = String::from_utf8_lossy(&out.stdout);
+
+    assert!(out.status.success(), "{shown}");
+    assert!(
+        shown.contains("testtool 1.0.0 is installed; update to 2.0.0?"),
+        "{shown}"
+    );
+    assert_eq!(installed_version(&sandbox), "testtool 2.0.0", "{shown}");
+}
+
+#[test]
+fn install_of_an_installed_package_changes_nothing_when_the_answer_is_no() {
+    let sandbox = Sandbox::new();
+    installed_with_an_update(&sandbox);
+
+    let out = sandbox.ketch_on_tty(&["install", "test:testtool"], "n\n");
+    let shown = String::from_utf8_lossy(&out.stdout);
+
+    assert!(out.status.success(), "{shown}");
+    assert_eq!(installed_version(&sandbox), "testtool 1.0.0");
+}
+
+#[test]
+fn install_with_yes_updates_an_installed_package_without_asking() {
+    let sandbox = Sandbox::new();
+    installed_with_an_update(&sandbox);
+
+    sandbox.ok(&["install", "test:testtool", "--yes"]);
+
+    assert_eq!(installed_version(&sandbox), "testtool 2.0.0");
+}
+
+#[test]
+fn install_without_a_terminal_or_yes_refuses_to_update_and_says_how() {
+    let sandbox = Sandbox::new();
+    installed_with_an_update(&sandbox);
+
+    let out = sandbox.ketch(&["install", "test:testtool"]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert_eq!(out.status.code(), Some(5), "{stderr}");
+    assert!(stderr.contains("2.0.0 is available"), "{stderr}");
+    assert!(stderr.contains("--yes"), "{stderr}");
+    assert!(stderr.contains("ketch upgrade testtool"), "{stderr}");
+    assert_eq!(installed_version(&sandbox), "testtool 1.0.0");
+}
+
+#[test]
+fn install_of_an_up_to_date_package_says_no_update_is_available() {
+    let sandbox = Sandbox::new();
+    publish_tool(&sandbox, "1.0.0");
+    sandbox.ok(&["install", "test:testtool", "--yes"]);
+
+    let out = sandbox.ketch(&["install", "test:testtool"]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert_eq!(out.status.code(), Some(5), "{stderr}");
+    assert!(
+        stderr.contains(
+            "cannot install `testtool`: 1.0.0 is already installed and no update is available"
+        ),
+        "{stderr}"
+    );
+    assert!(stderr.contains("--force"), "{stderr}");
+}
+
 #[test]
 fn rollback_restores_the_previous_prefix_without_redownloading() {
     let sandbox = Sandbox::new();
@@ -1347,4 +1515,31 @@ fn self_uninstall_can_keep_the_packages_and_leave_the_cask_to_homebrew() {
     );
     assert!(!brew_log.exists(), "brew was run despite --no-brew");
     assert!(sandbox.homebrew().join("Caskroom").join("ketch").exists());
+}
+
+/// A second ketch must not wait on, or steal, a live run's lock: a GUI host
+/// and the CLI share one root, and each has to be told the other is working.
+#[test]
+fn a_command_run_while_another_process_holds_the_lock_reports_it_busy() {
+    let sandbox = Sandbox::new();
+    std::fs::create_dir_all(sandbox.root()).expect("root");
+    // This test process is alive and is not the ketch about to run.
+    let holder = std::process::id();
+    std::fs::write(sandbox.root().join(".lock"), holder.to_string()).expect("lock");
+
+    let out = sandbox.ketch(&["install", "--path", "/nonexistent", "-y"]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert_eq!(out.status.code(), Some(8), "{stderr}");
+    assert!(
+        stderr.contains(&format!(
+            "another ketch process holds the lock (pid {holder})"
+        )),
+        "{stderr}"
+    );
+    // The holder's lock file survives the refused run.
+    assert_eq!(
+        std::fs::read_to_string(sandbox.root().join(".lock")).unwrap(),
+        holder.to_string()
+    );
 }
