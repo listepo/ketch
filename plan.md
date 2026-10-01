@@ -18,7 +18,7 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | M9 | in progress | P2 | 5 | 90% | Claude Code / opus-5.5 |
 | R4 | in progress | P2 | 3 | 90% | Claude Code / opus-5.5 |
 | M14 | todo | P2 | 3 | 0% | |
-| M15 | in progress | P3 | 2 | 0% | Claude Code / sonnet-5.5 |
+| M15 | in progress | P3 | 2 | 90% | Claude Code / sonnet-5.5 |
 | M16 | todo | P2 | 4 | 0% | |
 | R5 | in progress | P2 | 4 | 90% | Claude Code / opus-5.5 |
 | R6 | in progress | P2 | 4 | 90% | Claude Code / opus-5.5 |
@@ -465,6 +465,8 @@ Done when `docs/manifest.schema.json` is generated from `Manifest` with `config:
 `ConfigFile` holds both as free strings and checks them at load time, so the schema cannot list the allowed values. `AGENTS.md`: constraints live in the types.
 
 Done when `ConfigFile` uses `crate::log::Level` and `crate::log::Format` (serde, lower case) directly, a bad value still fails with an error naming the file and the key, `docs/config.schema.json` lists the values, and the environment variables keep working as before.
+
+Status: PR https://github.com/pyrlyn/ketch/pull/203.
 
 Execution plan: give `Level` and `Format` in `crates/ketch-core/src/log.rs` serde (lower case) and `schemars` derives; switch `ConfigFile.log_level` and `log_format` in `crates/ketch-core/src/config.rs` to `Option<Level>` and `Option<Format>`; keep the environment variables parsed by `FromStr` as before; make the TOML parse error name the file and the key; regenerate `docs/config.schema.json` with the existing schema export; add tests for a bad value, each environment variable, the schema enum and unchanged loading of valid files; then run fmt, clippy, nextest and `ketch doctor` against a scratch root.
 
