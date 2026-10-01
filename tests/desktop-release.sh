@@ -139,7 +139,7 @@ fi
 # on the CLI.
 need install.sh 'releases/latest' '/releases/latest'
 need install.ps1 'releases/latest' '/releases/latest'
-need src/source/github.rs '"/releases/latest"' '/releases/latest'
+need crates/ketch-core/src/source/github.rs '"/releases/latest"' '/releases/latest'
 if grep -q 'desktop' .github/workflows/release.yml .github/workflows/release-plz.yml .github/workflows/bump.yml; then
     fail "a CLI release workflow mentions the desktop app"
 fi
