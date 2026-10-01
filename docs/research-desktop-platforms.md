@@ -376,8 +376,9 @@ already names as the pattern.
    with JSON records and a hand-written VAPI. Hand-written `unsafe` is allowed
    in that crate only (`deny` with scoped `allow`s, each with a `SAFETY`
    comment); every other crate keeps `forbid`.
-4. **C# binding route.** B (PR #176 pinned by commit) first; fallback D (C ABI)
-   or C (UniFFI 0.31.2, a version downgrade that needs your approval).
+4. **C# binding route.** Decided by the creator (2026-10-01): B (PR #176
+   pinned by commit) first; if it fails against UniFFI 0.32.2, D (the C ABI
+   from `ketch-capi`). C, the downgrade to UniFFI 0.31.2, is not taken.
 5. **Shared app layer.** None now (recommended) or a `ketch-app` crate.
 6. **Brand across platforms.** Accent, status colours, spacing, radii and type
    scale from `tokens.json` on Windows and Linux, with native surfaces
