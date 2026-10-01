@@ -19,6 +19,7 @@
 //! is reported once and then ignored for the rest of the run.
 
 use crate::config::Config;
+use serde::{Deserialize, Deserializer, Serialize};
 use std::fmt;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
@@ -34,7 +35,14 @@ const MAX_BYTES: u64 = 5 * 1024 * 1024;
 ///
 /// Ordered so a record is written when its level is at or below the configured
 /// one, which puts `Off` first and makes it filter everything.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+///
+/// Serialised in lower case because it is a `config.toml` value: the type is
+/// the one place that lists what the key accepts, and the schema reads the
+/// canonical names from here. Reading goes through `FromStr`, so the file takes
+/// every spelling `KETCH_LOG_LEVEL` takes, in any case, as it always did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "lowercase")]
 pub enum Level {
     Off,
     Error,
@@ -90,7 +98,12 @@ impl FromStr for Level {
 /// Two, because a log file has two audiences. The default is the line format
 /// every CLI writes and every person can read; `json` is JSON Lines, which is
 /// what a log shipper wants and what `jq` reads without a parser.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+///
+/// Serialised in lower case and read through `FromStr`, for the same reasons
+/// as `Level`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "lowercase")]
 pub enum Format {
     #[default]
     Text,
@@ -117,6 +130,25 @@ impl FromStr for Format {
         }
     }
 }
+
+/// Reading a config value goes through `FromStr`, not the derive, so the file
+/// accepts exactly what the environment variable does. A derived `Deserialize`
+/// would be case-sensitive and would refuse files that loaded before. The
+/// message is `FromStr`'s own, which already lists the allowed values; the TOML
+/// parser adds the file and the key.
+macro_rules! deserialize_from_str {
+    ($($ty:ty),*) => {$(
+        impl<'de> Deserialize<'de> for $ty {
+            fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                String::deserialize(deserializer)?
+                    .parse()
+                    .map_err(serde::de::Error::custom)
+            }
+        }
+    )*};
+}
+
+deserialize_from_str!(Level, Format);
 
 struct Sink {
     file: File,
