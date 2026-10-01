@@ -25,6 +25,7 @@ Options:
   -v, --verbose           Show what ketch is doing, including every request
   -q, --quiet             Only print errors and requested data
       --no-color          Never emit ANSI colour
+      --no-emoji          Never put an emoji icon in front of a status line
   -h, --help              Print help
   -V, --version           Print version
 
@@ -50,6 +51,7 @@ Options:
   -v, --verbose     Show what ketch is doing, including every request
   -q, --quiet       Only print errors and requested data
       --no-color    Never emit ANSI colour
+      --no-emoji    Never put an emoji icon in front of a status line
   -h, --help        Print help
   -V, --version     Print version
 
@@ -68,6 +70,7 @@ Options:
   -v, --verbose     Show what ketch is doing, including every request
   -q, --quiet       Only print errors and requested data
       --no-color    Never emit ANSI colour
+      --no-emoji    Never put an emoji icon in front of a status line
   -h, --help        Print help
   -V, --version     Print version
 
@@ -90,6 +93,7 @@ Options:
   -v, --verbose     Show what ketch is doing, including every request
   -q, --quiet       Only print errors and requested data
       --no-color    Never emit ANSI colour
+      --no-emoji    Never put an emoji icon in front of a status line
   -h, --help        Print help
   -V, --version     Print version
 

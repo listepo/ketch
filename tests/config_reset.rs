@@ -23,6 +23,7 @@ fn reset_writes_defaults_and_backs_up_the_old_file() {
     let body = std::fs::read_to_string(&before).unwrap();
     assert!(body.contains("Written by `ketch config reset`"), "{body}");
     assert!(body.contains("auto_update = true"), "{body}");
+    assert!(body.contains("emoji = true"), "{body}");
 
     let backups: Vec<_> = std::fs::read_dir(sandbox.root())
         .unwrap()

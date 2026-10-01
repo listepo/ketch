@@ -60,6 +60,7 @@ Project programs and direct packages from manifests.
 | tar | local | https://crates.io/crates/tar | Rust dependency |
 | tempfile | local | https://crates.io/crates/tempfile | Rust dependency |
 | terminal_size | local | https://crates.io/crates/terminal_size | Terminal width for `ketch list remote` descriptions |
+| unicode-width | local | https://github.com/unicode-rs/unicode-width | Column width of status-line emoji icons |
 | thiserror | local | https://crates.io/crates/thiserror | Errors |
 | tokio | local | https://crates.io/crates/tokio | Async runtime |
 | toml | local | https://crates.io/crates/toml | Config |

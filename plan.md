@@ -17,7 +17,6 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | F8 | in progress | P2 | 3 | 0% | Cursor / grok 4.7 high |
 | M9 | in progress | P2 | 5 | 90% | Claude Code / opus-5.5 |
 | F9 | todo | P2 | 2 | 0% | |
-| F11 | todo | P3 | 2 | 0% | |
 | R4 | in progress | P2 | 3 | 90% | Claude Code / opus-5.5 |
 
 ### F1. Notarisation
@@ -294,16 +293,6 @@ Check: e2e with the mock release API: newer + yes → upgraded; newer + no → u
 
 Plan:
 
-
-### F11. Emoji icons per operation, `emoji` config key (default true)
-
-Plan:
-1. One table in `src/ui.rs` maps each operation to an icon (proposal: install 📦, upgrade ⬆️, uninstall 🗑️, download ⬇️, link 🔗, rollback ⏪, search 🔍, doctor 🩺, success ✅, warning ⚠️, error ❌, note ℹ️). Ivan picks the final set.
-2. Config: `emoji = true` in `Config` / `Config::default_toml()`, the `KETCH_EMOJI` env var, and a `--no-emoji` global flag if wanted. Document it in the Configuration table in `README.md` and `docs/COMMANDS.md`, and in the `config reset` defaults test.
-3. Icons appear only on human-facing status lines going to a terminal. They never appear in `--json`, `--names-only`, `ui::out` data, the log file, or when `TERM=dumb`.
-4. Width: emoji are double-width, so pad the verb column with `unicode-width` and keep columns aligned with and without icons.
-
-Check: snapshots with emoji on and off; JSON and piped output contain no emoji; `emoji = false` and `KETCH_EMOJI=0` turn them off; `just check`.
 
 ### R4. Fuzz testing with cargo-fuzz / libFuzzer
 

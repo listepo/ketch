@@ -152,6 +152,34 @@ fn an_upgrade_replaces_the_payload_and_the_link_still_works() {
         .contains(r#""installed": "2.0.0""#));
 }
 
+/// Every icon `ui.rs` can put in front of a status line.
+const ICONS: &[&str] = &[
+    "📦", "⬆️", "🗑️", "⬇️", "🔗", "⏪", "🔍", "🩺", "✅", "⚠️", "❌", "ℹ️",
+];
+
+fn assert_no_icon(what: &str, text: &str) {
+    for icon in ICONS {
+        assert!(!text.contains(icon), "{what} carries {icon}: {text}");
+    }
+}
+
+#[test]
+fn piped_output_json_and_the_log_carry_no_emoji_even_when_they_are_wanted() {
+    let sandbox = Sandbox::new();
+    publish_tool(&sandbox, "1.0.0");
+    let out = sandbox.ketch_overrides(
+        &["install", "test:testtool@1.0.0", "--yes"],
+        &[("KETCH_EMOJI", "1")],
+    );
+    assert!(out.status.success(), "{out:?}");
+    assert_no_icon("stderr", &String::from_utf8_lossy(&out.stderr));
+    assert_no_icon("stdout", &String::from_utf8_lossy(&out.stdout));
+    let json = sandbox.ok_env(&["list", "local", "--json"], &[("KETCH_EMOJI", "1")]);
+    assert!(json.contains(r#""installed": "1.0.0""#), "{json}");
+    assert_no_icon("--json", &json);
+    assert_no_icon("the log", &sandbox.log());
+}
+
 /// Every file name anywhere under `dir`.
 fn names_under(dir: &std::path::Path) -> Vec<String> {
     let mut names = Vec::new();
