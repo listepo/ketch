@@ -56,8 +56,11 @@ from this directory; CI runs `lint --strict`.
 | `Ketch/Core/KetchRoot.swift` | the root, resolved like the CLI (`KETCH_ROOT`, empty means unset) |
 | `Ketch/Store/KetchStore.swift` | the `@Observable` main-actor store: state, operations, callbacks, update checks |
 | `Ketch/Store/AppSettings.swift` | the app's own preferences (UserDefaults) and Open at login |
+| `Ketch/Store/Appearance.swift` | Settings -> Appearance as values: tint, glass style, accent, wash, and how Reduce Transparency and Increase Contrast override them |
 | `Ketch/Views/` | the window sections, the menu-bar panel, Settings, About, the glass styling |
-| `Ketch/Views/Theme.swift` | every colour, spacing, radius and shadow; the one file to switch to the design system's generated tokens (F14) |
+| `Ketch/Views/Theme.swift` | the views' spacing, radius, shadow and status-colour roles, mapped onto the generated tokens |
+| `Ketch/Views/Glass.swift` | the `appearance` environment value, `ketchAppearance()`, glass cards and the backdrop wash |
+| `design/generated/Tokens.swift` | generated from `design/tokens.json` (`just design-tokens`) and compiled into the app; see `DESIGN.md` |
 | `KetchTests/` | Swift Testing tests of the store, settings and root on the fake core |
 | `KetchUITests/` | one XCUITest smoke test: launch against a scratch `KETCH_ROOT` |
 

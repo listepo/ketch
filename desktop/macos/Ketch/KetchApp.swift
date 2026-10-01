@@ -25,15 +25,18 @@ struct KetchApp: App {
     var body: some Scene {
         Window("Ketch", id: WindowID.main) {
             ContentView()
+                .frame(minWidth: 760, minHeight: 480)
+                .ketchAppearance()
                 .environment(store)
                 .environment(settings)
-                .frame(minWidth: 760, minHeight: 480)
         }
         .commands { AppCommands(updater: updater) }
 
         MenuBarExtra {
             MenuBarContent()
+                .ketchAppearance()
                 .environment(store)
+                .environment(settings)
         } label: {
             MenuBarLabel(count: store.pendingUpgradeCount, isRunning: store.isRunning)
         }
@@ -41,6 +44,7 @@ struct KetchApp: App {
 
         Settings {
             SettingsView()
+                .ketchAppearance()
                 .environment(store)
                 .environment(settings)
         }

@@ -49,14 +49,53 @@ generator knows (`color`, `dimension`, `number`, `typography`, `shadow`,
 - **Contrast**: `contrast.mjs` checks every text/background pair the
   components use, in light, dark and both high-contrast appearances, against
   WCAG 2.2 AA (4.5:1 text, 3:1 large text and UI glyphs). The background is
-  what the text really sits on: material tints composited over the canvas base
-  and each mesh blob, worst case kept. `node desktop/macos/design/contrast.mjs --verbose`
+  what the text really sits on: material tints composited over the canvas base,
+  alone and under the wash at `opacity.washMax` (each gradient stop, plain and
+  under each hill), worst case kept. `node desktop/macos/design/contrast.mjs --verbose`
   prints every pair. Add a pair to `PAIRS` there when a component puts text on
   a new surface.
 - **DESIGN.md lint**: `designmd lint` from `@google/design.md`; errors fail,
   warnings do not.
 
 Everything runs offline after `npm ci`.
+
+## Token names
+
+The names below are the contract with the app and with the Figma library that
+mirrors it: keep a Figma variable's path the same as the token's. A path
+`color.accent.ink` is `Tokens.Colors.Accent.ink` in Swift and
+`--color-accent-ink` in CSS. Values live in `tokens.json`; the token index at
+the bottom of `preview.html` and the `DESIGN.md` front matter list them too.
+Every colour has light, dark, high-contrast and high-contrast dark values
+(a missing one falls back as described above).
+
+| Group | Tokens |
+| --- | --- |
+| `color.accent.*` | `default`, `pressed`, `subtle`, `on`, `ink` |
+| `color.text.*` | `primary`, `secondary`, `tertiary` |
+| `color.status.*` | `installed`, `installedSubtle`, `update`, `updateSubtle`, `busy`, `busySubtle`, `warning`, `warningSubtle`, `error`, `errorSubtle` |
+| `color.background.*` | `base`, `washStart`, `washEnd`, `washHill`, `washDeep` |
+| `color.glass.*` | `window`, `regular`, `frost`, `control`, `elevated`, `clear`, `stroke`, `highlight`, `shade`, `solidRegular`, `solidElevated` |
+| `color.shadow.*` | `drop`, `window` |
+| `color.*` | `scrim`, `separator`, `focusRing` |
+| `color.fill.*` | `control`, `hover`, `track` |
+| `color.preset.tint.*` | `sky`, `mint`, `sand`, `rose`, `lilac`, `smoke` |
+| `color.preset.accent.*` | `blue`, `purple`, `pink`, `red`, `orange`, `yellow`, `green`, `graphite` |
+| `opacity.*` | `wash`, `washMax`, `tint`, `tintDark` |
+| `space.*` | `xxs`, `xs`, `sm`, `md`, `lg`, `xl`, `xxl`, `xxxl`, `huge` |
+| `radius.*` | `xs`, `sm`, `md`, `lg`, `xl`, `full` |
+| `size.*` | `sidebarWidth`, `rowHeight`, `toolbarHeight`, `iconSm`, `iconMd`, `iconLg`, `appIcon`, `badgeHeight`, `progressHeight`, `controlHeight`, `menuBarWidth`, `contentMaxWidth`, `hairline` |
+| `blur.*` | `regular`, `elevated`, `clear` |
+| `typography.*` | `display`, `title`, `title2`, `headline`, `body`, `callout`, `caption`, `overline`, `badge`, `mono` |
+| `elevation.*` | `level0`, `level1`, `level2`, `level3`, `level4`, `lift`, `window` |
+| `motion.*` | `instant`, `quick`, `standard`, `gentle`, `emphasized` |
+| `component.*` | `buttonPrimary`, `buttonSecondary`, `packageRow`, `card`, `sheet`, `sidebar`, `menuBarExtra`, `badge`, `progress` |
+
+`color.preset.*` are the swatches in Settings → Appearance, not colours for
+views. The Liquid glass palette renamed the canvas mesh `meshTide`, `meshIris`,
+`meshDawn` and `meshMist` to `washStart`, `washEnd`, `washHill` and
+`washDeep`; nothing else was renamed. Update this table in the same change
+as `tokens.json`.
 
 ## Files
 

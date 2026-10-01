@@ -1,40 +1,43 @@
-// Every colour, spacing, radius and shadow the views use, in one place. The
-// design system (F14) generates tokens for these; switching to them is a
-// change to this file only. Liquid Glass itself stays a system material and
-// is not themed here.
+// The names the views use for spacing, radii, shadow and status colour, mapped
+// onto the generated design tokens (design/generated/Tokens.swift, from
+// design/tokens.json). Views keep these role names; which token a role takes
+// is decided here, so a palette change never touches a view. Liquid Glass
+// itself stays a system material; the user's tint, glass style, accent and wash
+// arrive through the `appearance` environment value (Store/Appearance.swift).
 
 import SwiftUI
 
 enum Theme {
     enum Spacing {
         /// Between cards in a list.
-        static let cards: CGFloat = 10
+        static let cards = Tokens.Space.sm
         /// Between blocks inside a section.
-        static let section: CGFloat = 12
+        static let section = Tokens.Space.md
         /// Between the large cards of a detail page.
-        static let page: CGFloat = 16
+        static let page = Tokens.Space.lg
         /// Inside a card, around its content.
-        static let cardPadding: CGFloat = 12
+        static let cardPadding = Tokens.Space.md
     }
 
     enum Radius {
-        static let card: CGFloat = 16
-        static let panel: CGFloat = 20
+        static let card = Tokens.Radius.md
+        static let panel = Tokens.Radius.lg
     }
 
+    /// The outer layer of `elevation.lift`, under every glass card.
     enum Shadow {
-        static let color = Color.black.opacity(0.12)
-        static let radius: CGFloat = 10
-        static let y: CGFloat = 5
+        private static let drop = Tokens.Elevation.lift.last { !$0.inset }
+        /// Softened: the token's CSS form has a negative spread, which SwiftUI
+        /// shadows cannot express and which keeps most of the colour hidden
+        /// under the card.
+        static let color = (drop?.color ?? .clear).opacity(0.35)
+        static let radius = drop?.radius ?? 0
+        static let y = drop?.y ?? 0
     }
 
     enum Palette {
-        /// The wash behind the glass, top-leading to bottom-trailing.
-        static let backdrop = [Color.accentColor.opacity(0.22), Color.purple.opacity(0.10), Color.clear]
-        /// The tint of an "update available" badge.
-        static let updateBadge = Color.accentColor.opacity(0.35)
-        static let ok = Color.green
-        static let warning = Color.orange
-        static let error = Color.red
+        static let ok = Tokens.Colors.Status.installed
+        static let warning = Tokens.Colors.Status.warning
+        static let error = Tokens.Colors.Status.error
     }
 }

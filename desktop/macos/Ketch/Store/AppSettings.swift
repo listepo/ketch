@@ -15,6 +15,10 @@ final class AppSettings {
     private enum Key {
         static let interval = "updateCheckIntervalMinutes"
         static let prereleases = "includePrereleases"
+        static let tint = "appearanceTint"
+        static let glassStyle = "appearanceGlassStyle"
+        static let accent = "appearanceAccent"
+        static let wash = "appearanceWash"
     }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -28,11 +32,28 @@ final class AppSettings {
         didSet { defaults.set(includePrereleases, forKey: Key.prereleases) }
     }
 
+    /// Settings -> Appearance, as the user chose it. Views draw
+    /// `Appearance.resolved(…)`, never this directly.
+    var appearance: Appearance {
+        didSet {
+            defaults.set(appearance.tint.stored, forKey: Key.tint)
+            defaults.set(appearance.glassStyle.rawValue, forKey: Key.glassStyle)
+            defaults.set(appearance.accent.stored, forKey: Key.accent)
+            defaults.set(Appearance.clampWash(appearance.wash), forKey: Key.wash)
+        }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         let stored = defaults.integer(forKey: Key.interval)
         updateCheckIntervalMinutes = stored > 0 ? stored : 60
         includePrereleases = defaults.bool(forKey: Key.prereleases)
+        appearance = Appearance(
+            tint: TintChoice(stored: defaults.string(forKey: Key.tint)),
+            glassStyle: defaults.string(forKey: Key.glassStyle).flatMap(GlassStyle.init(rawValue:)) ?? .regular,
+            accent: AccentChoice(stored: defaults.string(forKey: Key.accent)),
+            wash: Appearance.clampWash((defaults.object(forKey: Key.wash) as? Double) ?? Tokens.Opacity.wash)
+        )
     }
 
     var updateCheckInterval: Duration { .seconds(updateCheckIntervalMinutes * 60) }

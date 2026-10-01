@@ -72,6 +72,7 @@ struct InstalledView: View {
 private struct InstalledRow: View {
     let package: InstalledPackage
     let update: String?
+    @Environment(\.appearance) private var appearance
 
     var body: some View {
         HStack(spacing: 12) {
@@ -89,7 +90,7 @@ private struct InstalledRow: View {
                 Text("→ \(update)")
                     .font(.caption.monospacedDigit().bold())
                     .padding(.horizontal, 8).padding(.vertical, 3)
-                    .glassEffect(.regular.tint(Theme.Palette.updateBadge), in: .capsule)
+                    .glassEffect(.regular.tint(appearance.accentColor.opacity(0.35)), in: .capsule)
                     .accessibilityLabel("Update to \(update) available")
             }
             Text(package.version).monospacedDigit().foregroundStyle(.secondary)
