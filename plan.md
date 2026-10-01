@@ -22,7 +22,7 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | M16 | todo | P2 | 4 | 0% | |
 | R5 | in progress | P2 | 4 | 90% | Claude Code / opus-5.5 |
 | R6 | in progress | P2 | 4 | 90% | Claude Code / opus-5.5 |
-| R7 | todo | P2 | 2 | 0% | |
+| R7 | in progress | P2 | 2 | 0% | Claude Code / sonnet-5.5 |
 | R8 | in progress | P3 | 3 | 90% | Claude Code / sonnet-5.5 |
 | R9 | todo | P3 | 3 | 0% | |
 | F12 | in progress | P3 | 5 | 50% | Claude Code / opus-5.5 |
