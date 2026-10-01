@@ -25,7 +25,7 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | R7 | todo | P2 | 2 | 0% | |
 | R8 | in progress | P3 | 3 | 90% | Claude Code / sonnet-5.5 |
 | R9 | todo | P3 | 3 | 0% | |
-| R10 | in progress | P3 | 3 | 0% | Claude Code / opus-5.5 |
+| R10 | in progress | P3 | 3 | 90% | Claude Code / opus-5.5 |
 | F12 | in progress | P3 | 5 | 50% | Claude Code / opus-5.5 |
 | F13 | in progress | P3 | 4 | 80% | Claude Code / opus-5.5 |
 | F14 | in progress | P2 | 3 | 90% | Claude Code / opus-5.5 |
@@ -414,6 +414,8 @@ Plan:
 4. Close: readiness 90%, a `Status:` line with the PR link and the recommendation; PR against `main`, CI checked once.
 
 Check: every table row cites a URL plus a version or date; `just check` (or the docs-relevant part of CI) passes on the PR.
+
+Status: PR https://github.com/pyrlyn/ketch/pull/205, research in `docs/research-desktop-windows-linux.md` (linked from `docs/research-desktop.md`). Recommendation: WinUI 3 in C# over R9's UniFFI binding (via `uniffi-bindgen-cs`, unpackaged through winget) for Windows, with `windows-reactor` as the Rust alternative to spike, and GTK 4 + libadwaita through gtk4-rs linking `ketch-core` directly for Linux; the open decisions are listed at the end of the research page.
 
 ### F12. Native macOS app (SwiftUI) on `ketch-ffi`
 
