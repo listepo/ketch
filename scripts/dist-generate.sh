@@ -135,6 +135,34 @@ if create_old not in text:
     fail("the Create GitHub Release block is missing or changed")
 text = text.replace(create_old, create_new, 1)
 
+# A last job that turns a failed release into a `release-failure` issue (pyrlyn/infra).
+NOTIFY = """
+  # Added by scripts/dist-generate.sh: a failed release (not a pull request or a dry run)
+  # opens or comments on a `release-failure` issue that mentions and assigns @listepo. The
+  # only release failure notification: GitHub cannot filter Actions notifications per
+  # workflow. Pinned to pyrlyn/infra's ci/notify-release-failure; repin to its merge commit.
+  notify-failure:
+    needs: [plan, build-local-artifacts, build-global-artifacts, host, custom-tap, announce]
+    if: >-
+      always() && github.event_name == 'workflow_dispatch' && inputs.tag != 'dry-run'
+      && contains(needs.*.result, 'failure')
+    runs-on: "ubuntu-22.04"
+    timeout-minutes: 5
+    permissions:
+      "actions": "read"
+      "issues": "write"
+    steps:
+      - uses: pyrlyn/infra/.github/actions/notify-release-failure@d709124d53dd4923eff8f594b3155842508b0049
+        with:
+          ref: ${{ inputs.tag }}
+          needs: ${{ toJSON(needs) }}
+"""
+if "notify-failure:" not in text:
+    text = text.rstrip("\n") + "\n" + NOTIFY
+
 path.write_text(text)
-print(f"patched {path}: MACOS_* secrets, build-check steps, SHA256SUMS, download sizes")
+print(
+    f"patched {path}: MACOS_* secrets, build-check steps, SHA256SUMS, download sizes, "
+    "notify-failure job"
+)
 PY

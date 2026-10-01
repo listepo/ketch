@@ -8,7 +8,8 @@ name: Bump and release
 # commit touches only Cargo.toml, Cargo.lock and CHANGELOG.md, so what is
 # tested is what ships. No `dry_run` input: a green "Bump and release" reads as
 # a release. The preview is local only: `scripts/release.sh <level> --dry-run`.
-# Pinned to pyrlyn/infra#11 (verify-tools, verify-mise-install-args); repin to its merge commit.
+# A failed run opens a `release-failure` issue (infra notify-failure job, issues: write).
+# Pinned to pyrlyn/infra ci/notify-release-failure (on top of #11); repin to its merge commit.
 on:
   workflow_dispatch:
     inputs:
@@ -23,10 +24,11 @@ permissions:
 
 jobs:
   bump:
-    uses: pyrlyn/infra/.github/workflows/bump.yml@5e892cc4fb4be97cfa388f5dc82e6bf47340337a
+    uses: pyrlyn/infra/.github/workflows/bump.yml@d709124d53dd4923eff8f594b3155842508b0049
     permissions:
       contents: write # push the version commit
       actions: write # dispatch release.yml, cancel-run
+      issues: write # notify-failure: a failed run opens a release-failure issue
     with:
       level: ${{ inputs.level }}
       release-script: scripts/release.sh
