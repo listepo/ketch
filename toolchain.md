@@ -49,6 +49,7 @@ Project programs and direct packages from manifests.
 | hex | local | https://crates.io/crates/hex | Rust dependency |
 | indicatif | local | https://crates.io/crates/indicatif | Rust dependency |
 | insta | local | https://crates.io/crates/insta | Reviewed snapshots |
+| jsonschema | local | https://crates.io/crates/jsonschema | Tests that the manifests ketch ships validate against `docs/manifest.schema.json` |
 | libsqlite3-sys | local | https://crates.io/crates/libsqlite3-sys | `bundled` compiles SQLite into the binary. Linking the system one would make ketch's single-binary promise depend on what the host happens to ship, and the release builds both macOS architectures where that answer differs. |
 | libfuzzer-sys | local (`fuzz/`) | https://crates.io/crates/libfuzzer-sys | libFuzzer targets |
 | lzma-rs | local | https://crates.io/crates/lzma-rs | Rust dependency |
@@ -59,7 +60,7 @@ Project programs and direct packages from manifests.
 | proptest | local | https://crates.io/crates/proptest | Property tests |
 | ratatui | local | https://crates.io/crates/ratatui | TUI |
 | rstest | local | https://crates.io/crates/rstest | Parameterized tests |
-| schemars | local | https://crates.io/crates/schemars | JSON Schema of `config.toml` and `ketch.lock`, checked by drift tests |
+| schemars | local | https://crates.io/crates/schemars | JSON Schema of `config.toml`, `ketch.lock` and `ketch.toml`, checked by drift tests |
 | semver | local | https://crates.io/crates/semver | Rust dependency |
 | serde | local | https://crates.io/crates/serde | Serialization |
 | serde_json | local | https://crates.io/crates/serde_json | JSON |

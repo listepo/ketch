@@ -37,6 +37,36 @@ so the questionnaire works from a script as well as a terminal. From there,
 offering the file to everyone is a registry pull request — see
 [REGISTRY.md](REGISTRY.md).
 
+## Editor support
+
+[manifest.schema.json](https://github.com/pyrlyn/ketch/blob/main/docs/manifest.schema.json)
+is the JSON Schema of a `ketch.toml`, generated from the types ketch reads it
+into. A TOML language server that reads a `#:schema` directive — Taplo, which
+the Even Better TOML extension runs, or Tombi — then completes keys, shows the
+documentation below as you type, and flags a misspelt key before ketch does.
+Put the directive on the first line:
+
+```toml
+#:schema https://raw.githubusercontent.com/pyrlyn/ketch/main/docs/manifest.schema.json
+source = "github:BurntSushi/ripgrep"
+```
+
+It describes one package: a registry or project `ketch.toml`, or a
+single-package file in `~/.ketch/manifests/`. A file holding a `[[package]]`
+array, as `builtin.toml` does, is a list of them and not this shape. `name` is
+optional in the schema because a registry folder supplies it; everywhere else
+ketch still requires it.
+
+The schema states what a schema can: unknown keys, the allowed values of
+`kind`, `verifier`, `mode` and `extra_paths` kinds, `source` syntax, names
+usable as a file name, `provides` aliases without whitespace, `strip_prefix` at
+most 8, a `bin` entry with `name` or `path`, and no blank hooks. The rest of
+[What ketch checks](#what-ketch-checks) — paths that must stay inside the
+payload, how an `extra_paths` entry is classified, which `trust` keys belong to
+which verifier, and whether a key parses — is still ketch's, at load time. As
+in ketch, `bin` entries and the `asset` table do not reject keys they do not
+know.
+
 ## The smallest one
 
 ```toml

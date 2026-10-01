@@ -20,6 +20,7 @@ Empty: F1/F2/M3/F5 and the 2026-09-20 audit follow-ups (A2) are in `done.md`; th
 - R7. Decisions out of the pipeline
 - R8. Core calls from a long-running host
 - R9. `ketch-ffi`: the core exported through UniFFI
+- R10. Toolkit choice for the Windows and Linux desktop apps
 - F12. Native macOS app (SwiftUI) on `ketch-ffi`
 - F13. macOS app release pipeline
 - F14. Design system for the macOS app: `DESIGN.md` and tokens
