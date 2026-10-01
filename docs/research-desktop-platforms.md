@@ -372,9 +372,10 @@ already names as the pattern.
    with GTK 4 + libadwaita, following the GNOME HIG; KDE/Qt is not pursued.
 2. **Linux markup.** Decided by the creator (2026-10-01): Blueprint, pinned
    as a Meson subproject; GtkBuilder XML is not used.
-3. **Linux core access.** `ketch-capi` with JSON records and a hand-written
-   VAPI (recommended) or typed C structs; and the `unsafe_code` exception for
-   that one crate.
+3. **Linux core access.** Decided by the creator (2026-10-01): `ketch-capi`
+   with JSON records and a hand-written VAPI. Hand-written `unsafe` is allowed
+   in that crate only (`deny` with scoped `allow`s, each with a `SAFETY`
+   comment); every other crate keeps `forbid`.
 4. **C# binding route.** B (PR #176 pinned by commit) first; fallback D (C ABI)
    or C (UniFFI 0.31.2, a version downgrade that needs your approval).
 5. **Shared app layer.** None now (recommended) or a `ketch-app` crate.
