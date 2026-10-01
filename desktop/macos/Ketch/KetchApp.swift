@@ -44,6 +44,7 @@ struct KetchApp: App {
 
         Settings {
             SettingsView()
+                .frame(width: 520)
                 .ketchAppearance()
                 .environment(store)
                 .environment(settings)
