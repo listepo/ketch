@@ -9,4 +9,5 @@ node = "24.20.0"              # commitlint for `just lint-commits` and the commi
 ruby = "3.4.11"               # `just lint-shell` -> tests/release-workflows.sh parses the workflows with ruby
 cargo-dist = "0.32.0" # generates .github/workflows/release.yml and builds the release tarballs (`just dist-generate`, `just package`)
 git-cliff = "2.13.1" # writes the CHANGELOG.md entry for a release, from cliff.toml (`scripts/release.sh`, and release-plz on its pull request)
+xcodegen = "2.46.0" # generates desktop/macos/Ketch.xcodeproj from project.yml (`just macos-app`, `just macos-test`); the project file is not committed
 "cargo:cargo-fuzz" = "0.13.2" # `just fuzz`; runs with `cargo +nightly`, a rustup toolchain outside this pin (fuzz/README.md)

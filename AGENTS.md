@@ -247,8 +247,12 @@ conditional, multi-stage Rust automation.
 | `install.sh` | the `curl | bash` installer for macOS and Linux; only bootstraps `ketch self install` |
 | `install.ps1` | the `irm | iex` installer for Windows; same bootstrap as `install.sh` |
 | `.github/dependabot.yml` | weekly `chore(deps)` pull requests for cargo, npm and GitHub Actions; not `mise.toml` |
+| `desktop/macos/` | the SwiftUI macOS app: `project.yml` (XcodeGen), `Ketch/` sources, `KetchTests/`, `KetchUITests/`; see its `README.md` |
 | `desktop/macos/DESIGN.md` | the macOS app's design system in the DESIGN.md format; its front matter is generated |
 | `desktop/macos/design/` | `tokens.json`, the one source of design tokens, and `build.mjs`, which generates `generated/Tokens.swift`, the DESIGN.md front matter and `preview.html`'s CSS (`just design-tokens`) |
+| `.github/workflows/desktop-release.yml` | the macOS app's release: signed, notarised `.dmg` under a `desktop-v*` tag, and its Sparkle appcast |
+| `scripts/desktop-version.sh`, `scripts/desktop-dmg.sh`, `scripts/desktop-appcast.sh` | the app release's version check, disk image and appcast, shared with `tests/desktop-appcast.sh` |
+| `desktop/cliff.toml` | the app's release notes: commits under `desktop/` and `crates/ketch-ffi/` since the last `desktop-v*` tag |
 
 The rule that keeps `cmd/` thin: anything touching the install tree belongs in
 `install.rs`, `state.rs`, or a trait implementation, so the same logic serves
@@ -273,6 +277,25 @@ startup file to its target before writing, because that file is very often a
 link into a dotfiles repository. On Windows `ketch path install` writes
 `HKCU\Environment\Path` via `[Environment]::SetEnvironmentVariable` so a new
 terminal sees it without a logoff; `setx` is not used, because it truncates.
+
+## macOS app
+
+`desktop/macos/` is a SwiftUI app (Swift 6, strict concurrency, macOS 26)
+described by XcodeGen's `project.yml`; the generated `Ketch.xcodeproj` and
+`build/` are gitignored. `just macos-app` builds it unsigned for arm64 and
+x86_64, `just macos-test` runs the Swift Testing unit tests and the UI smoke
+test; the `macos-app` CI job runs the same plus `swift format lint --strict`.
+It has no Rust in it and does not touch the CLI gate.
+
+Views talk to `KetchStore`, the store talks to `KetchCoreProtocol`, and
+`CoreFactory.swift` alone decides which core that is — `FakeKetchCore`
+until `ketch-ffi` (R9) exists. Keep it that way: no view or test reaches past
+the protocol. The UI uses system Liquid Glass (`glassEffect`, glass button
+styles), never a drawn imitation. The app updates itself with Sparkle
+(`Ketch/Store/AppUpdater.swift`, "Check for Updates…" in the app menu); only
+a Release build with a real `SUPublicEDKey` starts it. Releases are
+[Releasing → macOS app](#macos-app-releases). `desktop/macos/README.md` has
+the architecture and the steps to wire R9.
 
 ## Conventions
 
@@ -549,6 +572,71 @@ in one top-level `ketch-<target>/` directory; every reader finds it by
 searching the tree, and a store install unwraps the single directory. CI runs
 the same `dist build` on every gate run, so packaging breaks there, not
 halfway through a release.
+
+### macOS app releases
+
+The app in `desktop/macos/` is released from this repository too, by
+`.github/workflows/desktop-release.yml`, with a version of its own: tags are
+`desktop-vX.Y.Z`, never `vX.Y.Z`, and the version is the workflow's input, not
+`Cargo.toml`'s or `project.yml`'s.
+
+**No app release is ever the latest release.** `install.sh`, `install.ps1`
+and `ketch self upgrade` (the GitHub source's `/releases/latest` fast path)
+all install whatever GitHub calls the latest release. An app release marked
+latest would hand every CLI installer a release with no `ketch-<target>.tar.gz`
+in it. So every `gh release create` in the workflow passes `--latest=false`
+(`make_latest: false`), the feed release is a prerelease as well, and the last
+step checks that `/releases/latest` did not move — restoring the CLI release
+and failing if it did. Likewise the CLI's release tooling never takes a
+`desktop-v*` tag for its own: `cliff.toml`'s `tag_pattern` is anchored
+(`^v[0-9]`; git-cliff matches it anywhere in a tag name), `tests/crate-version.sh`
+lists only `v[0-9]*` tags, release-plz matches `^v<semver>$` from
+`git_tag_name`, `scripts/release.sh` looks up `refs/tags/v<version>` exactly,
+`scripts/tap-release-version.sh` refuses a tag without a leading `v`,
+`sync-docs.yml` skips non-`v` tag refs, and when ketch lists releases instead
+of asking for the latest (`--pre`), a tag that is not a version never
+outranks one that is (`select_release` in `src/source/mod.rs`). `tests/desktop-release.sh` (in
+`just lint-shell`) checks all of it.
+
+To cut one: Actions → desktop-release → Run workflow on `main` with the
+version, or `gh workflow run desktop-release.yml --ref main -f version=X.Y.Z`.
+The version must be plain `X.Y.Z` and above the last `desktop-v*` tag
+(`scripts/desktop-version.sh`), because it is also `CFBundleVersion`, which
+Sparkle compares. The run archives a universal Release build with the
+hardened runtime, exports it for Developer ID (`desktop/macos/ExportOptions.plist`),
+notarises and staples the app, builds the `.dmg` (`scripts/desktop-dmg.sh`,
+hdiutil), signs, notarises and staples that, runs `spctl --assess` on both,
+writes `Ketch-X.Y.Z.dmg.sha256`, and writes the Sparkle appcast
+(`scripts/desktop-appcast.sh`). Only then does it create the tag and the
+release, with release notes from `desktop/cliff.toml`, and replace
+`appcast.xml` on the `desktop-appcast` release, the stable URL the app's
+`SUFeedURL` names. A failed run creates nothing; re-run it. If it failed after
+the versioned release was created but before the feed was replaced, upload
+that release's `appcast.xml` to `desktop-appcast` with `gh release upload
+--clobber` rather than re-running, since the version is then taken.
+
+Secrets, all required; the first step names any that are missing and stops
+before building:
+
+- `MACOS_CERTIFICATE`, `MACOS_CERTIFICATE_PWD` — the same Developer ID
+  Application `.p12` the CLI is signed with.
+- `APPSTORE_CONNECT_KEY` (the `.p8` as base64), `APPSTORE_CONNECT_KEY_ID`,
+  `APPSTORE_CONNECT_ISSUER_ID` — notarisation. Unlike the CLI's, it is not
+  behind `KETCH_NOTARIZE`: an app is only ever released notarised.
+- `SPARKLE_ED_PRIVATE_KEY` — the EdDSA key from Sparkle's `generate_keys -x`
+  (the base64 seed). Its public half is `SUPublicEDKey` in
+  `desktop/macos/Ketch/Info.plist`, still a placeholder that the workflow
+  refuses; commit the real one first. The appcast is checked against the
+  exported app's key before anything is published
+  (`scripts/desktop-appcast-verify.swift`), because `generate_appcast` only
+  warns on a mismatch. Losing or rotating this key strands every installed
+  copy on its version.
+
+`just macos-appcast` runs the disk-image and appcast scripts on a local build
+with a throwaway key, as CI's `macos-app` job does. The ketch-ffi XCFramework
+(R9) does not exist yet: the workflow's XCFramework step is off
+(`XCFRAMEWORK: 'false'`, marked `TODO(R9)`), so a release made before R9
+ships the app on `FakeKetchCore`.
 
 ## Before you call it done
 

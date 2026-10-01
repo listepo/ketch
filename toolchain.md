@@ -14,7 +14,13 @@ Project programs and direct packages from manifests.
 | cargo | with rustc | Rust build and dependencies | https://github.com/rust-lang/cargo |
 | just | cargo install just / brew | Command recipes | https://github.com/casey/just |
 | cargo-dist | mise | Generates `release.yml` and builds the release tarballs (`just dist-generate`, `just package`) | https://github.com/axodotdev/cargo-dist |
-| git-cliff | mise | Writes the `CHANGELOG.md` entry from `cliff.toml` (`scripts/release.sh`) | https://github.com/orhun/git-cliff |
+| git-cliff | mise | Writes the `CHANGELOG.md` entry from `cliff.toml` (`scripts/release.sh`), and the macOS app's release notes from `desktop/cliff.toml` | https://github.com/orhun/git-cliff |
+| xcodegen | mise | Generates `desktop/macos/Ketch.xcodeproj` from `project.yml` (`just macos-app`, `just macos-test`) | https://github.com/yonaskolb/XcodeGen |
+| Xcode | global (App Store / developer.apple.com) | Builds and tests the macOS app (`xcodebuild`); 26 or later | https://developer.apple.com/xcode/ |
+| swift-format | with Xcode (`xcrun swift-format`) | Formats and lints the macOS app's Swift | https://github.com/swiftlang/swift-format |
+| notarytool, stapler | with Xcode (`xcrun`) | Notarise and staple the macOS app and its `.dmg` (`desktop-release.yml`) | https://developer.apple.com/documentation/security/customizing-the-notarization-workflow |
+| hdiutil, codesign, spctl | with macOS | Build the app's `.dmg` (`scripts/desktop-dmg.sh`), sign it, and assess what Gatekeeper will decide | https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution |
+| generate_appcast | with the Sparkle package (`build/SourcePackages/artifacts/sparkle/Sparkle/bin/`) | Writes and signs the macOS app's appcast (`scripts/desktop-appcast.sh`) | https://github.com/sparkle-project/Sparkle |
 | cargo-fuzz | mise | Builds and runs the libFuzzer targets in `fuzz/` (`just fuzz`) | https://github.com/rust-fuzz/cargo-fuzz |
 | rustc nightly | rustup (`rustup toolchain install nightly`) | Only for `cargo +nightly fuzz`; every build stays on the `mise.toml` pin | https://github.com/rust-lang/rust |
 | release-plz | GitHub Action | The release pull request | https://github.com/release-plz/release-plz |
@@ -80,3 +86,9 @@ Project programs and direct packages from manifests.
 | @commitlint/config-conventional | local | https://www.npmjs.com/package/@commitlint/config-conventional | Commit rules |
 | style-dictionary | local | https://github.com/style-dictionary/style-dictionary | Generates the macOS app's `Tokens.swift`, the DESIGN.md front matter and the preview CSS from `desktop/macos/design/tokens.json` (`just design-tokens`) |
 | @google/design.md | local | https://github.com/google-labs-code/design.md | Lints `desktop/macos/DESIGN.md` against the DESIGN.md format (`just design-check`) |
+
+## SwiftPM
+
+| Package | Where | Source | Why here |
+| --- | --- | --- | --- |
+| Sparkle | local (`desktop/macos/project.yml`, exact 2.10.0) | https://github.com/sparkle-project/Sparkle | The macOS app's own updates; its `generate_appcast` writes the release's appcast |

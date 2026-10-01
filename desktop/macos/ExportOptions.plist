@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  `xcodebuild -exportArchive` options for a release of Ketch.app, used by
+  .github/workflows/desktop-release.yml. Developer ID, signed by hand with the
+  one Developer ID Application identity the workflow imports from
+  MACOS_CERTIFICATE into a throwaway keychain; the team is the archive's. The
+  hardened runtime comes from ENABLE_HARDENED_RUNTIME in project.yml, which
+  notarisation requires. Keys: `xcodebuild -help`, Xcode 27.0 (27A266a).
+-->
+<plist version="1.0">
+<dict>
+	<key>method</key>
+	<string>developer-id</string>
+	<key>signingStyle</key>
+	<string>manual</string>
+	<key>signingCertificate</key>
+	<string>Developer ID Application</string>
+</dict>
+</plist>
