@@ -1,9 +1,19 @@
-// Settings: update checks, prereleases, open at login, and where ketch's own
-// configuration lives.
+// Settings: General (update checks, prereleases, open at login, and where
+// ketch's own configuration lives) and Appearance (AppearanceSettingsView).
 
 import SwiftUI
 
 struct SettingsView: View {
+    var body: some View {
+        TabView {
+            Tab("General", systemImage: "gearshape") { GeneralSettingsView() }
+            Tab("Appearance", systemImage: "paintpalette") { AppearanceSettingsView() }
+        }
+        .frame(width: 520)
+    }
+}
+
+private struct GeneralSettingsView: View {
     @Environment(KetchStore.self) private var store
     @Environment(AppSettings.self) private var settings
     @State private var opensAtLogin = false
@@ -41,7 +51,6 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 460)
         .onAppear { opensAtLogin = settings.opensAtLogin }
         .onChange(of: settings.updateCheckIntervalMinutes) { store.startUpdateChecks() }
     }
