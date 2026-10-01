@@ -37,12 +37,14 @@ need "$r" 'source=Notarized Developer ID' 'the spctl smoke check'
 need "$r" 'name: Smoke test' 'the smoke test'
 need "$r" 'sha256sum $(ls ketch-\*.tar.gz | sort) > SHA256SUMS' 'the aggregate SHA256SUMS'
 need "$r" 'uses: ./.github/workflows/tap.yml' 'the tap publish job'
+need "$r" 'pyrlyn/infra/.github/actions/notify-release-failure@' 'the release-failure job'
 
 b="$wf/bump.yml"
 need "$b" 'options: \[patch, minor, major\]' 'the patch/minor/major choice'
 need "$b" 'uses: pyrlyn/infra/.github/workflows/bump.yml@' 'the shared bump workflow'
 need "$b" 'release-script: scripts/release.sh' 'the release.sh call'
 need "$b" 'verify-command:' 'the verify gate'
+need "$b" 'issues: write' 'issues: write for the shared notify-failure job'
 
 p="$wf/release-plz.yml"
 need "$p" 'uses: pyrlyn/infra/.github/workflows/release-plz.yml@' 'the shared release-plz workflow'
@@ -50,6 +52,7 @@ need "$p" '  ^chore: release v' 'the merge gate'
 need "$p" 'release-branch-prefix: release-plz-' 'the release-plz branch check'
 need "$p" 'verify-command:' 'the verify gate'
 need "$p" 'release-workflow: release.yml' 'the release.yml dispatch'
+need "$p" 'issues: write' 'issues: write for the shared notify-failure job'
 
 need "$ROOT/release-plz.toml" 'pr_name = "chore: release v{{ version }}"' 'the pull request title the gate matches'
 need "$ROOT/release-plz.toml" 'changelog_config = "cliff.toml"' 'the shared git-cliff config'
