@@ -13,7 +13,7 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | B60 | in progress | P3 | 1 | 80% | Cursor / grok 4.7 |
 | B64 | in progress | P0 | 4 | 70% | Claude Code / opus-5.5 |
 | B65 | in progress | P0 | 2 | 0% | Cursor / grok 4.7 high |
-| B71 | in progress | P1 | 2 | 0% | Claude Code / sonnet-5.5 |
+| B71 | in progress | P1 | 2 | 90% | Claude Code / sonnet-5.5 |
 | R3 | in progress | P1 | 3 | 67% | Cursor / grok 4.7 high |
 | F8 | in progress | P2 | 3 | 0% | Cursor / grok 4.7 high |
 | M9 | in progress | P2 | 5 | 90% | Claude Code / opus-5.5 |
@@ -198,6 +198,8 @@ Execution plan:
 2. Make `glob_preferred` return `Result<Option<&Path>>`, one OS-independent function; update both platform callers.
 3. Update `docs/MANIFESTS.md` where `bin` globs are described.
 4. Verify with `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo nextest run`, and a run of the binary against a scratch `KETCH_ROOT` if it can be done offline.
+
+Status: implemented with unit and end-to-end tests in `tests/bin_choice.rs`; PR https://github.com/pyrlyn/ketch/pull/202
 
 ### M9. `ketch list` refactor: `local`, `remote`, and both by default
 
