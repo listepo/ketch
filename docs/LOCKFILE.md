@@ -10,6 +10,9 @@ ketch lock --check      # has the tree drifted from it?
 ketch sync              # install what the lockfile names, at those versions
 ```
 
+Its JSON Schema, generated from the types ketch reads it into, is
+[lock.schema.json](https://github.com/pyrlyn/ketch/blob/main/docs/lock.schema.json).
+
 It is not the lock ketch takes while it works — that one is a mutex over the
 install tree, held for the length of a command and released at the end.
 

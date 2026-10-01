@@ -17,6 +17,7 @@ pub const USER_AGENT: &str = concat!("ketch/", env!("CARGO_PKG_VERSION"));
 
 /// On-disk settings. Every field optional so a partial file is valid.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct ConfigFile {
     pub root: Option<PathBuf>,
@@ -462,9 +463,56 @@ pub fn sanitize_component(raw: &str) -> String {
     }
 }
 
+/// Fails when the JSON Schema committed at `relative` (from the repository
+/// root) is not what `T` generates. `KETCH_BLESS=1` rewrites the file
+/// instead: the types are the source, the file only publishes them.
+#[cfg(test)]
+pub(crate) fn assert_schema_current<T: schemars::JsonSchema>(relative: &str) {
+    // TOML has no null: an absent key is how an `Option` says `None`, so a
+    // schema allowing `null` would describe a file ketch cannot read.
+    let drop_null = schemars::transform::RecursiveTransform(|s: &mut schemars::Schema| {
+        if let Some(serde_json::Value::Array(types)) = s.get_mut("type") {
+            types.retain(|t| t != "null");
+            if let [only] = types.as_slice() {
+                let only = only.clone();
+                s.insert("type".into(), only);
+            }
+        }
+    });
+    let mut schema = schemars::generate::SchemaSettings::draft2020_12()
+        .with_transform(drop_null)
+        .into_generator()
+        .into_root_schema_for::<T>();
+    schema.insert(
+        "$comment".into(),
+        "Generated from the Rust types by `KETCH_BLESS=1 cargo nextest run schema`. Do not edit."
+            .into(),
+    );
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(relative);
+    let rendered = serde_json::to_string_pretty(&schema).expect("render schema") + "\n";
+    if std::env::var_os("KETCH_BLESS").is_some() {
+        std::fs::write(&path, &rendered).expect("write schema");
+        return;
+    }
+    // A Windows checkout may have turned LF into CRLF; the schema is the same.
+    let committed = std::fs::read_to_string(&path)
+        .unwrap_or_default()
+        .replace("\r\n", "\n");
+    pretty_assertions::assert_eq!(
+        committed,
+        rendered,
+        "{relative} is stale; regenerate it with KETCH_BLESS=1 cargo nextest run schema"
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn committed_config_schema_matches_config_file() {
+        assert_schema_current::<ConfigFile>("docs/config.schema.json");
+    }
 
     #[test]
     fn only_owner_repo_is_accepted_as_a_repository() {

@@ -11,3 +11,6 @@ Empty: F1/F2/M3/F5 and the 2026-09-20 audit follow-ups (A2) are in `done.md`; th
 - F8. Spinner and progress bar
 - M9. `ketch list` refactor: `local`, `remote`, and both by default
 - R4. Fuzz testing with cargo-fuzz / libFuzzer
+- M14. JSON Schema for the package manifest
+- M15. `log_level` and `log_format` as enums in `config.toml`
+- M16. One module owns config file I/O

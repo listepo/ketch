@@ -17,6 +17,9 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | F8 | in progress | P2 | 3 | 0% | Cursor / grok 4.7 high |
 | M9 | in progress | P2 | 5 | 90% | Claude Code / opus-5.5 |
 | R4 | in progress | P2 | 3 | 90% | Claude Code / opus-5.5 |
+| M14 | todo | P2 | 3 | 0% | |
+| M15 | todo | P3 | 2 | 0% | |
+| M16 | todo | P2 | 4 | 0% | |
 
 ### F1. Notarisation
 
@@ -293,3 +296,21 @@ Execution plan (Claude Code / opus-5.5):
 Done in the pull request: all eleven targets build and ran 60 s each without a crash in ketch. Left: review and merge; the optional nightly CI job is not added.
 
 Check: `cargo +nightly fuzz build` succeeds for all targets; each target runs 60 s with no crash (or the crash is filed with a repro test); stable `just check` does not compile `fuzz/`.
+
+### M14. JSON Schema for the package manifest
+
+`ketch.toml` (`Manifest` in `src/model.rs`) is the third TOML file ketch owns, after `config.toml` and `ketch.lock` (M13). `AGENTS.md` requires a schema for it too. Its nested types and custom (de)serializers (`PackageRef` as `scheme:id`, the `trust` and `hooks` tables) make it larger than M13.
+
+Done when `docs/manifest.schema.json` is generated from `Manifest` with `config::assert_schema_current`, committed, checked by a drift test, and linked from `docs/MANIFESTS.md`. Every field a registry `ketch.toml` in `pyrlyn/ketch-registry` uses validates against it.
+
+### M15. `log_level` and `log_format` as enums in `config.toml`
+
+`ConfigFile` holds both as free strings and checks them at load time, so the schema cannot list the allowed values. `AGENTS.md`: constraints live in the types.
+
+Done when `ConfigFile` uses `crate::log::Level` and `crate::log::Format` (serde, lower case) directly, a bad value still fails with an error naming the file and the key, `docs/config.schema.json` lists the values, and the environment variables keep working as before.
+
+### M16. One module owns config file I/O
+
+`AGENTS.md`: one module owns all config loading, validation and editing, and the rest of the code does not import `toml` or `toml_edit`. Today `registry.rs`, `manifest.rs`, `extra.rs`, `push.rs`, `wizard.rs` and `model.rs` use them directly, besides `config.rs` and `lockfile.rs`.
+
+Done when TOML parsing, rendering and editing for the files ketch owns go through one module, and no other module imports `toml` or `toml_edit`. Behaviour does not change. Before starting, confirm with the creator whether `ketch.toml` manifests and `ketch.lock` belong to that module or keep their own, with only the TOML calls moved.
