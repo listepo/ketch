@@ -24,7 +24,7 @@ default-members = [".", "crates/ketch-core", "crates/ketch-ffi"]
 # binary's. scripts/release.sh, tests/crate-version.sh and site/sync-docs.py
 # read and write this line.
 [workspace.package]
-version = "0.9.0"
+version = "0.10.0"
 edition = "2021"
 # Raised from 1.82 by Diesel 2.3, which is the floor for the statistics
 # database. Nothing else in the tree needs it.

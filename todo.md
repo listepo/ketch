@@ -1,27 +1,33 @@
 # ketch — todo
 
-Empty: F1/F2/M3/F5 and the 2026-09-20 audit follow-ups (A2) are in `done.md`; the audit-13 evaluation (A3) also landed there with "already shipped, no gap" verdicts. The two remaining notes are not actionable from inside the repo:
-
-- Notarisation secrets + first notarized release — creator step (needs the App Store Connect key).
-- `src/config.rs` unit tests (`default_toml_*`, `ENV_GUARD`/`CleanEnv`) — uncommitted in the working tree, owned by an earlier session; commit separately, do not fold into an audit PR.
 - B60. Windows self-update leaves `ketch.exe.old` behind
-- B64. Binary name must be an explicit config parameter
 - B65. Binary selection regression test
-- B71. Ambiguous bin glob refuses instead of taking directory order
 - R3. Cross-platform CI
 - F8. Spinner and progress bar
-- M9. `ketch list` refactor: `local`, `remote`, and both by default
-- R4. Fuzz testing with cargo-fuzz / libFuzzer
-- M14. JSON Schema for the package manifest
-- M15. `log_level` and `log_format` as enums in `config.toml`
 - M16. One module owns config file I/O
 - R5. Workspace split: `ketch-core` library crate
 - R6. A reporter instead of the global `ui::` sink
-- R7. Decisions out of the pipeline
 - R8. Core calls from a long-running host
-- R9. `ketch-ffi`: the core exported through UniFFI
-- R10. Toolkit choice for the Windows and Linux desktop apps
 - F12. Native macOS app (SwiftUI) on `ketch-ffi`
 - F13. macOS app release pipeline
 - F14. Design system for the macOS app: `DESIGN.md` and tokens
 - F18. Figma design for macOS, Windows and Linux
+- R11. Desktop apps on macOS, Windows and Linux: capabilities, shared layer and per-platform interfaces
+- D1. `ketch-ffi`: foreign traits and per-operation callbacks
+- D2. `ketch-ffi`: records and operations the apps need
+- D3. `ketch-ffi`: the remaining CLI operations
+- D4. Contract fixtures for every app's fake core
+- D5. Design tokens for XAML and GTK
+- D7. macOS: update notifications
+- D8. macOS: `ketch://` links
+- D9. macOS: VoiceOver pass
+- D10. Windows: C# binding for `ketch-ffi`
+- D11. Windows: WinUI 3 app shell on a fake core
+- D12. Windows: the app on the real core
+- D13. Windows: tray icon, notifications, start at login, links
+- D14. Windows: release pipeline
+- D15. Linux: `ketch-capi`, a C ABI and VAPI for Vala
+- D16. Linux: Vala + GTK 4 app shell on a fake core
+- D17. Linux: the app on the real core
+- D18. Linux: notifications, background and autostart
+- D19. Linux: packaging and release
