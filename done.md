@@ -775,3 +775,49 @@ Plan (Claude Code / opus-5.5):
 Done (Claude Code / opus-5.5): reproduced with the prebuilt test binary run 64-way in parallel — 2 of 192 runs failed with no `in use` line, because the shell had not opened the script within 400 ms, so `lsof` found nobody. After the fix: 0 of 800 runs failed (64- and 96-way), and the full suite passes. Running `cargo nextest` several times at once was no use as a reproducer: concurrent runs relink the binaries and macOS SIGKILLs them.
 
 Status: done 2026-10-01
+
+### F15. Liquid glass design in Figma
+
+The creator chose variant 6, "Liquid glass", from the design explorations as the app's design (2026-10-01), and Figma as the design tool. The Figma file becomes the source the tokens and the screens follow.
+
+Plan:
+1. A Figma design file "ketch for macOS — Liquid glass" in the creator's team: a `Color` variable collection with Light and Dark modes (glass, glass-hi, glass-lo, glass-top, glass-sheet, ink, ink-2, hair, edge, rim-hi, rim-lo, drop, scrim, accent, accent-soft, accent-ink, on-accent, status colours), number variables for radius and spacing, text styles (Large title, Title, Headline, Body, Caption, Badge, Mono), effect styles for the glass elevations (drop shadow plus inner rim light and shade, background blur).
+2. Components: window chrome, sidebar navigation, package row, app card, shelf, badge, button (primary, glass), segmented control, progress bar, sheet, menu-bar extra.
+3. Screens on a Light page and a Dark page, 1180×760: Installed, Discover, Updates, Package detail, Activity, Doctor, Settings (with Appearance), binary-choice sheet, menu-bar extra; prototype links between them.
+4. The file link and the variable-to-token mapping go into `desktop/macos/DESIGN.md` and `desktop/macos/design/README.md`.
+
+Check: every colour, radius and text style on the screens is bound to a variable or style; screenshots of both pages reviewed; the mapping table lists every variable.
+
+Done (Claude Code / opus-5.5): file https://www.figma.com/design/v7OJLmQEyCFbJ63uSYpJ9g (Ivan's Starter team). `Color` collection (32 variables, Light and Dark) and `Dimension` collection (13) synced to F16's `tokens.json`, each with its Swift name as iOS code syntax; 7 text styles; 5 effect styles built on Figma's Glass effect; components (icons, app icon, badge, button, nav item, search field, progress, segment, swatch, package row); nine screens on the Light page and their Dark-mode clones; prototype links from the sidebar, rows and Uninstall. Inter and JetBrains Mono stand in for SF Pro and SF Mono, which Figma's cloud renderer does not have. The variable-to-token mapping is `desktop/macos/design/figma.md`.
+
+Status: done 2026-10-01
+
+### F16. Tokens and Appearance settings for Liquid glass
+
+The app moves to F15's palette and gets Appearance settings. Liquid Glass stays the system material (`.glassEffect`), so what the user can change is what the material allows: tint, regular or clear glass, accent, and the strength of the backdrop wash (creator, 2026-10-01).
+
+Plan:
+1. `desktop/macos/design/tokens.json`: the Liquid glass palette for light, dark and their increased-contrast variants (values from F15's variables), regenerated with `just design-tokens`; `DESIGN.md` prose updated; `just design-check` passes (drift, WCAG AA, lint).
+2. `Theme.swift` reads `Tokens.swift` instead of literals; `project.yml` compiles the generated file.
+3. Settings → Appearance: tint (clear plus presets plus custom), glass style (regular, clear), accent (system or a preset), backdrop wash strength; stored in `AppSettings`, applied through one environment value; Reduce Transparency and Increase Contrast still win over the user's choice.
+4. Tests: Swift Testing for the settings model (defaults, persistence, accessibility overrides).
+
+Check: `just design-check`, `xcodebuild test` for the app, a screenshot of both appearances.
+
+Status: done 2026-10-01, PR https://github.com/pyrlyn/ketch/pull/197. To meet WCAG AA the accent deepened to #0873e0 (white on #0a84ff is 3.65:1) and the dark wash colours changed; F15's Figma variables were synced to these values.
+
+### F17. Screens rebuilt on the Liquid glass design
+
+The SwiftUI views follow F15's screens: the glass sidebar with counts, an Updates screen, Discover as shelves of app cards, the detail page, Activity, Doctor, the binary-choice sheet and the menu-bar extra. Starts after F15's screens and F16's tokens land.
+
+Plan (stacked on F16's branch `f16-liquid-glass-tokens` until #197 merges):
+1. Read the Figma screens (`get_design_context` / `get_screenshot` per frame; node ids and the variable mapping in `desktop/macos/design/figma.md`); colours, radii and spacing come only from `Tokens.swift` through `Theme.swift`, never literals.
+2. `ContentView.swift`: glass sidebar with counts (Installed, Discover, Updates, Activity, Doctor) and the root and package summary at its foot; `KetchStore` gains an update count if it lacks one.
+3. New `UpdatesView.swift`: available updates with per-row Update and Update all, the busy banner (`Error::Busy`) with Retry, pinned packages held by `ketch.lock`.
+4. `InstalledView`, `DiscoverView` (hero plus shelves of app cards), `PackageDetailView`, `ActivityView`, `DoctorView`, the uninstall sheet and `MenuBarContent` restyled to the frames; badges use the status pairs, an update badge `Status.update`.
+5. Reduce Transparency and Increase Contrast keep working (the `Glass/Reduced` style, `highContrast` tokens).
+6. Tests: Swift Testing for new store logic (update count, busy state); the UI test navigates every sidebar item.
+
+Check: `xcodegen` + `xcodebuild test`, `just design-check`, screenshots of each screen in light and dark compared with the Figma frames.
+
+Status: done 2026-10-01, PR https://github.com/pyrlyn/ketch/pull/200. All nine screens in light and dark. Differs from Figma where the core has no data: no package sizes or changelog headlines, Discover without featured picks or categories, Doctor names each fix as text with no Fix buttons, monogram icons. Not verified: the real menu-bar popover's glass, and screenshots under Reduce Transparency and Increase Contrast.
