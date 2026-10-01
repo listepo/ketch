@@ -30,7 +30,7 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | F12 | in progress | P3 | 5 | 50% | Claude Code / opus-5.5 |
 | F13 | in progress | P3 | 4 | 80% | Claude Code / opus-5.5 |
 | F14 | in progress | P2 | 3 | 90% | Claude Code / opus-5.5 |
-| F18 | in progress | P2 | 4 | 0% | Claude Code / opus-5.5 |
+| F18 | in progress | P2 | 4 | 90% | Claude Code / opus-5.5 |
 
 ### F1. Notarisation
 
@@ -572,4 +572,9 @@ Execution plan:
 6. Prototype links; screenshot-verify each step.
 7. Update the Figma mapping doc (`desktop/macos/design/figma.md`, or a platform-neutral place
    if the structure warrants it), open a PR, wait for CI.
+
+Status: the Figma work is done — shared pages, macOS synced with F17 plus ten new frames,
+Windows (Fluent) and Linux (libadwaita, per R11) pages in light and dark, prototype flows on
+every page. `figma.md` stays in `desktop/macos/design/` until D5 moves it. Left: the creator's
+review of the file and the merge of the PR.
 
