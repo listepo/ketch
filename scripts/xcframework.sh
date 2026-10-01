@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# Builds ketch-ffi into the local Swift package desktop/macos/KetchCore:
+# an XCFramework holding one static library for both macOS architectures, and
+# the Swift bindings UniFFI generates from that library's metadata. Both are
+# build output (gitignored); Package.swift and the tests beside them are not.
+#
+#   scripts/xcframework.sh          the `ffi` profile: what the app ships
+#   scripts/xcframework.sh --debug  the dev profile: quicker, for tests and CI
+#
+# `just xcframework` runs it; `just ffi-test` runs it and then `swift test`.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+root=$(pwd)
+
+profile=ffi
+dir=ffi
+case "${1:-}" in
+    "") ;;
+    --debug) profile=dev dir=debug ;;
+    *) echo "usage: $0 [--debug]" >&2; exit 2 ;;
+esac
+
+[ "$(uname -s)" = Darwin ] || { echo "an XCFramework is built on macOS" >&2; exit 1; }
+
+# The app's deployment target (desktop/macos/project.yml). Set for the Rust
+# build too, or the linker warns about every object built for a newer macOS
+# than the app it is linked into.
+export MACOSX_DEPLOYMENT_TARGET=26.0
+
+package="$root/desktop/macos/KetchCore"
+work="$root/target/xcframework"
+targets=(aarch64-apple-darwin x86_64-apple-darwin)
+
+# The Rust toolchain is mise.toml's pin; only its standard library for the
+# other architecture may be missing. Adding a target installs no program, and
+# pinning it in mise.toml would download it on every Linux and Windows job too.
+installed=$(rustup target list --installed)
+for target in "${targets[@]}"; do
+    grep -qx "$target" <<<"$installed" || rustup target add "$target"
+done
+
+libs=()
+for target in "${targets[@]}"; do
+    cargo build --locked -p ketch-ffi --lib --profile "$profile" --target "$target"
+    libs+=("$root/target/$target/$dir/libketch_ffi.a")
+done
+
+rm -rf "$work"
+mkdir -p "$work/include"
+lipo -create "${libs[@]}" -output "$work/libketch_ffi.a"
+
+# The bindings come from the metadata compiled into the library, so they can
+# never describe a different build than the one in the XCFramework.
+cargo run --locked -q -p ketch-ffi --features bindgen --bin uniffi-bindgen -- \
+    generate --library "${libs[0]}" --language swift --out-dir "$work/swift"
+
+# SwiftPM finds a binary target's module through a `module.modulemap` beside
+# its header; UniFFI names it after the crate.
+cp "$work/swift/ketch_ffiFFI.h" "$work/include/"
+cp "$work/swift/ketch_ffiFFI.modulemap" "$work/include/module.modulemap"
+
+rm -rf "$package/KetchFFI.xcframework"
+xcodebuild -create-xcframework \
+    -library "$work/libketch_ffi.a" -headers "$work/include" \
+    -output "$package/KetchFFI.xcframework" >/dev/null
+
+mkdir -p "$package/Sources/KetchCore"
+cp "$work/swift/ketch_ffi.swift" "$package/Sources/KetchCore/ketch_ffi.swift"
+
+echo "built $package/KetchFFI.xcframework ($profile) and Sources/KetchCore/ketch_ffi.swift"

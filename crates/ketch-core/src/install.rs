@@ -1286,23 +1286,23 @@ pub fn latest_release(
     latest_of(sources, &pkg.source, &installed_list_opts(pkg, prerelease))
 }
 
-/// The request that moves installed `pkg` to `release`, as `ketch upgrade`
-/// makes it: the exact tag that was reported, so nothing can change between
-/// the plan a person approved and what is installed.
+/// The request that moves installed `pkg` to the release tagged `tag`, as
+/// `ketch upgrade` makes it: the exact tag that was reported, so nothing can
+/// change between the plan a person approved and what is installed.
 pub fn upgrade_request(
     cfg: &Config,
     pkg: &InstalledPackage,
-    release: &Release,
+    tag: &str,
     prerelease: bool,
     bin: Option<String>,
     cancel: Cancel,
 ) -> InstallRequest {
     InstallRequest {
         spec: PackageSpec {
-            raw: format!("{}@{}", pkg.source, release.tag),
+            raw: format!("{}@{tag}", pkg.source),
             reference: Some(pkg.source.clone()),
             alias: None,
-            version: VersionSpec::Exact(release.tag.clone()),
+            version: VersionSpec::Exact(tag.to_string()),
         },
         force: true,
         prerelease,

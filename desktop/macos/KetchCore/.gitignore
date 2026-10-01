@@ -1,0 +1,5 @@
+# Built by scripts/xcframework.sh (`just xcframework`); never committed.
+/KetchFFI.xcframework/
+/Sources/KetchCore/ketch_ffi.swift
+/.build/
+/.swiftpm/

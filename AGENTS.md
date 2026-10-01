@@ -62,10 +62,13 @@ cargo fmt --all                  # must be clean
 cargo build                      # debug binary at target/debug/ketch
 ```
 
-The repository is a Cargo workspace of two crates: the root package `ketch`
-(the binary) and `crates/ketch-core` (the library it is built on). Both are
-default members, so a bare `cargo test` or `cargo clippy` at the root covers
-both; `--workspace` says so explicitly, and is what the Justfile and CI pass.
+The repository is a Cargo workspace of three crates: the root package `ketch`
+(the binary), `crates/ketch-core` (the library it is built on) and
+`crates/ketch-ffi` (the core exported through UniFFI for the desktop apps).
+All are default members, so a bare `cargo test` or `cargo clippy` at the root
+covers them; `--workspace` says so explicitly, and is what the Justfile and CI
+pass. `just xcframework` builds `ketch-ffi` into the macOS app's XCFramework
+and Swift bindings; `just ffi-test` builds a debug one and runs its Swift test.
 
 The Justfile wraps the same commands with `--locked`: `just fmt`, `just clippy`
 (or `just lint`), `just test`, and `just check` runs what CI runs on this
@@ -242,6 +245,10 @@ conditional, multi-stage Rust automation.
 | `crates/ketch-core/src/report.rs` | how the core says what happens: `Event`, `Reporter`, the `Report` handle, `Ctx`, `LogReporter` and `Recorder` |
 | `crates/ketch-core/src/decide.rs` | what the core asks a person mid-run: the `Decider` trait and `NoDecider`, carried in `Ctx` |
 | `crates/ketch-core/src/text.rs` | byte counts and truncation, spelled the same by the core and every renderer |
+| `crates/ketch-core/src/doctor.rs` | `ketch doctor`'s checks, shared by the command and `ketch-ffi` |
+| `crates/ketch-ffi/` | the core through UniFFI: a coarse, language-neutral surface of plain records, callback interfaces for `Reporter` and `Decider`, a cancel token and a typed `KetchError` |
+| `scripts/xcframework.sh` | `ketch-ffi` as an XCFramework for both macOS architectures, and its generated Swift bindings; `just xcframework` |
+| `desktop/macos/KetchCore/` | the Swift package wrapping that XCFramework and bindings (both build output), and the Swift test that drives the real core through them |
 | `src/ui.rs` | all terminal output, `Terminal`: the `Reporter` that draws the core's events, and `TerminalDecider`: the `Decider` that prompts on the terminal |
 | `src/tui/` | the opt-in full-screen renderer (`tui` feature), driven by `ui.rs` |
 | `crates/ketch-core/src/builtin.toml` | the manifests compiled into the binary, the offline registry tier |

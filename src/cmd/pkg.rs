@@ -353,7 +353,7 @@ pub fn upgrade(cfg: &Config, args: UpgradeArgs) -> Result<()> {
             install::upgrade_request(
                 cfg,
                 pkg,
-                release,
+                &release.tag,
                 prerelease,
                 args.bin.clone(),
                 Cancel::new(),

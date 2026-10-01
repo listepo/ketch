@@ -1,0 +1,45 @@
+[package]
+name = "ketch-ffi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "ketch-core exported through UniFFI, for native front ends that link it in-process."
+license.workspace = true
+repository.workspace = true
+# Linked into the macOS app as an XCFramework, never released on its own.
+publish = false
+
+# dist builds the `ketch` binary only; this crate's library goes out as an
+# XCFramework built by scripts/xcframework.sh.
+[package.metadata.dist]
+dist = false
+
+[lib]
+# `staticlib` is what the XCFramework wraps; `lib` lets the bindgen binary
+# and the tests link the crate as Rust.
+crate-type = ["lib", "staticlib"]
+
+[[bin]]
+# Generates the foreign bindings from the built library's metadata. Behind a
+# feature so the static library never compiles the generator and its CLI.
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+required-features = ["bindgen"]
+
+[features]
+bindgen = ["uniffi/cli"]
+
+[dependencies]
+ketch-core = { path = "../ketch-core" }
+thiserror = "2"
+# Proc-macro mode: the exported surface is the Rust code itself, no UDL file.
+uniffi = "0.32.2"
+
+[dev-dependencies]
+pretty_assertions = "1.4.1"
+tempfile = "3"
+
+# `forbid`, like the rest of the workspace, although the generated scaffolding
+# is unsafe code: see the header of src/lib.rs for why that holds.
+[lints]
+workspace = true
