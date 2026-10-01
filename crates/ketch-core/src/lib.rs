@@ -6,14 +6,16 @@
 //! command bodies that call into this crate. It is a separate crate so a
 //! second front end can link the same pipeline without the CLI.
 //!
-//! It prints nothing. What it has to say — stages, progress, warnings, a
-//! question — goes out as `report::Event`s to the `report::Reporter` the front
+//! It prints nothing and reads nothing. What it has to say — stages, progress,
+//! warnings — goes out as `report::Event`s to the `report::Reporter` the front
 //! end hands in through `report::Ctx`, and the front end decides how it looks.
+//! What it has to ask goes to the `decide::Decider` in the same `Ctx`.
 
 pub(crate) mod bin_choice;
 pub mod cancel;
 pub mod changelog;
 pub mod config;
+pub mod decide;
 pub mod diff;
 pub mod error;
 pub mod extra;

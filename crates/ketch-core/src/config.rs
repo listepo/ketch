@@ -471,8 +471,12 @@ pub fn sanitize_component(raw: &str) -> String {
 #[cfg(test)]
 pub(crate) fn assert_schema_current<T: schemars::JsonSchema>(relative: &str) {
     // TOML has no null: an absent key is how an `Option` says `None`, so a
-    // schema allowing `null` would describe a file ketch cannot read.
+    // schema allowing `null`, or offering it as a default an editor fills
+    // in, would describe a file ketch cannot read.
     let drop_null = schemars::transform::RecursiveTransform(|s: &mut schemars::Schema| {
+        if s.get("default").is_some_and(serde_json::Value::is_null) {
+            s.remove("default");
+        }
         if let Some(serde_json::Value::Array(types)) = s.get_mut("type") {
             types.retain(|t| t != "null");
             if let [only] = types.as_slice() {

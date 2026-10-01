@@ -305,6 +305,19 @@ staples the image. `xcodebuild -help` (Xcode 27.0, 27A266a) lists
 `developer-id` as the export method and `Developer ID Application` as an
 automatic `signingCertificate` selector.
 
+## Windows and Linux toolkits (R10, checked 2026-10-01)
+
+The toolkit research for the Windows and Linux apps on the roadmap lives in
+[`docs/research-desktop-windows-linux.md`](research-desktop-windows-linux.md):
+a separate page because this one records choices already made for macOS,
+while that one is still a proposal. In short, it proposes WinUI 3 in C#
+over R9's binding (through `uniffi-bindgen-cs`, which targets UniFFI 0.31,
+not R9's 0.32.2) for Windows, with Microsoft's new Rust `windows-reactor` as
+the alternative to spike. For Linux it proposes GTK 4 + libadwaita through
+gtk4-rs linking `ketch-core` directly. It also shows that MSIX would
+virtualize, and Flatpak sandbox, the writes ketch makes outside its root. The open
+decisions are listed there.
+
 ## Unverified
 
 - Tauri's macOS notarization flow: the page
