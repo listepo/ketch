@@ -493,7 +493,12 @@ pub fn update(cfg: &Config, force: bool, dry_run: bool) -> Result<SelfUpdate> {
         .path()
         .join(crate::config::sanitize_component(&chosen.asset.name));
     let progress = ui::progress();
-    let sha256 = source.download(&chosen.asset, &download, progress.as_ref())?;
+    let sha256 = source.download(
+        &chosen.asset,
+        &download,
+        progress.as_ref(),
+        &crate::cancel::Cancel::new(),
+    )?;
 
     // `require` is hard-coded: for its own binary ketch does not accept the
     // trust-on-first-use path it allows for packages.

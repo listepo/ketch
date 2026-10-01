@@ -116,13 +116,28 @@ pub enum Error {
     #[error("{0}")]
     Config(String),
 
-    #[error("another ketch process holds the lock ({0})")]
-    Locked(String),
-
     /// The command has already told the user everything, line by line, and
     /// only the exit code is left: `main` prints nothing more for it.
     #[error("")]
     Reported(i32),
+
+    /// Another operation holds the install tree's lock: a ketch process named
+    /// by `pid`, or (when the lock file could not be read) just `lock`.
+    #[error("another ketch process holds the lock ({})", busy_holder(*pid, lock))]
+    Busy { pid: Option<u32>, lock: PathBuf },
+
+    /// The caller's `Cancel` token fired; nothing was left half-installed.
+    #[error("cancelled")]
+    Cancelled,
+}
+
+/// The parenthesised part of the busy message: the pid when known, else the
+/// lock file, exactly as the message read before `Busy` was typed.
+fn busy_holder(pid: Option<u32>, lock: &Path) -> String {
+    match pid {
+        Some(pid) => format!("pid {pid}"),
+        None => lock.display().to_string(),
+    }
 }
 
 impl Error {
@@ -205,8 +220,10 @@ impl Error {
             | Error::Pinned { .. } => 5,
             Error::ChecksumMismatch { .. } | Error::ChecksumMissing(_) => 6,
             Error::Http { .. } | Error::Network { .. } => 7,
-            Error::Locked(_) => 8,
+            Error::Busy { .. } => 8,
             Error::Reported(code) => *code,
+            // The shell convention for "interrupted", as the TUI already uses.
+            Error::Cancelled => 130,
             _ => 1,
         }
     }

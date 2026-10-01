@@ -3,10 +3,11 @@
 
 mod support;
 
+use std::path::Path;
 use std::process::{Command, Stdio};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use support::{host_arch, Archive, Entry, Release, Sandbox};
+use support::{host_arch, Archive, Entry, Release, Sandbox, SLEEPER_READY};
 
 fn host_triple() -> &'static str {
     #[cfg(target_os = "macos")]
@@ -68,6 +69,20 @@ fn bin_tool(sandbox: &Sandbox) -> std::path::PathBuf {
         "testtool"
     };
     sandbox.bin().join(name)
+}
+
+/// Wait until `path` exists. The bound only turns a sleeper that never
+/// starts into a failure instead of a hang; it is not a timing guess.
+fn wait_for(path: &Path) {
+    let deadline = Instant::now() + Duration::from_secs(60);
+    while !path.exists() {
+        assert!(
+            Instant::now() < deadline,
+            "{} never appeared",
+            path.display()
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
 }
 
 #[test]
@@ -146,12 +161,16 @@ fn upgrade_stops_a_process_holding_the_binary_when_yes() {
     sandbox.ok(&["install", "test:testtool@1.0.0", "--yes"]);
 
     let link = bin_tool(&sandbox);
+    let ready = sandbox.root().join("sleeper-ready");
     let mut child = Command::new(&link)
+        .env(SLEEPER_READY, &ready)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
         .expect("spawn installed tool");
-    std::thread::sleep(Duration::from_millis(400));
+    // A fixed pause here lost the race under load: the shell had not opened
+    // the script yet, so upgrade found nobody holding it.
+    wait_for(&ready);
 
     publish_sleeper(&sandbox, "2.0.0");
     let out = sandbox.ketch(&["upgrade", "--yes"]);

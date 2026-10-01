@@ -1,6 +1,6 @@
 [package]
 name = "ketch"
-version = "0.8.1"
+version = "0.9.0"
 edition = "2021"
 # Raised from 1.82 by Diesel 2.3, which is the floor for the statistics
 # database. Nothing else in the tree needs it.
@@ -102,6 +102,9 @@ trycmd = "1.2"
 # There is no unsafe code in ketch and there is no reason for any to appear.
 [lints.rust]
 unsafe_code = "forbid"
+# `cargo fuzz` builds with `--cfg fuzzing`; only then does `src/lib.rs` hold
+# anything (see `fuzz/README.md`).
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(fuzzing)"] }
 
 [profile.release]
 opt-level = "z"

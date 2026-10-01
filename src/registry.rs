@@ -60,6 +60,7 @@ pub fn update(cfg: &Config) -> Result<usize> {
         &headers,
         true,
         crate::ui::progress().as_ref(),
+        &crate::cancel::Cancel::new(),
     )?;
 
     let unpacked = staging.path().join("tree");

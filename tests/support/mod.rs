@@ -573,6 +573,10 @@ impl Entry {
     }
 
     /// A program that stays running, so upgrade can see a process holding the file.
+    ///
+    /// It creates the file `SLEEPER_READY` names, when set, before it starts
+    /// waiting: by then the interpreter is running and has the script open, so
+    /// a test can wait for that instead of guessing how long a start takes.
     pub fn sleeper(path: &str) -> Entry {
         #[cfg(windows)]
         {
@@ -586,7 +590,10 @@ impl Entry {
             };
             Entry {
                 path,
-                body: b"@echo off\r\nping -n 30 127.0.0.1 >nul\r\n".to_vec(),
+                body: format!(
+                    "@echo off\r\nif defined {SLEEPER_READY} type nul > \"%{SLEEPER_READY}%\"\r\nping -n 30 127.0.0.1 >nul\r\n"
+                )
+                .into_bytes(),
                 mode: 0o755,
             }
         }
@@ -594,12 +601,19 @@ impl Entry {
         {
             Entry {
                 path: path.to_string(),
-                body: b"#!/bin/sh\nsleep 30\n".to_vec(),
+                body: format!(
+                    "#!/bin/sh\nif [ -n \"${SLEEPER_READY}\" ]; then : > \"${SLEEPER_READY}\"; fi\nsleep 30\n"
+                )
+                .into_bytes(),
                 mode: 0o755,
             }
         }
     }
 }
+
+/// The environment variable naming the file [`Entry::sleeper`] creates once
+/// it is running.
+pub const SLEEPER_READY: &str = "KETCH_TEST_SLEEPER_READY";
 
 /// A fixture archive, in one of the formats ketch sniffs for.
 pub enum Archive {

@@ -8,6 +8,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [0.9.0](https://github.com/listepo/ketch/releases/tag/v0.9.0) - 2026-10-01
+
+### Added
+
+- windows completion for powershell and cmd ([#180](https://github.com/listepo/ketch/pull/180))
+- man page for every command, rendered with clap_mangen ([#176](https://github.com/listepo/ketch/pull/176))
+- complete package names in bash ([#175](https://github.com/listepo/ketch/pull/175))
+- *(ui)* colour whole error, warning and success lines ([#174](https://github.com/listepo/ketch/pull/174))
+
+### Fixed
+
+- install and upgrade sweep swap leftovers before placing anything ([#186](https://github.com/listepo/ketch/pull/186))
+- uninstall of a name that is not installed prints only "not found" ([#181](https://github.com/listepo/ketch/pull/181))
+- self uninstall removes every registry value ketch wrote on Windows ([#178](https://github.com/listepo/ketch/pull/178))
+- uninstall removes the package's whole store folder ([#173](https://github.com/listepo/ketch/pull/173))
 ## [0.8.1](https://github.com/listepo/ketch/releases/tag/v0.8.1) - 2026-09-30
 
 ### Other
