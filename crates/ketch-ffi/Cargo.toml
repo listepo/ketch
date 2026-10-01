@@ -15,9 +15,11 @@ publish = false
 dist = false
 
 [lib]
-# `staticlib` is what the XCFramework wraps; `lib` lets the bindgen binary
-# and the tests link the crate as Rust.
-crate-type = ["lib", "staticlib"]
+# `staticlib` is what the XCFramework wraps; `cdylib` is the shared library a
+# Windows front end loads (ketch_ffi.dll), built now so the binding is proven
+# loadable before that front end exists; `lib` lets the bindgen binary and the
+# tests link the crate as Rust.
+crate-type = ["lib", "staticlib", "cdylib"]
 
 [[bin]]
 # Generates the foreign bindings from the built library's metadata. Behind a
