@@ -571,6 +571,8 @@ Execution plan (Claude Code / opus-5.5):
 4. Tasks: new `D` ids (desktop), shared first, then macOS (referencing F12/F13/F14 rather than repeating them), Windows, Linux; rows appended to the table, cards appended at the end, `todo.md` in sync.
 5. Close at 90% with a `Status:` line; PR against `main`, CI watched until green.
 
+Status: PR https://github.com/pyrlyn/ketch/pull/211, research in `docs/research-desktop-platforms.md`, tasks D1–D19. Recommendation: fix the `ketch-ffi` contract once (D1, D2), then WinUI 3 in C# through `uniffi-bindgen-cs` built from PR #176 pinned by commit, and on Linux Vala + GTK 4 + libadwaita with Blueprint over a small `ketch-capi` C ABI, since no Qt binding for Vala exists; the open decisions are listed at the end of the research page.
+
 ### D1. `ketch-ffi`: foreign traits and per-operation callbacks
 
 UniFFI calls callback interfaces "(soft) deprecated" in favour of foreign traits (new in 0.32), and `KetchCore::new` takes the `Reporter` and `Decider` once, while every app wants them per operation so two screens can each watch their own work. Research: `docs/research-desktop-platforms.md`, section 3a, gap G1.
