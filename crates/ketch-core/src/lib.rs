@@ -17,6 +17,7 @@ pub mod changelog;
 pub mod config;
 pub mod decide;
 pub mod diff;
+pub mod doctor;
 pub mod error;
 pub mod extra;
 pub mod extract;
