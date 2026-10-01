@@ -35,6 +35,9 @@ targets:
       - path: Ketch
         excludes:
           - Info.plist
+      # Generated from design/tokens.json by `just design-tokens`; compiled
+      # where it is generated, so the app never builds a stale copy.
+      - path: design/generated/Tokens.swift
     dependencies:
       - package: Sparkle
     settings:

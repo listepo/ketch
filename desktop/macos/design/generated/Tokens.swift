@@ -82,75 +82,90 @@ extension Color {
 
 extension Tokens {
   public enum Colors {
+    /// Dims the window behind a sheet (--g-scrim).
+    public static let scrim: Color = Color(
+      light: .init(0, 0.0588, 0.1765, 0.16),
+      dark: .init(0, 0, 0, 0.28),
+      highContrast: .init(0, 0.0588, 0.1765, 0.3),
+      highContrastDark: .init(0, 0, 0, 0.45)
+    )
+
+    /// Hairlines between rows and fields (--g-hair).
     public static let separator: Color = Color(
-      light: .init(0.051, 0.0863, 0.1412, 0.1),
-      dark: .init(1, 1, 1, 0.1),
-      highContrast: .init(0.051, 0.0863, 0.1412, 0.4),
+      light: .init(0, 0.1176, 0.3137, 0.1),
+      dark: .init(1, 1, 1, 0.12),
+      highContrast: .init(0, 0.1176, 0.3137, 0.4),
       highContrastDark: .init(1, 1, 1, 0.45)
     )
 
+    /// Keyboard focus ring: accent.ink, 3:1 against glass.
     public static let focusRing: Color = Color(
-      light: .init(0.0275, 0.3804, 0.4784, 0.9),
-      dark: .init(0.3529, 0.8235, 0.8941, 0.85),
-      highContrast: .init(0, 0.3059, 0.3804, 1),
-      highContrastDark: .init(0.5608, 0.902, 0.949, 1)
+      light: .init(0.0196, 0.3137, 0.6118, 1),
+      dark: .init(0.3294, 0.6627, 1, 1),
+      highContrast: .init(0, 0.2275, 0.4588, 1),
+      highContrastDark: .init(0.6588, 0.8314, 1, 1)
     )
 
-    /// Tide: the one accent. Selection, primary actions, links, progress.
+    /// Blue: the one accent. Fills carry accent.on; text and glyphs on glass use accent.ink. The user can pick another accent in Settings -> Appearance; these are the defaults.
     public enum Accent {
-      /// Primary actions, selection, progress fill, links.
+      /// Fills: primary buttons, selection, progress, counts. #0a84ff deepened just enough for 4.5:1 under white labels.
       public static let `default`: Color = Color(
-        light: .init(0.0275, 0.3804, 0.4784, 1),
-        dark: .init(0.3529, 0.8235, 0.8941, 1),
-        highContrast: .init(0, 0.3059, 0.3804, 1),
-        highContrastDark: .init(0.5608, 0.902, 0.949, 1)
+        light: .init(0.0314, 0.451, 0.8784, 1),
+        dark: .init(0.0314, 0.451, 0.8784, 1),
+        highContrast: .init(0, 0.3451, 0.749, 1),
+        highContrastDark: .init(0, 0.3451, 0.749, 1)
       )
 
       public static let pressed: Color = Color(
-        light: .init(0.0196, 0.3098, 0.3882, 1),
-        dark: .init(0.5255, 0.8745, 0.9216, 1),
-        highContrast: .init(0, 0.2353, 0.2941, 1),
-        highContrastDark: .init(0.7098, 0.9412, 0.9686, 1)
+        light: .init(0.0235, 0.3882, 0.7608, 1),
+        dark: .init(0.1647, 0.5451, 0.9412, 1),
+        highContrast: .init(0, 0.2824, 0.6118, 1),
+        highContrastDark: .init(0.102, 0.4471, 0.8392, 1)
       )
 
-      /// Tinted fill behind selected rows and the accent glass tint.
+      /// Accent wash behind selected rows, tinted buttons and the update pill (--g-accent-soft).
       public static let subtle: Color = Color(
-        light: .init(0.0275, 0.3804, 0.4784, 0.12),
-        dark: .init(0.3529, 0.8235, 0.8941, 0.16),
-        highContrast: .init(0, 0.3059, 0.3804, 0.18),
-        highContrastDark: .init(0.5608, 0.902, 0.949, 0.26)
+        light: .init(0.0392, 0.5176, 1, 0.15),
+        dark: .init(0.0392, 0.5176, 1, 0.24),
+        highContrast: .init(0, 0.3451, 0.749, 0.2),
+        highContrastDark: .init(0.3529, 0.6824, 1, 0.3)
       )
 
-      /// Text and glyphs on an accent fill.
-      public static let on: Color = Color(
-        light: .init(1, 1, 1, 1),
-        dark: .init(0.0157, 0.1333, 0.1647, 1),
-        highContrast: .init(1, 1, 1, 1),
-        highContrastDark: .init(0, 0.102, 0.1294, 1)
+      /// Text and glyphs on an accent fill (--g-on-accent).
+      public static let on: Color = Color(ketch: .init(1, 1, 1, 1))
+
+      /// Accent as text or a glyph on glass: links, the selected sidebar symbol, tinted button labels (--g-accent-ink).
+      public static let ink: Color = Color(
+        light: .init(0.0196, 0.3137, 0.6118, 1),
+        dark: .init(0.4235, 0.7137, 1, 1),
+        highContrast: .init(0, 0.2275, 0.4588, 1),
+        highContrastDark: .init(0.6588, 0.8314, 1, 1)
       )
     }
 
     public enum Text {
+      /// Names, titles, body (--g-ink).
       public static let primary: Color = Color(
-        light: .init(0.051, 0.0863, 0.1412, 1),
-        dark: .init(0.9451, 0.9608, 0.9804, 1),
+        light: .init(0.051, 0.1059, 0.1647, 1),
+        dark: .init(0.9333, 0.949, 0.9725, 1),
         highContrast: .init(0, 0, 0, 1),
         highContrastDark: .init(1, 1, 1, 1)
       )
 
+      /// Supporting lines, captions, section labels (--g-ink-2).
       public static let secondary: Color = Color(
-        light: .init(0.2745, 0.3216, 0.3961, 1),
-        dark: .init(0.7176, 0.7608, 0.8196, 1),
-        highContrast: .init(0.1216, 0.1608, 0.2157, 1),
-        highContrastDark: .init(0.8902, 0.9137, 0.9451, 1)
+        light: .init(0.2902, 0.3529, 0.4392, 1),
+        dark: .init(0.6392, 0.6784, 0.749, 1),
+        highContrast: .init(0.1216, 0.1647, 0.2275, 1),
+        highContrastDark: .init(0.8745, 0.898, 0.9373, 1)
       )
 
       /// Captions and metadata only; never body copy.
       public static let tertiary: Color = Color(
-        light: .init(0.3647, 0.4078, 0.4745, 1),
-        dark: .init(0.5843, 0.6314, 0.702, 1),
-        highContrast: .init(0.1843, 0.2275, 0.2902, 1),
-        highContrastDark: .init(0.7882, 0.8235, 0.8706, 1)
+        light: .init(0.2902, 0.3529, 0.4392, 1),
+        dark: .init(0.6392, 0.6784, 0.749, 1),
+        highContrast: .init(0.1647, 0.2118, 0.2745, 1),
+        highContrastDark: .init(0.8118, 0.8431, 0.8902, 1)
       )
     }
 
@@ -231,146 +246,219 @@ extension Tokens {
       )
     }
 
-    /// The canvas under the glass: a base with a soft mesh of four blobs.
+    /// The canvas under the glass: a base, and the backdrop wash (the Ocean wallpaper of the mock) drawn over it at opacity.wash. Dark mode deepens the wash so light ink keeps its contrast.
     public enum Background {
+      /// The window's own colour under the wash.
       public static let base: Color = Color(
-        light: .init(0.9333, 0.949, 0.9686, 1),
-        dark: .init(0.0392, 0.0627, 0.1098, 1),
-        highContrast: .init(0.9569, 0.9647, 0.9765, 1),
-        highContrastDark: .init(0.0196, 0.0314, 0.0588, 1)
+        light: .init(0.949, 0.9647, 0.9843, 1),
+        dark: .init(0.0431, 0.0588, 0.0902, 1),
+        highContrast: .init(0.9686, 0.9765, 0.9882, 1),
+        highContrastDark: .init(0.0196, 0.0275, 0.0471, 1)
       )
 
-      /// Top-left blob; echoes the accent.
-      public static let meshTide: Color = Color(
-        light: .init(0.7255, 0.8902, 0.9176, 1),
-        dark: .init(0.051, 0.2902, 0.3451, 1),
-        highContrast: .init(0.8392, 0.9333, 0.949, 1),
-        highContrastDark: .init(0.0392, 0.2039, 0.251, 1)
+      /// Wash gradient, top-leading stop.
+      public static let washStart: Color = Color(
+        light: .init(0, 0.7765, 1, 1),
+        dark: .init(0.0196, 0.2353, 0.3608, 1),
+        highContrast: .init(0, 0.7765, 1, 1),
+        highContrastDark: .init(0.0196, 0.2353, 0.3608, 1)
       )
 
-      /// Top-right blob.
-      public static let meshIris: Color = Color(
-        light: .init(0.851, 0.8275, 0.9647, 1),
-        dark: .init(0.1686, 0.1451, 0.3882, 1),
-        highContrast: .init(0.9059, 0.8902, 0.9765, 1),
-        highContrastDark: .init(0.1137, 0.098, 0.2745, 1)
+      /// Wash gradient, bottom-trailing stop.
+      public static let washEnd: Color = Color(
+        light: .init(0, 0.4471, 1, 1),
+        dark: .init(0.0392, 0.1843, 0.451, 1),
+        highContrast: .init(0, 0.4471, 1, 1),
+        highContrastDark: .init(0.0392, 0.1843, 0.451, 1)
       )
 
-      /// Bottom-right blob.
-      public static let meshDawn: Color = Color(
-        light: .init(0.9647, 0.8784, 0.8235, 1),
-        dark: .init(0.2275, 0.1137, 0.2353, 1),
-        highContrast: .init(0.9725, 0.9216, 0.8863, 1),
-        highContrastDark: .init(0.1529, 0.0784, 0.1569, 1)
+      /// The near hill along the bottom of the wash.
+      public static let washHill: Color = Color(
+        light: .init(0, 0.898, 0.6275, 0.55),
+        dark: .init(0, 0.4157, 0.302, 0.55),
+        highContrast: .init(0, 0.898, 0.6275, 0.55),
+        highContrastDark: .init(0, 0.4157, 0.302, 0.55)
       )
 
-      /// Bottom-left blob, nearly the base.
-      public static let meshMist: Color = Color(
-        light: .init(0.8902, 0.9255, 0.9608, 1),
-        dark: .init(0.0627, 0.1137, 0.2, 1),
-        highContrast: .init(0.9333, 0.9529, 0.9725, 1),
-        highContrastDark: .init(0.0431, 0.0784, 0.1412, 1)
+      /// The far hill, lowest in the wash.
+      public static let washDeep: Color = Color(
+        light: .init(0, 0.2275, 0.549, 0.5),
+        dark: .init(0, 0.0863, 0.2275, 0.5),
+        highContrast: .init(0, 0.2275, 0.549, 0.5),
+        highContrastDark: .init(0, 0.0863, 0.2275, 0.5)
       )
     }
 
     /// Tints standing in for the system materials in preview.html and in the contrast check. Natively, Liquid Glass and the standard materials render themselves; only the solid fallbacks are painted as colours.
     public enum Glass {
-      /// Liquid Glass (glossy): sidebar, toolbar controls, the floating activity bar.
+      /// The window pane in the preview and the menu-bar strip (--g-glass). Natively the window is opaque: canvas plus wash.
+      public static let window: Color = Color(
+        light: .init(0.9804, 0.9882, 1, 0.28),
+        dark: .init(0.102, 0.1176, 0.1569, 0.28),
+        highContrast: .init(0.9804, 0.9882, 1, 0.9),
+        highContrastDark: .init(0.102, 0.1176, 0.1569, 0.9)
+      )
+
+      /// Liquid Glass (glossy): sidebar, toolbar groups, the floating activity bar (--g-glass-hi).
       public static let regular: Color = Color(
-        light: .init(1, 1, 1, 0.56),
-        dark: .init(0.1059, 0.1412, 0.2118, 0.52),
-        highContrast: .init(1, 1, 1, 0.9),
-        highContrastDark: .init(0.0784, 0.1059, 0.1608, 0.9)
+        light: .init(0.9882, 0.9922, 1, 0.42),
+        dark: .init(0.1608, 0.1804, 0.2275, 0.42),
+        highContrast: .init(0.9882, 0.9922, 1, 0.94),
+        highContrastDark: .init(0.1608, 0.1804, 0.2275, 0.94)
       )
 
-      /// Standard material (frosted, matte) for content-layer cards: package detail, findings, empty states.
+      /// Content-layer cards: package rows, the detail panels, findings, settings groups (--g-glass-lo).
       public static let frost: Color = Color(
-        light: .init(0.9725, 0.9804, 0.9922, 0.72),
-        dark: .init(0.0902, 0.1255, 0.2, 0.7),
-        highContrast: .init(1, 1, 1, 0.94),
-        highContrastDark: .init(0.0706, 0.098, 0.1529, 0.94)
+        light: .init(0.9882, 0.9922, 1, 0.278),
+        dark: .init(0.1608, 0.1804, 0.2275, 0.278),
+        highContrast: .init(0.9882, 0.9922, 1, 0.92),
+        highContrastDark: .init(0.1608, 0.1804, 0.2275, 0.92)
       )
 
-      /// Sheets, popovers, the menu-bar extra.
-      public static let elevated: Color = Color(
+      /// Raised controls on glass: the selected sidebar item, the search field, secondary buttons, chips, the segmented thumb (--g-glass-top).
+      public static let control: Color = Color(
         light: .init(1, 1, 1, 0.74),
-        dark: .init(0.1333, 0.1725, 0.251, 0.68),
-        highContrast: .init(1, 1, 1, 0.96),
-        highContrastDark: .init(0.102, 0.1333, 0.2, 0.96)
-      )
-
-      /// Floating controls over rich content.
-      public static let clear: Color = Color(
-        light: .init(1, 1, 1, 0.22),
-        dark: .init(1, 1, 1, 0.06),
-        highContrast: .init(1, 1, 1, 0.7),
-        highContrastDark: .init(0.0784, 0.1059, 0.1608, 0.7)
-      )
-
-      /// Hairline edge that catches light.
-      public static let stroke: Color = Color(
-        light: .init(1, 1, 1, 0.7),
         dark: .init(1, 1, 1, 0.14),
-        highContrast: .init(0.051, 0.0863, 0.1412, 0.55),
+        highContrast: .init(1, 1, 1, 0.97),
+        highContrastDark: .init(0.1843, 0.2078, 0.2588, 0.97)
+      )
+
+      /// Sheets, popovers, the menu-bar extra (--g-glass-sheet).
+      public static let elevated: Color = Color(
+        light: .init(0.9882, 0.9922, 1, 0.58),
+        dark: .init(0.1608, 0.1804, 0.2275, 0.58),
+        highContrast: .init(0.9882, 0.9922, 1, 0.97),
+        highContrastDark: .init(0.1608, 0.1804, 0.2275, 0.97)
+      )
+
+      /// Glass.clear, when Settings -> Appearance picks it: small controls only, never body text.
+      public static let clear: Color = Color(
+        light: .init(0.9804, 0.9882, 1, 0.12),
+        dark: .init(0.102, 0.1176, 0.1569, 0.12),
+        highContrast: .init(0.9804, 0.9882, 1, 0.8),
+        highContrastDark: .init(0.102, 0.1176, 0.1569, 0.8)
+      )
+
+      /// Hairline edge that catches light (--g-edge).
+      public static let stroke: Color = Color(
+        light: .init(1, 1, 1, 0.5),
+        dark: .init(1, 1, 1, 0.16),
+        highContrast: .init(0.051, 0.1059, 0.1647, 0.55),
         highContrastDark: .init(1, 1, 1, 0.6)
       )
 
-      /// Specular top edge (inset).
+      /// Specular top rim, inset (--g-rim-hi).
       public static let highlight: Color = Color(
-        light: .init(1, 1, 1, 0.9),
+        light: .init(1, 1, 1, 0.88),
         dark: .init(1, 1, 1, 0.22),
         highContrast: .init(1, 1, 1, 0.9),
         highContrastDark: .init(1, 1, 1, 0.35)
       )
 
-      /// Inner shade along the bottom edge (inset).
+      /// Inner shade along the bottom rim, inset (--g-rim-lo).
       public static let shade: Color = Color(
-        light: .init(0.051, 0.0863, 0.1412, 0.06),
+        light: .init(0, 0.1569, 0.4314, 0.12),
         dark: .init(0, 0, 0, 0.35),
-        highContrast: .init(0.051, 0.0863, 0.1412, 0.12),
+        highContrast: .init(0, 0.1569, 0.4314, 0.2),
         highContrastDark: .init(0, 0, 0, 0.5)
       )
 
-      /// Reduce Transparency: replaces glass.regular.
+      /// Reduce Transparency: replaces glass.window, glass.regular and glass.frost.
       public static let solidRegular: Color = Color(
         light: .init(0.9686, 0.9765, 0.9882, 1),
-        dark: .init(0.0863, 0.1176, 0.1765, 1),
+        dark: .init(0.1176, 0.1333, 0.1725, 1),
         highContrast: .init(1, 1, 1, 1),
-        highContrastDark: .init(0.0549, 0.0784, 0.1216, 1)
+        highContrastDark: .init(0.0667, 0.0784, 0.1059, 1)
       )
 
-      /// Reduce Transparency: replaces glass.elevated.
+      /// Reduce Transparency: replaces glass.control and glass.elevated.
       public static let solidElevated: Color = Color(
         light: .init(1, 1, 1, 1),
-        dark: .init(0.1176, 0.1529, 0.2235, 1),
+        dark: .init(0.1608, 0.1804, 0.2275, 1),
         highContrast: .init(1, 1, 1, 1),
-        highContrastDark: .init(0.0784, 0.1059, 0.1608, 1)
+        highContrastDark: .init(0.102, 0.1176, 0.1569, 1)
+      )
+    }
+
+    /// Shadow colours for depth on custom surfaces; elevation.* uses them.
+    public enum Shadow {
+      /// Tight lift under controls, rows and the selected item (--g-drop).
+      public static let drop: Color = Color(
+        light: .init(0, 0.1176, 0.3529, 0.38),
+        dark: .init(0, 0, 0, 0.6),
+        highContrast: .init(0, 0.1176, 0.3529, 0.5),
+        highContrastDark: .init(0, 0, 0, 0.7)
+      )
+
+      /// The deep shadow under the window and popovers (--g-shadow).
+      public static let window: Color = Color(
+        light: .init(0, 0.1176, 0.3529, 0.6),
+        dark: .init(0, 0, 0, 0.85),
+        highContrast: .init(0, 0.1176, 0.3529, 0.6),
+        highContrastDark: .init(0, 0, 0, 0.85)
       )
     }
 
     public enum Fill {
       /// Resting fill of secondary controls and search field.
       public static let control: Color = Color(
-        light: .init(0.051, 0.0863, 0.1412, 0.05),
+        light: .init(0, 0.1176, 0.3137, 0.06),
         dark: .init(1, 1, 1, 0.08),
-        highContrast: .init(0.051, 0.0863, 0.1412, 0.1),
+        highContrast: .init(0, 0.1176, 0.3137, 0.12),
         highContrastDark: .init(1, 1, 1, 0.16)
       )
 
       public static let hover: Color = Color(
-        light: .init(0.051, 0.0863, 0.1412, 0.07),
-        dark: .init(1, 1, 1, 0.11),
-        highContrast: .init(0.051, 0.0863, 0.1412, 0.14),
+        light: .init(0, 0.1176, 0.3137, 0.09),
+        dark: .init(1, 1, 1, 0.12),
+        highContrast: .init(0, 0.1176, 0.3137, 0.16),
         highContrastDark: .init(1, 1, 1, 0.2)
       )
 
       /// Progress and slider track.
       public static let track: Color = Color(
-        light: .init(0.051, 0.0863, 0.1412, 0.08),
+        light: .init(0, 0.1176, 0.3137, 0.1),
         dark: .init(1, 1, 1, 0.12),
-        highContrast: .init(0.051, 0.0863, 0.1412, 0.2),
-        highContrastDark: .init(1, 1, 1, 0.25)
+        highContrast: .init(0, 0.1176, 0.3137, 0.25),
+        highContrastDark: .init(1, 1, 1, 0.3)
       )
+    }
+
+    /// The swatches Settings -> Appearance offers. Single values: the user's pick is the same colour in every appearance.
+    public enum Preset {
+      /// Window glass tints (Glass.tint). Clear, the default, is no tint.
+      public enum Tint {
+        public static let sky: Color = Color(ketch: .init(0.4863, 0.7686, 1, 1))
+
+        public static let mint: Color = Color(ketch: .init(0.4353, 0.8902, 0.7569, 1))
+
+        public static let sand: Color = Color(ketch: .init(1, 0.7882, 0.5451, 1))
+
+        public static let rose: Color = Color(ketch: .init(1, 0.6196, 0.7529, 1))
+
+        public static let lilac: Color = Color(ketch: .init(0.7255, 0.651, 1, 1))
+
+        public static let smoke: Color = Color(ketch: .init(0.3569, 0.3961, 0.4667, 1))
+      }
+
+      /// Accent presets. System, the default, follows the macOS accent colour.
+      public enum Accent {
+        public static let blue: Color = Color(ketch: .init(0.0392, 0.5176, 1, 1))
+
+        public static let purple: Color = Color(ketch: .init(0.749, 0.3529, 0.949, 1))
+
+        public static let pink: Color = Color(ketch: .init(1, 0.2157, 0.3725, 1))
+
+        public static let red: Color = Color(ketch: .init(1, 0.2706, 0.2275, 1))
+
+        public static let orange: Color = Color(ketch: .init(1, 0.6235, 0.0392, 1))
+
+        public static let yellow: Color = Color(ketch: .init(1, 0.8392, 0.0392, 1))
+
+        public static let green: Color = Color(ketch: .init(0.1882, 0.8196, 0.3451, 1))
+
+        public static let graphite: Color = Color(ketch: .init(0.5569, 0.5569, 0.5765, 1))
+      }
     }
   }
 
@@ -402,13 +490,13 @@ extension Tokens {
     /// Buttons, fields, rows.
     public static let sm: CGFloat = 8
 
-    /// Package rows on hover, small cards.
-    public static let md: CGFloat = 12
+    /// Package rows, findings, small cards.
+    public static let md: CGFloat = 16
 
-    /// Cards and the detail panel.
-    public static let lg: CGFloat = 18
+    /// Cards, forms, the detail panels, the activity bar.
+    public static let lg: CGFloat = 20
 
-    /// Sheets, popovers, the menu-bar extra.
+    /// The window, sheets, popovers, the menu-bar extra.
     public static let xl: CGFloat = 26
 
     /// Capsules: badges, pill buttons, progress.
@@ -452,18 +540,33 @@ extension Tokens {
     public static let clear: CGFloat = 12
   }
 
-  public enum Typography {
-    /// Window-level hero: empty states, the detail header name.
-    public static let display: KetchTypeStyle = KetchTypeStyle(size: 28, weight: .bold, design: .default, lineHeight: 1.15, tracking: -0.4)
+  /// Opacities that are settings, not colours.
+  public enum Opacity {
+    /// Default strength of the backdrop wash over the canvas base (Settings -> Appearance).
+    public static let wash: Double = 0.14
 
-    /// Section headers (Installed, Discover).
-    public static let title: KetchTypeStyle = KetchTypeStyle(size: 22, weight: .semibold, design: .default, lineHeight: 1.2, tracking: -0.25)
+    /// The strongest wash the setting allows; the contrast check composites at this strength.
+    public static let washMax: Double = 0.2
+
+    /// How strongly a tint preset colours the glass in light mode: the opacity of the colour passed to Glass.tint(_:).
+    public static let tint: Double = 0.38
+
+    /// The same in dark mode, where a tint reads stronger.
+    public static let tintDark: Double = 0.3
+  }
+
+  public enum Typography {
+    /// Large title: the Discover hero, the package name in the detail header.
+    public static let display: KetchTypeStyle = KetchTypeStyle(size: 34, weight: .heavy, design: .default, lineHeight: 1.05, tracking: -1)
+
+    /// Section title (Installed, Discover).
+    public static let title: KetchTypeStyle = KetchTypeStyle(size: 26, weight: .bold, design: .default, lineHeight: 1.1, tracking: -0.5)
 
     /// Card titles, sheet titles.
     public static let title2: KetchTypeStyle = KetchTypeStyle(size: 17, weight: .semibold, design: .default, lineHeight: 1.25, tracking: -0.1)
 
-    /// Package name in a row; emphasised labels.
-    public static let headline: KetchTypeStyle = KetchTypeStyle(size: 13, weight: .semibold, design: .default, lineHeight: 1.3, tracking: 0)
+    /// Package name in a row, button labels, field labels.
+    public static let headline: KetchTypeStyle = KetchTypeStyle(size: 14, weight: .semibold, design: .default, lineHeight: 1.3, tracking: 0)
 
     /// Descriptions, changelog prose.
     public static let body: KetchTypeStyle = KetchTypeStyle(size: 13, weight: .regular, design: .default, lineHeight: 1.45, tracking: 0)
@@ -471,11 +574,14 @@ extension Tokens {
     /// Secondary lines in rows.
     public static let callout: KetchTypeStyle = KetchTypeStyle(size: 12, weight: .regular, design: .default, lineHeight: 1.4, tracking: 0)
 
-    /// Metadata, badges, timestamps.
-    public static let caption: KetchTypeStyle = KetchTypeStyle(size: 11, weight: .medium, design: .default, lineHeight: 1.3, tracking: 0.1)
+    /// Metadata, timestamps, notes under a field.
+    public static let caption: KetchTypeStyle = KetchTypeStyle(size: 12, weight: .regular, design: .default, lineHeight: 1.35, tracking: 0)
 
-    /// Sidebar section labels; uppercase.
-    public static let overline: KetchTypeStyle = KetchTypeStyle(size: 10, weight: .semibold, design: .default, lineHeight: 1.2, tracking: 0.6)
+    /// Sidebar section labels.
+    public static let overline: KetchTypeStyle = KetchTypeStyle(size: 11, weight: .semibold, design: .default, lineHeight: 1.2, tracking: 0)
+
+    /// Counts and short status words in a capsule.
+    public static let badge: KetchTypeStyle = KetchTypeStyle(size: 11, weight: .bold, design: .default, lineHeight: 1.2, tracking: 0)
 
     /// Versions, paths, commands, log lines.
     public static let mono: KetchTypeStyle = KetchTypeStyle(size: 12, weight: .medium, design: .monospaced, lineHeight: 1.4, tracking: 0)
@@ -631,6 +737,68 @@ extension Tokens {
         x: 0, y: -1, blur: 0, spread: 0, inset: true
       ),
     ]
+
+    /// Liquid glass lens: a specular rim, a soft inner shade and a tight drop. Rows, selected items, raised controls.
+    public static let lift: [KetchShadow] = [
+      KetchShadow(
+        color: Color(
+          light: .init(1, 1, 1, 0.88),
+          dark: .init(1, 1, 1, 0.22),
+          highContrast: .init(1, 1, 1, 0.9),
+          highContrastDark: .init(1, 1, 1, 0.35)
+        ),
+        x: 0, y: 1, blur: 1, spread: 0, inset: true
+      ),
+      KetchShadow(
+        color: Color(
+          light: .init(0, 0.1569, 0.4314, 0.12),
+          dark: .init(0, 0, 0, 0.35),
+          highContrast: .init(0, 0.1569, 0.4314, 0.2),
+          highContrastDark: .init(0, 0, 0, 0.5)
+        ),
+        x: 0, y: -1, blur: 2, spread: 0, inset: true
+      ),
+      KetchShadow(
+        color: Color(
+          light: .init(0, 0.1176, 0.3529, 0.38),
+          dark: .init(0, 0, 0, 0.6),
+          highContrast: .init(0, 0.1176, 0.3529, 0.5),
+          highContrastDark: .init(0, 0, 0, 0.7)
+        ),
+        x: 0, y: 8, blur: 20, spread: -12, inset: false
+      ),
+    ]
+
+    /// The window and popovers in the preview; macOS draws the real window shadow.
+    public static let window: [KetchShadow] = [
+      KetchShadow(
+        color: Color(
+          light: .init(1, 1, 1, 0.88),
+          dark: .init(1, 1, 1, 0.22),
+          highContrast: .init(1, 1, 1, 0.9),
+          highContrastDark: .init(1, 1, 1, 0.35)
+        ),
+        x: 0, y: 1, blur: 1, spread: 0, inset: true
+      ),
+      KetchShadow(
+        color: Color(
+          light: .init(0, 0.1569, 0.4314, 0.12),
+          dark: .init(0, 0, 0, 0.35),
+          highContrast: .init(0, 0.1569, 0.4314, 0.2),
+          highContrastDark: .init(0, 0, 0, 0.5)
+        ),
+        x: 0, y: -1, blur: 2, spread: 0, inset: true
+      ),
+      KetchShadow(
+        color: Color(
+          light: .init(0, 0.1176, 0.3529, 0.6),
+          dark: .init(0, 0, 0, 0.85),
+          highContrast: .init(0, 0.1176, 0.3529, 0.6),
+          highContrastDark: .init(0, 0, 0, 0.85)
+        ),
+        x: 0, y: 34, blur: 70, spread: -26, inset: false
+      ),
+    ]
   }
 
   /// Durations and curves. Under Reduce Motion every transition becomes a cross-fade of motion.instant.
@@ -654,18 +822,13 @@ extension Tokens {
   public enum Component {
     public enum ButtonPrimary {
       public static let backgroundColor: Color = Color(
-        light: .init(0.0275, 0.3804, 0.4784, 1),
-        dark: .init(0.3529, 0.8235, 0.8941, 1),
-        highContrast: .init(0, 0.3059, 0.3804, 1),
-        highContrastDark: .init(0.5608, 0.902, 0.949, 1)
+        light: .init(0.0314, 0.451, 0.8784, 1),
+        dark: .init(0.0314, 0.451, 0.8784, 1),
+        highContrast: .init(0, 0.3451, 0.749, 1),
+        highContrastDark: .init(0, 0.3451, 0.749, 1)
       )
 
-      public static let textColor: Color = Color(
-        light: .init(1, 1, 1, 1),
-        dark: .init(0.0157, 0.1333, 0.1647, 1),
-        highContrast: .init(1, 1, 1, 1),
-        highContrastDark: .init(0, 0.102, 0.1294, 1)
-      )
+      public static let textColor: Color = Color(ketch: .init(1, 1, 1, 1))
 
       public static let rounded: CGFloat = 999
 
@@ -676,15 +839,15 @@ extension Tokens {
 
     public enum ButtonSecondary {
       public static let backgroundColor: Color = Color(
-        light: .init(1, 1, 1, 1),
-        dark: .init(0.1176, 0.1529, 0.2235, 1),
-        highContrast: .init(1, 1, 1, 1),
-        highContrastDark: .init(0.0784, 0.1059, 0.1608, 1)
+        light: .init(1, 1, 1, 0.74),
+        dark: .init(1, 1, 1, 0.14),
+        highContrast: .init(1, 1, 1, 0.97),
+        highContrastDark: .init(0.1843, 0.2078, 0.2588, 0.97)
       )
 
       public static let textColor: Color = Color(
-        light: .init(0.051, 0.0863, 0.1412, 1),
-        dark: .init(0.9451, 0.9608, 0.9804, 1),
+        light: .init(0.051, 0.1059, 0.1647, 1),
+        dark: .init(0.9333, 0.949, 0.9725, 1),
         highContrast: .init(0, 0, 0, 1),
         highContrastDark: .init(1, 1, 1, 1)
       )
@@ -696,20 +859,20 @@ extension Tokens {
 
     public enum PackageRow {
       public static let backgroundColor: Color = Color(
-        light: .init(0.9686, 0.9765, 0.9882, 1),
-        dark: .init(0.0863, 0.1176, 0.1765, 1),
-        highContrast: .init(1, 1, 1, 1),
-        highContrastDark: .init(0.0549, 0.0784, 0.1216, 1)
+        light: .init(0.9882, 0.9922, 1, 0.278),
+        dark: .init(0.1608, 0.1804, 0.2275, 0.278),
+        highContrast: .init(0.9882, 0.9922, 1, 0.92),
+        highContrastDark: .init(0.1608, 0.1804, 0.2275, 0.92)
       )
 
       public static let textColor: Color = Color(
-        light: .init(0.051, 0.0863, 0.1412, 1),
-        dark: .init(0.9451, 0.9608, 0.9804, 1),
+        light: .init(0.051, 0.1059, 0.1647, 1),
+        dark: .init(0.9333, 0.949, 0.9725, 1),
         highContrast: .init(0, 0, 0, 1),
         highContrastDark: .init(1, 1, 1, 1)
       )
 
-      public static let rounded: CGFloat = 12
+      public static let rounded: CGFloat = 20
 
       public static let height: CGFloat = 56
 
@@ -718,35 +881,35 @@ extension Tokens {
 
     public enum Card {
       public static let backgroundColor: Color = Color(
-        light: .init(0.9686, 0.9765, 0.9882, 1),
-        dark: .init(0.0863, 0.1176, 0.1765, 1),
-        highContrast: .init(1, 1, 1, 1),
-        highContrastDark: .init(0.0549, 0.0784, 0.1216, 1)
+        light: .init(0.9882, 0.9922, 1, 0.278),
+        dark: .init(0.1608, 0.1804, 0.2275, 0.278),
+        highContrast: .init(0.9882, 0.9922, 1, 0.92),
+        highContrastDark: .init(0.1608, 0.1804, 0.2275, 0.92)
       )
 
       public static let textColor: Color = Color(
-        light: .init(0.051, 0.0863, 0.1412, 1),
-        dark: .init(0.9451, 0.9608, 0.9804, 1),
+        light: .init(0.051, 0.1059, 0.1647, 1),
+        dark: .init(0.9333, 0.949, 0.9725, 1),
         highContrast: .init(0, 0, 0, 1),
         highContrastDark: .init(1, 1, 1, 1)
       )
 
-      public static let rounded: CGFloat = 18
+      public static let rounded: CGFloat = 20
 
       public static let padding: CGFloat = 20
     }
 
     public enum Sheet {
       public static let backgroundColor: Color = Color(
-        light: .init(1, 1, 1, 1),
-        dark: .init(0.1176, 0.1529, 0.2235, 1),
-        highContrast: .init(1, 1, 1, 1),
-        highContrastDark: .init(0.0784, 0.1059, 0.1608, 1)
+        light: .init(0.9882, 0.9922, 1, 0.58),
+        dark: .init(0.1608, 0.1804, 0.2275, 0.58),
+        highContrast: .init(0.9882, 0.9922, 1, 0.97),
+        highContrastDark: .init(0.1608, 0.1804, 0.2275, 0.97)
       )
 
       public static let textColor: Color = Color(
-        light: .init(0.051, 0.0863, 0.1412, 1),
-        dark: .init(0.9451, 0.9608, 0.9804, 1),
+        light: .init(0.051, 0.1059, 0.1647, 1),
+        dark: .init(0.9333, 0.949, 0.9725, 1),
         highContrast: .init(0, 0, 0, 1),
         highContrastDark: .init(1, 1, 1, 1)
       )
@@ -758,17 +921,17 @@ extension Tokens {
 
     public enum Sidebar {
       public static let backgroundColor: Color = Color(
-        light: .init(0.9686, 0.9765, 0.9882, 1),
-        dark: .init(0.0863, 0.1176, 0.1765, 1),
-        highContrast: .init(1, 1, 1, 1),
-        highContrastDark: .init(0.0549, 0.0784, 0.1216, 1)
+        light: .init(0.9882, 0.9922, 1, 0.42),
+        dark: .init(0.1608, 0.1804, 0.2275, 0.42),
+        highContrast: .init(0.9882, 0.9922, 1, 0.94),
+        highContrastDark: .init(0.1608, 0.1804, 0.2275, 0.94)
       )
 
       public static let textColor: Color = Color(
-        light: .init(0.2745, 0.3216, 0.3961, 1),
-        dark: .init(0.7176, 0.7608, 0.8196, 1),
-        highContrast: .init(0.1216, 0.1608, 0.2157, 1),
-        highContrastDark: .init(0.8902, 0.9137, 0.9451, 1)
+        light: .init(0.2902, 0.3529, 0.4392, 1),
+        dark: .init(0.6392, 0.6784, 0.749, 1),
+        highContrast: .init(0.1216, 0.1647, 0.2275, 1),
+        highContrastDark: .init(0.8745, 0.898, 0.9373, 1)
       )
 
       public static let width: CGFloat = 232
@@ -776,15 +939,15 @@ extension Tokens {
 
     public enum MenuBarExtra {
       public static let backgroundColor: Color = Color(
-        light: .init(1, 1, 1, 1),
-        dark: .init(0.1176, 0.1529, 0.2235, 1),
-        highContrast: .init(1, 1, 1, 1),
-        highContrastDark: .init(0.0784, 0.1059, 0.1608, 1)
+        light: .init(0.9882, 0.9922, 1, 0.58),
+        dark: .init(0.1608, 0.1804, 0.2275, 0.58),
+        highContrast: .init(0.9882, 0.9922, 1, 0.97),
+        highContrastDark: .init(0.1608, 0.1804, 0.2275, 0.97)
       )
 
       public static let textColor: Color = Color(
-        light: .init(0.051, 0.0863, 0.1412, 1),
-        dark: .init(0.9451, 0.9608, 0.9804, 1),
+        light: .init(0.051, 0.1059, 0.1647, 1),
+        dark: .init(0.9333, 0.949, 0.9725, 1),
         highContrast: .init(0, 0, 0, 1),
         highContrastDark: .init(1, 1, 1, 1)
       )
@@ -804,10 +967,10 @@ extension Tokens {
 
     public enum Progress {
       public static let backgroundColor: Color = Color(
-        light: .init(0.051, 0.0863, 0.1412, 0.08),
+        light: .init(0, 0.1176, 0.3137, 0.1),
         dark: .init(1, 1, 1, 0.12),
-        highContrast: .init(0.051, 0.0863, 0.1412, 0.2),
-        highContrastDark: .init(1, 1, 1, 0.25)
+        highContrast: .init(0, 0.1176, 0.3137, 0.25),
+        highContrastDark: .init(1, 1, 1, 0.3)
       )
 
       public static let height: CGFloat = 6

@@ -93,3 +93,5 @@ ketch-side answer is local validation before push — see
 ## Native desktop apps for Windows and Linux
 
 Approved 2026-09-30, after the macOS app (F12, F13). Each OS gets a native UI over the same core: Windows reuses R9's UniFFI binding from a native front end, Linux may link `ketch-core` directly from a Rust toolkit native to the desktop. Toolkit choice is its own research task, with sources, when this moves to `plan.md`. See `docs/research-desktop.md`.
+
+The toolkit research is now R10 in `plan.md` (taken 2026-10-01 at the creator's request); the Windows and Linux apps themselves stay here until the creator moves them.

@@ -340,7 +340,7 @@ function formatDesignMd({ dictionary }) {
     "# schema has no place for them.",
     "version: alpha",
     "name: ketch for macOS",
-    `description: ${yamlStr("Liquid Glass package manager: calm glass over a soft mesh, one Tide accent, clear status colours.")}`,
+    `description: ${yamlStr("Liquid Glass package manager: clear glass over a soft ocean wash, one Blue accent, clear status colours.")}`,
     "colors:",
   ];
   const colorTokens = of("color");

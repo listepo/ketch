@@ -1,3 +1,4 @@
+#:schema https://raw.githubusercontent.com/pyrlyn/ketch/main/docs/manifest.schema.json
 # ketch, as a ketch package.
 #
 # This is the file `ketch registry push` sends to the registry (pyrlyn/ketch-registry,

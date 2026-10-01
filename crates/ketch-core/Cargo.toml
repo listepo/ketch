@@ -69,6 +69,10 @@ proptest = "1.11"
 rstest = "0.26"
 # Only the schema drift tests use it; the derives are `cfg_attr(test, ...)`.
 schemars = "1.2"
+# Checks that the files ketch ships validate against the schemas it publishes.
+# Without default features it resolves no remote or file `$ref`, so the tests
+# stay offline.
+jsonschema = { version = "0.58", default-features = false }
 
 [lints]
 workspace = true

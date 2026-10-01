@@ -80,7 +80,6 @@ pub fn install(cfg: &Config, args: InstallArgs) -> Result<()> {
             expected_sha256: None,
             // --name applies to the single package being installed.
             name_override: if i == 0 { name_override.clone() } else { None },
-            interactive: !args.yes,
             bin: args.bin.clone(),
             locked_bin: None,
             // `--yes` has already answered the question this would ask.
@@ -94,7 +93,7 @@ pub fn install(cfg: &Config, args: InstallArgs) -> Result<()> {
     let mut failed: Vec<String> = Vec::new();
 
     let outcomes = install::batch(
-        &crate::ui::ctx(cfg),
+        &crate::ui::ctx_asking(cfg, !args.yes),
         &sources,
         &mut state,
         &reqs,
@@ -143,7 +142,7 @@ pub fn install(cfg: &Config, args: InstallArgs) -> Result<()> {
     // release the question named, update hooks included.
     if !updates.is_empty() {
         let outcomes = install::batch(
-            &crate::ui::ctx(cfg),
+            &crate::ui::ctx_asking(cfg, !args.yes),
             &sources,
             &mut state,
             &updates,
@@ -346,7 +345,7 @@ pub fn upgrade(cfg: &Config, args: UpgradeArgs) -> Result<()> {
                 .flat_map(|link| [link.link.clone(), link.target.clone()])
         })
         .collect();
-    crate::process::offer_to_stop(&files, args.yes, crate::ui::report());
+    crate::process::offer_to_stop(&files, args.yes, &crate::ui::ctx_asking(cfg, !args.yes));
 
     let reqs: Vec<InstallRequest> = plan
         .iter()
@@ -369,7 +368,6 @@ pub fn upgrade(cfg: &Config, args: UpgradeArgs) -> Result<()> {
             // The installed name, which `--name` may have chosen. Resolving
             // the source alone would infer another and install a second copy.
             name_override: Some(pkg.name.clone()),
-            interactive: !args.yes,
             bin: args.bin.clone(),
             locked_bin: None,
             offer_update: false,
@@ -380,7 +378,7 @@ pub fn upgrade(cfg: &Config, args: UpgradeArgs) -> Result<()> {
     let mut done = 0usize;
     let mut failed = Vec::new();
     let outcomes = install::batch(
-        &crate::ui::ctx(cfg),
+        &crate::ui::ctx_asking(cfg, !args.yes),
         &sources,
         &mut state,
         &reqs,
@@ -417,7 +415,7 @@ pub fn rollback(cfg: &Config, args: RollbackArgs) -> Result<()> {
     let _lock = Lock::acquire(&crate::ui::ctx(cfg))?;
     let mut state = State::load(cfg)?;
     let out = install::rollback(
-        &crate::ui::ctx(cfg),
+        &crate::ui::ctx_asking(cfg, true),
         &mut state,
         &args.package,
         args.to.as_deref(),
@@ -499,7 +497,7 @@ pub fn link(cfg: &Config, args: NameArgs, linked: bool) -> Result<()> {
 
     for name in select(&state, &args.names)? {
         if linked {
-            install::relink(&crate::ui::ctx(cfg), &mut state, &name)?;
+            install::relink(&crate::ui::ctx_asking(cfg, true), &mut state, &name)?;
             ui::success("linked", &name);
         } else {
             install::unlink(&crate::ui::ctx(cfg), &mut state, &name)?;
