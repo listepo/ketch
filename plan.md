@@ -13,6 +13,7 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | B60 | in progress | P3 | 1 | 80% | Cursor / grok 4.7 |
 | B64 | in progress | P0 | 4 | 70% | Claude Code / opus-5.5 |
 | B65 | in progress | P0 | 2 | 0% | Cursor / grok 4.7 high |
+| B71 | in progress | P1 | 2 | 90% | Claude Code / sonnet-5.5 |
 | R3 | in progress | P1 | 3 | 67% | Cursor / grok 4.7 high |
 | F8 | in progress | P2 | 3 | 0% | Cursor / grok 4.7 high |
 | M9 | in progress | P2 | 5 | 90% | Claude Code / opus-5.5 |
@@ -185,6 +186,21 @@ Item 2 stays with B64. Item 1 is B65, which closes with B64's `tests/bin_choice.
 Add a fixture with two similarly named binaries (for example `rtok` and `rtok-hook`) and assert the intended one is chosen on every OS: macOS, Windows and Linux. This is the test that would have caught the Windows alphabetical-sort bug, where `rtok hook` was selected instead of the intended binary.
 
 Note for the owner: B64's branch `b64-bin-name` already adds `tests/bin_choice.rs` with `rtok`, `rtok-hook` and `other-tool` fixtures, not gated by OS. Reuse or extend it once B64 merges instead of writing a second fixture.
+
+### B71. Ambiguous bin glob refuses instead of taking directory order
+
+`glob_preferred` (`crates/ketch-core/src/model.rs`, called from `platform/unix.rs` and `platform/windows.rs`) falls back to the first match in directory order when a `bin` glob matches several files and none has the entry's `name` as its stem, or the entry has no `name`. Directory order differs per OS (NTFS against ext4 and APFS), so the linked binary differs per OS: the same bug class as B62 and B64.
+
+Decision (creator, 2026-10-01): refuse in that case. The error lists the candidate files, sorted so the message is the same on every OS, and says how to resolve it: set the `bin` entry's `name` or `path` in the manifest. `ketch install --bin` is not offered: it already refuses when the manifest names its binaries. A single match, or a stem equal to `name` (case-insensitive, `.exe` ignored), behaves as before. A glob matching nothing keeps its existing error. This is breaking: an install that used to link something now refuses, so the commit is `fix!:`.
+
+Execution plan:
+
+1. Add the failing unit test beside `glob_preferred_picks_the_stem_named_match_over_directory_order`.
+2. Make `glob_preferred` return `Result<Option<&Path>>`, one OS-independent function; update both platform callers.
+3. Update `docs/MANIFESTS.md` where `bin` globs are described.
+4. Verify with `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo nextest run`, and a run of the binary against a scratch `KETCH_ROOT` if it can be done offline.
+
+Status: implemented with unit and end-to-end tests in `tests/bin_choice.rs`; PR https://github.com/pyrlyn/ketch/pull/202
 
 ### M9. `ketch list` refactor: `local`, `remote`, and both by default
 
