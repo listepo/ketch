@@ -8,6 +8,7 @@ pub mod github;
 pub mod local;
 pub mod plugin;
 
+use crate::cancel::Cancel;
 use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::http::Http;
@@ -80,11 +81,15 @@ pub trait Source: Send + Sync {
     }
 
     /// Download one asset to `dest`, returning its SHA-256 as lowercase hex.
+    ///
+    /// Stops with `Error::Cancelled`, leaving nothing at `dest`, once `cancel`
+    /// fires.
     fn download(
         &self,
         asset: &ReleaseAsset,
         dest: &Path,
         progress: &dyn ProgressSink,
+        cancel: &Cancel,
     ) -> Result<String>;
 
     /// Free-text search. Sources that cannot search return an empty list.

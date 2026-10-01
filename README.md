@@ -402,6 +402,7 @@ release required. See [docs/PLUGINS.md](docs/PLUGINS.md).
 | `require_checksums` | `KETCH_REQUIRE_CHECKSUMS` | `false` |
 | `strip_quarantine` | `KETCH_STRIP_QUARANTINE` | `true` |
 | `auto_update` | `KETCH_AUTO_UPDATE` | `true` |
+| `emoji` | `KETCH_EMOJI` | `true` |
 | `registry` | `KETCH_REGISTRY` | `pyrlyn/ketch-registry` |
 | `self_repo` | `KETCH_SELF_REPO` | `listepo/ketch` |
 | `jobs` | `KETCH_JOBS` | `4` (capped at `16`) |
@@ -424,6 +425,12 @@ ketch config reset --yes    # for scripts and CI
 `auto_update` (default `true`) runs `ketch update` at the start of `install` and
 `upgrade`. Set it to `false`, or `KETCH_AUTO_UPDATE=false`, to skip the registry
 refresh.
+
+`emoji` (default `true`) puts an icon in front of each status line on a
+terminal: 📦 install, ⬆️ upgrade, 🗑️ uninstall, ⬇️ download, 🔗 link, ⏪ rollback,
+✅ success, ⚠️ warning, ❌ error, ℹ️ note. Set it to `false`, or
+`KETCH_EMOJI=0`, or pass `--no-emoji`, to go without. Icons never reach a pipe,
+`TERM=dumb`, `--json` output or the log.
 
 The root itself is `KETCH_ROOT` or `--root`; it cannot be set from the config
 file, because the file lives inside it. `KETCH_GITHUB_API` overrides the GitHub

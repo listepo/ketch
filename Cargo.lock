@@ -2640,7 +2640,7 @@ dependencies = [
 
 [[package]]
 name = "ketch"
-version = "0.8.1"
+version = "0.9.0"
 dependencies = [
  "assert_cmd",
  "assert_fs",
@@ -2685,6 +2685,7 @@ dependencies = [
  "toml_edit",
  "trycmd",
  "typed-path",
+ "unicode-width",
  "ureq",
  "walkdir",
  "zip",

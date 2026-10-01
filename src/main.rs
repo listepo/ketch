@@ -5,6 +5,7 @@
 //! single place decides how errors are shown and what the process exits with.
 
 mod bin_choice;
+mod cancel;
 mod changelog;
 mod cli;
 mod cmd;
@@ -112,6 +113,7 @@ fn run(cli: Cli) -> Result<()> {
         }
     ) {
         let cfg = config::Config::load(cli.global.root.clone())?;
+        ui::set_emoji(cfg.emoji && !cli.global.no_emoji);
         return match cli.command {
             Command::Config { command } => cmd::config::run(&cfg, command),
             _ => unreachable!("matched Create above"),
@@ -119,6 +121,7 @@ fn run(cli: Cli) -> Result<()> {
     }
 
     let cfg = config::Config::load(cli.global.root.clone())?;
+    ui::set_emoji(cfg.emoji && !cli.global.no_emoji);
     cfg.ensure_dirs()?;
     log::init(&cfg, cli.global.verbose);
 

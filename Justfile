@@ -101,6 +101,7 @@ lint-shell:
     bash -n install.sh
     bash -n scripts/release.sh
     bash -n scripts/dist-generate.sh
+    bash -n fuzz/seed.sh
     sh tests/crate-version.sh
     sh tests/release-sh.sh
     sh tests/release-workflows.sh
@@ -177,11 +178,36 @@ dist-check:
     diff -u "$before" .github/workflows/release.yml \
         || { echo "release.yml is stale: commit what just dist-generate wrote" >&2; exit 1; }
 
+# regenerate the macOS app's Tokens.swift, DESIGN.md front matter and
+# preview.html tokens from desktop/macos/design/tokens.json
+design-tokens:
+    mise exec -- node desktop/macos/design/build.mjs
+
+# the generated design files are what design-tokens writes (compared with the
+# files as they stand, like dist-check), DESIGN.md lints clean, and text meets
+# WCAG AA on its glass backgrounds
+design-check:
+    #!/bin/sh
+    set -eu
+    before="$(mktemp -d)"
+    trap 'rm -rf "$before"' EXIT
+    d=desktop/macos
+    cp "$d/DESIGN.md" "$d/design/preview.html" "$d/design/generated/Tokens.swift" "$before/"
+    mise exec -- node "$d/design/build.mjs"
+    stale=0
+    for f in DESIGN.md design/preview.html design/generated/Tokens.swift; do
+        diff -u "$before/$(basename "$f")" "$d/$f" || stale=1
+    done
+    [ "$stale" = 0 ] || { echo "design tokens were stale: commit what just design-tokens wrote" >&2; exit 1; }
+    mise exec -- node "$d/design/contrast.mjs"
+    mise exec -- npx --no-install designmd lint "$d/DESIGN.md" > "$before/lint.json" \
+        || { cat "$before/lint.json"; exit 1; }
+
 # release Cargo.toml's version, or the next one if it is tagged (`just release minor --dry-run`)
 release level="patch" *flags:
     scripts/release.sh {{level}} {{flags}}
 
-check: fmt-check lint test lint-commits lint-shell lint-man dist-check package lint-cask
+check: fmt-check lint test lint-commits lint-shell lint-man dist-check design-check package lint-cask
 
 # $CARGO_HOME sizes (no deletes) and the build output, wherever cargo puts it
 cache:
@@ -202,3 +228,16 @@ dunnage:
     command -v dunnage >/dev/null || { echo "dunnage not found; install it with: ketch install dunnage"; exit 0; }
     [ -d target ] || exit 0
     dunnage run target || test $? -eq 2
+
+# libFuzzer targets in fuzz/ (fuzz/README.md), on nightly and never part of `check`.
+# `just fuzz` lists them, `just fuzz <target> [secs]` runs one, `just fuzz all [secs]` each in turn.
+fuzz target="" secs="60":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -z "{{target}}" ]; then exec cargo +nightly fuzz list; fi
+    fuzz/seed.sh
+    targets="{{target}}"
+    if [ "$targets" = all ]; then targets=$(cargo +nightly fuzz list); fi
+    for t in $targets; do
+        cargo +nightly fuzz run "$t" -- -max_total_time={{secs}} -max_len=16384 -rss_limit_mb=4096
+    done

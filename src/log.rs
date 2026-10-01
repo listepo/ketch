@@ -146,6 +146,9 @@ fn file_level(configured: Level, verbose: bool) -> Level {
 pub fn init(cfg: &Config, verbose: bool) {
     let level = file_level(cfg.log_level, verbose);
     if level == Level::Off {
+        // A host calls `init` once per operation: turning the log off must also
+        // drop the sink an earlier operation opened, or it keeps writing.
+        set(None);
         return;
     }
     match open(&cfg.log_file, level, cfg.log_format) {
@@ -374,5 +377,22 @@ mod tests {
         let contents = std::fs::read_to_string(&path).expect("read log");
         assert!(contents.contains("DEBUG"));
         assert!(contents.contains("root /tmp/ketch"));
+    }
+
+    #[test]
+    fn turning_the_log_off_closes_the_sink_an_earlier_init_opened() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let previous = guard().take();
+        let mut cfg = Config::load(Some(dir.path().join("root"))).expect("config");
+        cfg.log_level = Level::Info;
+        init(&cfg, false);
+        assert!(path().is_some(), "first operation logs");
+
+        cfg.log_level = Level::Off;
+        init(&cfg, false);
+        let closed = path().is_none();
+        set(previous);
+
+        assert!(closed, "second operation, log off, must not reuse the sink");
     }
 }

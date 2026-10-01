@@ -279,7 +279,7 @@ fn create_bootstrap_link(link: &Path, target: &Path) -> Result<LinkRecord> {
 
 /// Generate ketch's man page and completions into the store prefix and link
 /// them into the user directories `doctor` reports.
-fn expose_self_docs(_cfg: &Config, state: &mut State) -> Result<()> {
+fn expose_self_docs(cfg: &Config, state: &mut State) -> Result<()> {
     let Some(pkg) = state.get(SELF_NAME).cloned() else {
         return Ok(());
     };
@@ -301,6 +301,19 @@ fn expose_self_docs(_cfg: &Config, state: &mut State) -> Result<()> {
     if !stale.is_empty() {
         platform.unplace(&stale)?;
     }
+    // Windows loads neither directory by itself: a profile block and AutoRun
+    // are what switch completion on there.
+    #[cfg(windows)]
+    {
+        let powershell_rel = crate::extra::generated_completion_rel(CompletionShell::Powershell);
+        let script = planned
+            .iter()
+            .find(|p| p.rel_path == powershell_rel)
+            .map(|p| p.dest.clone());
+        enable_windows_completion(cfg, script.as_deref());
+    }
+    #[cfg(not(windows))]
+    let _ = cfg;
     if let Some(entry) = state.get_mut(SELF_NAME) {
         entry.links.retain(|record| {
             record.role.is_binary() || extra_links.iter().any(|fresh| fresh.link == record.link)
@@ -316,6 +329,43 @@ fn expose_self_docs(_cfg: &Config, state: &mut State) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Switch completion on for PowerShell and cmd. Best effort: completion is
+/// worth a warning when it cannot be set up, never a failed install.
+#[cfg(windows)]
+fn enable_windows_completion(cfg: &Config, script: Option<&Path>) {
+    if let Some(script) = script {
+        match crate::shell::install_powershell_profiles(script) {
+            Ok(changes) => {
+                for change in changes {
+                    let what = format!(
+                        "{} completion in {}",
+                        change.shell.label(),
+                        change.file.display()
+                    );
+                    match change.outcome {
+                        Ok(crate::shell::Outcome::Added) => ui::success("added", &what),
+                        Ok(crate::shell::Outcome::Updated) => ui::success("updated", &what),
+                        Ok(_) => {}
+                        Err(why) => ui::note(&format!(
+                            "{} completion not enabled: {why}",
+                            change.shell.label()
+                        )),
+                    }
+                }
+            }
+            Err(e) => ui::warn(&format!("could not enable PowerShell completion: {e}")),
+        }
+    }
+    match crate::shell::install_cmd_macros(cfg) {
+        Ok(crate::shell::Outcome::Added) => ui::success(
+            "added",
+            "cmd macros ki, ku, kl, kun (HKCU\\Software\\Microsoft\\Command Processor\\AutoRun)",
+        ),
+        Ok(_) => {}
+        Err(e) => ui::warn(&format!("could not add the cmd macros: {e}")),
+    }
 }
 
 /// Install one shell's completion script the same way `self install` does.
@@ -443,7 +493,12 @@ pub fn update(cfg: &Config, force: bool, dry_run: bool) -> Result<SelfUpdate> {
         .path()
         .join(crate::config::sanitize_component(&chosen.asset.name));
     let progress = ui::progress();
-    let sha256 = source.download(&chosen.asset, &download, progress.as_ref())?;
+    let sha256 = source.download(
+        &chosen.asset,
+        &download,
+        progress.as_ref(),
+        &crate::cancel::Cancel::new(),
+    )?;
 
     // `require` is hard-coded: for its own binary ketch does not accept the
     // trust-on-first-use path it allows for packages.
@@ -710,6 +765,8 @@ pub struct UninstallPlan {
     pub shell_files: Vec<PathBuf>,
     /// Registry values ketch wrote that are still there.
     pub registry: Vec<crate::shell::RegistryEntry>,
+    /// PowerShell profiles holding the block that loads ketch's completion.
+    pub powershell_profiles: Vec<PathBuf>,
     /// The Homebrew cask's own directory, when ketch came from `brew`.
     pub cask: Option<PathBuf>,
     /// The running binary, when it lives inside the root and so goes with it.
@@ -748,13 +805,14 @@ pub fn uninstall_plan(cfg: &Config, keep_packages: bool, no_brew: bool) -> Resul
         } else {
             crate::shell::files_with_block()
         },
-        // Kept with `--keep-packages`, like the shell blocks: the packages
-        // left in the bin dir are still meant to be on PATH.
-        registry: if keep_packages {
-            Vec::new()
-        } else {
-            crate::shell::registry_entries(cfg)
-        },
+        // The user PATH is kept with `--keep-packages`, like the shell
+        // blocks: the packages left in the bin dir still need it. What loads
+        // ketch itself (cmd's AutoRun) goes either way.
+        registry: crate::shell::registry_entries(cfg)
+            .into_iter()
+            .filter(|entry| !keep_packages || !entry.serves_packages())
+            .collect(),
+        powershell_profiles: crate::shell::powershell_profiles_with_block(),
         cask: (!no_brew).then(cask_dir).flatten(),
         exe: current_exe().ok().filter(|exe| {
             let root = dunce::canonicalize(&cfg.root).unwrap_or_else(|_| cfg.root.clone());
@@ -798,6 +856,26 @@ pub fn uninstall_self(cfg: &Config, plan: &UninstallPlan) -> Result<Vec<PathBuf>
     for entry in &plan.registry {
         if let Err(e) = crate::shell::remove_registry_entry(cfg, *entry) {
             ui::warn(&format!("{}: {e}", entry.describe()));
+        }
+    }
+
+    // Also before the root: the macro file lives in it, and the root is
+    // removed only when nothing ketch did not name is left inside. A macro
+    // file AutoRun no longer names is still ketch's to delete.
+    if !plan
+        .registry
+        .contains(&crate::shell::RegistryEntry::CmdMacros)
+        && doskey_file_exists(cfg)
+    {
+        if let Err(e) = crate::shell::uninstall_cmd_macros(cfg) {
+            ui::warn(&format!("cmd macros: {e}"));
+        }
+    }
+    for file in &plan.powershell_profiles {
+        match crate::shell::uninstall_powershell_profile(file) {
+            Ok(true) => removed.push(file.clone()),
+            Ok(false) => {}
+            Err(e) => ui::warn(&format!("{}: {e}", file.display())),
         }
     }
 
@@ -861,6 +939,10 @@ pub fn uninstall_self(cfg: &Config, plan: &UninstallPlan) -> Result<Vec<PathBuf>
         }
     }
     Ok(removed)
+}
+
+fn doskey_file_exists(cfg: &Config) -> bool {
+    crate::shell::doskey_file(cfg).exists()
 }
 
 /// Take the root apart by naming what ketch owns, then removing the directory

@@ -1,0 +1,15 @@
+---
+source: src/ui.rs
+expression: shown
+---
+installing ripgrep 14.1.0
+ installed ripgrep 14.1.0
+   warning ripgrep ships no checksum
+      note ripgrep is pinned
+     debug GET /repos/BurntSushi/ripgrep
+     error `ghost` is not installed
+           looked in state.json
+      hint run `ketch list`
+   confirm remove ripgrep? [y/N] 
+ cancelled remove ripgrep?
+    answer package name?

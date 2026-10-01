@@ -15,6 +15,10 @@
       "description": "Refresh the package registry before `install` and `upgrade`.",
       "type": "boolean"
     },
+    "emoji": {
+      "description": "Put an emoji icon in front of status lines on a terminal.",
+      "type": "boolean"
+    },
     "github_token": {
       "type": "string"
     },

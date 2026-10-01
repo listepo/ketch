@@ -231,7 +231,8 @@ pub fn write_ketch_docs(prefix: &Path) -> Result<Vec<ExtraPath>> {
     Ok(extras)
 }
 
-fn generated_completion_rel(shell: CompletionShell) -> String {
+/// Where [`write_ketch_docs`] puts `shell`'s script, relative to the prefix.
+pub(crate) fn generated_completion_rel(shell: CompletionShell) -> String {
     match shell {
         CompletionShell::Bash => "share/ketch/completions/ketch".to_string(),
         CompletionShell::Zsh => "share/ketch/completions/_ketch".to_string(),

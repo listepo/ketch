@@ -7,6 +7,7 @@
 //! traits, so this file contains no GitHub-specific and no macOS-specific code.
 
 use crate::bin_choice::{self, Picked};
+use crate::cancel::Cancel;
 use crate::config::{sanitize_component, Config};
 use crate::error::{Error, Result};
 use crate::hooks;
@@ -52,6 +53,14 @@ pub struct InstallRequest {
     /// The choice `ketch.lock` recorded, consulted after state's: a fresh
     /// machine has no state, and no terminal to ask on during `ketch sync`.
     pub locked_bin: Option<String>,
+    /// `ketch install` without `--yes`: an installed package with a newer
+    /// release stops with `Error::UpdateAvailable`, so the command can ask
+    /// before it updates, instead of updating on its own.
+    pub offer_update: bool,
+    /// Stops this install at its next check: before the download, between
+    /// chunks, and before anything is placed. Clones share one flag, so a host
+    /// keeps a clone to cancel with. `Cancel::new()` never fires on its own.
+    pub cancel: Cancel,
 }
 
 impl InstallRequest {
@@ -69,6 +78,8 @@ impl InstallRequest {
             interactive: false,
             bin: None,
             locked_bin: None,
+            offer_update: false,
+            cancel: Cancel::new(),
         }
     }
 }
@@ -124,6 +135,8 @@ pub struct Prepared {
     /// Set for `local:` installs so list/info can show how the path was used.
     local_kind: Option<LocalKind>,
     local_path: Option<PathBuf>,
+    /// Carried from the request so `commit` can stop before it places anything.
+    cancel: Cancel,
 }
 
 /// Run the pipeline. Mutates `state` in memory; the caller saves it, so a batch
@@ -188,6 +201,7 @@ pub fn prepare(
     req: &InstallRequest,
     progress: &dyn ui::ProgressSink,
 ) -> Result<Prepared> {
+    req.cancel.check()?;
     let started = std::time::Instant::now();
     let platform = crate::platform::host()?;
     let label = req.spec.label();
@@ -254,10 +268,27 @@ pub fn prepare(
                 version: old.version.to_string(),
             });
         }
+        let unversioned = !matches!(req.spec.version, VersionSpec::Exact(_));
         if old.tag == release.tag && !req.force {
-            return Err(Error::AlreadyInstalled {
+            // `pkg@1.2.0` asked for that version and keeps the old message.
+            return Err(if unversioned && req.offer_update {
+                Error::NoUpdate {
+                    name: old.name.clone(),
+                    version: old.version.to_string(),
+                }
+            } else {
+                Error::AlreadyInstalled {
+                    name: old.name.clone(),
+                    version: old.version.to_string(),
+                }
+            });
+        }
+        if unversioned && req.offer_update && !req.force {
+            return Err(Error::UpdateAvailable {
                 name: old.name.clone(),
-                version: old.version.to_string(),
+                installed: old.version.to_string(),
+                latest: release.version.to_string(),
+                tag: release.tag.clone(),
             });
         }
     }
@@ -331,7 +362,7 @@ pub fn prepare(
             if let Some(path) = &local_path {
                 asset.url = path.to_string_lossy().into_owned();
             }
-            let sha256 = source.download(&asset, &download_path, progress)?;
+            let sha256 = source.download(&asset, &download_path, progress, &req.cancel)?;
 
             // --- checksum -------------------------------------------------------
             check_locked(req, &manifest.name, &asset.name, &sha256)?;
@@ -398,6 +429,7 @@ pub fn prepare(
         started,
         local_kind,
         local_path,
+        cancel: req.cancel.clone(),
     })
 }
 
@@ -595,7 +627,11 @@ pub fn commit(cfg: &Config, state: &mut State, prepared: Prepared) -> Result<Ins
         started,
         local_kind,
         local_path,
+        cancel,
     } = prepared;
+    // Before the first hook or file: later steps are short and leave the tree
+    // consistent on their own, so this is the last point a stop is free.
+    cancel.check()?;
     let mut manifest = manifest;
     let platform = crate::platform::host()?;
     ui::stage(&label, ui::ProgressStage::Installing);
@@ -606,6 +642,11 @@ pub fn commit(cfg: &Config, state: &mut State, prepared: Prepared) -> Result<Ins
 
     let version = release.version.to_string();
     let store_dir = cfg.package_dir(&manifest.name, &version);
+
+    // --- sweep --------------------------------------------------------------
+    // Before the hooks and before anything is placed: a leftover the sweep
+    // cannot remove is a reason to stop, not to install beside it.
+    sweep_swap_leftovers(cfg, &manifest.name, existing.as_ref())?;
 
     // --- hooks: before ------------------------------------------------------
     // Refused before anything is placed: a manifest that may not run hooks
@@ -1467,13 +1508,60 @@ fn remove_store_dir(cfg: &Config, prefix: &Path) {
     }
 }
 
-/// Delete `store/<name>/` whole, with whatever is left in it.
+/// Remove the `<version>.incoming` and `<version>.old` folders an interrupted
+/// swap in `move_into_store` left in `store/<name>/`.
 ///
-/// Returns the folder when it was a candidate — a direct child of the store
-/// named exactly like the package, and inside it after symlinks resolve — so
-/// the caller knows which prefixes it already covered. A name that is not one
-/// plain path component is never joined onto the store.
-pub(crate) fn remove_package_dir(cfg: &Config, name: &str) -> Option<PathBuf> {
+/// Their own cleanup is best effort, so one that failed would otherwise wait
+/// for the next swap of the same version — and a stale `.incoming` is where
+/// that swap stages the new payload. A prefix the package still records is
+/// never touched, whatever its name ends with.
+///
+/// # Errors
+///
+/// Returns an error naming the leftover that could not be removed.
+fn sweep_swap_leftovers(
+    cfg: &Config,
+    name: &str,
+    existing: Option<&InstalledPackage>,
+) -> Result<()> {
+    let Some(dir) = package_dir_candidate(cfg, name) else {
+        return Ok(());
+    };
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Ok(());
+    };
+    let recorded: Vec<&Path> = existing
+        .into_iter()
+        .flat_map(|p| std::iter::once(&p.prefix).chain(p.retained.iter().map(|r| &r.prefix)))
+        .map(PathBuf::as_path)
+        .collect();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let file_name = entry.file_name();
+        let leftover = file_name
+            .to_str()
+            .is_some_and(|n| n.ends_with(".incoming") || n.ends_with(".old"));
+        if !leftover || recorded.contains(&path.as_path()) {
+            continue;
+        }
+        // `file_type` does not follow a symlink, so a link is removed as a
+        // link and never followed out of the store.
+        let removed = match entry.file_type() {
+            Ok(t) if t.is_dir() => std::fs::remove_dir_all(&path),
+            _ => std::fs::remove_file(&path),
+        };
+        match removed {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(Error::io(&path, e)),
+        }
+    }
+    Ok(())
+}
+
+/// `store/<name>/` when `name` is one plain path component and the folder
+/// exists inside the store after symlinks resolve.
+fn package_dir_candidate(cfg: &Config, name: &str) -> Option<PathBuf> {
     use std::path::Component;
     let mut components = Path::new(name).components();
     if !matches!(
@@ -1486,6 +1574,17 @@ pub(crate) fn remove_package_dir(cfg: &Config, name: &str) -> Option<PathBuf> {
     if dir.symlink_metadata().is_err() || !is_inside_store(&cfg.store_dir, &dir) {
         return None;
     }
+    Some(dir)
+}
+
+/// Delete `store/<name>/` whole, with whatever is left in it.
+///
+/// Returns the folder when it was a candidate — a direct child of the store
+/// named exactly like the package, and inside it after symlinks resolve — so
+/// the caller knows which prefixes it already covered. A name that is not one
+/// plain path component is never joined onto the store.
+pub(crate) fn remove_package_dir(cfg: &Config, name: &str) -> Option<PathBuf> {
+    let dir = package_dir_candidate(cfg, name)?;
     if let Err(e) = std::fs::remove_dir_all(&dir) {
         if e.kind() != std::io::ErrorKind::NotFound {
             ui::warn(&format!("could not remove {}: {e}", dir.display()));
@@ -1802,6 +1901,70 @@ mod tests {
     }
 
     #[test]
+    fn the_sweep_takes_swap_leftovers_and_keeps_every_version() {
+        let root = tempfile::tempdir().unwrap();
+        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        cfg.ensure_dirs().unwrap();
+        let folder = cfg.store_dir.join("tool");
+        std::fs::create_dir_all(folder.join("1.0.0")).unwrap();
+        std::fs::create_dir_all(folder.join("1.1.0.incoming")).unwrap();
+        std::fs::write(folder.join("1.1.0.incoming").join("planted"), b"x").unwrap();
+        std::fs::create_dir_all(folder.join("1.0.0.old")).unwrap();
+        std::fs::write(folder.join("0.9.0.old"), b"a file, not a folder").unwrap();
+
+        sweep_swap_leftovers(&cfg, "tool", None).unwrap();
+
+        let mut left: Vec<_> = std::fs::read_dir(&folder)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        left.sort();
+        assert_eq!(left, vec!["1.0.0".to_string()]);
+    }
+
+    #[test]
+    fn the_sweep_never_takes_a_prefix_the_package_records() {
+        let root = tempfile::tempdir().unwrap();
+        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        cfg.ensure_dirs().unwrap();
+        // A release really versioned like a leftover.
+        let prefix = cfg.store_dir.join("tool").join("2.old");
+        std::fs::create_dir_all(&prefix).unwrap();
+        let pkg = installed("tool", "2.old", prefix.clone());
+
+        sweep_swap_leftovers(&cfg, "tool", Some(&pkg)).unwrap();
+
+        assert!(prefix.is_dir());
+    }
+
+    #[test]
+    fn the_sweep_is_a_no_op_without_a_package_folder() {
+        let root = tempfile::tempdir().unwrap();
+        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        cfg.ensure_dirs().unwrap();
+        sweep_swap_leftovers(&cfg, "tool", None).unwrap();
+        sweep_swap_leftovers(&cfg, "../outside", None).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_leftover_the_sweep_cannot_remove_stops_the_install_and_is_named() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        cfg.ensure_dirs().unwrap();
+        let folder = cfg.store_dir.join("tool");
+        std::fs::create_dir_all(folder.join("1.0.0.old")).unwrap();
+        std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+        let result = sweep_swap_leftovers(&cfg, "tool", None);
+        std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let err = result.expect_err("a read-only package folder cannot be swept");
+        assert!(err.to_string().contains("1.0.0.old"), "{err}");
+    }
+
+    #[test]
     fn a_package_name_that_is_not_one_component_is_never_removed() {
         let root = tempfile::tempdir().unwrap();
         let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
@@ -1926,5 +2089,97 @@ mod tests {
         assert_eq!(select_retained(&pkg, None).unwrap(), 0);
         assert_eq!(select_retained(&pkg, Some("1.0.0")).unwrap(), 0);
         assert!(select_retained(&pkg, Some("0.9.0")).is_err());
+    }
+
+    /// A scratch ketch root and a local program to install from it.
+    #[cfg(unix)]
+    fn local_fixture(dir: &Path, name: &str) -> (Config, PathBuf) {
+        use std::os::unix::fs::PermissionsExt;
+        let cfg = Config::load(Some(dir.join("root"))).unwrap();
+        let program = dir.join(name);
+        std::fs::write(&program, "#!/bin/sh\necho hi\n").unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+        (cfg, program)
+    }
+
+    #[cfg(unix)]
+    fn local_request(program: &Path, cancel: &Cancel) -> InstallRequest {
+        let mut req =
+            InstallRequest::new(PackageSpec::parse(&format!("local:{}", program.display())));
+        req.cancel = cancel.clone();
+        req
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn an_install_cancelled_before_it_commits_leaves_no_store_folder_or_state_entry() {
+        let dir = tempfile::tempdir().unwrap();
+        let (cfg, program) = local_fixture(dir.path(), "canceltool");
+        let sources = SourceRegistry::load(&cfg);
+        let mut state = State::default();
+        let cancel = Cancel::new();
+        let req = local_request(&program, &cancel);
+
+        let prepared =
+            prepare(&cfg, &sources, &state, &req, &ui::SilentProgress).expect("prepare succeeds");
+        // The host pressed Stop after the download, before anything was placed.
+        cancel.cancel();
+        let err = commit(&cfg, &mut state, prepared).expect_err("commit must stop");
+
+        assert!(matches!(err, Error::Cancelled), "got {err}");
+        assert!(state.packages.is_empty(), "no state entry");
+        assert!(
+            !cfg.store_dir.join("canceltool").exists(),
+            "no store folder"
+        );
+        let staged = std::fs::read_dir(&cfg.cache_dir).map(|d| d.count());
+        assert_eq!(staged.unwrap_or(0), 0, "temp dir removed");
+        assert!(!cfg.bin_dir.join("canceltool").exists(), "no link");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_cancelled_token_stops_a_batch_before_any_package_is_prepared() {
+        let dir = tempfile::tempdir().unwrap();
+        let (cfg, program) = local_fixture(dir.path(), "batchtool");
+        let sources = SourceRegistry::load(&cfg);
+        let mut state = State::default();
+        let cancel = Cancel::new();
+        cancel.cancel();
+        let reqs = vec![
+            local_request(&program, &cancel),
+            local_request(&program, &cancel),
+        ];
+
+        for jobs in [1, 2] {
+            let outcomes = batch(&cfg, &sources, &mut state, &reqs, jobs);
+            assert_eq!(outcomes.len(), 2);
+            assert!(outcomes.iter().all(|o| matches!(o, Err(Error::Cancelled))));
+        }
+        assert!(state.packages.is_empty());
+        assert!(!cfg.store_dir.exists() || std::fs::read_dir(&cfg.store_dir).unwrap().count() == 0);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn two_operations_in_one_process_run_one_after_the_other() {
+        let dir = tempfile::tempdir().unwrap();
+        let (cfg, first) = local_fixture(dir.path(), "firsttool");
+        let (_, second) = local_fixture(dir.path(), "secondtool");
+        let sources = SourceRegistry::load(&cfg);
+        let mut state = State::default();
+
+        for program in [&first, &second] {
+            // What a host does per operation: lock, run, release.
+            let _lock = crate::state::Lock::acquire(&cfg).unwrap();
+            install(
+                &cfg,
+                &sources,
+                &mut state,
+                &local_request(program, &Cancel::new()),
+            )
+            .unwrap();
+        }
+        assert_eq!(state.packages.len(), 2);
     }
 }
