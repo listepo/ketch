@@ -379,7 +379,9 @@ already names as the pattern.
 4. **C# binding route.** Decided by the creator (2026-10-01): B (PR #176
    pinned by commit) first; if it fails against UniFFI 0.32.2, D (the C ABI
    from `ketch-capi`). C, the downgrade to UniFFI 0.31.2, is not taken.
-5. **Shared app layer.** None now (recommended) or a `ketch-app` crate.
+5. **Shared app layer.** Decided by the creator (2026-10-01): none now; thin
+   view-models per app and D4's fixtures. Revisit if the same event-fold fix
+   lands in two apps.
 6. **Brand across platforms.** Accent, status colours, spacing, radii and type
    scale from `tokens.json` on Windows and Linux, with native surfaces
    (recommended); or fully native palettes. Moving
