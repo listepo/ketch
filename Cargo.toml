@@ -102,6 +102,9 @@ trycmd = "1.2"
 # There is no unsafe code in ketch and there is no reason for any to appear.
 [lints.rust]
 unsafe_code = "forbid"
+# `cargo fuzz` builds with `--cfg fuzzing`; only then does `src/lib.rs` hold
+# anything (see `fuzz/README.md`).
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(fuzzing)"] }
 
 [profile.release]
 opt-level = "z"

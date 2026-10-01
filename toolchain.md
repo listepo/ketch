@@ -15,6 +15,8 @@ Project programs and direct packages from manifests.
 | just | cargo install just / brew | Command recipes | https://github.com/casey/just |
 | cargo-dist | mise | Generates `release.yml` and builds the release tarballs (`just dist-generate`, `just package`) | https://github.com/axodotdev/cargo-dist |
 | git-cliff | mise | Writes the `CHANGELOG.md` entry from `cliff.toml` (`scripts/release.sh`) | https://github.com/orhun/git-cliff |
+| cargo-fuzz | mise | Builds and runs the libFuzzer targets in `fuzz/` (`just fuzz`) | https://github.com/rust-fuzz/cargo-fuzz |
+| rustc nightly | rustup (`rustup toolchain install nightly`) | Only for `cargo +nightly fuzz`; every build stays on the `mise.toml` pin | https://github.com/rust-lang/rust |
 | release-plz | GitHub Action | The release pull request | https://github.com/release-plz/release-plz |
 | ketch | see its README | Installs dunnage | https://github.com/pyrlyn/ketch |
 | dunnage | `ketch` | Lossless cleanup of `target/` after tests | https://github.com/listepo/dunnage |
@@ -24,6 +26,7 @@ Project programs and direct packages from manifests.
 
 | Package | Where | Source | Why here |
 | --- | --- | --- | --- |
+| arbitrary | local (`fuzz/`) | https://crates.io/crates/arbitrary | Structured fuzz input |
 | assert_cmd | local | https://crates.io/crates/assert_cmd | Rust dependency |
 | assert_fs | local | https://crates.io/crates/assert_fs | Rust dependency |
 | bzip2 | local | https://crates.io/crates/bzip2 | Rust dependency |
@@ -41,6 +44,7 @@ Project programs and direct packages from manifests.
 | indicatif | local | https://crates.io/crates/indicatif | Rust dependency |
 | insta | local | https://crates.io/crates/insta | Reviewed snapshots |
 | libsqlite3-sys | local | https://crates.io/crates/libsqlite3-sys | `bundled` compiles SQLite into the binary. Linking the system one would make ketch's single-binary promise depend on what the host happens to ship, and the release builds both macOS architectures where that answer differs. |
+| libfuzzer-sys | local (`fuzz/`) | https://crates.io/crates/libfuzzer-sys | libFuzzer targets |
 | lzma-rs | local | https://crates.io/crates/lzma-rs | Rust dependency |
 | octocrab | local | https://crates.io/crates/octocrab | `ketch registry push` talks to GitHub through octocrab rather than the ureq client the sources use: it needs forks, refs, contents and pull requests, which octocrab already types and paginates. It is async, hence tokio for a runtime to block on; everything else in ketch stays synchronous. |
 | pathdiff | local | https://crates.io/crates/pathdiff | Relative path between two paths |

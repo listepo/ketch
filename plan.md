@@ -18,7 +18,7 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | M9 | in progress | P2 | 5 | 90% | Claude Code / opus-5.5 |
 | F9 | todo | P2 | 2 | 0% | |
 | F11 | todo | P3 | 2 | 0% | |
-| R4 | todo | P2 | 3 | 0% | |
+| R4 | in progress | P2 | 3 | 90% | Claude Code / opus-5.5 |
 
 ### F1. Notarisation
 
@@ -314,5 +314,13 @@ Plan:
 4. Verify: `cargo +nightly fuzz build` for every target, then a short run of each (`cargo +nightly fuzz run <target> -- -max_total_time=60`). Every crash becomes a minimized regression test in `tests/`, with the fix in its own PR.
 5. Optional CI: a non-required nightly job (build plus a short run) on Linux. Do not touch `dependabot.yml` or `sync-docs.yml`.
 6. Deliver as a PR; do not merge it.
+
+Execution plan (Claude Code / opus-5.5):
+1. `src/lib.rs` compiled only under `cfg(fuzzing)` (empty crate on stable), re-declaring the same modules as `main.rs` plus a `fuzzing` module of entry points; `main.rs` is not touched. Private items the targets need get `#[cfg(fuzzing)]` wrappers in their own module. `unexpected_cfgs` learns `cfg(fuzzing)` in `Cargo.toml`.
+2. `fuzz/` with its own `[workspace]`, one `fuzz_targets/<target>.rs` per target above, `fuzz/seed.sh` building seed corpora from `tests/fixtures`, `ketch.toml`, `src/builtin.toml` and archives it makes on the fly.
+3. `cargo-fuzz` pinned in `mise.toml`; nightly stays a rustup toolchain used only by `cargo +nightly fuzz`. `just fuzz` recipe, rows in `toolchain.md` and `rust.md`.
+4. Verify: stable `cargo fmt`/`clippy`/`nextest` clean, `cargo +nightly fuzz build`, 60 s per target; any crash gets a regression test in `tests/`, not a fix.
+
+Done in the pull request: all eleven targets build and ran 60 s each without a crash in ketch. Left: review and merge; the optional nightly CI job is not added.
 
 Check: `cargo +nightly fuzz build` succeeds for all targets; each target runs 60 s with no crash (or the crash is filed with a repro test); stable `just check` does not compile `fuzz/`.

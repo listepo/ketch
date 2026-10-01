@@ -515,6 +515,12 @@ fn urlencode_path_segment(raw: &str) -> String {
     out
 }
 
+/// `parse_digest` for the `checksum_file` fuzz target (`src/lib.rs`).
+#[cfg(fuzzing)]
+pub(crate) fn fuzz_parse_digest(raw: &str) -> Option<String> {
+    parse_digest(raw)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
