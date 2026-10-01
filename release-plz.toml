@@ -51,3 +51,26 @@ pr_name = "chore: release v{{ version }}"
 # The entry's shape is cliff.toml's, shared with scripts/release.sh so both
 # ways of cutting a release write the same thing.
 changelog_config = "cliff.toml"
+
+# The workspace is two crates with one version: the root `ketch` package, which
+# is what ships, and `crates/ketch-core`, where most of the code now lives.
+# release-plz reads commits per package, by the files they touch, and the
+# root package's files stop at the nested crate: left alone, a `feat:` in the
+# core would be written into a crates/ketch-core/CHANGELOG.md that nobody
+# reads, and not into the release notes. The version group keeps the two on
+# one version, `changelog_include` lists the core's commits in the root
+# CHANGELOG.md, and the core keeps no changelog of its own.
+#
+# git_only reads each package at its last tag, and no tag before the split has
+# a ketch-core in it: until one does, `release-plz` stops with "cannot find
+# package ketch-core". The first release after the split is therefore cut
+# with bump.yml or `just release`; from its tag on, the group works as above.
+[[package]]
+name = "ketch"
+version_group = "ketch"
+changelog_include = ["ketch-core"]
+
+[[package]]
+name = "ketch-core"
+version_group = "ketch"
+changelog_update = false

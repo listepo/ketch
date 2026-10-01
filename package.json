@@ -1,13 +1,15 @@
 {
   "private": true,
-  "description": "Commitlint, plus the Tailwind CLI that builds site/static/css/mini-ui.css.",
+  "description": "Commitlint, the Tailwind CLI that builds site/static/css/mini-ui.css, and the macOS design-token tools (Style Dictionary, the DESIGN.md linter).",
   "scripts": {
     "css": "tailwindcss -i site/css/mini-ui.src.css -o site/static/css/mini-ui.css"
   },
   "devDependencies": {
     "@commitlint/cli": "21.2.3",
     "@commitlint/config-conventional": "21.2.3",
+    "@google/design.md": "0.4.0",
     "@tailwindcss/cli": "4.3.3",
+    "style-dictionary": "5.5.5",
     "tailwindcss": "4.3.3"
   }
 }

@@ -5,7 +5,7 @@ a schedule.
 
 ## Linux and Windows
 
-Shipped: `src/platform/linux.rs` and `src/platform/windows.rs`, selected from
+Shipped: `crates/ketch-core/src/platform/linux.rs` and `crates/ketch-core/src/platform/windows.rs`, selected from
 `platform::host()`. Linux places bin-dir symlinks; Windows copies into the bin
 dir and records `CopiedFile`.
 
@@ -21,7 +21,7 @@ suite on that OS.
 
 ## Verifying signatures
 
-Shipped as M3 (`src/trust.rs`). A checksum proves the file was not corrupted;
+Shipped as M3 (`crates/ketch-core/src/trust.rs`). A checksum proves the file was not corrupted;
 a signature says who published it. The manifest's `trust` table declares the
 expected identity where the package is declared rather than assuming it at
 install time, and `Manifest::validate` refuses a broken policy before anyone
@@ -42,7 +42,7 @@ the manifest pinned, never what a signature file says about itself. See
 
 ## Man pages and shell completions
 
-Shipped as M4 (`src/extra.rs`). `extra_paths` entries are classified as a man
+Shipped as M4 (`crates/ketch-core/src/extra.rs`). `extra_paths` entries are classified as a man
 page or a completion from explicit `{ path, kind }` metadata or the path rules
 in [docs/MANIFESTS.md](docs/MANIFESTS.md); ambiguous or untyped entries are
 refused at validate rather than guessed. They resolve only under the extracted
@@ -79,7 +79,7 @@ ketch-side answer is local validation before push — see
 ## Smaller things
 
 - **Rollback.** Shipped. An upgrade keeps the previous prefix; `ketch rollback <pkg>` relinks it with no redownload. `ketch prune` drops prefixes beyond the retention policy.
-- **`ketch why <pkg>`.** Shipped as M7 (`src/resolve.rs`, `ketch why`). Explains a resolution end to end without installing: which tier the manifest came from, which release matched, which asset scored highest — and which assets and releases were rejected, and why.
+- **`ketch why <pkg>`.** Shipped as M7 (`crates/ketch-core/src/resolve.rs`, `ketch why`). Explains a resolution end to end without installing: which tier the manifest came from, which release matched, which asset scored highest — and which assets and releases were rejected, and why.
 
 ## Deliberately out of scope
 
@@ -89,3 +89,7 @@ ketch-side answer is local validation before push — see
   package manager that resolves a graph is a different program.
 - **Running as root, or installing outside the ketch root.** Everything lives
   under `~/.ketch`, with `/Applications` the single documented exception.
+
+## Native desktop apps for Windows and Linux
+
+Approved 2026-09-30, after the macOS app (F12, F13). Each OS gets a native UI over the same core: Windows reuses R9's UniFFI binding from a native front end, Linux may link `ketch-core` directly from a Rust toolkit native to the desktop. Toolkit choice is its own research task, with sources, when this moves to `plan.md`. See `docs/research-desktop.md`.

@@ -1,21 +1,31 @@
-//! Terminal output.
+//! Terminal output: the only place the binary prints.
 //!
-//! Kept dependency-light on purpose: sources and platforms report download
-//! progress through the `ProgressSink` trait, so nothing below this module needs
-//! to know whether a human, a pipe, or a test is watching. Other long work
-//! reports through [`activity`]: a bar when the total is known, a spinner
-//! otherwise.
+//! The core prints nothing; it says what happens as `report::Event`s, and
+//! [`Terminal`] is the `Reporter` that draws them here — each event through the
+//! same helper a command body calls, so a line looks the same whoever said it.
+//! Colour, verbosity and the choice between line output and the `tui` renderer
+//! are settings of this renderer, never of the core. Long work is drawn by
+//! [`activity`]: a bar when the total is known, a spinner otherwise.
 
+use crate::config::Config;
 use crate::log;
+use crate::report::{Ctx, Event, Report, Reporter, Task, TaskId};
+pub use crate::report::{ProgressSink, SilentProgress, Stage};
+pub use crate::text::{bytes, truncate};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use std::collections::HashMap;
 use std::io::{IsTerminal, Write};
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Mutex;
+use unicode_width::UnicodeWidthStr;
 
 #[cfg(feature = "tui")]
 use std::sync::Arc;
 
 static COLOR: AtomicBool = AtomicBool::new(false);
+/// Off until the config says otherwise: an error raised while the config is
+/// still loading is printed without an icon rather than with a guessed one.
+static EMOJI: AtomicBool = AtomicBool::new(false);
 static LEVEL: AtomicU8 = AtomicU8::new(1); // 0 quiet, 1 normal, 2 verbose
 
 /// The bars currently sharing the terminal, while a batch is running.
@@ -147,7 +157,7 @@ fn held() -> std::sync::MutexGuard<'static, Option<MultiProgress>> {
 /// error message cannot each forget it.
 ///
 /// Only the text is filtered, never the colours: painting happens after.
-pub(crate) fn printable(text: &str) -> String {
+pub fn printable(text: &str) -> String {
     crate::changelog::sanitize(text)
 }
 
@@ -215,6 +225,30 @@ fn windows_vt() -> bool {
 #[cfg(not(windows))]
 fn windows_vt() -> bool {
     true
+}
+
+/// Turn the status-line icons on or off, once the config is known.
+///
+/// `wanted` is the `emoji` setting (`KETCH_EMOJI`, `config.toml`) with
+/// `--no-emoji` already applied. It is only a wish: see [`emoji_allowed`].
+pub fn set_emoji(wanted: bool) {
+    let term = std::env::var("TERM").ok();
+    EMOJI.store(
+        emoji_allowed(wanted, std::io::stderr().is_terminal(), term.as_deref()),
+        Ordering::Relaxed,
+    );
+}
+
+/// Icons are for a person reading a terminal. A pipe or a file is read by a
+/// program, which would have to strip them, and `TERM=dumb` is a terminal that
+/// has said it cannot draw them. Unlike colour, nothing forces them into a
+/// pipe: `CLICOLOR_FORCE` asks for escape codes, not for glyphs.
+fn emoji_allowed(wanted: bool, stderr_is_terminal: bool, term: Option<&str>) -> bool {
+    wanted && stderr_is_terminal && term != Some("dumb")
+}
+
+fn emoji_enabled() -> bool {
+    EMOJI.load(Ordering::Relaxed)
 }
 
 pub fn color_enabled() -> bool {
@@ -292,13 +326,87 @@ pub fn tone(tone: Tone, text: &str) -> String {
     }
 }
 
-/// The right-aligned verb column every status line starts with.
-fn label(verb: &str) -> String {
-    format!("{verb:>10}")
+/// Icons for what a verb is doing, looked up before the [`Tone`]'s own.
+///
+/// Matched as substrings of the verb, in order, so `installing`, `installed`
+/// and `already installed` share one entry. `uninstall` comes before `install`
+/// because it contains it.
+const OPERATION_ICONS: &[(&str, &str)] = &[
+    ("uninstall", "🗑️"),
+    ("remov", "🗑️"),
+    ("prun", "🗑️"),
+    ("install", "📦"),
+    ("upgrad", "⬆️"),
+    ("updat", "⬆️"),
+    ("download", "⬇️"),
+    ("fetch", "⬇️"),
+    ("link", "🔗"),
+    ("roll", "⏪"),
+    ("search", "🔍"),
+    ("doctor", "🩺"),
+];
+
+/// The icon a line carries: its operation's when the verb names one, else its
+/// meaning's. Work in progress and questions have no icon of their own.
+fn icon(verb: &str, kind: Tone) -> Option<&'static str> {
+    let verb = verb.to_ascii_lowercase();
+    if let Some((_, icon)) = OPERATION_ICONS.iter().find(|(key, _)| verb.contains(key)) {
+        return Some(icon);
+    }
+    match kind {
+        Tone::Success => Some("✅"),
+        Tone::Warning => Some("⚠️"),
+        Tone::Error => Some("❌"),
+        Tone::Note => Some("ℹ️"),
+        Tone::Step | Tone::Hint => None,
+    }
+}
+
+/// Columns every icon is padded to. Every icon in the table is two columns
+/// wide, the ones built from a narrow symbol and a presentation selector
+/// (`ℹ️`, `⚠️`) included; each is still measured rather than assumed, so a
+/// narrower icon added later pads out instead of pulling its line left.
+const ICON_WIDTH: usize = 2;
+
+/// The icon gutter in front of the verb column: the icon and a space, or as
+/// many blanks when the line has none, so lines with and without icons align.
+/// Empty when icons are off.
+fn gutter(icon: Option<&str>) -> String {
+    if !emoji_enabled() {
+        return String::new();
+    }
+    let icon = icon.unwrap_or("");
+    let pad = ICON_WIDTH.saturating_sub(UnicodeWidthStr::width(icon));
+    format!("{icon}{} ", " ".repeat(pad))
+}
+
+/// The width of the verb column, icon gutter included: where the text after
+/// the verb starts, for lines that continue under it.
+fn label_width() -> usize {
+    if emoji_enabled() {
+        10 + ICON_WIDTH + 1
+    } else {
+        10
+    }
+}
+
+/// The right-aligned verb column every status line starts with, behind the
+/// icon its verb and [`Tone`] pick.
+fn label(verb: &str, kind: Tone) -> String {
+    format!("{}{verb:>10}", gutter(icon(verb, kind)))
+}
+
+/// The verb column with no icon, but the same width as one that has it.
+fn bare_label(verb: &str) -> String {
+    format!("{}{verb:>10}", gutter(None))
 }
 
 fn step_line(verb: &str, detail: &str) -> String {
-    format!("{} {}", tone(Tone::Step, &label(verb)), printable(detail))
+    format!(
+        "{} {}",
+        tone(Tone::Step, &label(verb, Tone::Step)),
+        printable(detail)
+    )
 }
 
 /// The whole line is green, not only the verb: a finished step should read as
@@ -306,7 +414,7 @@ fn step_line(verb: &str, detail: &str) -> String {
 fn success_line(verb: &str, detail: &str) -> String {
     tone(
         Tone::Success,
-        &format!("{} {}", label(verb), printable(detail)),
+        &format!("{} {}", label(verb, Tone::Success), printable(detail)),
     )
 }
 
@@ -315,21 +423,21 @@ fn success_line(verb: &str, detail: &str) -> String {
 fn warn_line(detail: &str) -> String {
     tone(
         Tone::Warning,
-        &format!("{} {}", label("warning"), printable(detail)),
+        &format!("{} {}", label("warning", Tone::Warning), printable(detail)),
     )
 }
 
 fn note_line(detail: &str) -> String {
     tone(
         Tone::Note,
-        &format!("{} {}", label("note"), printable(detail)),
+        &format!("{} {}", label("note", Tone::Note), printable(detail)),
     )
 }
 
 fn debug_line(detail: &str) -> String {
     tone(
         Tone::Note,
-        &format!("{} {}", label("debug"), printable(detail)),
+        &format!("{} {}", bare_label("debug"), printable(detail)),
     )
 }
 
@@ -338,19 +446,19 @@ fn debug_line(detail: &str) -> String {
 fn error_lines(headline: &str, details: &[String], hint: Option<&str>) -> Vec<String> {
     let mut lines = vec![tone(
         Tone::Error,
-        &format!("{} {}", label("error"), printable(headline)),
+        &format!("{} {}", label("error", Tone::Error), printable(headline)),
     )];
     for line in details {
         lines.push(format!(
             "{} {}",
-            " ".repeat(10),
+            " ".repeat(label_width()),
             tone(Tone::Note, &printable(line))
         ));
     }
     if let Some(hint) = hint {
         lines.push(format!(
             "{} {}",
-            tone(Tone::Hint, &label("hint")),
+            tone(Tone::Hint, &label("hint", Tone::Hint)),
             printable(hint)
         ));
     }
@@ -360,7 +468,7 @@ fn error_lines(headline: &str, details: &[String], hint: Option<&str>) -> Vec<St
 /// The start of a question: a coloured label, then the question itself. The
 /// question can name a client app's asset or package, so it is filtered too.
 fn prompt_line(kind: Tone, verb: &str, question: &str) -> String {
-    format!("{} {}", tone(kind, &label(verb)), printable(question))
+    format!("{} {}", tone(kind, &bare_label(verb)), printable(question))
 }
 
 fn confirm_line(question: &str, default: bool) -> String {
@@ -397,7 +505,7 @@ pub fn success(verb: &str, detail: &str) {
 
 /// A warning that is not written to the log, for the one caller that cannot:
 /// the log failing to open.
-pub(crate) fn warn_unlogged(detail: &str) {
+pub fn warn_unlogged(detail: &str) {
     if is_quiet() {
         return;
     }
@@ -467,6 +575,11 @@ pub fn out(line: &str) {
     let stdout = std::io::stdout();
     let mut lock = stdout.lock();
     let _ = writeln!(lock, "{line}");
+}
+
+/// Whether a question can be put to a person: stdin is a terminal.
+pub fn can_ask() -> bool {
+    std::io::stdin().is_terminal()
 }
 
 /// Ask a yes/no question. Returns `default` when stdin is not a terminal, so
@@ -603,7 +716,12 @@ pub fn select(question: &str, options: &[String]) -> Option<usize> {
         // and would otherwise swallow the options into its activity pane.
         eprintln!("{}", prompt_line(Tone::Hint, "choose", question));
         for (i, option) in options.iter().enumerate() {
-            eprintln!("{:>11} {}", format!("{})", i + 1), printable(option));
+            eprintln!(
+                "{:>width$} {}",
+                format!("{})", i + 1),
+                printable(option),
+                width = label_width() + 1
+            );
         }
         loop {
             eprint!(
@@ -628,59 +746,9 @@ pub fn select(question: &str, options: &[String]) -> Option<usize> {
     })
 }
 
-/// Human-readable byte count.
-pub fn bytes(n: u64) -> String {
-    const UNITS: [&str; 5] = ["B", "KiB", "MiB", "GiB", "TiB"];
-    let mut value = n as f64;
-    let mut unit = 0;
-    while value >= 1024.0 && unit < UNITS.len() - 1 {
-        value /= 1024.0;
-        unit += 1;
-    }
-    if unit == 0 {
-        format!("{n} B")
-    } else {
-        format!("{value:.1} {}", UNITS[unit])
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Progress
 // ---------------------------------------------------------------------------
-
-/// How long-running work reports back. Implementors must be cheap to call and
-/// safe to call from any thread.
-pub trait ProgressSink: Send + Sync {
-    fn start(&self, total: Option<u64>, label: &str);
-    fn advance(&self, delta: u64);
-    fn finish(&self, message: &str);
-}
-
-/// A typed stage of the install pipeline for progress renderers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ProgressStage {
-    /// Looking up the manifest and release.
-    Resolving,
-    /// Copying the release asset locally.
-    Downloading,
-    /// Checking the asset digest.
-    Verifying,
-    /// Expanding the release archive.
-    Extracting,
-    /// Checking platform-specific trust requirements.
-    Trusting,
-    /// Putting files and links in their final locations.
-    Installing,
-}
-
-/// Discards everything. Used by tests, `--quiet`, and non-terminal output.
-pub struct SilentProgress;
-
-impl ProgressSink for SilentProgress {
-    fn start(&self, _total: Option<u64>, _label: &str) {}
-    fn advance(&self, _delta: u64) {}
-    fn finish(&self, _message: &str) {}
-}
 
 /// A real terminal progress bar.
 pub struct BarProgress {
@@ -817,11 +885,6 @@ impl Drop for Bars {
     }
 }
 
-/// Pick the right sink for the current run.
-pub fn progress() -> Box<dyn ProgressSink> {
-    progress_for("download")
-}
-
 /// Pick the right sink for a named unit of work.
 pub fn progress_for(label: &str) -> Box<dyn ProgressSink> {
     #[cfg(not(feature = "tui"))]
@@ -866,7 +929,7 @@ impl Activity {
     /// Which mode this was started in.
     ///
     /// Read by unit tests. `ketch list` does not need it.
-    #[cfg_attr(not(test), expect(dead_code))]
+    #[cfg(test)]
     pub fn kind(&self) -> ActivityKind {
         self.kind
     }
@@ -883,7 +946,7 @@ impl Activity {
     ///
     /// `ketch list` will use this for `N/M packages`. Nothing in this binary
     /// has that shape yet.
-    #[cfg_attr(not(test), expect(dead_code))]
+    #[cfg(test)]
     pub fn set_position(&self, position: u64) {
         self.bar.set_position(position);
     }
@@ -910,13 +973,6 @@ impl Activity {
                 group.clear().ok();
             }
         }
-    }
-
-    /// Run `work` and clear the line before returning its value.
-    pub fn run<T>(self, work: impl FnOnce(&Self) -> T) -> T {
-        let out = work(&self);
-        self.finish();
-        out
     }
 }
 
@@ -1016,7 +1072,7 @@ fn activity_message(message: &str, kind: ActivityKind) -> String {
 }
 
 /// Report an install pipeline stage to the optional interactive renderer.
-pub fn stage(package: &str, stage: ProgressStage) {
+pub fn stage(package: &str, stage: Stage) {
     #[cfg(not(feature = "tui"))]
     let _ = (package, stage);
     #[cfg(feature = "tui")]
@@ -1039,17 +1095,6 @@ pub fn completed(package: &str, success: bool) {
             success,
         });
     }
-}
-
-/// Shorten to `width`, ending with `…` when it does not fit.
-pub fn truncate(text: &str, width: usize) -> String {
-    if text.chars().count() <= width {
-        return text.to_string();
-    }
-    let keep = width.saturating_sub(1);
-    let mut s: String = text.chars().take(keep).collect();
-    s.push('…');
-    s
 }
 
 /// Render rows as an aligned table. Empty input produces no output.
@@ -1111,7 +1156,7 @@ pub fn counter(verb: &str, total: u64, unit: &str) -> Counter {
     let style = ProgressStyle::with_template(&format!("{{msg}} {{pos}}/{{len}} {unit}"))
         .unwrap_or_else(|_| ProgressStyle::default_bar());
     bar.set_style(style);
-    bar.set_message(tone(Tone::Step, &label(verb)));
+    bar.set_message(tone(Tone::Step, &label(verb, Tone::Step)));
     bar.enable_steady_tick(std::time::Duration::from_millis(120));
     Counter { bar }
 }
@@ -1181,17 +1226,139 @@ fn styled_table_lines(headers: &[&str], rows: &[Vec<String>], paint: CellPaint<'
     lines
 }
 
+// ---------------------------------------------------------------------------
+// Rendering the core's events
+// ---------------------------------------------------------------------------
+
+/// What a begun task has on screen until it ends.
+enum Live {
+    Batch(Bars),
+    Download {
+        sink: Box<dyn ProgressSink>,
+        done: u64,
+    },
+    /// Held for its drop, which clears the spinner.
+    Activity {
+        _spinner: Activity,
+    },
+    Counter {
+        counter: Counter,
+        done: u64,
+    },
+}
+
+/// Renders the core's [`Event`]s as this module's lines and bars.
+///
+/// Each event lands on the helper that drew the same thing before the core
+/// reported through events — a status line on [`step`], a download on the bar
+/// [`progress_for`] or a batch's [`Bars::sink`] picks — so what reaches the
+/// terminal, the TUI and the log is unchanged.
+#[derive(Default)]
+pub struct Terminal {
+    live: Mutex<HashMap<TaskId, Live>>,
+}
+
+impl Terminal {
+    fn live(&self) -> std::sync::MutexGuard<'_, HashMap<TaskId, Live>> {
+        self.live.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn began(&self, id: TaskId, task: Task) {
+        let live = match task {
+            Task::Batch => Live::Batch(bars()),
+            Task::Download { label, batch } => {
+                let in_batch = batch.and_then(|b| match self.live().get(&b) {
+                    Some(Live::Batch(bars)) => Some(bars.sink(&label)),
+                    _ => None,
+                });
+                Live::Download {
+                    sink: in_batch.unwrap_or_else(|| progress_for(&label)),
+                    done: 0,
+                }
+            }
+            Task::Activity { message } => Live::Activity {
+                _spinner: activity(&message, None),
+            },
+            Task::Counter { verb, unit, total } => Live::Counter {
+                counter: counter(&verb, total, &unit),
+                done: 0,
+            },
+        };
+        self.live().insert(id, live);
+    }
+
+    fn advanced(&self, id: TaskId, now: u64) {
+        match self.live().get_mut(&id) {
+            Some(Live::Download { sink, done }) => {
+                sink.advance(now.saturating_sub(*done));
+                *done = now;
+            }
+            Some(Live::Counter { counter, done }) => {
+                for _ in *done..now {
+                    counter.inc();
+                }
+                *done = now;
+            }
+            _ => {}
+        }
+    }
+
+    fn ended(&self, id: TaskId, message: Option<&str>) {
+        // Taken out first and finished after the lock is released: finishing
+        // an activity or a batch takes the bars' own lock, and a status line
+        // printed meanwhile must not wait on this map.
+        let live = self.live().remove(&id);
+        if let Some(Live::Download { sink, .. }) = &live {
+            sink.finish(message.unwrap_or(""));
+        }
+    }
+}
+
+impl Reporter for Terminal {
+    fn event(&self, event: Event) {
+        match event {
+            Event::Step { package, stage: s } => stage(&package, s),
+            Event::Status { verb, detail } => step(&verb, &detail),
+            Event::Success { verb, detail } => success(&verb, &detail),
+            Event::Warn { detail } => warn(&detail),
+            Event::Note { detail } => note(&detail),
+            Event::Debug { detail } => debug(&detail),
+            Event::Began { id, task } => self.began(id, task),
+            Event::Sized { id, name, total } => {
+                if let Some(Live::Download { sink, done }) = self.live().get_mut(&id) {
+                    sink.start(total, &name);
+                    *done = 0;
+                }
+            }
+            Event::Progress { id, done, .. } => self.advanced(id, done),
+            Event::Ended { id, message } => self.ended(id, message.as_deref()),
+            Event::Abandoned { id } => drop(self.live().remove(&id)),
+        }
+    }
+
+    fn choose(&self, question: &str, options: &[String]) -> Option<usize> {
+        select(question, options)
+    }
+
+    fn offer(&self, question: &str, default: bool) -> bool {
+        offer(question, default)
+    }
+}
+
+/// The reporter every command hands the core: one [`Terminal`] for the run.
+pub fn report() -> &'static Report {
+    static REPORT: std::sync::OnceLock<Report> = std::sync::OnceLock::new();
+    REPORT.get_or_init(|| Report::new(Terminal::default()))
+}
+
+/// A core context for `cfg` that reports to this terminal.
+pub fn ctx(cfg: &Config) -> Ctx<'_> {
+    Ctx::new(cfg, report())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn formats_byte_counts() {
-        assert_eq!(bytes(512), "512 B");
-        assert_eq!(bytes(1024), "1.0 KiB");
-        assert_eq!(bytes(1536), "1.5 KiB");
-        assert_eq!(bytes(5 * 1024 * 1024), "5.0 MiB");
-    }
 
     const HOSTILE: &str = "evil\u{1b}[2K\u{1b}[1;31mFAKE\u{1b}[0m";
     const FILTERED: &str = "evil[2K[1;31mFAKE[0m";
@@ -1290,6 +1457,80 @@ mod tests {
     }
 
     #[test]
+    fn each_line_kind_carries_its_icon_when_emoji_are_on() {
+        init(Some(false), false, true);
+        EMOJI.store(true, Ordering::Relaxed);
+        let shown = every_line_kind().join("\n");
+        EMOJI.store(false, Ordering::Relaxed);
+        insta::assert_snapshot!(shown);
+    }
+
+    #[test]
+    fn no_line_kind_carries_an_icon_when_emoji_are_off() {
+        init(Some(false), false, true);
+        EMOJI.store(false, Ordering::Relaxed);
+        let shown = every_line_kind().join("\n");
+        insta::assert_snapshot!(shown);
+        for (_, icon) in OPERATION_ICONS {
+            assert!(!shown.contains(icon), "{shown}");
+        }
+    }
+
+    #[test]
+    fn every_icon_fills_the_same_gutter() {
+        for (_, icon) in OPERATION_ICONS {
+            assert_eq!(UnicodeWidthStr::width(*icon), ICON_WIDTH, "{icon}");
+        }
+        for kind in [Tone::Success, Tone::Warning, Tone::Error, Tone::Note] {
+            let icon = icon("", kind).unwrap_or_default();
+            assert_eq!(UnicodeWidthStr::width(icon), ICON_WIDTH, "{icon}");
+        }
+    }
+
+    #[test]
+    fn text_after_the_verb_starts_in_one_column_with_or_without_an_icon() {
+        init(Some(false), false, true);
+        EMOJI.store(true, Ordering::Relaxed);
+        let lines = [
+            step_line("installing", "ripgrep"),
+            step_line("resolving", "ripgrep"),
+            success_line("up to date", "ripgrep"),
+            warn_line("ripgrep"),
+            debug_line("ripgrep"),
+        ];
+        let detail = error_lines("x", &["ripgrep".to_string()], None)[1].clone();
+        EMOJI.store(false, Ordering::Relaxed);
+        for line in lines.iter().chain([&detail]) {
+            let at = line.find("ripgrep").unwrap_or_default();
+            assert_eq!(UnicodeWidthStr::width(&line[..at]), 14, "{line:?}");
+        }
+    }
+
+    #[test]
+    fn an_operation_icon_outranks_the_meaning_icon() {
+        assert_eq!(icon("installed", Tone::Success), Some("📦"));
+        assert_eq!(icon("uninstalled", Tone::Success), Some("🗑️"));
+        assert_eq!(icon("rolled back", Tone::Success), Some("⏪"));
+        assert_eq!(icon("up to date", Tone::Success), Some("✅"));
+        assert_eq!(icon("resolving", Tone::Step), None);
+    }
+
+    #[rstest::rstest]
+    #[case::wanted_on_a_terminal(true, true, Some("xterm-256color"), true)]
+    #[case::wanted_with_no_term_set(true, true, None, true)]
+    #[case::turned_off_by_config_env_or_flag(false, true, Some("xterm"), false)]
+    #[case::piped(true, false, Some("xterm"), false)]
+    #[case::dumb_terminal(true, true, Some("dumb"), false)]
+    fn emoji_show_only_when_wanted_on_a_capable_terminal(
+        #[case] wanted: bool,
+        #[case] terminal: bool,
+        #[case] term: Option<&str>,
+        #[case] shown: bool,
+    ) {
+        assert_eq!(emoji_allowed(wanted, terminal, term), shown);
+    }
+
+    #[test]
     fn no_line_kind_carries_escape_bytes_with_colour_off() {
         init(Some(false), false, true);
         for line in every_line_kind() {
@@ -1363,14 +1604,6 @@ mod tests {
             .collect();
         assert_eq!(plain[1].find('x'), plain[2].find('y'), "{plain:?}");
         assert_eq!(plain[1].find('x'), Some("longer".len() + 2));
-    }
-
-    #[test]
-    fn truncates_on_char_boundaries() {
-        assert_eq!(truncate("abcdef", 10), "abcdef");
-        assert_eq!(truncate("abcdef", 4), "abc…");
-        // Multi-byte input must not panic or split a character.
-        assert_eq!(truncate("ünïcödé-package", 6), "ünïcö…");
     }
 
     #[test]

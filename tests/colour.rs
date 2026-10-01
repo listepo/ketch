@@ -1,6 +1,6 @@
 //! When the real binary paints its status lines, and when it must not.
 //!
-//! The line shapes themselves are snapshotted beside `src/ui.rs`. What only the
+//! The line shapes themselves are snapshotted beside `crates/ketch-core/src/ui.rs`. What only the
 //! binary can show is the decision: `CLICOLOR_FORCE`, `NO_COLOR`, `--no-color`
 //! and a pipe all reach `ui::init` through the environment and the argument
 //! parser, not through a test calling it. `uninstall` of a package that was
@@ -63,4 +63,11 @@ fn no_color_keeps_escape_bytes_out() {
 fn the_no_color_flag_outranks_a_forced_colour() {
     let stderr = uninstall_ghost(&["--no-color"], &[("CLICOLOR_FORCE", "1")]);
     assert!(!stderr.contains('\u{1b}'), "{stderr:?}");
+}
+
+#[test]
+fn the_no_emoji_flag_is_accepted_everywhere_and_a_pipe_gets_no_icon() {
+    let stderr = uninstall_ghost(&["--no-emoji"], &[("KETCH_EMOJI", "1")]);
+    assert!(stderr.starts_with("ghost: not found"), "{stderr:?}");
+    assert!(!stderr.contains('❌'), "{stderr:?}");
 }

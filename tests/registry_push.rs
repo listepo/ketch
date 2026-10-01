@@ -2,7 +2,7 @@
 //!
 //! The review step — fetch the registry's copy, diff it, confirm — needs a
 //! live GitHub token, so its three-way decision is unit-tested in
-//! `src/push.rs`. What only the real binary can prove is everything short of
+//! `crates/ketch-core/src/push.rs`. What only the real binary can prove is everything short of
 //! that boundary: the package file is found, parsed and validated before any
 //! flag is honoured, `--registry` is checked before it can become a URL, and a
 //! dry run reports the destination and the file body with no token in the

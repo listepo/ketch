@@ -1,0 +1,317 @@
+name: desktop-release
+
+# Releases the macOS app (desktop/macos): a signed, notarised, stapled
+# Ketch-X.Y.Z.dmg under the tag desktop-vX.Y.Z, and the Sparkle appcast that
+# installed copies update from. Dispatch-only, like release.yml: Actions ->
+# desktop-release -> Run workflow, or `gh workflow run desktop-release.yml
+# --ref main -f version=X.Y.Z`. AGENTS.md, "Releasing" / "macOS app".
+#
+# The app shares this repository with the CLI, and the CLI's installers
+# (install.sh, install.ps1, `ketch self upgrade`) all ask GitHub for
+# /releases/latest. So every release made here is created with
+# make_latest=false (`--latest=false`), and the last step checks that the
+# latest release is still a CLI `v*` one. The tag and the release exist only
+# once every check has passed: a failed run leaves nothing behind but logs.
+#
+# Secrets, all required, and checked before anything is built:
+#   MACOS_CERTIFICATE, MACOS_CERTIFICATE_PWD - the Developer ID Application
+#     .p12 (base64) and its password, the ones release.yml signs the CLI with
+#   APPSTORE_CONNECT_KEY (the .p8 as base64), APPSTORE_CONNECT_KEY_ID,
+#     APPSTORE_CONNECT_ISSUER_ID - notarytool's App Store Connect API key
+#   SPARKLE_ED_PRIVATE_KEY - the EdDSA key Sparkle's generate_keys exported
+#     with -x; its public half is SUPublicEDKey in desktop/macos/Ketch/Info.plist
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: App version to release, X.Y.Z (tagged desktop-vX.Y.Z)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# Two releases at once would race for the one appcast.
+concurrency:
+  group: desktop-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    # The runner and Xcode CI's macos-app job builds the app with.
+    runs-on: macos-26
+    timeout-minutes: 120
+    permissions:
+      contents: write # the desktop-v tag, its release, and the appcast release
+    env:
+      VERSION: ${{ inputs.version }}
+      GH_TOKEN: ${{ github.token }}
+      # Off until R9 ships crates/ketch-ffi; see the XCFramework step.
+      XCFRAMEWORK: 'false'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # every tag: the version check and the release notes
+          persist-credentials: false
+
+      - name: Check the version
+        id: version
+        run: scripts/desktop-version.sh "$VERSION"
+
+      - name: Check the secrets
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+          APPSTORE_CONNECT_KEY: ${{ secrets.APPSTORE_CONNECT_KEY }}
+          APPSTORE_CONNECT_KEY_ID: ${{ secrets.APPSTORE_CONNECT_KEY_ID }}
+          APPSTORE_CONNECT_ISSUER_ID: ${{ secrets.APPSTORE_CONNECT_ISSUER_ID }}
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          missing=""
+          for name in MACOS_CERTIFICATE MACOS_CERTIFICATE_PWD APPSTORE_CONNECT_KEY \
+            APPSTORE_CONNECT_KEY_ID APPSTORE_CONNECT_ISSUER_ID SPARKLE_ED_PRIVATE_KEY; do
+            [ -n "${!name:-}" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "missing repository secrets:$missing" >&2
+            echo "An app release is signed, notarised and carries a signed update feed;" >&2
+            echo "each needs its secret (AGENTS.md, Releasing / macOS app). Nothing was built." >&2
+            exit 1
+          fi
+          key="$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' desktop/macos/Ketch/Info.plist)"
+          if [ "$key" = SPARKLE_ED_PUBLIC_KEY_PLACEHOLDER ]; then
+            echo "SUPublicEDKey in desktop/macos/Ketch/Info.plist is still the placeholder:" >&2
+            echo "run Sparkle's generate_keys, commit the public key, store the private one" >&2
+            echo "(generate_keys -x) as SPARKLE_ED_PRIVATE_KEY." >&2
+            exit 1
+          fi
+
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install_args: xcodegen git-cliff
+
+      # TODO(R9): crates/ketch-ffi does not exist yet, so there is no
+      # XCFramework to link and the app runs on FakeKetchCore. When R9 lands:
+      # set XCFRAMEWORK to 'true' in the job's env, add `rust` to the mise
+      # install above, and add the KetchCore package to project.yml
+      # (desktop/macos/README.md, "Wiring the real core").
+      - name: Build the ketch-ffi XCFramework (TODO R9, skipped)
+        if: env.XCFRAMEWORK == 'true'
+        run: just xcframework
+
+      # A throwaway keychain, searched by codesign and xcodebuild, holding the
+      # one Developer ID Application identity; the same import as the CLI's
+      # identity step in .github/build-setup.yml.
+      - name: Import the signing certificate
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/ketch-app-signing.keychain-db"
+          keychain_pwd="$(openssl rand -hex 16)"
+          cert="$RUNNER_TEMP/ketch-app-certificate.p12"
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "$cert"
+          security create-keychain -p "$keychain_pwd" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_pwd" "$keychain"
+          security import "$cert" -P "$MACOS_CERTIFICATE_PWD" \
+            -f pkcs12 -k "$keychain" -T /usr/bin/codesign
+          rm -f "$cert"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$keychain_pwd" "$keychain" >/dev/null
+          # shellcheck disable=SC2046
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+
+          ids="$(security find-identity -v -p codesigning "$keychain" | grep '"Developer ID Application:' || true)"
+          if [ "$(printf '%s\n' "$ids" | grep -c .)" -ne 1 ]; then
+            echo "expected exactly one Developer ID Application identity, found:" >&2
+            security find-identity -v -p codesigning "$keychain" >&2
+            exit 1
+          fi
+          identity="$(printf '%s\n' "$ids" | sed -nE 's/^ *[0-9]+\) ([0-9A-F]{40}) .*/\1/p')"
+          team="$(printf '%s\n' "$ids" | sed -nE 's/.*\(([A-Z0-9]{10})\)"$/\1/p')"
+          [ -n "$identity" ] && [ -n "$team" ] || { echo "cannot read the identity or team" >&2; exit 1; }
+          {
+            echo "KEYCHAIN=$keychain"
+            echo "IDENTITY=$identity"
+            echo "TEAM_ID=$team"
+          } >> "$GITHUB_ENV"
+
+      # Universal, Release, signed with the hardened runtime; the version is
+      # both CFBundleShortVersionString and CFBundleVersion, which Sparkle
+      # compares.
+      - name: Archive the app
+        working-directory: desktop/macos
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcodegen generate --spec project.yml
+          xcodebuild archive -project Ketch.xcodeproj -scheme Ketch -configuration Release \
+            -derivedDataPath build -archivePath "$RUNNER_TEMP/Ketch.xcarchive" \
+            -destination 'generic/platform=macOS' ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO \
+            MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$VERSION" \
+            CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="$IDENTITY" DEVELOPMENT_TEAM="$TEAM_ID" \
+            OTHER_CODE_SIGN_FLAGS="--keychain $KEYCHAIN --timestamp" ENABLE_HARDENED_RUNTIME=YES
+
+      - name: Export for Developer ID
+        run: |
+          set -euo pipefail
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/Ketch.xcarchive" \
+            -exportOptionsPlist desktop/macos/ExportOptions.plist -exportPath "$RUNNER_TEMP/export"
+          app="$RUNNER_TEMP/export/Ketch.app"
+          echo "APP=$app" >> "$GITHUB_ENV"
+
+          # What notarisation and Sparkle rely on, checked before either runs.
+          codesign --verify --deep --strict --verbose=2 "$app"
+          details="$(codesign --display --verbose=4 "$app" 2>&1)"
+          grep -q 'Authority=Developer ID Application' <<<"$details" \
+            || { echo "not signed with Developer ID" >&2; exit 1; }
+          grep -Eq 'flags=0x[0-9a-f]+\(runtime\)' <<<"$details" \
+            || { echo "the hardened runtime is off" >&2; exit 1; }
+          archs="$(lipo -archs "$app/Contents/MacOS/Ketch")"
+          case " $archs " in *" arm64 "*" x86_64 "* | *" x86_64 "*" arm64 "*) ;; *)
+            echo "not universal: $archs" >&2; exit 1 ;;
+          esac
+          plist="$app/Contents/Info.plist"
+          for key in CFBundleShortVersionString CFBundleVersion; do
+            [ "$(/usr/libexec/PlistBuddy -c "Print :$key" "$plist")" = "$VERSION" ] \
+              || { echo "$key is not $VERSION" >&2; exit 1; }
+          done
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$plist")" = 26.0 ] \
+            || { echo "LSMinimumSystemVersion is not 26.0" >&2; exit 1; }
+
+      # The app is notarised and stapled on its own first, so a copy dragged
+      # out of the image opens offline without a Gatekeeper prompt; then the
+      # image holding it is signed, notarised and stapled too.
+      - name: Notarise and staple
+        env:
+          NOTARY_KEY: ${{ secrets.APPSTORE_CONNECT_KEY }}
+          NOTARY_KEY_ID: ${{ secrets.APPSTORE_CONNECT_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.APPSTORE_CONNECT_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/notarise"
+          mkdir -p "$work"
+          key="$work/key.p8"
+          trap 'rm -f "$key"' EXIT
+          echo "$NOTARY_KEY" | base64 --decode > "$key"
+          auth=(--key "$key" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER")
+
+          notarise() {
+            xcrun notarytool submit "$1" "${auth[@]}" --wait --output-format json \
+              > "$work/result.json" || true
+            cat "$work/result.json"
+            if [ "$(jq -r .status "$work/result.json")" != "Accepted" ]; then
+              id="$(jq -r .id "$work/result.json")"
+              xcrun notarytool log "$id" "${auth[@]}" >&2 || true
+              exit 1
+            fi
+          }
+
+          ditto -c -k --keepParent "$APP" "$work/Ketch.zip"
+          notarise "$work/Ketch.zip"
+          xcrun stapler staple "$APP"
+
+          dmg="$GITHUB_WORKSPACE/Ketch-$VERSION.dmg"
+          scripts/desktop-dmg.sh "$APP" "$dmg"
+          codesign --sign "$IDENTITY" --keychain "$KEYCHAIN" --timestamp "$dmg"
+          notarise "$dmg"
+          xcrun stapler staple "$dmg"
+          xcrun stapler validate "$dmg"
+          echo "DMG=$dmg" >> "$GITHUB_ENV"
+
+      # What a user's Mac decides on first open.
+      - name: Smoke test
+        run: |
+          set -euo pipefail
+          app="$(spctl --assess --type execute -vv "$APP" 2>&1)"
+          echo "$app"
+          grep -q 'source=Notarized Developer ID' <<<"$app"
+          image="$(spctl --assess --type open --context context:primary-signature -vv "$DMG" 2>&1)"
+          echo "$image"
+          grep -q 'source=Notarized Developer ID' <<<"$image"
+
+      - name: Checksum
+        run: |
+          set -euo pipefail
+          cd "$(dirname "$DMG")"
+          shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256"
+          shasum -a 256 -c "$(basename "$DMG").sha256"
+
+      # The feed lives on the `desktop-appcast` release, at a URL that never
+      # changes (SUFeedURL). A feed that should exist but cannot be read stops
+      # the release: starting a new one would drop every earlier version.
+      - name: Fetch the current appcast
+        env:
+          PREVIOUS: ${{ steps.version.outputs.previous }}
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/appcast"
+          mkdir -p "$dir"
+          if out="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/desktop-appcast" --jq .id 2>&1)"; then
+            gh release download desktop-appcast --repo "$GITHUB_REPOSITORY" \
+              --pattern appcast.xml --dir "$dir"
+          elif grep -q 'HTTP 404' <<<"$out" && [ -z "$PREVIOUS" ]; then
+            echo "first app release: starting the appcast"
+          else
+            echo "cannot read the desktop-appcast release (last app release: ${PREVIOUS:-none}):" >&2
+            echo "$out" >&2
+            exit 1
+          fi
+          cp "$DMG" "$dir/"
+          echo "APPCAST_DIR=$dir" >> "$GITHUB_ENV"
+
+      - name: Generate and verify the appcast
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: scripts/desktop-appcast.sh "$APPCAST_DIR" "$APP" "$VERSION" "$GITHUB_REPOSITORY"
+
+      - name: Release notes
+        run: |
+          set -euo pipefail
+          notes="$RUNNER_TEMP/notes.md"
+          git-cliff --config desktop/cliff.toml --unreleased --tag "desktop-v$VERSION" --strip all > "$notes"
+          printf '\nRequires macOS 26 or later. SHA-256: Ketch-%s.dmg.sha256.\n' "$VERSION" >> "$notes"
+          cat "$notes"
+          echo "NOTES=$notes" >> "$GITHUB_ENV"
+
+      # Everything above passed; only now do the tag and the release exist.
+      # --latest=false is make_latest=false: /releases/latest stays the CLI's.
+      - name: Publish the release
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          before="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2>/dev/null || true)"
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Ketch for macOS $VERSION" --notes-file "$NOTES" --latest=false \
+            "$DMG" "$DMG.sha256" "$APPCAST_DIR/appcast.xml"
+
+          # The feed release is a prerelease as well, so neither /releases/latest
+          # nor ketch's own release listing ever picks it.
+          if gh api "repos/$GITHUB_REPOSITORY/releases/tags/desktop-appcast" --jq .id >/dev/null 2>&1; then
+            gh release upload desktop-appcast "$APPCAST_DIR/appcast.xml" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create desktop-appcast --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+              --title "Ketch for macOS: update feed" --prerelease --latest=false \
+              --notes "The Sparkle appcast Ketch.app checks for updates. Rewritten by every desktop-v release; not a release itself." \
+              "$APPCAST_DIR/appcast.xml"
+          fi
+
+          after="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2>/dev/null || true)"
+          if [ "$after" != "$before" ]; then
+            echo "/releases/latest moved from '$before' to '$after'; install.sh would follow it" >&2
+            if [ -n "$before" ]; then
+              gh release edit "$before" --repo "$GITHUB_REPOSITORY" --latest
+            fi
+            exit 1
+          fi
+
+      - name: Remove the keychain
+        if: always()
+        run: |
+          if [ -n "${KEYCHAIN:-}" ]; then
+            security delete-keychain "$KEYCHAIN" || true
+          fi

@@ -11,14 +11,16 @@ set -eu
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-version="$(awk '/^\[package\]/ { in_pkg = 1; next }
+version="$(awk '/^\[(package|workspace\.package)\]/ { in_pkg = 1; next }
                 /^\[/          { in_pkg = 0 }
                 in_pkg && /^version[[:space:]]*=/ {
                   split($0, q, "\""); print q[2]; exit
                 }' Cargo.toml)"
 [ -n "$version" ] || { echo "crate-version: no version in Cargo.toml" >&2; exit 1; }
 
-tag="$(git tag --sort=-v:refname | head -n 1)"
+# Only the CLI's tags: the macOS app is tagged desktop-v* in the same
+# repository, with a version of its own.
+tag="$(git tag --list 'v[0-9]*' --sort=-v:refname | head -n 1)"
 [ -n "$tag" ] || { echo "crate-version: no git tags found" >&2; exit 1; }
 
 grep -q "^\#\# \[$version\](.*releases/tag/v$version)" CHANGELOG.md \

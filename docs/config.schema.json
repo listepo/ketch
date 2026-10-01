@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ConfigFile",
+  "description": "On-disk settings. Every field optional so a partial file is valid.",
+  "type": "object",
+  "properties": {
+    "allow_emulation": {
+      "description": "Allow installing x86_64 assets on Apple Silicon (via Rosetta).",
+      "type": "boolean"
+    },
+    "apps_dir": {
+      "type": "string"
+    },
+    "auto_update": {
+      "description": "Refresh the package registry before `install` and `upgrade`.",
+      "type": "boolean"
+    },
+    "emoji": {
+      "description": "Put an emoji icon in front of status lines on a terminal.",
+      "type": "boolean"
+    },
+    "github_token": {
+      "type": "string"
+    },
+    "jobs": {
+      "description": "How many packages a batch install works on at once.",
+      "type": "integer",
+      "format": "uint",
+      "minimum": 0
+    },
+    "link_apps": {
+      "description": "Symlink `.app` bundles instead of copying them.",
+      "type": "boolean"
+    },
+    "log_format": {
+      "description": "`text` or `json`.",
+      "type": "string"
+    },
+    "log_level": {
+      "description": "`off`, `error`, `warn`, `info` or `debug`.",
+      "type": "string"
+    },
+    "prerelease": {
+      "type": "boolean"
+    },
+    "registry": {
+      "description": "`owner/repo` of the package registry.",
+      "type": "string"
+    },
+    "require_checksums": {
+      "description": "Refuse to install when the release publishes no checksum.",
+      "type": "boolean"
+    },
+    "root": {
+      "type": "string"
+    },
+    "self_repo": {
+      "type": "string"
+    },
+    "strip_quarantine": {
+      "description": "Remove the quarantine flag from code that passes signature checks.",
+      "type": "boolean"
+    }
+  },
+  "$comment": "Generated from the Rust types by `KETCH_BLESS=1 cargo nextest run schema`. Do not edit.",
+  "additionalProperties": false
+}

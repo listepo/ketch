@@ -17,19 +17,19 @@ fmt-check:
     cargo fmt --all -- --check
 
 lint:
-    cargo clippy --all-targets --locked -- -D warnings
+    cargo clippy --workspace --all-targets --locked -- -D warnings
 
 # the same gate under the name people type
 alias clippy := lint
 
 test: && dunnage
-    cargo nextest run --all-targets --locked
+    cargo nextest run --workspace --all-targets --locked
 
 test-install:
-    cargo nextest run --locked --all-targets -E 'binary(install)'
+    cargo nextest run --workspace --locked --all-targets -E 'binary(install)'
 
 test-tui:
-    cargo nextest run --locked --all-targets --features tui
+    cargo nextest run --workspace --locked --all-targets --features tui
 
 # one-time setup: the pinned node from mise.toml, then commitlint onto it
 deps:
@@ -101,11 +101,15 @@ lint-shell:
     bash -n install.sh
     bash -n scripts/release.sh
     bash -n scripts/dist-generate.sh
+    bash -n scripts/desktop-version.sh
+    bash -n scripts/desktop-dmg.sh
+    bash -n scripts/desktop-appcast.sh
     bash -n fuzz/seed.sh
     sh tests/crate-version.sh
     sh tests/release-sh.sh
     sh tests/release-workflows.sh
     sh tests/ci-yml-triggers.sh
+    sh tests/desktop-release.sh
 
 package:
     #!/usr/bin/env bash
@@ -178,11 +182,36 @@ dist-check:
     diff -u "$before" .github/workflows/release.yml \
         || { echo "release.yml is stale: commit what just dist-generate wrote" >&2; exit 1; }
 
+# regenerate the macOS app's Tokens.swift, DESIGN.md front matter and
+# preview.html tokens from desktop/macos/design/tokens.json
+design-tokens:
+    mise exec -- node desktop/macos/design/build.mjs
+
+# the generated design files are what design-tokens writes (compared with the
+# files as they stand, like dist-check), DESIGN.md lints clean, and text meets
+# WCAG AA on its glass backgrounds
+design-check:
+    #!/bin/sh
+    set -eu
+    before="$(mktemp -d)"
+    trap 'rm -rf "$before"' EXIT
+    d=desktop/macos
+    cp "$d/DESIGN.md" "$d/design/preview.html" "$d/design/generated/Tokens.swift" "$before/"
+    mise exec -- node "$d/design/build.mjs"
+    stale=0
+    for f in DESIGN.md design/preview.html design/generated/Tokens.swift; do
+        diff -u "$before/$(basename "$f")" "$d/$f" || stale=1
+    done
+    [ "$stale" = 0 ] || { echo "design tokens were stale: commit what just design-tokens wrote" >&2; exit 1; }
+    mise exec -- node "$d/design/contrast.mjs"
+    mise exec -- npx --no-install designmd lint "$d/DESIGN.md" > "$before/lint.json" \
+        || { cat "$before/lint.json"; exit 1; }
+
 # release Cargo.toml's version, or the next one if it is tagged (`just release minor --dry-run`)
 release level="patch" *flags:
     scripts/release.sh {{level}} {{flags}}
 
-check: fmt-check lint test lint-commits lint-shell lint-man dist-check package lint-cask
+check: fmt-check lint test lint-commits lint-shell lint-man dist-check design-check package lint-cask
 
 # $CARGO_HOME sizes (no deletes) and the build output, wherever cargo puts it
 cache:
@@ -203,6 +232,31 @@ dunnage:
     command -v dunnage >/dev/null || { echo "dunnage not found; install it with: ketch install dunnage"; exit 0; }
     [ -d target ] || exit 0
     dunnage run target || test $? -eq 2
+
+# The macOS app (desktop/macos). XcodeGen writes Ketch.xcodeproj from
+# project.yml; the project file and build/ are gitignored. Builds are unsigned:
+# signing and notarisation belong to the app's release pipeline.
+macos_dir := "desktop/macos"
+macos_build := "xcodebuild -project " + macos_dir + "/Ketch.xcodeproj -scheme Ketch -derivedDataPath " + macos_dir + "/build"
+
+macos-project:
+    mise exec -- xcodegen generate --quiet --spec {{macos_dir}}/project.yml
+    # Tagged like cargo's target/, so backup tools and worktree cleanup treat it as a cache.
+    mkdir -p {{macos_dir}}/build
+    printf 'Signature: 8a477f597d28d172789f06886806bc55\n# xcodebuild output for the macOS app; safe to delete.\n' > {{macos_dir}}/build/CACHEDIR.TAG
+
+# universal (arm64 + x86_64) Debug build of Ketch.app
+macos-app: macos-project
+    {{macos_build}} -configuration Debug -destination 'generic/platform=macOS' ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO -quiet build
+
+# Swift Testing unit tests on the fake core, then the UI smoke test
+macos-test: macos-project
+    {{macos_build}} -destination 'platform=macOS' test
+
+# the release's disk image and Sparkle appcast, round-tripped with a throwaway
+# key: what desktop-release.yml runs, minus signing and notarisation
+macos-appcast: macos-app
+    sh tests/desktop-appcast.sh
 
 # libFuzzer targets in fuzz/ (fuzz/README.md), on nightly and never part of `check`.
 # `just fuzz` lists them, `just fuzz <target> [secs]` runs one, `just fuzz all [secs]` each in turn.

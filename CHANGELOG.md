@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- *(macos)* SwiftUI app shell on a fake core ([#185](https://github.com/listepo/ketch/pull/185))
+- [**breaking**] install of an installed package asks before updating it ([#193](https://github.com/listepo/ketch/pull/193))
+- *(ui)* emoji icons on status lines, `emoji` config key ([#179](https://github.com/listepo/ketch/pull/179))
+- *(macos)* design system — DESIGN.md, tokens and preview ([#188](https://github.com/listepo/ketch/pull/188))
 - windows completion for powershell and cmd ([#180](https://github.com/listepo/ketch/pull/180))
 - man page for every command, rendered with clap_mangen ([#176](https://github.com/listepo/ketch/pull/176))
 - complete package names in bash ([#175](https://github.com/listepo/ketch/pull/175))
@@ -19,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- in-process lock guard, typed busy error and cancellation ([#184](https://github.com/listepo/ketch/pull/184))
 - install and upgrade sweep swap leftovers before placing anything ([#186](https://github.com/listepo/ketch/pull/186))
 - uninstall of a name that is not installed prints only "not found" ([#181](https://github.com/listepo/ketch/pull/181))
 - self uninstall removes every registry value ketch wrote on Windows ([#178](https://github.com/listepo/ketch/pull/178))
@@ -26,6 +31,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Other
 
+- the core reports through a Reporter, not ui:: ([#189](https://github.com/listepo/ketch/pull/189))
+- split the core into a ketch-core library crate
+- plan the native macOS app and the core split ([#183](https://github.com/listepo/ketch/pull/183))
+- add JSON Schema for config.toml and ketch.lock, with drift tests ([#182](https://github.com/listepo/ketch/pull/182))
+- stop tracking insta pending snapshots ([#192](https://github.com/listepo/ketch/pull/192))
+- wait for the sleeper to start instead of a fixed pause ([#191](https://github.com/listepo/ketch/pull/191))
 - *(fuzz)* add cargo-fuzz targets for parsers, extractors and output filters ([#177](https://github.com/listepo/ketch/pull/177))
 ## [0.8.1](https://github.com/listepo/ketch/releases/tag/v0.8.1) - 2026-09-30
 

@@ -39,6 +39,9 @@ permissions:
 
 jobs:
   sync:
+    # The macOS app's releases (desktop-v*, and the desktop-appcast feed) are
+    # not the CLI's version: the card would read "desktop-v1.0.0".
+    if: github.ref_type != 'tag' || startsWith(github.ref_name, 'v')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

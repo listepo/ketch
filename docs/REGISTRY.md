@@ -32,7 +32,7 @@ provides    = ["rg"]
 
 `source` is the only required field. The rest are the same fields a user
 manifest in `~/.ketch/manifests/` takes — [MANIFESTS.md](MANIFESTS.md) is the
-full schema, and `src/builtin.toml` is a working example of each.
+full schema, and `crates/ketch-core/src/builtin.toml` is a working example of each.
 
 `name` may be given, but it must equal the folder name — a package that
 disagrees with its folder would be unreachable under the name the folder
@@ -200,7 +200,7 @@ A name is resolved against, in order:
 
 1. `~/.ketch/manifests/<name>.toml` — your own manifests
 2. the fetched registry
-3. the registry compiled into the binary (`src/builtin.toml`)
+3. the registry compiled into the binary (`crates/ketch-core/src/builtin.toml`)
 4. inference from `owner/repo`
 
 So a local manifest always wins, and a package curated in the registry beats

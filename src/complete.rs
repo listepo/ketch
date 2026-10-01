@@ -99,7 +99,7 @@ pub fn intercept(args: &[OsString]) -> Option<i32> {
     };
     // A completion that fails prints nothing: the shell falls back to its
     // default, and an error message in the middle of a command line helps no one.
-    let Ok(cfg) = Config::load(request.root) else {
+    let Ok(cfg) = Config::load(request.root, crate::ui::report()) else {
         return Some(1);
     };
     for name in candidates(&cfg, request.kind, request.prefix.as_deref().unwrap_or("")) {
@@ -118,7 +118,7 @@ pub fn candidates(cfg: &Config, kind: Kind, prefix: &str) -> Vec<String> {
         Kind::Installed => State::load(cfg)
             .map(|state| state.names().into_iter().map(str::to_string).collect())
             .unwrap_or_default(),
-        Kind::Registry => registry::load(cfg)
+        Kind::Registry => registry::load(&crate::ui::ctx(cfg))
             .into_iter()
             .map(|(manifest, _)| manifest.name)
             .collect(),
@@ -429,7 +429,8 @@ mod tests {
     #[test]
     fn the_script_self_install_writes_is_the_one_completions_prints() {
         let tmp = tempfile::tempdir().expect("temp dir");
-        crate::extra::write_ketch_docs(tmp.path()).expect("write docs");
+        ketch_core::extra::write_ketch_docs(tmp.path(), crate::self_docs::SELF_DOCS)
+            .expect("write docs");
         let written =
             std::fs::read(tmp.path().join("share/ketch/completions/ketch")).expect("bash script");
         assert_eq!(written, script(clap_complete::Shell::Bash));
@@ -490,7 +491,8 @@ mod tests {
     #[test]
     fn candidates_are_filtered_by_prefix_sorted_and_plain() {
         let tmp = tempfile::tempdir().expect("temp dir");
-        let cfg = Config::load(Some(tmp.path().to_path_buf())).expect("config");
+        let cfg =
+            Config::load(Some(tmp.path().to_path_buf()), crate::ui::report()).expect("config");
         for name in ["ripgrep", "ripcord", "fd", "$(evil)"] {
             let dir = cfg.registry_dir.join(name);
             std::fs::create_dir_all(&dir).expect("dir");

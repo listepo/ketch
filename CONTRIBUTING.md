@@ -7,10 +7,17 @@ trust boundaries.
 ## Checks
 
 ```bash
-cargo test
-cargo clippy --all-targets
-cargo fmt --check
+cargo test --workspace
+cargo clippy --workspace --all-targets
+cargo fmt --all --check
 ```
+
+The repository is a Cargo workspace: the `ketch` binary at the root (the
+command line: `src/main.rs`, `src/cli.rs`, `src/cmd/`, `src/complete.rs`,
+`src/man.rs`, `src/self_docs.rs`) and the `ketch-core` library in `crates/ketch-core`
+(everything else). Unit tests sit beside the module they test, in either
+crate; `tests/` drives the real binary. `AGENTS.md` says which crate a change
+belongs in.
 
 CI (`ci.yml`) runs on pushes to `main`, on pull requests that are not drafts,
 and on `workflow_dispatch`. Before merging a branch, dispatch the gate on that

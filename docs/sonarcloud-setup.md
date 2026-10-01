@@ -79,8 +79,9 @@ and points Sonar at the report with **`sonar.rust.lcov.reportPaths=coverage/lcov
 (not `sonar.coverageReportPaths`). The step is best effort: if tests fail or the report
 is missing, the scan still runs, just without coverage.
 
-Scope: `src/` and `tests/`. `site/`, `scripts/`, `examples/`, `migrations/` and the
-Node tooling (commitlint) are outside the analysis scope; `tests/fixtures/` is excluded.
+Scope: `src/`, `crates/ketch-core/src/` and `tests/`. `site/`, `scripts/`,
+`examples/`, `crates/ketch-core/migrations/` and the Node tooling (commitlint)
+are outside the analysis scope; `tests/fixtures/` is excluded.
 Coverage uses the default feature set; add `--features tui` if the TUI should count.
 
 ## 8. Local dry run (optional)

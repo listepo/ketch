@@ -5,7 +5,7 @@
 //! sorted by file name, `rtok-hook.exe` comes before `rtok.exe` on Windows
 //! while `rtok` comes before `rtok-hook` everywhere else. Stdin is never a
 //! terminal here, so these are the paths without a prompt; the order the
-//! prompt sits in is proved by the unit tests in `src/bin_choice.rs`.
+//! prompt sits in is proved by the unit tests in `crates/ketch-core/src/bin_choice.rs`.
 
 mod support;
 
