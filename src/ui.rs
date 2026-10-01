@@ -8,7 +8,9 @@
 //! [`activity`]: a bar when the total is known, a spinner otherwise.
 
 use crate::config::Config;
+use crate::decide::Decider;
 use crate::log;
+use crate::process::Occupant;
 use crate::report::{Ctx, Event, Report, Reporter, Task, TaskId};
 pub use crate::report::{ProgressSink, SilentProgress, Stage};
 pub use crate::text::{bytes, truncate};
@@ -1335,13 +1337,26 @@ impl Reporter for Terminal {
             Event::Abandoned { id } => drop(self.live().remove(&id)),
         }
     }
+}
 
-    fn choose(&self, question: &str, options: &[String]) -> Option<usize> {
-        select(question, options)
+/// The [`Decider`] for a person at this terminal: today's prompts, which
+/// already answer "nobody" when stdin or stderr is not a terminal.
+pub struct TerminalDecider;
+
+impl Decider for TerminalDecider {
+    fn choose_binary(&self, package: &str, candidates: &[String]) -> Option<usize> {
+        select(
+            &format!("{package} ships several binaries sharing its name; which one to link?"),
+            candidates,
+        )
     }
 
-    fn offer(&self, question: &str, default: bool) -> bool {
-        offer(question, default)
+    fn stop_processes(&self, occupants: &[Occupant]) -> bool {
+        let question = match occupants {
+            [one] => format!("stop process {} using {}?", one.pid, one.path.display()),
+            many => format!("stop {} processes using files being replaced?", many.len()),
+        };
+        offer(&question, false)
     }
 }
 
@@ -1351,9 +1366,20 @@ pub fn report() -> &'static Report {
     REPORT.get_or_init(|| Report::new(Terminal::default()))
 }
 
-/// A core context for `cfg` that reports to this terminal.
+/// A core context for `cfg` that reports to this terminal and asks nothing:
+/// what a run with no person to answer, or `--yes`, wants.
 pub fn ctx(cfg: &Config) -> Ctx<'_> {
     Ctx::new(cfg, report())
+}
+
+/// [`ctx`], with the pipeline's questions put to a person at this terminal
+/// when `ask` is true. `ask` is false under `--yes`, which has answered them.
+pub fn ctx_asking(cfg: &Config, ask: bool) -> Ctx<'_> {
+    if ask {
+        ctx(cfg).with_decider(&TerminalDecider)
+    } else {
+        ctx(cfg)
+    }
 }
 
 #[cfg(test)]

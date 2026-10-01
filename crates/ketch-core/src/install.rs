@@ -42,11 +42,6 @@ pub struct InstallRequest {
     pub expected_sha256: Option<String>,
     /// Override the resolved package name (used by `ketch install --path --name`).
     pub name_override: Option<String>,
-    /// A person may be asked to decide what inference cannot — which of
-    /// several binaries sharing the package's name to link. False under
-    /// `--yes` and for installs no person started; the prompt itself still
-    /// needs a terminal on stdin and stderr.
-    pub interactive: bool,
     /// `--bin`: which of several binaries sharing the package's name to
     /// link, answered before anyone asks. Wins over every other rule.
     pub bin: Option<String>,
@@ -75,7 +70,6 @@ impl InstallRequest {
             asset_override: None,
             expected_sha256: None,
             name_override: None,
-            interactive: false,
             bin: None,
             locked_bin: None,
             offer_update: false,
@@ -119,10 +113,8 @@ pub struct Prepared {
     /// Carried from the request: `commit` is the only place that links.
     link: bool,
     /// Carried from the request: `commit` is where a binary is chosen.
-    interactive: bool,
-    /// Carried from the request, like `interactive`.
     bin: Option<String>,
-    /// Carried from the request, like `interactive`.
+    /// Carried from the request, like `bin`.
     locked_bin: Option<String>,
     /// Root of the unpacked payload, inside `unpack`.
     payload: PathBuf,
@@ -434,7 +426,6 @@ pub fn prepare(
         trust,
         provenance,
         link: req.link,
-        interactive: req.interactive,
         bin: req.bin.clone(),
         locked_bin: req.locked_bin.clone(),
         payload,
@@ -473,9 +464,8 @@ fn pick_bin(
     manifest: Option<&crate::model::Manifest>,
     name: &str,
     known: bin_choice::Known<'_>,
-    interactive: bool,
 ) -> Result<Option<BinPick>> {
-    let (cfg, report) = (cx.cfg, cx.report);
+    let cfg = cx.cfg;
     if manifest.is_some_and(|m| !m.bin.is_empty()) {
         if let Some(flag) = known.flag {
             return Err(Error::msg(format!(
@@ -507,14 +497,7 @@ fn pick_bin(
     let hint = crate::manifest::user_manifest_path(cfg, name)
         .display()
         .to_string();
-    let question = format!("{name} ships several binaries sharing its name; which one to link?");
-    let mut ask = |candidates: &[String]| {
-        if interactive {
-            report.choose(&question, candidates)
-        } else {
-            None
-        }
-    };
+    let mut ask = |candidates: &[String]| cx.decider.choose_binary(name, candidates);
     let (i, how) = bin_choice::choose(name, &names, known, &mut ask, &hint)?;
     let chosen = contenders[i];
     // The exact paths, not globs or bare names: a release can carry a
@@ -639,7 +622,6 @@ pub fn commit(cx: &Ctx<'_>, state: &mut State, prepared: Prepared) -> Result<Ins
         trust,
         provenance,
         link,
-        interactive,
         bin,
         locked_bin,
         payload,
@@ -722,7 +704,6 @@ pub fn commit(cx: &Ctx<'_>, state: &mut State, prepared: Prepared) -> Result<Ins
             Some(&manifest),
             &manifest.name,
             known,
-            interactive,
         )?
     } else {
         None
@@ -1022,7 +1003,6 @@ pub fn relink(cx: &Ctx<'_>, state: &mut State, name: &str) -> Result<()> {
             flag: None,
             remembered: remembered.as_slice(),
         },
-        true,
     )?;
     let picked_specs = pick.as_ref().map(|p| p.specs.clone());
     let links = platform.place(&Placement {
@@ -1153,7 +1133,6 @@ pub fn rollback(
                 flag: None,
                 remembered: remembered.as_slice(),
             },
-            true,
         )?
     } else {
         None
@@ -2340,6 +2319,112 @@ mod tests {
         assert!(
             !events.iter().any(|e| matches!(e, Event::Warn { .. })),
             "a clean install warns about nothing: {events:#?}"
+        );
+    }
+
+    /// Answers the binary question from a script and remembers what it was
+    /// asked, so a test sees the question as the front end would.
+    struct Scripted {
+        pick: Option<usize>,
+        asked: std::sync::Mutex<Vec<(String, Vec<String>)>>,
+    }
+
+    impl Scripted {
+        fn answering(pick: Option<usize>) -> Self {
+            Scripted {
+                pick,
+                asked: Default::default(),
+            }
+        }
+    }
+
+    impl crate::decide::Decider for Scripted {
+        fn choose_binary(&self, package: &str, candidates: &[String]) -> Option<usize> {
+            self.asked
+                .lock()
+                .unwrap()
+                .push((package.to_string(), candidates.to_vec()));
+            self.pick
+        }
+
+        fn stop_processes(&self, _occupants: &[crate::process::Occupant]) -> bool {
+            false
+        }
+    }
+
+    /// A payload with two executables that share the package name and none
+    /// named exactly like it, so only a decision can pick between them.
+    fn ambiguous_payload(dir: &Path) {
+        for stem in ["rtok-cli", "rtok-hook"] {
+            let file = dir.join(if cfg!(windows) {
+                format!("{stem}.exe")
+            } else {
+                stem.to_string()
+            });
+            std::fs::write(&file, "#!/bin/sh\n").unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
+            }
+        }
+    }
+
+    fn pick_with(decider: &dyn crate::decide::Decider) -> Result<Option<BinPick>> {
+        let tmp = tempfile::tempdir().unwrap();
+        let payload = tmp.path().join("payload");
+        std::fs::create_dir(&payload).unwrap();
+        ambiguous_payload(&payload);
+        let report = Report::silent();
+        let cfg = Config::load(Some(tmp.path().join("root")), &report).unwrap();
+        let cx = Ctx::new(&cfg, &report).with_decider(decider);
+        let platform = crate::platform::host().unwrap();
+        pick_bin(
+            &cx,
+            platform.as_ref(),
+            &payload,
+            None,
+            "rtok",
+            bin_choice::Known {
+                flag: None,
+                remembered: &[],
+            },
+        )
+    }
+
+    #[test]
+    fn the_decider_picks_the_binary_when_nothing_else_can() {
+        let decider = Scripted::answering(Some(1));
+        let pick = pick_with(&decider).unwrap().expect("a pick");
+        let asked = decider.asked.lock().unwrap();
+        assert_eq!(asked.len(), 1, "asked exactly once: {asked:?}");
+        let (package, candidates) = &asked[0];
+        assert_eq!(package, "rtok");
+        assert_eq!(candidates.len(), 2, "{candidates:?}");
+        assert_eq!(pick.file, candidates[1]);
+        assert_eq!(pick.how, Picked::Asked);
+    }
+
+    #[test]
+    fn a_declined_choice_is_the_ambiguity_error() {
+        let decider = Scripted::answering(None);
+        let err = pick_with(&decider).err().expect("an error").to_string();
+        assert!(
+            err.contains("ships several binaries sharing its name"),
+            "{err}"
+        );
+        assert_eq!(decider.asked.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn no_decider_declines_like_a_script() {
+        let err = pick_with(&crate::decide::NoDecider)
+            .err()
+            .expect("an error")
+            .to_string();
+        assert!(
+            err.contains("ships several binaries sharing its name"),
+            "{err}"
         );
     }
 }

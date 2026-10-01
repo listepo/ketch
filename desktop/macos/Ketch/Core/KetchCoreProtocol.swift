@@ -38,6 +38,9 @@ struct Upgrade: Sendable, Hashable, Identifiable {
     var name: String
     var from: String
     var to: String
+    /// The `ketch.lock` that pins this package at `from`, when one does;
+    /// `upgrade` leaves a held package where it is.
+    var heldBy: String?
 
     var id: String { name }
 }

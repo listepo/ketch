@@ -23,7 +23,7 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | M16 | todo | P2 | 4 | 0% | |
 | R5 | in progress | P2 | 4 | 90% | Claude Code / opus-5.5 |
 | R6 | in progress | P2 | 4 | 90% | Claude Code / opus-5.5 |
-| R7 | todo | P2 | 2 | 0% | |
+| R7 | in progress | P2 | 2 | 90% | Claude Code / sonnet-5.5 |
 | R8 | in progress | P3 | 3 | 90% | Claude Code / sonnet-5.5 |
 | R9 | todo | P3 | 3 | 0% | |
 | F12 | in progress | P3 | 5 | 50% | Claude Code / opus-5.5 |
@@ -379,6 +379,8 @@ Plan:
 4. Audit that nothing in the core reads stdin (`grep` for `stdin()`, `read_line`, `IsTerminal` outside `ui.rs`/`tui/`).
 
 Check: unit tests with a scripted decider (picks the second candidate; declines → the existing ambiguity error); the B64 end-to-end tests pass unchanged.
+
+Status: PR https://github.com/pyrlyn/ketch/pull/204. `decide::Decider` (`choose_binary`, `stop_processes`) sits in `Ctx`; `Reporter::choose`/`offer` and `InstallRequest::interactive` are gone. `process::offer_to_stop`, the other mid-run question, went through the same trait. `ui::ctx_asking` opts the CLI in (install, upgrade, rollback, link, self upgrade; off under `--yes`). Nothing in `crates/` reads stdin.
 
 ### R8. Core calls from a long-running host
 

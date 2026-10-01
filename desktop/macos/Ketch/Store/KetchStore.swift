@@ -38,7 +38,7 @@ struct Activity: Sendable, Hashable {
 
 /// One line of the Activity log.
 struct LogEntry: Sendable, Hashable, Identifiable {
-    enum Level: Sendable, Hashable { case info, warning, error }
+    enum Level: Sendable, Hashable { case info, success, warning, error }
 
     let id: Int
     let date: Date
@@ -95,11 +95,21 @@ final class KetchStore {
 
     var root: URL { core.root }
     var isRunning: Bool { activity != nil }
-    /// What the menu bar shows.
-    var pendingUpgradeCount: Int { outdated.count }
 
+    /// Newer releases `upgrade` would install: everything outdated that no
+    /// `ketch.lock` holds back.
+    var updates: [Upgrade] { outdated.filter { $0.heldBy == nil } }
+    /// Newer releases a `ketch.lock` holds back, shown but never upgraded.
+    var pinned: [Upgrade] { outdated.filter { $0.heldBy != nil } }
+    /// What the sidebar, the menu bar and Upgrade all count.
+    var pendingUpgradeCount: Int { updates.count }
+    /// Doctor findings that are not ok, for the sidebar.
+    var problemCount: Int { findings.count { $0.severity != .ok } }
+
+    /// The version an upgrade would move `name` to; `nil` when it is current
+    /// or pinned.
     func outdatedVersion(of name: String) -> String? {
-        outdated.first { $0.name == name }?.to
+        updates.first { $0.name == name }?.to
     }
 
     // MARK: Reading
@@ -207,6 +217,14 @@ final class KetchStore {
         answer(nil)
     }
 
+    /// Re-runs what the held lock refused. The banner goes away now and comes
+    /// back with the new holder's pid if the lock is still held.
+    func retryBusy() async {
+        guard let busy else { return }
+        self.busy = nil
+        await busy.retry()
+    }
+
     /// Answers the pending binary choice.
     func answer(_ choice: Int?) {
         guard let pending = pendingChoice else { return }
@@ -255,7 +273,7 @@ final class KetchStore {
         let decider = SheetDecider(store: self, cancel: token)
         do {
             try await background { core in try body(core, reporter, decider, token) }
-            append(.info, "Done: \(title)")
+            append(.success, "Done: \(title)")
         } catch {
             report(error, retry: retry)
         }

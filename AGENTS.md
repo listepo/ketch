@@ -240,8 +240,9 @@ conditional, multi-stage Rust automation.
 | `crates/ketch-core/src/push.rs` | `ketch registry push`: a project's `ketch.toml` as a registry pull request, via octocrab |
 | `crates/ketch-core/src/self_update.rs` | `ketch self`: installing, updating and removing the host as a package |
 | `crates/ketch-core/src/report.rs` | how the core says what happens: `Event`, `Reporter`, the `Report` handle, `Ctx`, `LogReporter` and `Recorder` |
+| `crates/ketch-core/src/decide.rs` | what the core asks a person mid-run: the `Decider` trait and `NoDecider`, carried in `Ctx` |
 | `crates/ketch-core/src/text.rs` | byte counts and truncation, spelled the same by the core and every renderer |
-| `src/ui.rs` | all terminal output, and `Terminal`: the `Reporter` that draws the core's events |
+| `src/ui.rs` | all terminal output, `Terminal`: the `Reporter` that draws the core's events, and `TerminalDecider`: the `Decider` that prompts on the terminal |
 | `src/tui/` | the opt-in full-screen renderer (`tui` feature), driven by `ui.rs` |
 | `crates/ketch-core/src/builtin.toml` | the manifests compiled into the binary, the offline registry tier |
 | `crates/ketch-core/migrations/` | the `stats.db` schema, embedded by `stats.rs` |
@@ -342,8 +343,13 @@ These are observed throughout; match them rather than introducing your own.
   never calls `ui::` — `ui.rs` lives in the binary. Code in the core takes a
   `report::Ctx` (config plus `Report`) or a `&Report` and says what happens as
   typed `report::Event`s: `stage`, `step`, `success`, `warn`, `note`, `debug`,
-  and `activity`/`download`/`batch`/`counter` handles for long work. A question
-  goes through `Report::choose`/`offer`, whose defaults answer like a script.
+  and `activity`/`download`/`batch`/`counter` handles for long work. The core
+  never reads stdin: a question goes to the `decide::Decider` in `Ctx`
+  (`choose_binary`, `stop_processes`), and `NoDecider`, the default, answers
+  like a script. The binary asks through `ui::ctx_asking`, which puts
+  `ui::TerminalDecider` there unless `--yes` has already answered. A
+  confirmation a command makes before calling the core stays in `cmd/`: it is
+  the front end's own dialog, and a GUI makes its own.
   The binary hands in `ui::Terminal`, which draws each event through the same
   `ui::` helper a command body calls, so its output is unchanged by who said
   it. In the binary there is no `println!` outside `ui.rs`: data goes to
