@@ -22,6 +22,5 @@ Empty: F1/F2/M3/F5 and the 2026-09-20 audit follow-ups (A2) are in `done.md`; th
 - F12. Native macOS app (SwiftUI) on `ketch-ffi`
 - F13. macOS app release pipeline
 - F14. Design system for the macOS app: `DESIGN.md` and tokens
-- F15. Liquid glass design in Figma
 - F16. Tokens and Appearance settings for Liquid glass
 - F17. Screens rebuilt on the Liquid glass design

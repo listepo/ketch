@@ -28,9 +28,8 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | F12 | in progress | P3 | 5 | 50% | Claude Code / opus-5.5 |
 | F13 | in progress | P3 | 4 | 80% | Claude Code / opus-5.5 |
 | F14 | in progress | P2 | 3 | 90% | Claude Code / opus-5.5 |
-| F15 | in progress | P2 | 4 | 80% | Claude Code / opus-5.5 |
-| F16 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
-| F17 | todo | P2 | 4 | 0% | |
+| F16 | in progress | P2 | 3 | 90% | Claude Code / opus-5.5 |
+| F17 | in progress | P2 | 4 | 0% | Claude Code / opus-5.5 |
 
 ### F1. Notarisation
 
@@ -457,20 +456,6 @@ Check: the generator reproduces `Tokens.swift` byte-for-byte; the preview render
 
 Status: PR https://github.com/pyrlyn/ketch/pull/188, CI green (new `design` job). Google Labs DESIGN.md spec (alpha, `@google/design.md` 0.4.0) with generated front matter; tokens in W3C DTCG 2025.10; Style Dictionary 5.5.5 with custom formats for Swift (four appearances), CSS and the front matter; `just design-check` covers drift, WCAG AA and lint. Research in `docs/research-design-system.md`. Remaining: an Accessibility Inspector pass on the real Liquid Glass material, and the F12 switch of `Theme.swift` to `Tokens.swift`.
 
-### F15. Liquid glass design in Figma
-
-The creator chose variant 6, "Liquid glass", from the design explorations as the app's design (2026-10-01), and Figma as the design tool. The Figma file becomes the source the tokens and the screens follow.
-
-Plan:
-1. A Figma design file "ketch for macOS — Liquid glass" in the creator's team: a `Color` variable collection with Light and Dark modes (glass, glass-hi, glass-lo, glass-top, glass-sheet, ink, ink-2, hair, edge, rim-hi, rim-lo, drop, scrim, accent, accent-soft, accent-ink, on-accent, status colours), number variables for radius and spacing, text styles (Large title, Title, Headline, Body, Caption, Badge, Mono), effect styles for the glass elevations (drop shadow plus inner rim light and shade, background blur).
-2. Components: window chrome, sidebar navigation, package row, app card, shelf, badge, button (primary, glass), segmented control, progress bar, sheet, menu-bar extra.
-3. Screens on a Light page and a Dark page, 1180×760: Installed, Discover, Updates, Package detail, Activity, Doctor, Settings (with Appearance), binary-choice sheet, menu-bar extra; prototype links between them.
-4. The file link and the variable-to-token mapping go into `desktop/macos/DESIGN.md` and `desktop/macos/design/README.md`.
-
-Check: every colour, radius and text style on the screens is bound to a variable or style; screenshots of both pages reviewed; the mapping table lists every variable.
-
-Status: file https://www.figma.com/design/v7OJLmQEyCFbJ63uSYpJ9g (Ivan's Starter team). Done: `Color` collection (31 variables, Light and Dark), `Dimension` collection (13), 7 text styles, 5 effect styles built on Figma's Glass effect, components (icons, app icon, badge, button, nav item, search field, progress, segment, swatch, package row), nine screens on the Light page and their Dark-mode clones, prototype links from the sidebar, rows and Uninstall. Inter and JetBrains Mono stand in for SF Pro and SF Mono, which Figma's cloud renderer does not have. Remaining: the variable-to-token mapping in `DESIGN.md` and `design/README.md` once F16 fixes the token names, and iOS code syntax on the variables.
-
 ### F16. Tokens and Appearance settings for Liquid glass
 
 The app moves to F15's palette and gets Appearance settings. Liquid Glass stays the system material (`.glassEffect`), so what the user can change is what the material allows: tint, regular or clear glass, accent, and the strength of the backdrop wash (creator, 2026-10-01).
@@ -483,9 +468,21 @@ Plan:
 
 Check: `just design-check`, `xcodebuild test` for the app, a screenshot of both appearances.
 
+Status: PR https://github.com/pyrlyn/ketch/pull/197, CI green. To meet WCAG AA the accent deepened to #0873e0 (white on #0a84ff is 3.65:1) and the dark wash colours changed; F15's Figma variables were synced to these values. Not verified locally: dark-appearance screenshots, the UI test (timed out in automation mode; passes in CI) and `preview.html` in a browser.
+
 ### F17. Screens rebuilt on the Liquid glass design
 
 The SwiftUI views follow F15's screens: the glass sidebar with counts, an Updates screen, Discover as shelves of app cards, the detail page, Activity, Doctor, the binary-choice sheet and the menu-bar extra. Starts after F15's screens and F16's tokens land.
+
+Plan (stacked on F16's branch `f16-liquid-glass-tokens` until #197 merges):
+1. Read the Figma screens (`get_design_context` / `get_screenshot` per frame; node ids and the variable mapping in `desktop/macos/design/figma.md`); colours, radii and spacing come only from `Tokens.swift` through `Theme.swift`, never literals.
+2. `ContentView.swift`: glass sidebar with counts (Installed, Discover, Updates, Activity, Doctor) and the root and package summary at its foot; `KetchStore` gains an update count if it lacks one.
+3. New `UpdatesView.swift`: available updates with per-row Update and Update all, the busy banner (`Error::Busy`) with Retry, pinned packages held by `ketch.lock`.
+4. `InstalledView`, `DiscoverView` (hero plus shelves of app cards), `PackageDetailView`, `ActivityView`, `DoctorView`, the uninstall sheet and `MenuBarContent` restyled to the frames; badges use the status pairs, an update badge `Status.update`.
+5. Reduce Transparency and Increase Contrast keep working (the `Glass/Reduced` style, `highContrast` tokens).
+6. Tests: Swift Testing for new store logic (update count, busy state); the UI test navigates every sidebar item.
+
+Check: `xcodegen` + `xcodebuild test`, `just design-check`, screenshots of each screen in light and dark compared with the Figma frames.
 
 ### M14. JSON Schema for the package manifest
 
