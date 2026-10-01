@@ -2684,6 +2684,7 @@ dependencies = [
  "toml_edit",
  "trycmd",
  "typed-path",
+ "unicode-width",
  "ureq",
  "walkdir",
  "zip",

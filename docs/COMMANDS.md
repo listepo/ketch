@@ -5,7 +5,15 @@ working example. `PKG` below is an installed name, an alias, or
 `owner/repo` — most commands that take one also accept `@version` on the end
 (`sharkdp/fd@v10.2.0`). Global flags work everywhere: `--root <DIR>` points at
 a different ketch tree, `-v/--verbose` shows what ketch is doing, `-q/--quiet`
-prints only errors and requested data, and `--no-color` disables colour.
+prints only errors and requested data, `--no-color` disables colour, and
+`--no-emoji` drops the icons in front of status lines.
+
+**Icons.** On a terminal, each status line starts with an icon for what it
+reports: 📦 install, ⬆️ upgrade or update, 🗑️ uninstall or remove, ⬇️ download,
+🔗 link, ⏪ rollback, 🔍 search, 🩺 doctor, and otherwise ✅ success, ⚠️ warning,
+❌ error, ℹ️ note. They are on by default (`emoji` in `config.toml`,
+`KETCH_EMOJI`) and never appear in a pipe or a file, under `TERM=dumb`, in
+`--json` or `--names-only` output, in table data, or in the log.
 
 ## Install and remove
 
