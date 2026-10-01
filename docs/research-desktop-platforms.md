@@ -382,10 +382,10 @@ already names as the pattern.
 5. **Shared app layer.** Decided by the creator (2026-10-01): none now; thin
    view-models per app and D4's fixtures. Revisit if the same event-fold fix
    lands in two apps.
-6. **Brand across platforms.** Accent, status colours, spacing, radii and type
-   scale from `tokens.json` on Windows and Linux, with native surfaces
-   (recommended); or fully native palettes. Moving
-   `desktop/macos/design/` to `desktop/design/` follows from the first.
+6. **Brand across platforms.** Decided by the creator (2026-10-01): accent,
+   status colours, spacing, radii and type scale from `tokens.json` on
+   Windows and Linux, with native surfaces; the token source moves from
+   `desktop/macos/design/` to `desktop/design/`.
 7. **Localisation.** English first; each app in its native format, one
    Weblate project later; or no localisation for now.
 8. **Linux tray.** None, relying on the Background portal (recommended); or
