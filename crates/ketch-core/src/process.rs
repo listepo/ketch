@@ -12,7 +12,7 @@ use std::process::Command;
 use std::sync::mpsc;
 use std::time::Duration;
 
-use crate::report::Report;
+use crate::report::{Ctx, Report};
 
 /// How long a listing subprocess may run before it is stopped. The listing
 /// is best-effort ("could not list" and "nobody" are the same answer), so a
@@ -31,8 +31,10 @@ pub struct Occupant {
 
 /// Ask to stop processes using `paths`. `--yes` stops them without asking;
 /// a decline leaves them running and the caller continues as before. The
-/// question is `report`'s to ask: a front end that cannot ask declines.
-pub fn offer_to_stop(paths: &[PathBuf], yes: bool, report: &Report) {
+/// question is the [`Decider`](crate::decide::Decider)'s to answer: a front end
+/// that cannot ask declines.
+pub fn offer_to_stop(paths: &[PathBuf], yes: bool, cx: &Ctx<'_>) {
+    let report = cx.report;
     let me = std::process::id();
     let mut seen = BTreeSet::new();
     let occupants: Vec<Occupant> = using(paths, report)
@@ -48,19 +50,7 @@ pub fn offer_to_stop(paths: &[PathBuf], yes: bool, report: &Report) {
             &format!("pid {} {}", occupant.pid, occupant.path.display()),
         );
     }
-    let question = if occupants.len() == 1 {
-        format!(
-            "stop process {} using {}?",
-            occupants[0].pid,
-            occupants[0].path.display()
-        )
-    } else {
-        format!(
-            "stop {} processes using files being replaced?",
-            occupants.len()
-        )
-    };
-    if !(yes || report.offer(&question, false)) {
+    if !(yes || cx.decider.stop_processes(&occupants)) {
         return;
     }
     for occupant in occupants {
@@ -630,7 +620,9 @@ mod tests {
         let found = wait_for(&copy, &mut child);
         assert_eq!(found.pid, child.0.id());
         let recorder = std::sync::Arc::new(crate::report::Recorder::default());
-        offer_to_stop(&[copy], true, &Report::shared(recorder.clone()));
+        let report = Report::shared(recorder.clone());
+        let cfg = crate::config::Config::load(Some(tmp.path().to_path_buf()), &report).unwrap();
+        offer_to_stop(&[copy], true, &Ctx::new(&cfg, &report));
         let pid = format!("pid {}", found.pid);
         assert!(
             recorder.events().contains(&crate::report::Event::Status {
