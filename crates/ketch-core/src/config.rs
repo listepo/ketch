@@ -809,6 +809,25 @@ mod tests {
     }
 
     #[test]
+    fn log_values_in_the_file_are_not_case_sensitive() {
+        use crate::log::{Format, Level};
+        let got = log_with("log_level = \"Info\"\nlog_format = \"JSON\"\n", None, None);
+        assert_eq!(got.unwrap(), (Level::Info, Format::Json));
+    }
+
+    #[test]
+    fn a_bad_log_value_in_the_file_lists_the_allowed_values() {
+        let err = log_with("log_level = \"chatty\"\n", None, None)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("off, error, warn, info or debug"), "{err}");
+        let err = log_with("log_format = \"xml\"\n", None, None)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("text or json"), "{err}");
+    }
+
+    #[test]
     fn ketch_log_level_overrides_the_file() {
         use crate::log::{Format, Level};
         let got = log_with("log_level = \"debug\"\n", Some("error"), None);

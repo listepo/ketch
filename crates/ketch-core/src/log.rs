@@ -19,7 +19,7 @@
 //! is reported once and then ignored for the rest of the run.
 
 use crate::config::Config;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::fmt;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
@@ -37,21 +37,18 @@ const MAX_BYTES: u64 = 5 * 1024 * 1024;
 /// one, which puts `Off` first and makes it filter everything.
 ///
 /// Serialised in lower case because it is a `config.toml` value: the type is
-/// the one place that lists what the key accepts, and the schema reads it from
-/// here. The aliases are the spellings `FromStr` has always taken from
-/// `KETCH_LOG_LEVEL`, kept so a file that used one still loads.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Serialize, Deserialize)]
+/// the one place that lists what the key accepts, and the schema reads the
+/// canonical names from here. Reading goes through `FromStr`, so the file takes
+/// every spelling `KETCH_LOG_LEVEL` takes, in any case, as it always did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum Level {
-    #[serde(alias = "none", alias = "false")]
     Off,
     Error,
-    #[serde(alias = "warning")]
     Warn,
     #[default]
     Info,
-    #[serde(alias = "trace")]
     Debug,
 }
 
@@ -102,16 +99,14 @@ impl FromStr for Level {
 /// every CLI writes and every person can read; `json` is JSON Lines, which is
 /// what a log shipper wants and what `jq` reads without a parser.
 ///
-/// Serialised in lower case for the same reason as `Level`, with the aliases
-/// `KETCH_LOG_FORMAT` has always taken.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+/// Serialised in lower case and read through `FromStr`, for the same reasons
+/// as `Level`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum Format {
     #[default]
-    #[serde(alias = "plain", alias = "logfmt")]
     Text,
-    #[serde(alias = "jsonl", alias = "ndjson")]
     Json,
 }
 
@@ -135,6 +130,25 @@ impl FromStr for Format {
         }
     }
 }
+
+/// Reading a config value goes through `FromStr`, not the derive, so the file
+/// accepts exactly what the environment variable does. A derived `Deserialize`
+/// would be case-sensitive and would refuse files that loaded before. The
+/// message is `FromStr`'s own, which already lists the allowed values; the TOML
+/// parser adds the file and the key.
+macro_rules! deserialize_from_str {
+    ($($ty:ty),*) => {$(
+        impl<'de> Deserialize<'de> for $ty {
+            fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                String::deserialize(deserializer)?
+                    .parse()
+                    .map_err(serde::de::Error::custom)
+            }
+        }
+    )*};
+}
+
+deserialize_from_str!(Level, Format);
 
 struct Sink {
     file: File,
