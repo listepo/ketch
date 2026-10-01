@@ -4,41 +4,22 @@
 //! `Config`, and hand off to a command. Every failure path converges here so a
 //! single place decides how errors are shown and what the process exits with.
 
-mod bin_choice;
-mod cancel;
-mod changelog;
 mod cli;
 mod cmd;
 mod complete;
-mod config;
-mod diff;
-mod error;
-mod extra;
-mod extract;
-mod hooks;
-mod http;
-mod install;
-mod listing;
-mod lockfile;
-mod log;
 mod man;
-mod manifest;
-mod model;
-mod platform;
-mod process;
-mod push;
-mod registry;
-mod resolve;
-mod self_update;
-mod shell;
-mod source;
-mod state;
-mod stats;
-mod trust;
+mod self_docs;
+
+// The core's modules, imported at the crate root under the names they had
+// when they lived here, so `crate::config`, `crate::ui` and the rest keep
+// resolving in `cmd/` and the binary's own paths did not have to change.
 #[cfg(feature = "tui")]
-mod tui;
-mod ui;
-mod wizard;
+use ketch_core::tui;
+use ketch_core::{
+    cancel, changelog, config, diff, error, install, listing, lockfile, log, manifest, model,
+    platform, process, push, registry, resolve, self_update, shell, source, state, stats, ui,
+    wizard,
+};
 
 use clap::Parser;
 use cli::{Cli, Command};

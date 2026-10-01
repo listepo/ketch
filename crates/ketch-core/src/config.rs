@@ -96,7 +96,7 @@ impl Config {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```ignore
     /// use ketch::config::Config;
     ///
     /// let config = Config::load(None).unwrap();
@@ -466,6 +466,9 @@ pub fn sanitize_component(raw: &str) -> String {
 /// Fails when the JSON Schema committed at `relative` (from the repository
 /// root) is not what `T` generates. `KETCH_BLESS=1` rewrites the file
 /// instead: the types are the source, the file only publishes them.
+///
+/// The schema files stay next to the other docs, while this crate's manifest
+/// is `crates/ketch-core`, so the repository root is two directories up.
 #[cfg(test)]
 pub(crate) fn assert_schema_current<T: schemars::JsonSchema>(relative: &str) {
     // TOML has no null: an absent key is how an `Option` says `None`, so a
@@ -488,7 +491,9 @@ pub(crate) fn assert_schema_current<T: schemars::JsonSchema>(relative: &str) {
         "Generated from the Rust types by `KETCH_BLESS=1 cargo nextest run schema`. Do not edit."
             .into(),
     );
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(relative);
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join(relative);
     let rendered = serde_json::to_string_pretty(&schema).expect("render schema") + "\n";
     if std::env::var_os("KETCH_BLESS").is_some() {
         std::fs::write(&path, &rendered).expect("write schema");

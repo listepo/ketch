@@ -15,38 +15,13 @@
 // define is unused from here; that says nothing about the binary.
 #![allow(dead_code, unused_imports)]
 
-mod bin_choice;
-mod changelog;
+// The pipeline lives in `ketch-core`. This library only exists so `fuzz/`
+// can link a crate; the command-line modules stay here because they are the
+// binary's.
 mod cli;
 mod cmd;
-mod config;
-mod diff;
-mod error;
-mod extra;
-mod extract;
-mod hooks;
-mod http;
-mod install;
-mod listing;
-mod lockfile;
-mod log;
-mod manifest;
-mod model;
-mod platform;
-mod process;
-mod push;
-mod registry;
-mod resolve;
-mod self_update;
-mod shell;
-mod source;
-mod state;
-mod stats;
-mod trust;
-#[cfg(feature = "tui")]
-mod tui;
-mod ui;
-mod wizard;
+
+pub use ketch_core::{extra, extract, hooks, lockfile, manifest, model, source, state, ui};
 
 /// Entry points for the targets in `fuzz/fuzz_targets/`, one per trust
 /// boundary. Each takes plain data, returns nothing, and panics only when an

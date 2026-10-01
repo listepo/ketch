@@ -473,11 +473,15 @@ drift.
 ## Building from source
 
 ```bash
-cargo build --release          # target/release/ketch
-cargo test                     # unit tests and the end-to-end suite; no network
-cargo clippy --all-targets     # must be clean
-cargo fmt --check              # must be clean
+cargo build --release                    # target/release/ketch
+cargo test --workspace                   # unit tests and the end-to-end suite; no network
+cargo clippy --workspace --all-targets   # must be clean
+cargo fmt --all --check                  # must be clean
 ```
+
+The source is a Cargo workspace: the `ketch` binary at the root holds the
+command line, and [`crates/ketch-core`](crates/ketch-core) holds everything it
+does — resolving, fetching, verifying, unpacking and linking.
 
 Run the binary against a throwaway tree instead of your real `~/.ketch`:
 
@@ -573,8 +577,8 @@ what a change needs before it can be merged.
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the checklist.
 [AGENTS.md](AGENTS.md) documents layout, conventions, and trust boundaries —
 read it before changing anything. Repository prose (commits, PRs, docs,
-comments) is English. `cargo test`, `cargo clippy --all-targets`, and
-`cargo fmt --check` all have to be clean; CI enforces those on macOS, Linux,
+comments) is English. `cargo test --workspace`, `cargo clippy --workspace
+--all-targets`, and `cargo fmt --all --check` all have to be clean; CI enforces those on macOS, Linux,
 and Windows — dispatch `ci.yml` on your branch and wait for green before
 merging.
 

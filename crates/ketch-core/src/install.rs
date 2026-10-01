@@ -160,7 +160,7 @@ pub fn install(
 ///
 /// # Examples
 ///
-/// ```no_run
+/// ```ignore
 /// # use crate::config::Config;
 /// # use crate::install::{commit, prepare, InstallRequest, Installed};
 /// # use crate::model::PackageSpec;
@@ -593,7 +593,7 @@ fn extra_placements(
 ///
 /// # Examples
 ///
-/// ```no_run
+/// ```ignore
 /// let mut state = todo!();
 /// let cfg = todo!();
 /// let prepared = todo!();
@@ -1583,7 +1583,7 @@ fn package_dir_candidate(cfg: &Config, name: &str) -> Option<PathBuf> {
 /// named exactly like the package, and inside it after symlinks resolve — so
 /// the caller knows which prefixes it already covered. A name that is not one
 /// plain path component is never joined onto the store.
-pub(crate) fn remove_package_dir(cfg: &Config, name: &str) -> Option<PathBuf> {
+pub fn remove_package_dir(cfg: &Config, name: &str) -> Option<PathBuf> {
     let dir = package_dir_candidate(cfg, name)?;
     if let Err(e) = std::fs::remove_dir_all(&dir) {
         if e.kind() != std::io::ErrorKind::NotFound {

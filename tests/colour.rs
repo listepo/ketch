@@ -1,6 +1,6 @@
 //! When the real binary paints its status lines, and when it must not.
 //!
-//! The line shapes themselves are snapshotted beside `src/ui.rs`. What only the
+//! The line shapes themselves are snapshotted beside `crates/ketch-core/src/ui.rs`. What only the
 //! binary can show is the decision: `CLICOLOR_FORCE`, `NO_COLOR`, `--no-color`
 //! and a pipe all reach `ui::init` through the environment and the argument
 //! parser, not through a test calling it. `uninstall` of a package that was

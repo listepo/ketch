@@ -1,7 +1,7 @@
 //! Publisher signatures end to end: a manifest's `trust` table held against
 //! a release served by the offline test plugin.
 //!
-//! The unit tests in `src/trust.rs` prove each verifier. These prove the
+//! The unit tests in `crates/ketch-core/src/trust.rs` prove each verifier. These prove the
 //! pipeline around them: the sidecar is found among the release assets, a
 //! refusal stops the install before anything is placed, and what verified
 //! reaches `state.json`, `ketch info` and the log.

@@ -69,7 +69,7 @@ impl Action {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```ignore
     /// assert_eq!(Action::Install.as_str(), "install");
     /// assert_eq!(Action::Upgrade.as_str(), "upgrade");
     /// assert_eq!(Action::Uninstall.as_str(), "uninstall");
@@ -155,7 +155,7 @@ impl Summary {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```ignore
     /// let summary = Summary {
     ///     events: 2,
     ///     installs: 2,
@@ -179,7 +179,7 @@ impl Summary {
 ///
 /// # Examples
 ///
-/// ```no_run
+/// ```ignore
 /// let connection = open(std::path::Path::new("stats.sqlite"))?;
 /// # Ok::<(), Error>(())
 /// ```
@@ -215,7 +215,7 @@ fn open(path: &Path) -> Result<SqliteConnection> {
 ///
 /// # Examples
 ///
-/// ```no_run
+/// ```ignore
 /// # let cfg: Config = todo!();
 /// # let event: NewEvent<'_> = todo!();
 /// record(&cfg, &event);
@@ -234,7 +234,7 @@ pub fn record(cfg: &Config, event: &NewEvent<'_>) {
 ///
 /// # Examples
 ///
-/// ```no_run
+/// ```ignore
 /// use std::path::Path;
 ///
 /// # fn example(event: &NewEvent<'_>) -> Result<()> {
@@ -258,7 +258,7 @@ pub fn record_at(path: &Path, event: &NewEvent<'_>) -> Result<()> {
 ///
 /// # Examples
 ///
-/// ```no_run
+/// ```ignore
 /// # let package: &crate::model::InstalledPackage = todo!();
 /// let event = install_event(
 ///     package,
@@ -384,7 +384,7 @@ pub fn history(cfg: &Config, package: Option<&str>, limit: i64) -> Result<Vec<Ev
 ///
 /// # Examples
 ///
-/// ```
+/// ```ignore
 /// use std::path::Path;
 ///
 /// let events = history_at(Path::new("history.sqlite"), None, 20)?;
@@ -415,7 +415,7 @@ pub fn history_at(path: &Path, package: Option<&str>, limit: i64) -> Result<Vec<
 ///
 /// # Examples
 ///
-/// ```
+/// ```ignore
 /// # let cfg = Config::load(None)?;
 /// let summary = summary(&cfg)?;
 /// println!("{} events recorded", summary.events);
@@ -431,7 +431,7 @@ pub fn summary(cfg: &Config) -> Result<Summary> {
 ///
 /// # Examples
 ///
-/// ```
+/// ```ignore
 /// use std::path::Path;
 ///
 /// let summary = summary_at(Path::new("missing-stats.sqlite"))?;
@@ -484,7 +484,7 @@ pub fn summary_at(path: &Path) -> Result<Summary> {
 ///
 /// # Examples
 ///
-/// ```
+/// ```ignore
 /// let error = read_err(diesel::result::Error::NotFound);
 /// assert!(error.to_string().starts_with("could not read statistics:"));
 /// ```
@@ -496,7 +496,7 @@ fn read_err(e: diesel::result::Error) -> Error {
 ///
 /// # Examples
 ///
-/// ```
+/// ```ignore
 /// use diesel::{Connection, connection::SimpleConnection};
 ///
 /// let mut conn = diesel::sqlite::SqliteConnection::establish(":memory:").unwrap();

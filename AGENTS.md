@@ -40,13 +40,14 @@ ambiguous in a package manager:
 
 Where the distinction matters most: `ketch self upgrade` upgrades the host,
 `ketch upgrade` upgrades clients; `scripts/release.sh` releases the host,
-`ketch.lock` pins clients; `src/changelog.rs` reads a client's changelog, while
-the host's own `CHANGELOG.md` is written for it by git-cliff. The host is
+`ketch.lock` pins clients; `crates/ketch-core/src/changelog.rs` reads a
+client's changelog, while the host's own `CHANGELOG.md` is written for it by
+git-cliff. The host is
 also a client of itself: `ketch self install` records it in `state.json` as
 the package `ketch`, and the root `ketch.toml` is its manifest.
 
-macOS, Linux and Windows each have a `Platform` backend in `src/platform/`.
-`host()` selects it. Another OS still means implementing that trait — nothing
+macOS, Linux and Windows each have a `Platform` backend in
+`crates/ketch-core/src/platform/`. `host()` selects it. Another OS still means implementing that trait — nothing
 above it changes. End-to-end tests are gated with `#[cfg(target_os = "...")]`
 so `cargo test` on a host runs that OS's suite. CI runs that suite on macOS,
 Linux and Windows.
@@ -54,18 +55,23 @@ Linux and Windows.
 ## Commands
 
 ```bash
-cargo nextest run                # unit tests and the end-to-end suite; no network
+cargo nextest run --workspace    # unit tests and the end-to-end suite; no network
 cargo nextest run -E 'binary(install)'  # just the end-to-end suite
-cargo clippy --all-targets       # must be clean
-cargo fmt                        # must be clean
+cargo clippy --workspace --all-targets  # must be clean
+cargo fmt --all                  # must be clean
 cargo build                      # debug binary at target/debug/ketch
 ```
 
+The repository is a Cargo workspace of two crates: the root package `ketch`
+(the binary) and `crates/ketch-core` (the library it is built on). Both are
+default members, so a bare `cargo test` or `cargo clippy` at the root covers
+both; `--workspace` says so explicitly, and is what the Justfile and CI pass.
+
 The Justfile wraps the same commands with `--locked`: `just fmt`, `just clippy`
 (or `just lint`), `just test`, and `just check` runs what CI runs on this
-host — format, clippy, `cargo nextest run --all-targets`, commitlint fixtures, shell
-syntax on `install.sh` and the release scripts, `mandoc -Tlint` on the
-generated man pages when mandoc is present, whether `release.yml` is what
+host — format, clippy, `cargo nextest run --workspace --all-targets`, commitlint
+fixtures, shell syntax on `install.sh` and the release scripts, `mandoc -Tlint`
+on the generated man pages when mandoc is present, whether `release.yml` is what
 `dist generate` produces, `dist build` for the host target, and on macOS
 `brew style` on the generated cask. Cross-target
 builds and the Linux/Windows jobs are CI-only.
@@ -204,33 +210,40 @@ conditional, multi-stage Rust automation.
 
 | Path | Owns |
 | --- | --- |
+| `Cargo.toml` | the `ketch` package, and the workspace: members, the one shared version, edition, MSRV and lints |
 | `src/main.rs` | argument parsing, config construction, dispatch — nothing else |
 | `src/lib.rs` | empty except under `cfg(fuzzing)`: the same modules again, and the entry points `fuzz/` drives |
 | `src/cli.rs` | the clap surface, kept separate so `cmd/` takes its args directly |
 | `src/cmd/` | thin command bodies: arguments, output, confirmations |
-| `src/install.rs` | the install/uninstall/relink pipeline every command shares |
-| `src/hooks.rs` | a manifest's `[hooks]` commands, run by `install.rs` around install, update and uninstall — and only from a user-tier manifest |
-| `src/resolve.rs` | side-effect-free resolution trace shared by install and `ketch why` |
 | `src/complete.rs` | completion scripts, and `ketch __complete`: the package names they ask for at <TAB>, for every shell |
-| `src/bin_choice.rs` | which binary to link when several share the package's name, the same on every OS |
-| `src/source/` | where releases come from: GitHub built in, plugins external |
-| `src/extract/` | archive formats, selected by sniffing content not file names |
-| `src/platform/` | OS-specific placement, linking, trust checks (`macos.rs`, `linux.rs`, `windows.rs`) |
-| `src/shell.rs` | putting the bin dir on PATH in bash, zsh and fish, and on Windows the user environment; on Windows also the PowerShell profile blocks and cmd AutoRun that switch completion on |
-| `src/registry.rs` | the fetched package registry (see `docs/REGISTRY.md`) |
-| `src/manifest.rs` | resolving a name to a `Manifest` across four tiers |
-| `src/model.rs` | every type that crosses a module boundary |
-| `src/state.rs` | the installed-package record and the process lock |
-| `src/stats.rs` | `stats.db`: the history of what was installed, in SQLite |
-| `src/log.rs` | the log file, in text or JSON Lines |
-| `src/changelog.rs` | finding and slicing a client app's changelog |
 | `src/man.rs` | the host's own man pages, one per visible command, rendered from `Cli::command()` |
-| `src/lockfile.rs` | `ketch.lock`: what is installed, pinned to exact releases |
-| `src/listing.rs` | `ketch list`: installed and registry packages merged, `latest` looked up in parallel and cached |
-| `src/push.rs` | `ketch registry push`: a project's `ketch.toml` as a registry pull request, via octocrab |
-| `src/self_update.rs` | `ketch self`: installing, updating and removing the host as a package |
+| `src/self_docs.rs` | hands `man.rs` and `complete.rs` to the core as `SelfDocs`, for `ketch self` to place |
+| `crates/ketch-core/` | the library: everything besides the command line (see its `README.md`) |
+| `crates/ketch-core/src/lib.rs` | which core modules the binary may reach (`pub`) and which stay inside (`pub(crate)`) |
+| `crates/ketch-core/src/install.rs` | the install/uninstall/relink pipeline every command shares |
+| `crates/ketch-core/src/hooks.rs` | a manifest's `[hooks]` commands, run by `install.rs` around install, update and uninstall — and only from a user-tier manifest |
+| `crates/ketch-core/src/resolve.rs` | side-effect-free resolution trace shared by install and `ketch why` |
+| `crates/ketch-core/src/bin_choice.rs` | which binary to link when several share the package's name, the same on every OS |
+| `crates/ketch-core/src/source/` | where releases come from: GitHub built in, plugins external |
+| `crates/ketch-core/src/extract/` | archive formats, selected by sniffing content not file names |
+| `crates/ketch-core/src/platform/` | OS-specific placement, linking, trust checks (`macos.rs`, `linux.rs`, `windows.rs`) |
+| `crates/ketch-core/src/shell.rs` | putting the bin dir on PATH in bash, zsh and fish, and on Windows the user environment; on Windows also the PowerShell profile blocks and cmd AutoRun that switch completion on |
+| `crates/ketch-core/src/registry.rs` | the fetched package registry (see `docs/REGISTRY.md`) |
+| `crates/ketch-core/src/manifest.rs` | resolving a name to a `Manifest` across four tiers |
+| `crates/ketch-core/src/model.rs` | every type that crosses a module boundary |
+| `crates/ketch-core/src/state.rs` | the installed-package record and the process lock |
+| `crates/ketch-core/src/stats.rs` | `stats.db`: the history of what was installed, in SQLite |
+| `crates/ketch-core/src/log.rs` | the log file, in text or JSON Lines |
+| `crates/ketch-core/src/changelog.rs` | finding and slicing a client app's changelog |
+| `crates/ketch-core/src/lockfile.rs` | `ketch.lock`: what is installed, pinned to exact releases |
+| `crates/ketch-core/src/listing.rs` | `ketch list`: installed and registry packages merged, `latest` looked up in parallel and cached |
+| `crates/ketch-core/src/push.rs` | `ketch registry push`: a project's `ketch.toml` as a registry pull request, via octocrab |
+| `crates/ketch-core/src/self_update.rs` | `ketch self`: installing, updating and removing the host as a package |
+| `crates/ketch-core/src/ui.rs` | all terminal output |
+| `crates/ketch-core/src/tui/` | the opt-in full-screen renderer (`tui` feature), driven by `ui.rs` |
+| `crates/ketch-core/src/builtin.toml` | the manifests compiled into the binary, the offline registry tier |
+| `crates/ketch-core/migrations/` | the `stats.db` schema, embedded by `stats.rs` |
 | `ketch.toml` | the host's own package file, what `ketch registry push` sends |
-| `src/ui.rs` | all terminal output |
 | `tests/` | end-to-end tests that drive the real binary |
 | `fuzz/` | cargo-fuzz targets, its own workspace on nightly; `just fuzz`, see `fuzz/README.md` |
 | `dist-workspace.toml` | what cargo-dist builds, signs and publishes; the source of `release.yml` |
@@ -259,13 +272,24 @@ The rule that keeps `cmd/` thin: anything touching the install tree belongs in
 every command. If you are about to write install logic inside a command, you
 are in the wrong file.
 
+The same rule decides the crate. The binary keeps what only a command line
+needs: `main.rs`, `cli.rs`, `cmd/`, `complete.rs`, `man.rs` and
+`self_docs.rs`. Every other module lives in `ketch-core`, and nothing in the
+core may name the binary — when the core needs something only the CLI can produce, the binary
+passes it in, as `SelfDocs` does. The binary imports the core's modules at its
+crate root under their old names, so `crate::config` and `crate::ui` still
+resolve in `cmd/`. A core item the binary calls is `pub`; everything else
+stays `pub(crate)`. The core has one version, the workspace's, because it
+reports it: `ketch-core` is `publish = false` and dist skips it, and
+`tests/workspace.rs` fails if either promise drifts.
+
 Several things write outside the ketch root. `ketch self install`, the bootstrap
 installers and the Homebrew cask each place a bootstrap binary outside it.
-`src/platform/` links `.app` bundles into `/Applications` (or
+`crates/ketch-core/src/platform/` links `.app` bundles into `/Applications` (or
 `KETCH_APPS_DIR`), and man pages and completions into the user directories
 `ketch doctor` reports; those destinations are recorded in state so uninstall
-can take them back. `src/shell.rs` edits shell startup files and the user PATH
-only when asked: `ketch path install`, `ketch doctor --fix` and `ketch self
+can take them back. `crates/ketch-core/src/shell.rs` edits shell startup files
+and the user PATH only when asked: `ketch path install`, `ketch doctor --fix` and `ketch self
 uninstall`, which takes the block back out of every startup file that has one
 rather than only the shell running now, and on Windows takes the bin dir out of
 the user PATH. On Windows, `self install` and `completions --install` also
@@ -405,23 +429,28 @@ delete the guard deliberately and say why in the commit.
 ## Adding things
 
 - **A package that inference gets wrong** → an entry in the registry, or
-  `src/builtin.toml` if it must work offline out of the box. `docs/MANIFESTS.md`
-  is the schema; `docs/REGISTRY.md` is the folder-per-package layout.
-- **A new archive format** → implement `Extractor` in `src/extract/`, add it to
-  the platform's list. Detection sniffs content; do not trust the extension.
+  `crates/ketch-core/src/builtin.toml` if it must work offline out of the
+  box. `docs/MANIFESTS.md` is the schema; `docs/REGISTRY.md` is the
+  folder-per-package layout.
+- **A new archive format** → implement `Extractor` in
+  `crates/ketch-core/src/extract/`, add it to the platform's list. Detection
+  sniffs content; do not trust the extension.
 - **A new package source** → implement `Source`. Prefer an external plugin
-  (`src/source/plugin.rs`) over a built-in one: it needs no recompile. The wire
-  protocol is `docs/PLUGINS.md`; changing it means bumping `PROTOCOL_VERSION`.
+  (`crates/ketch-core/src/source/plugin.rs`) over a built-in one: it needs no
+  recompile. The wire protocol is `docs/PLUGINS.md`; changing it means bumping
+  `PROTOCOL_VERSION`.
 - **A new command** → a variant in `cli.rs`, a thin body in `cmd/`, and the
-  work itself in `install.rs` or a trait.
-- **A field in `ketch.lock`** → `src/lockfile.rs`, and a row in
-  `docs/LOCKFILE.md`. Anything a lockfile can say has to pass `validate`
+  work itself in `install.rs` or a trait — in the core, made `pub` in
+  `lib.rs` only as far as the command needs it.
+- **A field in `ketch.lock`** → `crates/ketch-core/src/lockfile.rs`, and a row
+  in `docs/LOCKFILE.md`. Anything a lockfile can say has to pass `validate`
   first: it is a file a colleague may have written.
-- **A column in `stats.db`** → a new folder under `migrations/`, never an edit
-  to one already released: the migration is embedded in the binary and has
-  already run on other people's machines. Then the `table!` block and the two
-  structs in `src/stats.rs`, which the `check_for_backend` attribute makes the
-  compiler verify against the schema.
+- **A column in `stats.db`** → a new folder under
+  `crates/ketch-core/migrations/`, never an edit to one already released: the
+  migration is embedded in the binary and has already run on other people's
+  machines. Then the `table!` block and the two structs in
+  `crates/ketch-core/src/stats.rs`, which the `check_for_backend` attribute
+  makes the compiler verify against the schema.
 - **Recording something new that happened** → a variant on `stats::Action` and
   a call from wherever it becomes true, which for anything touching the install
   tree is `install.rs`. Keep it best effort: `stats::record` warns and returns,
