@@ -10,5 +10,4 @@ Empty: F1/F2/M3/F5 and the 2026-09-20 audit follow-ups (A2) are in `done.md`; th
 - R3. Cross-platform CI
 - F8. Spinner and progress bar
 - M9. `ketch list` refactor: `local`, `remote`, and both by default
-- F9. `ketch install <pkg>` on an installed package offers the update
 - R4. Fuzz testing with cargo-fuzz / libFuzzer
