@@ -17,7 +17,7 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | F8 | in progress | P2 | 3 | 0% | Cursor / grok 4.7 high |
 | M9 | in progress | P2 | 5 | 90% | Claude Code / opus-5.5 |
 | R4 | in progress | P2 | 3 | 90% | Claude Code / opus-5.5 |
-| M14 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
+| M14 | in progress | P2 | 3 | 90% | Claude Code / opus-5.5 |
 | M15 | todo | P3 | 2 | 0% | |
 | M16 | todo | P2 | 4 | 0% | |
 | R5 | in progress | P2 | 4 | 90% | Claude Code / opus-5.5 |
@@ -466,6 +466,8 @@ Plan:
 3. A test that validates the root `ketch.toml`, every `[[package]]` in `builtin.toml` and the examples in `docs/MANIFESTS.md` against the committed schema, with the `jsonschema` crate as a dev-dependency (maintained, draft 2020-12, no network with default features off); plus cases the deserializer rejects, so the schema is not looser than the reader where it can say so.
 4. `docs/MANIFESTS.md`: link the schema and show the taplo `#:schema` directive; the root `ketch.toml` carries it. `toolchain.md` row for `jsonschema`.
 5. Check against the live `pyrlyn/ketch-registry` files; `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo nextest run`.
+
+Status: PR https://github.com/pyrlyn/ketch/pull/206. Schema generated and drift-tested; the root `ketch.toml`, `builtin.toml`, the docs examples and all six `pyrlyn/ketch-registry` files validate; a property test holds each pattern to its Rust check. Found on the way: `bin` entries and `[asset]` lack `deny_unknown_fields`, so a misspelt key there is still ignored (the schema follows ketch).
 
 ### M15. `log_level` and `log_format` as enums in `config.toml`
 
