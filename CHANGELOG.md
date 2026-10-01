@@ -8,6 +8,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [0.10.0](https://github.com/listepo/ketch/releases/tag/v0.10.0) - 2026-10-01
+
+### Added
+
+- json schema for the package manifest ([#206](https://github.com/listepo/ketch/pull/206))
+- *(macos)* screens rebuilt on the liquid glass design ([#200](https://github.com/listepo/ketch/pull/200))
+- *(macos)* the Liquid glass tokens and appearance settings ([#197](https://github.com/listepo/ketch/pull/197))
+
+### Fixed
+
+- [**breaking**] refuse an ambiguous bin glob instead of taking directory order ([#202](https://github.com/listepo/ketch/pull/202))
+
+### Other
+
+- toolkit research for the windows and linux desktop apps ([#205](https://github.com/listepo/ketch/pull/205))
+- liquid glass design in figma, close f15-f17 ([#207](https://github.com/listepo/ketch/pull/207))
+- binary choice through a decider, not the terminal ([#204](https://github.com/listepo/ketch/pull/204))
+- notify on release failure ([#198](https://github.com/listepo/ketch/pull/198))
 ## [0.9.0](https://github.com/listepo/ketch/releases/tag/v0.9.0) - 2026-10-01
 
 ### Added
