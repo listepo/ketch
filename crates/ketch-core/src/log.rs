@@ -19,6 +19,7 @@
 //! is reported once and then ignored for the rest of the run.
 
 use crate::config::Config;
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
@@ -34,13 +35,23 @@ const MAX_BYTES: u64 = 5 * 1024 * 1024;
 ///
 /// Ordered so a record is written when its level is at or below the configured
 /// one, which puts `Off` first and makes it filter everything.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+///
+/// Serialised in lower case because it is a `config.toml` value: the type is
+/// the one place that lists what the key accepts, and the schema reads it from
+/// here. The aliases are the spellings `FromStr` has always taken from
+/// `KETCH_LOG_LEVEL`, kept so a file that used one still loads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "lowercase")]
 pub enum Level {
+    #[serde(alias = "none", alias = "false")]
     Off,
     Error,
+    #[serde(alias = "warning")]
     Warn,
     #[default]
     Info,
+    #[serde(alias = "trace")]
     Debug,
 }
 
@@ -90,10 +101,17 @@ impl FromStr for Level {
 /// Two, because a log file has two audiences. The default is the line format
 /// every CLI writes and every person can read; `json` is JSON Lines, which is
 /// what a log shipper wants and what `jq` reads without a parser.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+///
+/// Serialised in lower case for the same reason as `Level`, with the aliases
+/// `KETCH_LOG_FORMAT` has always taken.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "lowercase")]
 pub enum Format {
     #[default]
+    #[serde(alias = "plain", alias = "logfmt")]
     Text,
+    #[serde(alias = "jsonl", alias = "ndjson")]
     Json,
 }
 

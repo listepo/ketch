@@ -42,10 +42,10 @@ pub struct ConfigFile {
     pub registry: Option<String>,
     /// How many packages a batch install works on at once.
     pub jobs: Option<usize>,
-    /// `off`, `error`, `warn`, `info` or `debug`.
-    pub log_level: Option<String>,
-    /// `text` or `json`.
-    pub log_format: Option<String>,
+    /// How much the log file records.
+    pub log_level: Option<crate::log::Level>,
+    /// How a record in the log file is written.
+    pub log_format: Option<crate::log::Format>,
 }
 
 #[derive(Debug, Clone)]
@@ -205,9 +205,8 @@ impl Config {
 
         // A parse failure here is the user's own config or environment, so it
         // is an error rather than a silent fall back to the default.
-        let log_level = parsed("KETCH_LOG_LEVEL", "log_level", file.log_level)?.unwrap_or_default();
-        let log_format =
-            parsed("KETCH_LOG_FORMAT", "log_format", file.log_format)?.unwrap_or_default();
+        let log_level = from_env_or("KETCH_LOG_LEVEL", file.log_level)?.unwrap_or_default();
+        let log_format = from_env_or("KETCH_LOG_FORMAT", file.log_format)?.unwrap_or_default();
         let jobs = match std::env::var("KETCH_JOBS")
             .ok()
             .filter(|v| !v.trim().is_empty())
@@ -303,8 +302,8 @@ impl Config {
             self_repo: Some(SELF_REPO.to_string()),
             registry: Some(REGISTRY_REPO.to_string()),
             jobs: Some(4),
-            log_level: Some(crate::log::Level::default().to_string()),
-            log_format: Some(crate::log::Format::default().to_string()),
+            log_level: Some(crate::log::Level::default()),
+            log_format: Some(crate::log::Format::default()),
             root: None,
         };
         format!(
@@ -381,26 +380,22 @@ fn path_lookup_key(p: &Path) -> String {
     }
 }
 
-/// A setting that has to be parsed, from the environment or the config file.
+/// A setting from the environment over the config file.
 ///
-/// A typo is reported against whichever one supplied it, because "unknown log
-/// level `verbose`" is only actionable if you know which file to fix.
-fn parsed<T: std::str::FromStr<Err = String>>(
+/// The file value is already a typed enum, so a typo there failed when the file
+/// was read; only the variable is parsed here, and a typo is reported against
+/// it by name.
+fn from_env_or<T: std::str::FromStr<Err = String>>(
     env_key: &str,
-    file_key: &str,
-    from_file: Option<String>,
+    from_file: Option<T>,
 ) -> Result<Option<T>> {
-    let (value, where_from) = match std::env::var(env_key).ok().filter(|v| !v.trim().is_empty()) {
-        Some(v) => (v, env_key.to_string()),
-        None => match from_file {
-            Some(v) => (v, format!("`{file_key}` in config.toml")),
-            None => return Ok(None),
-        },
-    };
-    value
-        .parse()
-        .map(Some)
-        .map_err(|e: String| Error::Config(format!("{where_from}: {e}")))
+    match std::env::var(env_key).ok().filter(|v| !v.trim().is_empty()) {
+        Some(v) => v
+            .parse()
+            .map(Some)
+            .map_err(|e: String| Error::Config(format!("{env_key}: {e}"))),
+        None => Ok(from_file),
+    }
 }
 
 fn env_bool(key: &str) -> Result<Option<bool>> {
@@ -703,8 +698,8 @@ mod tests {
         assert_eq!(file.self_repo.as_deref(), Some(SELF_REPO));
         assert_eq!(file.registry.as_deref(), Some(REGISTRY_REPO));
         assert_eq!(file.jobs, Some(4));
-        assert_eq!(file.log_level.as_deref(), Some("info"));
-        assert_eq!(file.log_format.as_deref(), Some("text"));
+        assert_eq!(file.log_level, Some(crate::log::Level::Info));
+        assert_eq!(file.log_format, Some(crate::log::Format::Text));
         assert!(file.apps_dir.is_none());
         assert!(file.github_token.is_none());
         assert!(file.root.is_none());
@@ -752,6 +747,107 @@ mod tests {
         assert_eq!(cfg.jobs, 4);
         assert_eq!(cfg.log_level.to_string(), "info");
         assert_eq!(cfg.log_format.to_string(), "text");
+    }
+
+    const LOG_KEYS: &[&str] = &["KETCH_ROOT", "KETCH_LOG_LEVEL", "KETCH_LOG_FORMAT"];
+
+    /// Load a root whose `config.toml` is `body`, with the log variables as given.
+    fn log_with(
+        body: &str,
+        level_env: Option<&str>,
+        format_env: Option<&str>,
+    ) -> Result<(crate::log::Level, crate::log::Format)> {
+        let _lock = ENV_GUARD.lock().unwrap();
+        let _env = CleanEnv::take(LOG_KEYS);
+        if let Some(value) = level_env {
+            std::env::set_var("KETCH_LOG_LEVEL", value);
+        }
+        if let Some(value) = format_env {
+            std::env::set_var("KETCH_LOG_FORMAT", value);
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("config.toml"), body).unwrap();
+        Config::load(
+            Some(tmp.path().to_path_buf()),
+            &crate::report::Report::silent(),
+        )
+        .map(|cfg| (cfg.log_level, cfg.log_format))
+    }
+
+    #[test]
+    fn a_bad_log_level_in_the_file_is_refused_naming_the_file_and_the_key() {
+        let err = log_with("log_level = \"chatty\"\n", None, None)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("config.toml"), "{err}");
+        assert!(err.contains("log_level"), "{err}");
+        assert!(err.contains("chatty"), "{err}");
+    }
+
+    #[test]
+    fn a_bad_log_format_in_the_file_is_refused_naming_the_file_and_the_key() {
+        let err = log_with("log_format = \"xml\"\n", None, None)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("config.toml"), "{err}");
+        assert!(err.contains("log_format"), "{err}");
+        assert!(err.contains("xml"), "{err}");
+    }
+
+    #[test]
+    fn log_values_in_the_file_load_as_before() {
+        use crate::log::{Format, Level};
+        let got = log_with("log_level = \"debug\"\nlog_format = \"json\"\n", None, None);
+        assert_eq!(got.unwrap(), (Level::Debug, Format::Json));
+        // The spellings the environment variables always took still load from a file.
+        let got = log_with(
+            "log_level = \"warning\"\nlog_format = \"jsonl\"\n",
+            None,
+            None,
+        );
+        assert_eq!(got.unwrap(), (Level::Warn, Format::Json));
+    }
+
+    #[test]
+    fn ketch_log_level_overrides_the_file() {
+        use crate::log::{Format, Level};
+        let got = log_with("log_level = \"debug\"\n", Some("error"), None);
+        assert_eq!(got.unwrap(), (Level::Error, Format::Text));
+    }
+
+    #[test]
+    fn ketch_log_format_overrides_the_file() {
+        use crate::log::{Format, Level};
+        let got = log_with("log_format = \"text\"\n", None, Some("json"));
+        assert_eq!(got.unwrap(), (Level::Info, Format::Json));
+    }
+
+    #[test]
+    fn a_bad_log_variable_is_refused_by_name_even_when_the_file_is_fine() {
+        let err = log_with("log_level = \"debug\"\n", Some("chatty"), None)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("KETCH_LOG_LEVEL"), "{err}");
+        let err = log_with("", None, Some("xml")).unwrap_err().to_string();
+        assert!(err.contains("KETCH_LOG_FORMAT"), "{err}");
+    }
+
+    #[test]
+    fn an_empty_log_variable_falls_back_to_the_file() {
+        use crate::log::{Format, Level};
+        let got = log_with("log_level = \"warn\"\n", Some(" "), Some(""));
+        assert_eq!(got.unwrap(), (Level::Warn, Format::Text));
+    }
+
+    #[test]
+    fn the_schema_lists_the_log_values() {
+        let schema = serde_json::to_string(&schemars::schema_for!(ConfigFile)).unwrap();
+        for value in ["off", "error", "warn", "info", "debug", "text", "json"] {
+            assert!(
+                schema.contains(&format!("\"{value}\"")),
+                "{value}: {schema}"
+            );
+        }
     }
 
     /// Load a root whose `config.toml` is `body`, with `KETCH_EMOJI` as given.

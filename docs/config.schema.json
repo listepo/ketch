@@ -33,12 +33,26 @@
       "type": "boolean"
     },
     "log_format": {
-      "description": "`text` or `json`.",
-      "type": "string"
+      "description": "How a record in the log file is written.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Format"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "log_level": {
-      "description": "`off`, `error`, `warn`, `info` or `debug`.",
-      "type": "string"
+      "description": "How much the log file records.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Level"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "prerelease": {
       "type": "boolean"
@@ -63,5 +77,26 @@
     }
   },
   "$comment": "Generated from the Rust types by `KETCH_BLESS=1 cargo nextest run schema`. Do not edit.",
-  "additionalProperties": false
+  "additionalProperties": false,
+  "$defs": {
+    "Format": {
+      "description": "How a record is written.\n\nTwo, because a log file has two audiences. The default is the line format\nevery CLI writes and every person can read; `json` is JSON Lines, which is\nwhat a log shipper wants and what `jq` reads without a parser.\n\nSerialised in lower case for the same reason as `Level`, with the aliases\n`KETCH_LOG_FORMAT` has always taken.",
+      "type": "string",
+      "enum": [
+        "text",
+        "json"
+      ]
+    },
+    "Level": {
+      "description": "How much gets written.\n\nOrdered so a record is written when its level is at or below the configured\none, which puts `Off` first and makes it filter everything.\n\nSerialised in lower case because it is a `config.toml` value: the type is\nthe one place that lists what the key accepts, and the schema reads it from\nhere. The aliases are the spellings `FromStr` has always taken from\n`KETCH_LOG_LEVEL`, kept so a file that used one still loads.",
+      "type": "string",
+      "enum": [
+        "off",
+        "error",
+        "warn",
+        "info",
+        "debug"
+      ]
+    }
+  }
 }
