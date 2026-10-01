@@ -665,7 +665,7 @@ Done when `crates/ketch-capi` exports the contract over `extern "C"` with a cbin
 
 ### D16. Linux: Vala + GTK 4 app shell on a fake core
 
-The Linux app's screens in Vala with GTK 4 and libadwaita, following the GNOME HIG, built before the C ABI is ready. Needs the creator's confirmation of GTK over KDE and of Blueprint (open decisions 1 and 2). Research: sections 3b, 3c and 5.
+The Linux app's screens in Vala with GTK 4 and libadwaita, following the GNOME HIG, built before the C ABI is ready. GTK 4 + libadwaita over KDE was confirmed by the creator (2026-10-01, open decision 1); Blueprint still needs confirmation (open decision 2). Research: sections 3b, 3c and 5.
 
 Done when a Meson project builds a libadwaita app with the common screens in an `AdwNavigationSplitView` that adapts to narrow windows, Blueprint (pinned as a subproject) or GtkBuilder files for the UI, `AdwAlertDialog`, `AdwBanner` and toasts for decisions, busy and finished work, dark and high-contrast styles, all on a fake core reading D4's fixtures, with a Linux CI job that builds and runs its tests.
 

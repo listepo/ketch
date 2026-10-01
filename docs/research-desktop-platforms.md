@@ -368,9 +368,8 @@ already names as the pattern.
 
 ## Open decisions for the creator
 
-1. **Linux toolkit, given Vala.** Confirm GTK 4 + libadwaita (GNOME HIG),
-   accepting GNOME styling on KDE; or choose KDE/Qt and give up Vala for Rust
-   (cxx-qt), C++ or Python.
+1. **Linux toolkit, given Vala.** Decided by the creator (2026-10-01): Vala
+   with GTK 4 + libadwaita, following the GNOME HIG; KDE/Qt is not pursued.
 2. **Linux markup.** Blueprint (experimental, pinned) or GtkBuilder XML.
 3. **Linux core access.** `ketch-capi` with JSON records and a hand-written
    VAPI (recommended) or typed C structs; and the `unsafe_code` exception for
