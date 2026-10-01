@@ -166,6 +166,11 @@ jobs:
           xcodebuild -project Ketch.xcodeproj -scheme Ketch -derivedDataPath build
           -destination 'platform=macOS' test
 
+      # The release's disk image and appcast scripts on the app just built,
+      # with a throwaway key: `just macos-appcast`.
+      - name: Update feed round trip
+        run: sh ../../tests/desktop-appcast.sh
+
   # Packaging is exercised on every pull request, so it breaks here rather than
   # halfway through a release, after the merge that started one.
   package:
@@ -205,10 +210,14 @@ jobs:
           bash -n install.sh
           bash -n scripts/release.sh
           bash -n scripts/dist-generate.sh
+          bash -n scripts/desktop-version.sh
+          bash -n scripts/desktop-dmg.sh
+          bash -n scripts/desktop-appcast.sh
           sh tests/release-sh.sh
           sh tests/crate-version.sh
           sh tests/release-workflows.sh
           sh tests/ci-yml-triggers.sh
+          sh tests/desktop-release.sh
 
       # release.yml is generated; a dist-workspace.toml or build-*.yml change
       # without `just dist-generate` would ship a workflow nobody reviewed.

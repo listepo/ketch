@@ -28,8 +28,8 @@ open desktop/macos/build/Build/Products/Debug/Ketch.app
 
 `project.yml` is the project; `Ketch.xcodeproj` and `build/` are generated
 and gitignored. To work in Xcode, run `just macos-project` and open the
-generated project. Builds are unsigned (ad-hoc); signing, notarisation and
-releases are F13.
+generated project. Local builds are unsigned (ad-hoc); signed, notarised
+builds come only from the release workflow, see [Releases](#releases).
 
 To run against a throwaway root, start the binary directly (`open` does not
 pass environment variables to the app):
@@ -46,7 +46,10 @@ from this directory; CI runs `lint --strict`.
 
 | Path | Owns |
 | --- | --- |
-| `project.yml` | the XcodeGen spec: targets, Swift 6 strict concurrency, deployment target 26.0 |
+| `project.yml` | the XcodeGen spec: targets, Swift 6 strict concurrency, deployment target 26.0, the Sparkle package |
+| `Ketch/Info.plist` | Sparkle's keys, merged into the generated Info.plist: the feed URL and the EdDSA public key |
+| `ExportOptions.plist` | `xcodebuild -exportArchive` options for a Developer ID release |
+| `Ketch/Store/AppUpdater.swift` | the app's own updates through Sparkle, behind "Check for Updates…" |
 | `Ketch/Core/KetchCoreProtocol.swift` | the core's API as the app sees it: records, events, `Reporter`, `Decider`, `CancelToken`, `KetchError` — mirroring R9 |
 | `Ketch/Core/FakeKetchCore.swift` | the stand-in core for previews, tests and, until R9, the app |
 | `Ketch/Core/CoreFactory.swift` | the one place that picks the core |
@@ -103,6 +106,55 @@ API names were checked against the macOS 27.0 SDK's
 [GlassEffectContainer](https://developer.apple.com/documentation/swiftui/glasseffectcontainer),
 [Applying Liquid Glass to custom views](https://developer.apple.com/documentation/swiftui/applying-liquid-glass-to-custom-views),
 [SMAppService](https://developer.apple.com/documentation/servicemanagement/smappservice).
+
+## Releases
+
+Releases are made by `.github/workflows/desktop-release.yml`, dispatched by
+hand with a version:
+
+```bash
+gh workflow run desktop-release.yml --ref main -f version=0.1.0
+```
+
+It builds a universal Release app, signs it with the Developer ID
+certificate and the hardened runtime, notarises and staples it, packs it into
+`Ketch-X.Y.Z.dmg` (hdiutil, with an `/Applications` link), signs, notarises
+and staples the image, checks both with `spctl`, and publishes the image, its
+`.sha256` and the updated appcast as the GitHub release `desktop-vX.Y.Z`. The
+release notes are the commits under `desktop/` and `crates/ketch-ffi/` since
+the last app release (`desktop/cliff.toml`). App releases are never marked
+latest, because the CLI's installers follow `/releases/latest`; the
+repository's `AGENTS.md` ("macOS app releases") has why, the secrets it needs,
+and what to do when a run fails half-way.
+
+The app version is the workflow input, set as both `CFBundleShortVersionString`
+and `CFBundleVersion`; `MARKETING_VERSION` in `project.yml` only labels local
+builds.
+
+Before the first release, the creator generates the update key once with the
+`generate_keys` tool that ships with Sparkle (after a build it is in
+`build/SourcePackages/artifacts/sparkle/Sparkle/bin/`): commit the printed
+public key as `SUPublicEDKey` in `Ketch/Info.plist`, and store
+`generate_keys -x <file>`'s output as the `SPARKLE_ED_PRIVATE_KEY` secret.
+
+Until R9 ships the ketch-ffi XCFramework, the workflow's XCFramework step is
+switched off (`TODO(R9)`), and a release carries the app on `FakeKetchCore`.
+
+### Updates
+
+Ketch.app updates itself with [Sparkle](https://sparkle-project.org) 2.10.0
+(SwiftPM, pinned exactly in `project.yml`). The feed is
+`https://github.com/pyrlyn/ketch/releases/download/desktop-appcast/appcast.xml`:
+one file on the `desktop-appcast` prerelease that every app release replaces,
+so the URL never changes and never depends on which release is latest. The
+feed and every archive are EdDSA-signed (`SURequireSignedFeed`,
+`SUVerifyUpdateBeforeExtraction`). Only a Release build with a real public
+key starts the updater; Debug builds and test runs leave "Check for Updates…"
+disabled.
+
+`just macos-appcast` builds the app and runs the release's disk-image and
+appcast scripts on it with a throwaway key: two releases in a row, a
+tampered signature and a mismatched key.
 
 ## Wiring the real core
 

@@ -8,6 +8,7 @@ import SwiftUI
 struct KetchApp: App {
     @State private var settings: AppSettings
     @State private var store: KetchStore
+    @State private var updater = AppUpdater()
 
     init() {
         let settings = AppSettings()
@@ -28,7 +29,7 @@ struct KetchApp: App {
                 .environment(settings)
                 .frame(minWidth: 760, minHeight: 480)
         }
-        .commands { AppCommands() }
+        .commands { AppCommands(updater: updater) }
 
         MenuBarExtra {
             MenuBarContent()
@@ -57,11 +58,24 @@ enum WindowID {
 }
 
 private struct AppCommands: Commands {
+    let updater: AppUpdater
     @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
         CommandGroup(replacing: .appInfo) {
             Button("About Ketch") { openWindow(id: WindowID.about) }
+            CheckForUpdatesButton(updater: updater)
         }
+    }
+}
+
+/// A view rather than a bare `Button` in the command group, so the menu item
+/// re-reads `canCheckForUpdates` when Sparkle changes it.
+private struct CheckForUpdatesButton: View {
+    let updater: AppUpdater
+
+    var body: some View {
+        Button("Check for Updates…") { updater.checkForUpdates() }
+            .disabled(!updater.canCheckForUpdates)
     }
 }

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Sparkle's keys, merged into the Info.plist Xcode generates from project.yml.
+
+  SUFeedURL is the one appcast every release rewrites, attached to the
+  `desktop-appcast` release. It never goes through /releases/latest: that
+  endpoint belongs to the CLI, and app releases are created with
+  make_latest false (AGENTS.md, "Releasing" / "macOS app").
+
+  SUPublicEDKey is a placeholder until the creator runs Sparkle's
+  generate_keys; the release workflow refuses to build while it is. Its private
+  half is the SPARKLE_ED_PRIVATE_KEY repository secret. Changing this key
+  strands every installed copy on its current version.
+-->
+<plist version="1.0">
+<dict>
+	<key>SUFeedURL</key>
+	<string>https://github.com/pyrlyn/ketch/releases/download/desktop-appcast/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>SPARKLE_ED_PUBLIC_KEY_PLACEHOLDER</string>
+	<key>SURequireSignedFeed</key>
+	<true/>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
+</dict>
+</plist>

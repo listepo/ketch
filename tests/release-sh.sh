@@ -62,7 +62,10 @@ git push -q origin main --tags
 echo 'fn second() {}' >src/second.rs
 git add -A
 git commit -qm "feat(cli): second (#7)"
-git push -q origin main
+# A macOS app release on the same commit: the CLI's entry must still list it,
+# so git-cliff may not take desktop-v* for one of the CLI's own tags.
+git tag desktop-v5.0.0
+git push -q origin main --tags
 
 out="$(scripts/release.sh minor --dry-run)"
 echo "$out" | grep -q 'release v1.3.0' || fail "tagged 1.2.3 raised by minor is not 1.3.0: $out"
