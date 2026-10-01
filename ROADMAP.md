@@ -95,3 +95,5 @@ ketch-side answer is local validation before push — see
 Approved 2026-09-30, after the macOS app (F12, F13). Each OS gets a native UI over the same core: Windows reuses R9's UniFFI binding from a native front end, Linux may link `ketch-core` directly from a Rust toolkit native to the desktop. Toolkit choice is its own research task, with sources, when this moves to `plan.md`. See `docs/research-desktop.md`.
 
 The toolkit research is now R10 in `plan.md` (taken 2026-10-01 at the creator's request); the Windows and Linux apps themselves stay here until the creator moves them.
+
+On 2026-10-01 the creator decided C# + WinUI 3 for Windows and Vala for Linux, and asked for the platform tasks: R11 (`docs/research-desktop-platforms.md`) turned the Windows and Linux apps into tasks D10–D14 and D15–D19 in `plan.md`, beside the shared D1–D6 and the macOS D7–D9.

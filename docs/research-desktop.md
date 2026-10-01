@@ -335,3 +335,11 @@ decisions are listed there.
   release-plz v0.3.169.
 - Whether GitHub recomputes `/releases/latest` when the current latest release
   is deleted, and whether it could then pick an app release, was not checked.
+
+## All three apps (R11, checked 2026-10-01)
+
+What the macOS, Windows and Linux apps each do, what is written once and what
+each platform writes for itself, the contract between the apps and the core,
+and the Linux app in Vala are in
+[`docs/research-desktop-platforms.md`](research-desktop-platforms.md). It
+builds on the sections above and on R10, and lists the `D` tasks it produced.
