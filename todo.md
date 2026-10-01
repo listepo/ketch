@@ -30,10 +30,9 @@ Empty: F1/F2/M3/F5 and the 2026-09-20 audit follow-ups (A2) are in `done.md`; th
 - D3. `ketch-ffi`: the remaining CLI operations
 - D4. Contract fixtures for every app's fake core
 - D5. Design tokens for XAML and GTK
-- D6. String keys and glossary for three apps
 - D7. macOS: update notifications
 - D8. macOS: `ketch://` links
-- D9. macOS: String Catalog and VoiceOver pass
+- D9. macOS: VoiceOver pass
 - D10. Windows: C# binding for `ketch-ffi`
 - D11. Windows: WinUI 3 app shell on a fake core
 - D12. Windows: the app on the real core

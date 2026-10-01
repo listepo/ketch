@@ -364,7 +364,7 @@ already names as the pattern.
   over a `ketch-capi` C ABI with JSON records and a hand-written VAPI
   (D15, D16). KDE/Qt is not reachable from Vala.
 - **Shared:** fix the contract once (D1–D3), share fixtures (D4), tokens
-  (D5) and string conventions (D6); no shared Rust view-model layer for now.
+  (D5); string conventions wait with localisation (decision 7); no shared Rust view-model layer for now.
 
 ## Open decisions for the creator
 
@@ -386,13 +386,15 @@ already names as the pattern.
    status colours, spacing, radii and type scale from `tokens.json` on
    Windows and Linux, with native surfaces; the token source moves from
    `desktop/macos/design/` to `desktop/design/`.
-7. **Localisation.** English first; each app in its native format, one
-   Weblate project later; or no localisation for now.
-8. **Linux tray.** None, relying on the Background portal (recommended); or
-   StatusNotifierItem through `libayatana-appindicator-glib`, which is
-   GPL-3.0 and so fits only the GPL build of ketch's triple licence.
-9. **Crash reporting.** None (recommended until there are users), or opt-in
-   Sentry where an SDK exists; nothing ships enabled.
+7. **Localisation.** Decided by the creator (2026-10-01): no localisation
+   for now; the apps ship in English. D6 moved to `ideas.md`, and D9 is the
+   VoiceOver pass only.
+8. **Linux tray.** Deferred by the creator (2026-10-01): no tray, relying on
+   the Background portal. StatusNotifierItem through
+   `libayatana-appindicator-glib` (GPL-3.0, so only the GPL build of ketch's
+   triple licence) is kept in `ideas.md`.
+9. **Crash reporting.** Decided by the creator (2026-10-01): none for now;
+   no crash-reporting SDK in any app.
 10. **Deep links.** Which `ketch://` actions exist: open a package page only,
     or also start an install after a confirmation in the app.
 
@@ -413,10 +415,10 @@ desktop work readable as one group. F12, F13 and F14 keep their ids.
 | D3 | Shared | `ketch-ffi`: the remaining CLI operations |
 | D4 | Shared | Contract fixtures for every app's fake core |
 | D5 | Shared | Design tokens for XAML and GTK |
-| D6 | Shared | String keys and glossary for three apps |
+| D6 | Shared | String keys and glossary for three apps (deferred to `ideas.md`, decision 7) |
 | D7 | macOS | Update notifications |
 | D8 | macOS | `ketch://` links |
-| D9 | macOS | String Catalog and VoiceOver pass |
+| D9 | macOS | VoiceOver pass |
 | D10 | Windows | C# binding for `ketch-ffi` |
 | D11 | Windows | WinUI 3 app shell on a fake core |
 | D12 | Windows | The app on the real core |

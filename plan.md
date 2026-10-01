@@ -36,7 +36,6 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | D3 | todo | P3 | 3 | 0% | |
 | D4 | todo | P3 | 2 | 0% | |
 | D5 | todo | P3 | 3 | 0% | |
-| D6 | todo | P3 | 2 | 0% | |
 | D7 | todo | P3 | 2 | 0% | |
 | D8 | todo | P3 | 2 | 0% | |
 | D9 | todo | P3 | 2 | 0% | |
@@ -603,12 +602,6 @@ Done when a set of language-neutral JSON scenarios (records, event streams with 
 
 Done when the token source lives in `desktop/design/`, `just design-tokens` also writes a XAML `ResourceDictionary` (Light, Dark, HighContrast theme dictionaries) and a GTK stylesheet setting libadwaita's CSS variables, glass and elevation tokens stay macOS-only, generated files say so in their first lines, and a drift check covers all outputs. Brand tokens on every platform, with native surfaces, were decided by the creator (2026-10-01, open decision 6).
 
-### D6. String keys and glossary for three apps
-
-Three apps with three native string formats (String Catalog, `.resw`, gettext) will translate the same phrases differently unless the keys and terms are agreed once. Research: section 2, "Strings".
-
-Done when a short convention for string keys and an English glossary of ketch's terms (package, source, pin, hold, store, link) are in the desktop docs, and each app's localisation task points at them. Needs the creator's answer on localisation (open decision 7).
-
 ### D7. macOS: update notifications
 
 The macOS app checks for updates on a timer (F12) but tells nobody unless the window or menu-bar panel is open. Builds on F12's live core; F12's remaining work (the `LiveKetchCore` adapter and the manual checks) stays in F12. Research: section 1.
@@ -621,11 +614,11 @@ A link on a web page or in the registry could open a package in the app. Whateve
 
 Done when `CFBundleURLTypes` registers `ketch`, `onOpenURL` routes the actions the creator allowed (open decision 10) through the core's validation, an install from a link always shows a confirmation, and tests cover malformed and hostile links.
 
-### D9. macOS: String Catalog and VoiceOver pass
+### D9. macOS: VoiceOver pass
 
-The macOS app has no localisation catalog, and its accessibility was only checked on the fake core. F14 keeps its own Accessibility Inspector pass on the real glass; this task covers strings and labels. Research: section 1.
+The macOS app's accessibility was only checked on the fake core. F14 keeps its own Accessibility Inspector pass on the real glass; this task covers labels. Localisation is not needed for now (creator, 2026-10-01, open decision 7), so no String Catalog. Research: section 1.
 
-Done when user-facing strings are in a String Catalog following D6's keys, every icon-only control has an accessibility label, and a VoiceOver walk through the nine screens finds no unlabeled control.
+Done when every icon-only control has an accessibility label, and a VoiceOver walk through the nine screens finds no unlabeled control.
 
 ### D10. Windows: C# binding for `ketch-ffi`
 
@@ -679,7 +672,7 @@ Done when every screen runs on the C ABI, calls run off the main loop with event
 
 GNOME has no tray in its HIG; an app that checks in the background asks the Background portal and notifies through `GNotification`. Research: sections 1 and 3c.
 
-Done when update notices go through `GNotification` (the Notification portal under Flatpak), background running and start at login are requested through the Background portal (libportal) with an XDG autostart entry outside a sandbox, `ketch://` links follow D8's rules, and the tray is either absent or the creator's chosen StatusNotifierItem option (open decision 8).
+Done when update notices go through `GNotification` (the Notification portal under Flatpak), background running and start at login are requested through the Background portal (libportal) with an XDG autostart entry outside a sandbox, `ketch://` links follow D8's rules, and there is no tray: the creator deferred a StatusNotifierItem tray (2026-10-01, open decision 8).
 
 ### D19. Linux: packaging and release
 
