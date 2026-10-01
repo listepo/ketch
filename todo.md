@@ -11,3 +11,22 @@
 - F12. Native macOS app (SwiftUI) on `ketch-ffi`
 - F13. macOS app release pipeline
 - F14. Design system for the macOS app: `DESIGN.md` and tokens
+- R11. Desktop apps on macOS, Windows and Linux: capabilities, shared layer and per-platform interfaces
+- D1. `ketch-ffi`: foreign traits and per-operation callbacks
+- D2. `ketch-ffi`: records and operations the apps need
+- D3. `ketch-ffi`: the remaining CLI operations
+- D4. Contract fixtures for every app's fake core
+- D5. Design tokens for XAML and GTK
+- D7. macOS: update notifications
+- D8. macOS: `ketch://` links
+- D9. macOS: VoiceOver pass
+- D10. Windows: C# binding for `ketch-ffi`
+- D11. Windows: WinUI 3 app shell on a fake core
+- D12. Windows: the app on the real core
+- D13. Windows: tray icon, notifications, start at login, links
+- D14. Windows: release pipeline
+- D15. Linux: `ketch-capi`, a C ABI and VAPI for Vala
+- D16. Linux: Vala + GTK 4 app shell on a fake core
+- D17. Linux: the app on the real core
+- D18. Linux: notifications, background and autostart
+- D19. Linux: packaging and release

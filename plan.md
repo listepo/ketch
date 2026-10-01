@@ -15,6 +15,25 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | F12 | in progress | P3 | 5 | 60% | Claude Code / opus-5.5 |
 | F13 | in progress | P3 | 4 | 80% | Claude Code / opus-5.5 |
 | F14 | in progress | P2 | 3 | 90% | Claude Code / opus-5.5 |
+| R11 | in progress | P2 | 3 | 90% | Claude Code / opus-5.5 |
+| D1 | todo | P2 | 3 | 0% | |
+| D2 | todo | P2 | 3 | 0% | |
+| D3 | todo | P3 | 3 | 0% | |
+| D4 | todo | P3 | 2 | 0% | |
+| D5 | todo | P3 | 3 | 0% | |
+| D7 | todo | P3 | 2 | 0% | |
+| D8 | todo | P3 | 2 | 0% | |
+| D9 | todo | P3 | 2 | 0% | |
+| D10 | todo | P2 | 3 | 0% | |
+| D11 | todo | P3 | 5 | 0% | |
+| D12 | todo | P3 | 4 | 0% | |
+| D13 | todo | P3 | 3 | 0% | |
+| D14 | todo | P3 | 4 | 0% | |
+| D15 | todo | P2 | 4 | 0% | |
+| D16 | todo | P3 | 5 | 0% | |
+| D17 | todo | P3 | 4 | 0% | |
+| D18 | todo | P3 | 3 | 0% | |
+| D19 | todo | P3 | 4 | 0% | |
 
 ### Ketch audit
 
@@ -262,3 +281,126 @@ Status: PR https://github.com/pyrlyn/ketch/pull/188 merged 2026-10-01. Google La
 `AGENTS.md`: one module owns all config loading, validation and editing, and the rest of the code does not import `toml` or `toml_edit`. Today `registry.rs`, `manifest.rs`, `extra.rs`, `push.rs`, `wizard.rs` and `model.rs` use them directly, besides `config.rs` and `lockfile.rs`.
 
 Done when TOML parsing, rendering and editing for the files ketch owns go through one module, and no other module imports `toml` or `toml_edit`. Behaviour does not change. Before starting, confirm with the creator whether `ketch.toml` manifests and `ketch.lock` belong to that module or keep their own, with only the TOML calls moved.
+
+### R11. Desktop apps on macOS, Windows and Linux: capabilities, shared layer and per-platform interfaces
+
+The creator asked (2026-10-01) for research on the desktop app for Windows and Linux, macOS included: what the app can do, what is common and written once versus what each platform does its own way, the common interface and each platform's interface, and tasks for each platform. Decided by the creator the same day: Windows is C# + WinUI 3 (Windows App SDK) over `ketch-ffi` (UniFFI, kept at 0.32 for now); Linux is written in Vala, with the toolkit (GTK or Qt/KDE) and the UI markup to be chosen by this research.
+
+Done when `docs/research-desktop-platforms.md` (linked from `docs/research-desktop.md` and `docs/research-desktop-windows-linux.md`) holds a capability matrix per platform with the native API and its maturity, the common/specific split, the common core and app contract (with the gaps R9 left), the common UI and each platform's departures from it per its HIG, the way forward for the C# binding gap and for Vala reaching the core, a recommendation and the open decisions; every fact with a primary source and a version or check date, secondary-only facts marked **unverified**. The resulting tasks are in `plan.md` as `todo`, mirrored in `todo.md`.
+
+Execution plan (Claude Code / opus-5.5):
+1. Read the repository facts: R9's exported surface (`crates/ketch-ffi`), the macOS app's `KetchCoreProtocol.swift` and views, the design pipeline (`desktop/macos/design/`), R10's page; list the contract gaps between the app and `ketch-ffi`.
+2. Primary sources, checked 2026-10-01: Apple, Microsoft Learn and GNOME/KDE developer docs and HIGs; crates.io, NuGet and GitHub/GitLab release APIs for UniFFI, `uniffi-bindgen-cs`, cbindgen, Vala, GTK, libadwaita, Blueprint, Qt binding projects for Vala, third-party UniFFI generators.
+3. Write the page: matrix, common vs specific, interfaces, the C#/UniFFI version gap and the Vala/C ABI route, recommendation, open decisions.
+4. Tasks: new `D` ids (desktop), shared first, then macOS (referencing F12/F13/F14 rather than repeating them), Windows, Linux; rows appended to the table, cards appended at the end, `todo.md` in sync.
+5. Close at 90% with a `Status:` line; PR against `main`, CI watched until green.
+
+Status: PR https://github.com/pyrlyn/ketch/pull/211, research in `docs/research-desktop-platforms.md`, tasks D1–D19. Recommendation: fix the `ketch-ffi` contract once (D1, D2), then WinUI 3 in C# through `uniffi-bindgen-cs` built from PR #176 pinned by commit, and on Linux Vala + GTK 4 + libadwaita with Blueprint over a small `ketch-capi` C ABI, since no Qt binding for Vala exists; the open decisions are listed at the end of the research page.
+
+### D1. `ketch-ffi`: foreign traits and per-operation callbacks
+
+UniFFI calls callback interfaces "(soft) deprecated" in favour of foreign traits (new in 0.32), and `KetchCore::new` takes the `Reporter` and `Decider` once, while every app wants them per operation so two screens can each watch their own work. Research: `docs/research-desktop-platforms.md`, section 3a, gap G1.
+
+Done when `Reporter` and `Decider` are foreign traits, `install`, `upgrade` and `uninstall` take a reporter, a decider and a `CancelToken` per call, the constructor no longer takes them, the Swift binding test covers a per-call reporter and `stop_processes`, and `crates/ketch-ffi`'s docs say why. A breaking change to the binding, marked as such.
+
+### D2. `ketch-ffi`: records and operations the apps need
+
+The macOS app's protocol needs things `ketch-ffi` does not give: a changelog across a version range, pinned packages in `outdated` with what holds them, `latest` in search results, and an `uninstall` that can be cancelled, reports progress and removes a leftover store folder for a name with no record, as the CLI does. Research: section 3a, gaps G2–G5.
+
+Done when `changelog_range(package, from, to)`, `Upgrade.pinned` (and the lock that holds it, when known), `RegistryPackage.latest` and the new `uninstall` exist with unit tests, the Swift binding test exercises each, and D4's fixtures can model them.
+
+### D3. `ketch-ffi`: the remaining CLI operations
+
+Screens the apps already draw (Activity history, package info, pin, rollback, Doctor fixes, PATH status) have no core call behind them. Research: section 3a, gap G6.
+
+Done when history (`stats.db`), info, pin/unpin, rollback, prune, registry refresh, `path` status and install, a doctor fix action and reading ketch's config are exported as thin calls into existing core code, each with a test; `registry push` stays out (it owns a tokio runtime).
+
+### D4. Contract fixtures for every app's fake core
+
+Three apps each test against a fake core; if each fake invents its own records and event streams, they will drift from the real one and from each other. Research: section 2, "Written once".
+
+Done when a set of language-neutral JSON scenarios (records, event streams with progress and `Abandoned`, `Busy`, `Cancelled`, decisions) is generated from the Rust types by a test that fails on drift, and the macOS app's fake core reads them; the Windows and Linux fakes read the same files when they exist.
+
+### D5. Design tokens for XAML and GTK
+
+`tokens.json` feeds only Swift today. The Windows and Linux apps should share ketch's brand (accent, status colours, spacing, radii, type scale) without imitating the glass. Style Dictionary has no XAML or GTK format, so it takes two custom ones. Research: section 2.
+
+Done when the token source lives in `desktop/design/`, `just design-tokens` also writes a XAML `ResourceDictionary` (Light, Dark, HighContrast theme dictionaries) and a GTK stylesheet setting libadwaita's CSS variables, glass and elevation tokens stay macOS-only, generated files say so in their first lines, and a drift check covers all outputs. Brand tokens on every platform, with native surfaces, were decided by the creator (2026-10-01, open decision 6).
+
+### D7. macOS: update notifications
+
+The macOS app checks for updates on a timer (F12) but tells nobody unless the window or menu-bar panel is open. Builds on F12's live core; F12's remaining work (the `LiveKetchCore` adapter and the manual checks) stays in F12. Research: section 1.
+
+Done when new upgrades since the last notice post one `UNUserNotificationCenter` notification, authorisation is asked only when the user turns notifications on in Settings, clicking it opens Updates, and a unit test covers which upgrades count as new.
+
+### D8. macOS: `ketch://` links
+
+A link on a web page or in the registry could open a package in the app. Whatever a link carries is untrusted input, so it is validated by the core. A link only opens a package page and never starts an install (creator, 2026-10-01, open decision 10). Research: section 1, "Deep links".
+
+Done when `CFBundleURLTypes` registers `ketch`, `onOpenURL` opens the package page a valid link names, through the core's validation, any other action is refused, and tests cover malformed and hostile links.
+
+### D9. macOS: VoiceOver pass
+
+The macOS app's accessibility was only checked on the fake core. F14 keeps its own Accessibility Inspector pass on the real glass; this task covers labels. Localisation is not needed for now (creator, 2026-10-01, open decision 7), so no String Catalog. Research: section 1.
+
+Done when every icon-only control has an accessibility label, and a VoiceOver walk through the nine screens finds no unlabeled control.
+
+### D10. Windows: C# binding for `ketch-ffi`
+
+The Windows app is C# + WinUI 3 over `ketch-ffi` (creator, 2026-10-01). `uniffi-bindgen-cs` last released for UniFFI 0.31.0; `ketch-ffi` is on 0.32.2. Decided by the creator (2026-10-01, open decision 4): first try the generator built from PR #176 (UniFFI 0.32.0), pinned to commit `0fc022aa1d73fb1dda91a778b63f2824d7dca58b`; if it fails against 0.32.2, use the C ABI from D15 through `LibraryImport`. Downgrading `ketch-ffi` to UniFFI 0.31.2 is not an option. Research: section 4.
+
+Done when the chosen route generates C# for `ketch-ffi`, the generator is pinned (a commit or a version, no system install), a .NET 10 test calls `installed`, `doctor` and a cancelled install against a scratch root on Windows CI, and the route taken and why is in the research page.
+
+### D11. Windows: WinUI 3 app shell on a fake core
+
+The Windows app's screens can be built before the binding is settled, the way F12 started on macOS. Research: sections 3b and 3c.
+
+Done when a WinUI 3 app (Windows App SDK, .NET 10, built with `dotnet build`, no Visual Studio required) has the common screens in a `NavigationView` with a `TitleBar` over Mica, `ContentDialog` and `InfoBar` for decisions and busy, light, dark and contrast themes, all on a fake core reading D4's fixtures, with a Windows CI job that builds and runs its tests.
+
+### D12. Windows: the app on the real core
+
+Swap the Windows app's fake core for the binding. Depends on D10, D11, D1 and D2.
+
+Done when the app runs every screen on `ketch-ffi` through D10's binding, work runs off the UI thread with events marshalled to the `DispatcherQueue`, cancel and `Busy` behave as in the contract, and a manual pass against a scratch root is recorded.
+
+### D13. Windows: tray icon, notifications, start at login, links
+
+The Windows counterparts of the macOS menu-bar extra, notifications, login item and URL scheme. WinUI has no tray control, so the icon is Win32's notification area. Research: sections 1 and 3c.
+
+Done when a notification-area icon opens the tray panel, `AppNotificationManager` posts update notices unpackaged, start at login and the `ketch` protocol are registered through `ActivationRegistrationManager` (with D8's validation rules), one instance runs at a time via `AppInstance`, and each can be switched off in Settings.
+
+### D14. Windows: release pipeline
+
+How the Windows app reaches users and updates itself, separate from the CLI's release. R10's open decisions on distribution and the Windows App SDK licence come first.
+
+Done when CI builds an unpackaged, signed (Artifact Signing or the creator's choice) release on `desktop-windows-v*` tags without touching `/releases/latest`, updates arrive through the chosen route (Velopack or winget), and the creator's answers to R10's decisions are recorded.
+
+### D15. Linux: `ketch-capi`, a C ABI and VAPI for Vala
+
+UniFFI has no Vala or C generator, so the Vala app needs a C ABI. R11 recommends one small crate with an opaque core handle, callbacks with user data, records as JSON strings and a hand-written VAPI; it is also the fallback C# route in D10. Depends on D1 and D2 for the per-call shape. Research: section 5.
+
+Done when `crates/ketch-capi` exports the contract over `extern "C"` with a cbindgen header checked for drift, its `unsafe_code` exception is scoped and explained, a `.vapi` binds it, a Vala test built with Meson calls `installed`, `doctor` and a cancelled install against a scratch root on Linux CI, and the JSON payloads have a schema. The creator chose JSON records and a hand-written VAPI, and allowed hand-written `unsafe` in `ketch-capi` only (2026-10-01, open decision 3): the crate sets `unsafe_code = "deny"` with a scoped `allow` and a `SAFETY` comment on each unsafe block, and the rest of the workspace keeps `forbid`.
+
+### D16. Linux: Vala + GTK 4 app shell on a fake core
+
+The Linux app's screens in Vala with GTK 4 and libadwaita, following the GNOME HIG, built before the C ABI is ready. GTK 4 + libadwaita over KDE and Blueprint for the markup were decided by the creator (2026-10-01, open decisions 1 and 2). Research: sections 3b, 3c and 5.
+
+Done when a Meson project builds a libadwaita app with the common screens in an `AdwNavigationSplitView` that adapts to narrow windows, Blueprint files (pinned as a Meson subproject) for the UI, `AdwAlertDialog`, `AdwBanner` and toasts for decisions, busy and finished work, dark and high-contrast styles, all on a fake core reading D4's fixtures, with a Linux CI job that builds and runs its tests.
+
+### D17. Linux: the app on the real core
+
+Swap the Linux app's fake core for `ketch-capi`. Depends on D15 and D16.
+
+Done when every screen runs on the C ABI, calls run off the main loop with events returned through the `GLib.MainContext`, cancel and `Busy` behave as in the contract, and a manual pass against a scratch root is recorded.
+
+### D18. Linux: notifications, background and autostart
+
+GNOME has no tray in its HIG; an app that checks in the background asks the Background portal and notifies through `GNotification`. Research: sections 1 and 3c.
+
+Done when update notices go through `GNotification` (the Notification portal under Flatpak), background running and start at login are requested through the Background portal (libportal) with an XDG autostart entry outside a sandbox, `ketch://` links follow D8's rules, and there is no tray: the creator deferred a StatusNotifierItem tray (2026-10-01, open decision 8).
+
+### D19. Linux: packaging and release
+
+How the Linux app reaches users. R10 left Flatpak against distribution packages open, and Flatpak needs home access for PATH work.
+
+Done when the creator has chosen the format, CI builds it on `desktop-linux-v*` tags without touching `/releases/latest`, the app ships AppStream metadata and a `.desktop` file that validate, and updates come from the chosen package manager.
