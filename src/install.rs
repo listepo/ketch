@@ -607,6 +607,11 @@ pub fn commit(cfg: &Config, state: &mut State, prepared: Prepared) -> Result<Ins
     let version = release.version.to_string();
     let store_dir = cfg.package_dir(&manifest.name, &version);
 
+    // --- sweep --------------------------------------------------------------
+    // Before the hooks and before anything is placed: a leftover the sweep
+    // cannot remove is a reason to stop, not to install beside it.
+    sweep_swap_leftovers(cfg, &manifest.name, existing.as_ref())?;
+
     // --- hooks: before ------------------------------------------------------
     // Refused before anything is placed: a manifest that may not run hooks
     // must not install as though it had none, or the user never learns why
@@ -1467,13 +1472,60 @@ fn remove_store_dir(cfg: &Config, prefix: &Path) {
     }
 }
 
-/// Delete `store/<name>/` whole, with whatever is left in it.
+/// Remove the `<version>.incoming` and `<version>.old` folders an interrupted
+/// swap in `move_into_store` left in `store/<name>/`.
 ///
-/// Returns the folder when it was a candidate — a direct child of the store
-/// named exactly like the package, and inside it after symlinks resolve — so
-/// the caller knows which prefixes it already covered. A name that is not one
-/// plain path component is never joined onto the store.
-pub(crate) fn remove_package_dir(cfg: &Config, name: &str) -> Option<PathBuf> {
+/// Their own cleanup is best effort, so one that failed would otherwise wait
+/// for the next swap of the same version — and a stale `.incoming` is where
+/// that swap stages the new payload. A prefix the package still records is
+/// never touched, whatever its name ends with.
+///
+/// # Errors
+///
+/// Returns an error naming the leftover that could not be removed.
+fn sweep_swap_leftovers(
+    cfg: &Config,
+    name: &str,
+    existing: Option<&InstalledPackage>,
+) -> Result<()> {
+    let Some(dir) = package_dir_candidate(cfg, name) else {
+        return Ok(());
+    };
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Ok(());
+    };
+    let recorded: Vec<&Path> = existing
+        .into_iter()
+        .flat_map(|p| std::iter::once(&p.prefix).chain(p.retained.iter().map(|r| &r.prefix)))
+        .map(PathBuf::as_path)
+        .collect();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let file_name = entry.file_name();
+        let leftover = file_name
+            .to_str()
+            .is_some_and(|n| n.ends_with(".incoming") || n.ends_with(".old"));
+        if !leftover || recorded.contains(&path.as_path()) {
+            continue;
+        }
+        // `file_type` does not follow a symlink, so a link is removed as a
+        // link and never followed out of the store.
+        let removed = match entry.file_type() {
+            Ok(t) if t.is_dir() => std::fs::remove_dir_all(&path),
+            _ => std::fs::remove_file(&path),
+        };
+        match removed {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(Error::io(&path, e)),
+        }
+    }
+    Ok(())
+}
+
+/// `store/<name>/` when `name` is one plain path component and the folder
+/// exists inside the store after symlinks resolve.
+fn package_dir_candidate(cfg: &Config, name: &str) -> Option<PathBuf> {
     use std::path::Component;
     let mut components = Path::new(name).components();
     if !matches!(
@@ -1486,6 +1538,17 @@ pub(crate) fn remove_package_dir(cfg: &Config, name: &str) -> Option<PathBuf> {
     if dir.symlink_metadata().is_err() || !is_inside_store(&cfg.store_dir, &dir) {
         return None;
     }
+    Some(dir)
+}
+
+/// Delete `store/<name>/` whole, with whatever is left in it.
+///
+/// Returns the folder when it was a candidate — a direct child of the store
+/// named exactly like the package, and inside it after symlinks resolve — so
+/// the caller knows which prefixes it already covered. A name that is not one
+/// plain path component is never joined onto the store.
+pub(crate) fn remove_package_dir(cfg: &Config, name: &str) -> Option<PathBuf> {
+    let dir = package_dir_candidate(cfg, name)?;
     if let Err(e) = std::fs::remove_dir_all(&dir) {
         if e.kind() != std::io::ErrorKind::NotFound {
             ui::warn(&format!("could not remove {}: {e}", dir.display()));
@@ -1799,6 +1862,70 @@ mod tests {
         assert_eq!(remove_package_dir(&cfg, "tool"), Some(folder.clone()));
         assert!(!folder.exists());
         assert!(cfg.store_dir.is_dir(), "the store itself stays");
+    }
+
+    #[test]
+    fn the_sweep_takes_swap_leftovers_and_keeps_every_version() {
+        let root = tempfile::tempdir().unwrap();
+        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        cfg.ensure_dirs().unwrap();
+        let folder = cfg.store_dir.join("tool");
+        std::fs::create_dir_all(folder.join("1.0.0")).unwrap();
+        std::fs::create_dir_all(folder.join("1.1.0.incoming")).unwrap();
+        std::fs::write(folder.join("1.1.0.incoming").join("planted"), b"x").unwrap();
+        std::fs::create_dir_all(folder.join("1.0.0.old")).unwrap();
+        std::fs::write(folder.join("0.9.0.old"), b"a file, not a folder").unwrap();
+
+        sweep_swap_leftovers(&cfg, "tool", None).unwrap();
+
+        let mut left: Vec<_> = std::fs::read_dir(&folder)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        left.sort();
+        assert_eq!(left, vec!["1.0.0".to_string()]);
+    }
+
+    #[test]
+    fn the_sweep_never_takes_a_prefix_the_package_records() {
+        let root = tempfile::tempdir().unwrap();
+        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        cfg.ensure_dirs().unwrap();
+        // A release really versioned like a leftover.
+        let prefix = cfg.store_dir.join("tool").join("2.old");
+        std::fs::create_dir_all(&prefix).unwrap();
+        let pkg = installed("tool", "2.old", prefix.clone());
+
+        sweep_swap_leftovers(&cfg, "tool", Some(&pkg)).unwrap();
+
+        assert!(prefix.is_dir());
+    }
+
+    #[test]
+    fn the_sweep_is_a_no_op_without_a_package_folder() {
+        let root = tempfile::tempdir().unwrap();
+        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        cfg.ensure_dirs().unwrap();
+        sweep_swap_leftovers(&cfg, "tool", None).unwrap();
+        sweep_swap_leftovers(&cfg, "../outside", None).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_leftover_the_sweep_cannot_remove_stops_the_install_and_is_named() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let cfg = Config::load(Some(root.path().join("ketch"))).unwrap();
+        cfg.ensure_dirs().unwrap();
+        let folder = cfg.store_dir.join("tool");
+        std::fs::create_dir_all(folder.join("1.0.0.old")).unwrap();
+        std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+        let result = sweep_swap_leftovers(&cfg, "tool", None);
+        std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let err = result.expect_err("a read-only package folder cannot be swept");
+        assert!(err.to_string().contains("1.0.0.old"), "{err}");
     }
 
     #[test]
