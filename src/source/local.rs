@@ -7,6 +7,7 @@
 //! `ketch list` and `ketch info` keep working after the working directory moves.
 
 use super::{ListOpts, Source};
+use crate::cancel::Cancel;
 use crate::error::{Error, Result};
 use crate::extract::{is_bundle_name, read_head};
 use crate::http;
@@ -82,7 +83,9 @@ impl Source for LocalSource {
         asset: &ReleaseAsset,
         dest: &Path,
         progress: &dyn ProgressSink,
+        cancel: &Cancel,
     ) -> Result<String> {
+        cancel.check()?;
         let src = Path::new(&asset.url);
         if !src.exists() {
             return Err(Error::msg(format!(
