@@ -195,6 +195,7 @@ differ by orders of magnitude — the cargo home is the small one. Set
 | `crates/ketch-core/src/registry.rs` | the fetched package registry (see `docs/REGISTRY.md`) |
 | `crates/ketch-core/src/manifest.rs` | resolving a name to a `Manifest` across four tiers |
 | `crates/ketch-core/src/model.rs` | every type that crosses a module boundary |
+| `crates/ketch-core/src/toml_file.rs` | parsing and rendering the TOML files ketch owns, and publishing their JSON Schemas (M16 moves every `toml` call here) |
 | `crates/ketch-core/src/state.rs` | the installed-package record and the process lock |
 | `crates/ketch-core/src/stats.rs` | `stats.db`: the history of what was installed, in SQLite |
 | `crates/ketch-core/src/log.rs` | the log file, in text or JSON Lines |
