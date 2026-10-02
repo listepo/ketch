@@ -208,7 +208,7 @@ differ by orders of magnitude — the cargo home is the small one. Set
 | `crates/ketch-core/src/decide.rs` | what the core asks a person mid-run: the `Decider` trait and `NoDecider`, carried in `Ctx` |
 | `crates/ketch-core/src/text.rs` | byte counts and truncation, spelled the same by the core and every renderer |
 | `crates/ketch-core/src/doctor.rs` | `ketch doctor`'s checks, shared by the command and `ketch-ffi` |
-| `crates/ketch-ffi/` | the core through UniFFI: a coarse, language-neutral surface of plain records, callback interfaces for `Reporter` and `Decider`, a cancel token and a typed `KetchError` |
+| `crates/ketch-ffi/` | the core through UniFFI: a coarse, language-neutral surface of plain records, foreign traits for `Reporter` and `Decider` passed with a cancel token to each call, and a typed `KetchError` |
 | `scripts/xcframework.sh` | `ketch-ffi` as an XCFramework for both macOS architectures, and its generated Swift bindings; `just xcframework` |
 | `desktop/macos/KetchCore/` | the Swift package wrapping that XCFramework and bindings (both build output), and the Swift test that drives the real core through them |
 | `src/ui.rs` | all terminal output, `Terminal`: the `Reporter` that draws the core's events, and `TerminalDecider`: the `Decider` that prompts on the terminal |
@@ -542,10 +542,10 @@ Seven things about that handoff are easy to break:
   push the branch and open the pull request; it merges, tags, releases and
   dispatches with `GITHUB_TOKEN`, and a tag or release made with that token
   starts no workflow, which is why bump dispatches `release.yml` itself.
-- **Merge the bump pull request with nothing but bump.** It is rebase-merged
-  (one commit per release; the repository allows rebase merging for it), and
-  only bump knows to tag the commit that lands. A bump pull request merged by
-  hand leaves an untagged version on `main`.
+- **Merge the bump pull request with nothing but bump.** Only bump knows to
+  tag the commit that lands (merge method: pyrlyn/.github
+  `docs/pull-requests.md`). A bump pull request merged by hand leaves an
+  untagged version on `main`.
 - **release-plz reads the tags, not crates.io** (`git_only = true`). By
   default it asks the registry for the last released version, and `ketch` is
   not published there — so the lookup comes back empty, release-plz decides

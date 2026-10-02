@@ -1,4 +1,8 @@
 #!/bin/sh
+# Copyright (c) 2026 Ivan Tugay
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 # scripts/release.sh decides the version, writes the changelog entry and makes
 # the version commit — exercised in a throwaway repository whose origin is a
 # local bare one, so nothing is pushed anywhere real and nothing is dispatched

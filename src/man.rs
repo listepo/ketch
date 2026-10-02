@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! ketch's own man pages, rendered from the clap definition.
 //!
 //! One page per visible command, `ketch.1` plus `ketch-<cmd>[-<sub>…].1`, so

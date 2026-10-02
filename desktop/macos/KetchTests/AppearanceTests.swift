@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // Settings -> Appearance: the defaults, what survives a relaunch, what a
 // damaged preference falls back to, and how Reduce Transparency and Increase
 // Contrast override the user's choice.

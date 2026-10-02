@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Publisher signatures: a manifest's `trust` table held against a release.
 //!
 //! A checksum says the download is the file the release lists. A signature

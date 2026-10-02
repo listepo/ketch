@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Windows pipeline coverage: the real binary against a throwaway root.
 //!
 //! Compiles and runs only on Windows (`cargo test` on a Windows host or runner).
