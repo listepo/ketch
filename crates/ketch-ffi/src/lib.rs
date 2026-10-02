@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! ketch-ffi — `ketch-core` exported through UniFFI, for front ends written in
 //! another language that link the core in-process: the SwiftUI app first, a
 //! Windows front end later, from the same Rust and the same generated
@@ -12,6 +16,14 @@
 //! foreign [`Reporter`], what it asks reaches a foreign [`Decider`], and a
 //! [`CancelToken`] stops an operation; all three are adapters onto the core's
 //! own traits ([`callbacks`]). Errors are one enum, [`KetchError`].
+//!
+//! The reporter, decider and token are passed to each call, not to the
+//! constructor. An app shows each operation where it was started — a progress
+//! row in one screen, a sheet in another — so one `KetchCore` serving two
+//! screens at once has to tell their events and questions apart, and a
+//! reporter fixed at construction would send both to the same place. Calls
+//! that change nothing take only a reporter; `root` and `installed` read a
+//! file and take none.
 //!
 //! Threading follows the rules the core sets for a long-running host. Every
 //! method is synchronous and blocks for as long as the work takes, so a caller
@@ -86,53 +98,61 @@ pub fn package_for_link(url: String) -> Result<String> {
 #[derive(uniffi::Object)]
 pub struct KetchCore {
     root: Option<PathBuf>,
-    reporter: Option<Arc<dyn Reporter>>,
-    decider: Option<ForeignDecider>,
 }
 
-/// What one call runs with: its own configuration and the reporter that logs
-/// and forwards.
+/// What one call runs with: its own configuration, the reporter that logs and
+/// forwards to the caller's, and the caller's decider.
 struct Operation {
     cfg: Config,
     report: Report,
+    decider: Option<ForeignDecider>,
+}
+
+impl Operation {
+    /// The context the core's calls take, asking this call's decider. Without
+    /// one every question is declined, as under `ketch --yes`.
+    fn ctx(&self) -> Ctx<'_> {
+        let cx = Ctx::new(&self.cfg, &self.report);
+        match &self.decider {
+            Some(decider) => cx.with_decider(decider),
+            None => cx,
+        }
+    }
 }
 
 #[uniffi::export]
 impl KetchCore {
     /// The core for `root`, or for `KETCH_ROOT` / `~/.ketch` when `None` —
-    /// the same tree, state and lock the CLI uses. `reporter` receives every
-    /// event; `decider` answers the pipeline's questions, and without one
-    /// every question is declined, as under `ketch --yes`.
+    /// the same tree, state and lock the CLI uses.
     #[uniffi::constructor]
-    pub fn new(
-        root: Option<String>,
-        reporter: Option<Box<dyn Reporter>>,
-        decider: Option<Box<dyn Decider>>,
-    ) -> Arc<Self> {
+    pub fn new(root: Option<String>) -> Arc<Self> {
         Arc::new(KetchCore {
             root: root.map(PathBuf::from),
-            reporter: reporter.map(Arc::from),
-            decider: decider.map(ForeignDecider),
         })
     }
 
     /// The ketch root this core manages, resolved as the next call will.
     pub fn root(&self) -> Result<String> {
-        Ok(self.operation()?.cfg.root.display().to_string())
+        Ok(self.operation(None, None)?.cfg.root.display().to_string())
     }
 
     /// Installed packages, by name. Reads `state.json` only; no network.
     pub fn installed(&self) -> Result<Vec<Package>> {
-        let op = self.operation()?;
+        let op = self.operation(None, None)?;
         let state = State::load(&op.cfg)?;
         Ok(state.iter().map(Package::from).collect())
     }
 
     /// Packages matching `query`: what the registry and the person's own
     /// manifests know first, then repositories the sources find, `limit` in
-    /// all. A source that cannot be reached is reported as a warning; only
+    /// all. A source that cannot be reached is a warning to `reporter`; only
     /// when every one failed and nothing was found is it an error.
-    pub fn search(&self, query: String, limit: u32) -> Result<SearchResults> {
+    pub fn search(
+        &self,
+        query: String,
+        limit: u32,
+        reporter: Option<Arc<dyn Reporter>>,
+    ) -> Result<SearchResults> {
         let query = query.trim();
         if query.is_empty() {
             return Err(KetchError::Other {
@@ -140,8 +160,8 @@ impl KetchCore {
             });
         }
         let limit = usize::try_from(limit).unwrap_or(usize::MAX);
-        let op = self.operation()?;
-        let cx = self.ctx(&op);
+        let op = self.operation(reporter, None)?;
+        let cx = op.ctx();
         let resolver = Resolver::new(&cx)?;
         let known: Vec<RegistryPackage> = resolver
             .search(query)
@@ -184,9 +204,9 @@ impl KetchCore {
     /// Installed packages with a newer release, under the rules `ketch
     /// outdated` uses: pinned and local packages never have one. An answer
     /// looked up in the last ten minutes is reused.
-    pub fn outdated(&self) -> Result<Vec<Upgrade>> {
-        let op = self.operation()?;
-        let cx = self.ctx(&op);
+    pub fn outdated(&self, reporter: Option<Arc<dyn Reporter>>) -> Result<Vec<Upgrade>> {
+        let op = self.operation(reporter, None)?;
+        let cx = op.ctx();
         let state = State::load(&op.cfg)?;
         upgrades(&cx, &state, None)
     }
@@ -200,6 +220,8 @@ impl KetchCore {
         &self,
         specs: Vec<String>,
         options: InstallOptions,
+        reporter: Option<Arc<dyn Reporter>>,
+        decider: Option<Arc<dyn Decider>>,
         cancel: Option<Arc<CancelToken>>,
     ) -> Result<Vec<Installed>> {
         let specs = distinct(specs);
@@ -213,8 +235,8 @@ impl KetchCore {
                 message: "a binary choice names one package, so it needs exactly one spec".into(),
             });
         }
-        let op = self.operation()?;
-        let cx = self.ctx(&op);
+        let op = self.operation(reporter, decider)?;
+        let cx = op.ctx();
         let _lock = Lock::acquire(&cx)?;
         let sources = SourceRegistry::load(&cx);
         let mut state = State::load(&op.cfg)?;
@@ -238,15 +260,17 @@ impl KetchCore {
 
     /// Upgrade `names`, or every installed package when empty, to the
     /// releases `outdated` reports. Processes holding the files about to be
-    /// replaced are put to the decider. Failures are returned as `install`
+    /// replaced are put to `decider`. Failures are returned as `install`
     /// returns them.
     pub fn upgrade(
         &self,
         names: Vec<String>,
+        reporter: Option<Arc<dyn Reporter>>,
+        decider: Option<Arc<dyn Decider>>,
         cancel: Option<Arc<CancelToken>>,
     ) -> Result<Vec<Installed>> {
-        let op = self.operation()?;
-        let cx = self.ctx(&op);
+        let op = self.operation(reporter, decider)?;
+        let cx = op.ctx();
         let _lock = Lock::acquire(&cx)?;
         let sources = SourceRegistry::load(&cx);
         let mut state = State::load(&op.cfg)?;
@@ -290,18 +314,29 @@ impl KetchCore {
 
     /// Remove `names`: their links, their files and their records. Every name
     /// is checked first, so an unknown one stops the call before anything is
-    /// removed.
-    pub fn uninstall(&self, names: Vec<String>) -> Result<Vec<Package>> {
-        let op = self.operation()?;
-        let cx = self.ctx(&op);
+    /// removed. `cancel` is checked before each package: what was removed by
+    /// then stays removed.
+    pub fn uninstall(
+        &self,
+        names: Vec<String>,
+        reporter: Option<Arc<dyn Reporter>>,
+        decider: Option<Arc<dyn Decider>>,
+        cancel: Option<Arc<CancelToken>>,
+    ) -> Result<Vec<Package>> {
+        let op = self.operation(reporter, decider)?;
+        let cx = op.ctx();
         let _lock = Lock::acquire(&cx)?;
         let mut state = State::load(&op.cfg)?;
         let targets = installed_names(&state, &names)?;
 
+        let cancel = token(cancel);
         let mut removed = Vec::new();
         let mut failed = Vec::new();
         for name in &targets {
-            match install::uninstall(&cx, &mut state, name) {
+            let outcome = cancel
+                .check()
+                .and_then(|()| install::uninstall(&cx, &mut state, name));
+            match outcome {
                 Ok(pkg) => removed.push(Package::from(&pkg)),
                 Err(e) => failed.push((name.clone(), e)),
             }
@@ -319,9 +354,14 @@ impl KetchCore {
     /// `None`, read from the changelog file the release ships when it has a
     /// section for that version, else from the notes the release published.
     /// Text is filtered of control characters.
-    pub fn changelog(&self, package: String, version: Option<String>) -> Result<Changelog> {
-        let op = self.operation()?;
-        let cx = self.ctx(&op);
+    pub fn changelog(
+        &self,
+        package: String,
+        version: Option<String>,
+        reporter: Option<Arc<dyn Reporter>>,
+    ) -> Result<Changelog> {
+        let op = self.operation(reporter, None)?;
+        let cx = op.ctx();
         let state = State::load(&op.cfg)?;
         let raw = match &version {
             Some(v) => format!("{package}@{v}"),
@@ -357,10 +397,9 @@ impl KetchCore {
     }
 
     /// Every `ketch doctor` check. Repairs nothing.
-    pub fn doctor(&self) -> Result<Vec<Check>> {
-        let op = self.operation()?;
-        let cx = self.ctx(&op);
-        Ok(ketch_core::doctor::checks(&cx)
+    pub fn doctor(&self, reporter: Option<Arc<dyn Reporter>>) -> Result<Vec<Check>> {
+        let op = self.operation(reporter, None)?;
+        Ok(ketch_core::doctor::checks(&op.ctx())
             .iter()
             .map(Check::from)
             .collect())
@@ -370,11 +409,12 @@ impl KetchCore {
 impl KetchCore {
     /// Configuration and log for one call, built afresh: the core keeps no
     /// configuration across operations, and neither does this.
-    fn operation(&self) -> Result<Operation> {
-        let forward = self
-            .reporter
-            .clone()
-            .map(|r| Report::new(ForeignReporter(r)));
+    fn operation(
+        &self,
+        reporter: Option<Arc<dyn Reporter>>,
+        decider: Option<Arc<dyn Decider>>,
+    ) -> Result<Operation> {
+        let forward = reporter.map(|r| Report::new(ForeignReporter(r)));
         let report = Report::new(LogReporter::new(forward.clone()));
         let cfg = Config::load(self.root.clone(), &report)?;
         cfg.ensure_dirs()?;
@@ -385,15 +425,11 @@ impl KetchCore {
                 forward.warn(&e.to_string());
             }
         }
-        Ok(Operation { cfg, report })
-    }
-
-    fn ctx<'a>(&'a self, op: &'a Operation) -> Ctx<'a> {
-        let cx = Ctx::new(&op.cfg, &op.report);
-        match &self.decider {
-            Some(decider) => cx.with_decider(decider),
-            None => cx,
-        }
+        Ok(Operation {
+            cfg,
+            report,
+            decider: decider.map(ForeignDecider),
+        })
     }
 }
 
@@ -501,8 +537,16 @@ mod tests {
 
     fn scratch() -> (tempfile::TempDir, Arc<KetchCore>) {
         let dir = tempfile::tempdir().unwrap();
-        let core = KetchCore::new(Some(dir.path().display().to_string()), None, None);
+        let core = KetchCore::new(Some(dir.path().join("root").display().to_string()));
         (dir, core)
+    }
+
+    /// A one-file `local:` package under `dir`, named `name`.
+    fn payload(dir: &std::path::Path, name: &str) -> String {
+        let payload = dir.join("payload").join(name);
+        std::fs::create_dir_all(&payload).unwrap();
+        std::fs::write(payload.join(name), "#!/bin/sh\necho hi\n").unwrap();
+        format!("local:{}", payload.join(name).display())
     }
 
     #[test]
@@ -527,7 +571,7 @@ mod tests {
     fn uninstalling_an_unknown_name_is_not_found_before_anything_changes() {
         let (_dir, core) = scratch();
         assert_eq!(
-            core.uninstall(vec!["nope".into()]),
+            core.uninstall(vec!["nope".into()], None, None, None),
             Err(KetchError::NotFound {
                 name: "nope".into()
             })
@@ -537,16 +581,34 @@ mod tests {
     #[test]
     fn a_held_lock_makes_a_mutating_call_busy() {
         let (_dir, core) = scratch();
-        let op = core.operation().unwrap();
-        let _held = Lock::acquire(&Ctx::new(&op.cfg, &op.report)).unwrap();
-        let err = core.uninstall(vec!["nope".into()]).unwrap_err();
+        let op = core.operation(None, None).unwrap();
+        let _held = Lock::acquire(&op.ctx()).unwrap();
+        let err = core
+            .uninstall(vec!["nope".into()], None, None, None)
+            .unwrap_err();
         assert!(matches!(err, KetchError::Busy { .. }), "{err:?}");
     }
 
     #[derive(Default)]
     struct Recorded(std::sync::Mutex<Vec<Event>>);
 
-    impl Reporter for Arc<Recorded> {
+    impl Recorded {
+        /// Whether a package reached the installing stage. Not checked by
+        /// name: the name a local file installs under differs on Windows.
+        fn saw_installing(&self) -> bool {
+            self.0.lock().unwrap().iter().any(|e| {
+                matches!(
+                    e,
+                    Event::Step {
+                        stage: Stage::Installing,
+                        ..
+                    }
+                )
+            })
+        }
+    }
+
+    impl Reporter for Recorded {
         fn event(&self, event: Event) {
             self.0.lock().unwrap().push(event);
         }
@@ -554,20 +616,16 @@ mod tests {
 
     #[test]
     fn a_local_package_installs_reports_and_uninstalls() {
-        let dir = tempfile::tempdir().unwrap();
-        let payload = dir.path().join("payload");
-        std::fs::create_dir_all(&payload).unwrap();
-        std::fs::write(payload.join("hello"), "#!/bin/sh\necho hi\n").unwrap();
+        let (dir, core) = scratch();
         let recorded = Arc::new(Recorded::default());
-        let core = KetchCore::new(
-            Some(dir.path().join("root").display().to_string()),
-            Some(Box::new(recorded.clone())),
-            None,
-        );
-
-        let spec = format!("local:{}", payload.join("hello").display());
         let placed = core
-            .install(vec![spec], InstallOptions::default(), None)
+            .install(
+                vec![payload(dir.path(), "hello")],
+                InstallOptions::default(),
+                Some(recorded.clone()),
+                None,
+                None,
+            )
             .unwrap();
         assert_eq!(placed.len(), 1);
         let name = placed[0].package.name.clone();
@@ -579,42 +637,85 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![name.clone()]
         );
-        assert!(recorded.0.lock().unwrap().iter().any(|e| matches!(
-            e,
-            Event::Step {
-                stage: Stage::Installing,
-                ..
-            }
-        )));
+        assert!(recorded.saw_installing());
 
-        let removed = core.uninstall(vec![name.clone()]).unwrap();
+        let removed = core
+            .uninstall(vec![name.clone()], None, None, None)
+            .unwrap();
         assert_eq!(removed[0].name, name);
         assert_eq!(core.installed().unwrap(), Vec::new());
     }
 
     #[test]
+    fn each_call_reports_to_its_own_reporter_only() {
+        let (dir, core) = scratch();
+        let installing = Arc::new(Recorded::default());
+        let removing = Arc::new(Recorded::default());
+        let placed = core
+            .install(
+                vec![payload(dir.path(), "hello")],
+                InstallOptions::default(),
+                Some(installing.clone()),
+                None,
+                None,
+            )
+            .unwrap();
+        let name = placed[0].package.name.clone();
+        core.uninstall(vec![name], Some(removing.clone()), None, None)
+            .unwrap();
+        assert!(installing.saw_installing());
+        assert!(!removing.saw_installing());
+    }
+
+    #[test]
     fn a_cancelled_install_places_nothing() {
         let (dir, core) = scratch();
-        let payload = dir.path().join("payload");
-        std::fs::create_dir_all(&payload).unwrap();
-        std::fs::write(payload.join("hello"), "#!/bin/sh\necho hi\n").unwrap();
         let token = CancelToken::new();
         token.cancel();
-        let spec = format!("local:{}", payload.join("hello").display());
         let err = core
-            .install(vec![spec], InstallOptions::default(), Some(token))
+            .install(
+                vec![payload(dir.path(), "hello")],
+                InstallOptions::default(),
+                None,
+                None,
+                Some(token),
+            )
             .unwrap_err();
         assert_eq!(err, KetchError::Cancelled);
         assert_eq!(core.installed().unwrap(), Vec::new());
     }
 
     #[test]
+    fn a_cancelled_uninstall_removes_nothing() {
+        let (dir, core) = scratch();
+        let spec = payload(dir.path(), "hello");
+        let placed = core
+            .install(vec![spec], InstallOptions::default(), None, None, None)
+            .unwrap();
+        let name = placed[0].package.name.clone();
+        let token = CancelToken::new();
+        token.cancel();
+        let err = core
+            .uninstall(vec![name.clone()], None, None, Some(token))
+            .unwrap_err();
+        assert_eq!(err, KetchError::Cancelled);
+        assert_eq!(
+            core.installed()
+                .unwrap()
+                .into_iter()
+                .map(|p| p.name)
+                .collect::<Vec<_>>(),
+            vec![name]
+        );
+    }
+
+    #[test]
     fn empty_requests_are_refused() {
         let (_dir, core) = scratch();
         assert!(core
-            .install(Vec::new(), InstallOptions::default(), None)
+            .install(Vec::new(), InstallOptions::default(), None, None, None)
             .is_err());
-        assert!(core.search("  ".into(), 10).is_err());
+        assert!(core.search("  ".into(), 10, None).is_err());
     }
 
     #[test]

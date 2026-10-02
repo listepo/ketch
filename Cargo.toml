@@ -29,7 +29,7 @@ edition = "2021"
 # Raised from 1.82 by Diesel 2.3, which is the floor for the statistics
 # database. Nothing else in the tree needs it.
 rust-version = "1.86"
-license = "GPL-3.0-only OR LicenseRef-Ketch-Royalty-free-1.0 OR LicenseRef-Ketch-Commercial"
+license = "GPL-3.0-or-later OR LicenseRef-Ketch-Royalty-free-1.0 OR LicenseRef-Ketch-Commercial"
 repository = "https://github.com/listepo/ketch"
 
 # There is no unsafe code in ketch and there is no reason for any to appear.

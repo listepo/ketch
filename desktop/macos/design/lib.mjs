@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // Token resolution shared by build.mjs and contrast.mjs: appearance modes,
 // per-mode references, and the DTCG 2025.10 value shapes this design uses
 // (sRGB colour objects, px/rem dimensions, ms/s durations, shadow layers).

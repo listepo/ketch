@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Arbitrary argv through the real clap tree, `Cli::try_parse_from`, plus the
 //! error a failed parse renders. Most tokens are drawn from the tree's own
 //! subcommands, flags and values so the fuzzer gets past the first word.

@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Unix symlink, mode and ownership helpers shared by the macOS and Linux
 //! backends. macOS-only app placement stays in `macos.rs`.
 #![cfg(unix)]

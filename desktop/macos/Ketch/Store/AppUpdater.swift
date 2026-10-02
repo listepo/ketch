@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // The app's own updates, through Sparkle. Separate from `KetchStore`, which
 // checks the packages ketch manages; this is the one thing that updates
 // Ketch.app itself, from the appcast the release workflow publishes.

@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // The names the views use for spacing, radii, shadow, type and status colour,
 // mapped onto the generated design tokens (design/generated/Tokens.swift, from
 // design/tokens.json). Views keep these role names; which token a role takes
