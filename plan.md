@@ -8,7 +8,7 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | B65 | in progress | P0 | 2 | 0% | Cursor / grok 4.7 high |
 | R3 | in progress | P1 | 3 | 67% | Cursor / grok 4.7 high |
 | F8 | in progress | P2 | 3 | 0% | Cursor / grok 4.7 high |
-| M16.2 | todo | P2 | 2 | 0% | |
+| M16.2 | in progress | P2 | 2 | 10% | Claude Code / opus-5.5 |
 | M16.3 | todo | P2 | 1 | 0% | |
 | M16.4 | todo | P2 | 1 | 0% | |
 | M16.5 | todo | P2 | 1 | 0% | |
@@ -332,6 +332,8 @@ The creator decided (2026-10-03) to split M16 into the subtasks below, one pull 
 `load_meta` and `write_meta` (`registry.meta.toml`) use M16.1's parse and render. `read_package` parses a package folder's `ketch.toml` as a table, fills `name` from the folder when the file leaves it out, and deserializes the manifest; the module gains what that needs (reading and inserting a string key of a parsed document, then deserializing it), with tests.
 
 Done when `registry.rs` imports neither `toml` nor `toml_edit`, the existing registry tests pass unchanged, the new helper has tests, and `ketch update` plus `ketch search` against a scratch root behave as before.
+
+Execution plan (Claude Code / opus-5.5): `load_meta`/`write_meta` call `toml_file::parse`/`render` with the same file name in the error; `toml_file::Document` (parse into a table, `str`, `set_str`, `deserialize`) carries `read_package`'s fill-in of `name`. Parsing straight into a table makes the old "expected a table of package fields" branch unreachable (a TOML document is a table), so it goes. Tests for `Document`; fmt, clippy, nextest; `ketch update` twice (writes then reads `registry.meta.toml`) and `ketch search ripgrep` against a scratch root.
 
 ### M16.3. `push.rs` through the module
 
