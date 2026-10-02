@@ -79,8 +79,8 @@ on the generated man pages when mandoc is present, whether `release.yml` is what
 `brew style` on the generated cask. Cross-target
 builds and the Linux/Windows jobs are CI-only.
 
-`just test` ends with a lossless `dunnage` cleanup of this checkout's cargo
-`target/` dirs (compress + dedupe, never deletes); a machine without `dunnage`
+`just test` ends with a lossless `swarfr` cleanup of this checkout's cargo
+`target/` dirs (compress + dedupe, never deletes); a machine without `swarfr`
 just gets a note to install it, not a failure.
 
 Commitlint checks commit messages against the conventional-commit format:

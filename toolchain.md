@@ -25,8 +25,8 @@ Project programs and direct packages from manifests.
 | cargo-fuzz | mise | Builds and runs the libFuzzer targets in `fuzz/` (`just fuzz`) | https://github.com/rust-fuzz/cargo-fuzz |
 | rustc nightly | rustup (`rustup toolchain install nightly`) | Only for `cargo +nightly fuzz`; every build stays on the `mise.toml` pin | https://github.com/rust-lang/rust |
 | release-plz | local only | `release-plz update` preview; no longer run in CI (bump.yml releases) | https://github.com/release-plz/release-plz |
-| ketch | see its README | Installs dunnage | https://github.com/pyrlyn/ketch |
-| dunnage | `ketch` | Lossless cleanup of `target/` after tests | https://github.com/listepo/dunnage |
+| ketch | see its README | Installs swarfr | https://github.com/pyrlyn/ketch |
+| swarfr | `ketch` | Lossless cleanup of `target/` after tests | https://github.com/listepo/swarfr |
 | mandoc | ships with macOS; `apt install mandoc` on Linux | `just lint-man` checks the generated man pages | https://mandoc.bsd.lv |
 
 ## cargo
