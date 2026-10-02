@@ -1,0 +1,136 @@
+{
+ "token": "codex",
+ "full_token": "codex",
+ "old_tokens": [],
+ "tap": "homebrew/cask",
+ "name": [
+  "Codex"
+ ],
+ "desc": "OpenAI's coding agent that runs in your terminal",
+ "homepage": "https://github.com/openai/codex",
+ "url": "https://github.com/openai/codex/releases/download/rust-v0.160.0/codex-package-aarch64-apple-darwin.tar.gz",
+ "url_specs": {},
+ "version": "0.160.0",
+ "autobump": true,
+ "no_autobump_message": null,
+ "skip_livecheck": false,
+ "installed": null,
+ "installed_time": null,
+ "bundle_version": null,
+ "bundle_short_version": null,
+ "pinned": false,
+ "pinned_version": null,
+ "outdated": false,
+ "sha256": "007df41b607dbbc8d204b9746ce7fed2d4ce6c813f44c32ceee54175ca796525",
+ "artifacts": [
+  {
+   "binary": [
+    "bin/codex"
+   ],
+   "target": "$HOMEBREW_PREFIX/bin/codex"
+  },
+  {
+   "generate_completions_from_executable": [
+    "bin/codex",
+    "completion",
+    {
+     "base_name": null,
+     "shell_parameter_format": null,
+     "shells": [
+      "bash",
+      "zsh",
+      "fish"
+     ]
+    }
+   ]
+  },
+  {
+   "zap": [
+    {
+     "rmdir": "~/.codex"
+    }
+   ]
+  }
+ ],
+ "caveats": null,
+ "caveats_rosetta": null,
+ "depends_on": {},
+ "conflicts_with": null,
+ "container": null,
+ "rename": [],
+ "auto_updates": null,
+ "deprecated": false,
+ "deprecation_date": null,
+ "deprecation_reason": null,
+ "deprecation_replacement_formula": null,
+ "deprecation_replacement_cask": null,
+ "deprecate_args": null,
+ "disabled": false,
+ "disable_date": null,
+ "disable_reason": null,
+ "disable_replacement_formula": null,
+ "disable_replacement_cask": null,
+ "disable_args": null,
+ "tap_git_head": "d8dfa8edc688822d5aa5a32baff9576b77e4184e",
+ "languages": [],
+ "ruby_source_path": "Casks/c/codex.rb",
+ "ruby_source_checksum": {
+  "sha256": "163cad3efc91c2489633d78346d12c8c37fc45b77aa06ec9ee9e324e6ce2efd6"
+ },
+ "variations": {
+  "golden_gate": {
+   "url": "https://github.com/openai/codex/releases/download/rust-v0.160.0/codex-package-x86_64-apple-darwin.tar.gz",
+   "sha256": "4d50514b2d8acd81ca8cfee55b667b3dc4f7681b65bf3299ff06b11a064f8861"
+  },
+  "tahoe": {
+   "url": "https://github.com/openai/codex/releases/download/rust-v0.160.0/codex-package-x86_64-apple-darwin.tar.gz",
+   "sha256": "4d50514b2d8acd81ca8cfee55b667b3dc4f7681b65bf3299ff06b11a064f8861"
+  },
+  "sequoia": {
+   "url": "https://github.com/openai/codex/releases/download/rust-v0.160.0/codex-package-x86_64-apple-darwin.tar.gz",
+   "sha256": "4d50514b2d8acd81ca8cfee55b667b3dc4f7681b65bf3299ff06b11a064f8861"
+  },
+  "sonoma": {
+   "url": "https://github.com/openai/codex/releases/download/rust-v0.160.0/codex-package-x86_64-apple-darwin.tar.gz",
+   "sha256": "4d50514b2d8acd81ca8cfee55b667b3dc4f7681b65bf3299ff06b11a064f8861"
+  },
+  "ventura": {
+   "url": "https://github.com/openai/codex/releases/download/rust-v0.160.0/codex-package-x86_64-apple-darwin.tar.gz",
+   "sha256": "4d50514b2d8acd81ca8cfee55b667b3dc4f7681b65bf3299ff06b11a064f8861"
+  },
+  "monterey": {
+   "url": "https://github.com/openai/codex/releases/download/rust-v0.160.0/codex-package-x86_64-apple-darwin.tar.gz",
+   "sha256": "4d50514b2d8acd81ca8cfee55b667b3dc4f7681b65bf3299ff06b11a064f8861"
+  },
+  "big_sur": {
+   "url": "https://github.com/openai/codex/releases/download/rust-v0.160.0/codex-package-x86_64-apple-darwin.tar.gz",
+   "sha256": "4d50514b2d8acd81ca8cfee55b667b3dc4f7681b65bf3299ff06b11a064f8861"
+  },
+  "x86_64_linux": {
+   "url": "https://github.com/openai/codex/releases/download/rust-v0.160.0/codex-package-x86_64-unknown-linux-musl.tar.gz",
+   "sha256": "4fcc47ab57f52ff75363951a8761146cd10c8288bd86fed45487dbb204a16b71"
+  },
+  "arm64_linux": {
+   "url": "https://github.com/openai/codex/releases/download/rust-v0.160.0/codex-package-aarch64-unknown-linux-musl.tar.gz",
+   "sha256": "7f0fe42ff22ecfa3a47bc4a34f5b22c4218b431a4ec0aba51c7d98299f07900c"
+  }
+ },
+ "supported_platforms": [
+  "golden_gate",
+  "arm64_golden_gate",
+  "tahoe",
+  "arm64_tahoe",
+  "sequoia",
+  "arm64_sequoia",
+  "sonoma",
+  "arm64_sonoma",
+  "ventura",
+  "arm64_ventura",
+  "monterey",
+  "arm64_monterey",
+  "big_sur",
+  "arm64_big_sur",
+  "x86_64_linux",
+  "arm64_linux"
+ ]
+}

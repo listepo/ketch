@@ -114,7 +114,16 @@ pub fn manifest(answers: &Answers) -> Result<Manifest> {
 /// answer set produces a file with `name`, `source` and the one `bin` entry
 /// naming the command, and nothing else.
 pub fn render(manifest: &Manifest) -> String {
-    let mut out = String::from("# Written by `ketch config create`. Schema: docs/MANIFESTS.md.\n");
+    render_with_header(
+        manifest,
+        "# Written by `ketch config create`. Schema: docs/MANIFESTS.md.\n",
+    )
+}
+
+/// [`render`] under another first line, for a file another command writes
+/// (`ketch import` marks its files as its own to rewrite).
+pub fn render_with_header(manifest: &Manifest, header: &str) -> String {
+    let mut out = String::from(header);
     out.push_str("name = ");
     out.push_str(&string(&manifest.name));
     out.push('\n');

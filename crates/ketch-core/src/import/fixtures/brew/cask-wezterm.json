@@ -1,0 +1,142 @@
+{
+ "token": "wezterm",
+ "full_token": "wezterm",
+ "old_tokens": [],
+ "tap": "homebrew/cask",
+ "name": [
+  "WezTerm"
+ ],
+ "desc": "GPU-accelerated cross-platform terminal emulator and multiplexer",
+ "homepage": "https://wezterm.org/",
+ "url": "https://github.com/wezterm/wezterm/releases/download/20240203-110809-5046fc22/WezTerm-macos-20240203-110809-5046fc22.zip",
+ "url_specs": {},
+ "version": "20240203-110809,5046fc22",
+ "autobump": true,
+ "no_autobump_message": null,
+ "skip_livecheck": false,
+ "installed": null,
+ "installed_time": null,
+ "bundle_version": null,
+ "bundle_short_version": null,
+ "pinned": false,
+ "pinned_version": null,
+ "outdated": false,
+ "sha256": "e77388cad55f2e9da95a220a89206a6c58f865874a629b7c3ea3c162f5692224",
+ "artifacts": [
+  {
+   "app": [
+    "WezTerm-macos-20240203-110809-5046fc22/WezTerm.app"
+   ],
+   "target": "/Applications/WezTerm.app"
+  },
+  {
+   "binary": [
+    "$APPDIR/WezTerm.app/Contents/MacOS/wezterm"
+   ],
+   "target": "$HOMEBREW_PREFIX/bin/wezterm"
+  },
+  {
+   "binary": [
+    "$APPDIR/WezTerm.app/Contents/MacOS/wezterm-gui"
+   ],
+   "target": "$HOMEBREW_PREFIX/bin/wezterm-gui"
+  },
+  {
+   "binary": [
+    "$APPDIR/WezTerm.app/Contents/MacOS/wezterm-mux-server"
+   ],
+   "target": "$HOMEBREW_PREFIX/bin/wezterm-mux-server"
+  },
+  {
+   "binary": [
+    "$APPDIR/WezTerm.app/Contents/MacOS/strip-ansi-escapes"
+   ],
+   "target": "$HOMEBREW_PREFIX/bin/strip-ansi-escapes"
+  },
+  {
+   "bash_completion": [
+    "$APPDIR/WezTerm.app/Contents/Resources/shell-completion/bash",
+    {
+     "target": "wezterm"
+    }
+   ],
+   "target": "$HOMEBREW_PREFIX/etc/bash_completion.d/wezterm"
+  },
+  {
+   "fish_completion": [
+    "$APPDIR/WezTerm.app/Contents/Resources/shell-completion/fish",
+    {
+     "target": "wezterm.fish"
+    }
+   ],
+   "target": "$HOMEBREW_PREFIX/share/fish/vendor_completions.d/wezterm.fish"
+  },
+  {
+   "zsh_completion": [
+    "$APPDIR/WezTerm.app/Contents/Resources/shell-completion/zsh",
+    {
+     "target": "_wezterm"
+    }
+   ],
+   "target": "$HOMEBREW_PREFIX/share/zsh/site-functions/_wezterm"
+  },
+  {
+   "zap": [
+    {
+     "trash": [
+      "~/.local/share/wezterm",
+      "~/Library/Saved Application State/com.github.wez.wezterm.savedState"
+     ]
+    }
+   ]
+  }
+ ],
+ "caveats": null,
+ "caveats_rosetta": null,
+ "depends_on": {
+  "macos": {}
+ },
+ "conflicts_with": {
+  "cask": [
+   "wezterm@nightly"
+  ]
+ },
+ "container": null,
+ "rename": [],
+ "auto_updates": null,
+ "deprecated": false,
+ "deprecation_date": null,
+ "deprecation_reason": null,
+ "deprecation_replacement_formula": null,
+ "deprecation_replacement_cask": null,
+ "deprecate_args": null,
+ "disabled": false,
+ "disable_date": null,
+ "disable_reason": null,
+ "disable_replacement_formula": null,
+ "disable_replacement_cask": null,
+ "disable_args": null,
+ "tap_git_head": "d8dfa8edc688822d5aa5a32baff9576b77e4184e",
+ "languages": [],
+ "ruby_source_path": "Casks/w/wezterm.rb",
+ "ruby_source_checksum": {
+  "sha256": "64079ce6af4caf402f8e2de3466bc92bd4c30f6060d701ee0308c86fc6d3a5e7"
+ },
+ "variations": {},
+ "supported_platforms": [
+  "golden_gate",
+  "arm64_golden_gate",
+  "tahoe",
+  "arm64_tahoe",
+  "sequoia",
+  "arm64_sequoia",
+  "sonoma",
+  "arm64_sonoma",
+  "ventura",
+  "arm64_ventura",
+  "monterey",
+  "arm64_monterey",
+  "big_sur",
+  "arm64_big_sur"
+ ]
+}

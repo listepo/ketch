@@ -1,0 +1,152 @@
+{
+ "token": "anki",
+ "full_token": "anki",
+ "old_tokens": [],
+ "tap": "homebrew/cask",
+ "name": [
+  "Anki"
+ ],
+ "desc": "Memory training application",
+ "homepage": "https://apps.ankiweb.net/",
+ "url": "https://github.com/ankitects/anki/releases/download/26.09.3/anki-26.09.3-mac-apple.dmg",
+ "url_specs": {},
+ "version": "26.09.3",
+ "autobump": true,
+ "no_autobump_message": null,
+ "skip_livecheck": false,
+ "installed": null,
+ "installed_time": null,
+ "bundle_version": null,
+ "bundle_short_version": null,
+ "pinned": false,
+ "pinned_version": null,
+ "outdated": false,
+ "sha256": "b36fe8f6c015a602feaf3ef38f5967c27c8964ee30a5c74ca2532225cf602345",
+ "artifacts": [
+  {
+   "uninstall": [
+    {
+     "quit": "net.ankiweb.anki"
+    }
+   ]
+  },
+  {
+   "app": [
+    "Anki.app"
+   ],
+   "target": "/Applications/Anki.app"
+  },
+  {
+   "zap": [
+    {
+     "trash": [
+      "~/Library/Application Support/Anki*",
+      "~/Library/Caches/Anki",
+      "~/Library/Saved Application State/net.ankiweb.dtop.savedState"
+     ]
+    }
+   ]
+  }
+ ],
+ "caveats": null,
+ "caveats_rosetta": null,
+ "depends_on": {
+  "macos": {}
+ },
+ "conflicts_with": null,
+ "container": null,
+ "rename": [],
+ "auto_updates": null,
+ "deprecated": false,
+ "deprecation_date": null,
+ "deprecation_reason": null,
+ "deprecation_replacement_formula": null,
+ "deprecation_replacement_cask": null,
+ "deprecate_args": null,
+ "disabled": false,
+ "disable_date": null,
+ "disable_reason": null,
+ "disable_replacement_formula": null,
+ "disable_replacement_cask": null,
+ "disable_args": null,
+ "tap_git_head": "d8dfa8edc688822d5aa5a32baff9576b77e4184e",
+ "languages": [],
+ "ruby_source_path": "Casks/a/anki.rb",
+ "ruby_source_checksum": {
+  "sha256": "088d9c2a3f390ee997ff54d2a9943db8266a6ccf41124ee990bcd80db7666f6a"
+ },
+ "variations": {
+  "golden_gate": {
+   "url": "https://github.com/ankitects/anki/releases/download/26.09.3/anki-26.09.3-mac-intel.dmg",
+   "sha256": "7b123efecab1395d03fdf4e5df4df16efc72c9629c38b50ef8cad692d310bd77"
+  },
+  "tahoe": {
+   "url": "https://github.com/ankitects/anki/releases/download/26.09.3/anki-26.09.3-mac-intel.dmg",
+   "sha256": "7b123efecab1395d03fdf4e5df4df16efc72c9629c38b50ef8cad692d310bd77"
+  },
+  "sequoia": {
+   "url": "https://github.com/ankitects/anki/releases/download/26.09.3/anki-26.09.3-mac-intel.dmg",
+   "sha256": "7b123efecab1395d03fdf4e5df4df16efc72c9629c38b50ef8cad692d310bd77"
+  },
+  "sonoma": {
+   "url": "https://github.com/ankitects/anki/releases/download/26.09.3/anki-26.09.3-mac-intel.dmg",
+   "sha256": "7b123efecab1395d03fdf4e5df4df16efc72c9629c38b50ef8cad692d310bd77"
+  },
+  "ventura": {
+   "url": "https://github.com/ankitects/anki/releases/download/26.09.3/anki-26.09.3-mac-intel.dmg",
+   "sha256": "7b123efecab1395d03fdf4e5df4df16efc72c9629c38b50ef8cad692d310bd77"
+  },
+  "monterey": {
+   "url": "https://github.com/ankitects/anki/releases/download/26.05/anki-26.05-mac-intel.dmg",
+   "version": "26.05",
+   "skip_livecheck": true,
+   "sha256": "2ff4d72a1d1c993a29eff44e03d602e1dc81cfd8801518695ee3516d1df0c189"
+  },
+  "arm64_monterey": {
+   "url": "https://github.com/ankitects/anki/releases/download/26.05/anki-26.05-mac-apple.dmg",
+   "version": "26.05",
+   "skip_livecheck": true,
+   "sha256": "7393597f4b96341ed74036010ed82bb4253e0390ae724d2b275c451bc858d127"
+  },
+  "big_sur": {
+   "url": "https://github.com/ankitects/anki/releases/download/25.02.7/anki-25.02.7-mac-intel-qt6.dmg",
+   "version": "25.02.7",
+   "skip_livecheck": true,
+   "sha256": "0d7eb9781596e44c0a833df71c6948706b97c4e89e8bdb315707de33c33c6052"
+  },
+  "arm64_big_sur": {
+   "url": "https://github.com/ankitects/anki/releases/download/25.02.7/anki-25.02.7-mac-apple-qt6.dmg",
+   "version": "25.02.7",
+   "skip_livecheck": true,
+   "sha256": "b2df44bf951404e1d5d56150ee50e158ca5dfd77416b442ed02218348bf1a43b"
+  },
+  "x86_64_linux": {
+   "url": null,
+   "url_specs": null,
+   "version": null,
+   "sha256": null
+  },
+  "arm64_linux": {
+   "url": null,
+   "url_specs": null,
+   "version": null,
+   "sha256": null
+  }
+ },
+ "supported_platforms": [
+  "golden_gate",
+  "arm64_golden_gate",
+  "tahoe",
+  "arm64_tahoe",
+  "sequoia",
+  "arm64_sequoia",
+  "sonoma",
+  "arm64_sonoma",
+  "ventura",
+  "arm64_ventura",
+  "monterey",
+  "arm64_monterey",
+  "big_sur",
+  "arm64_big_sur"
+ ]
+}

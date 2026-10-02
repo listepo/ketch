@@ -1,0 +1,114 @@
+{
+ "token": "background-music",
+ "full_token": "background-music",
+ "old_tokens": [],
+ "tap": "homebrew/cask",
+ "name": [
+  "Background Music"
+ ],
+ "desc": "Audio utility",
+ "homepage": "https://github.com/kyleneideck/BackgroundMusic",
+ "url": "https://github.com/kyleneideck/BackgroundMusic/releases/download/v0.5.0/BackgroundMusic-0.5.0.pkg",
+ "url_specs": {},
+ "version": "0.5.0",
+ "autobump": true,
+ "no_autobump_message": null,
+ "skip_livecheck": false,
+ "installed": null,
+ "installed_time": null,
+ "bundle_version": null,
+ "bundle_short_version": null,
+ "pinned": false,
+ "pinned_version": null,
+ "outdated": false,
+ "sha256": "c7742b48ac2e9ea955fea66e5c13bb56be5f1487e0b12bad93820984bccb69ef",
+ "artifacts": [
+  {
+   "uninstall": [
+    {
+     "launchctl": "com.bearisdriving.BGM.XPCHelper",
+     "quit": "com.bearisdriving.BGM.App",
+     "pkgutil": "com.bearisdriving.BGM",
+     "delete": [
+      "/Library/Application Support/Background Music",
+      "/Library/Audio/Plug-Ins/HAL/Background Music Device.driver",
+      "/usr/local/libexec/BGMXPCHelper.xpc"
+     ]
+    }
+   ]
+  },
+  {
+   "pkg": [
+    "BackgroundMusic-0.5.0.pkg"
+   ]
+  },
+  {
+   "uninstall_postflight_steps": [
+    {
+     "steps": [
+      {
+       "name": "coreaudiod",
+       "sudo": true,
+       "must_succeed": true,
+       "type": "terminate_process"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "zap": [
+    {
+     "trash": [
+      "/Library/LaunchDaemons/com.bearisdriving.BGM.XPCHelper.plist",
+      "~/Library/Preferences/com.bearisdriving.BGM.App.plist"
+     ]
+    }
+   ]
+  }
+ ],
+ "caveats": null,
+ "caveats_rosetta": null,
+ "depends_on": {
+  "macos": {}
+ },
+ "conflicts_with": null,
+ "container": null,
+ "rename": [],
+ "auto_updates": null,
+ "deprecated": false,
+ "deprecation_date": null,
+ "deprecation_reason": null,
+ "deprecation_replacement_formula": null,
+ "deprecation_replacement_cask": null,
+ "deprecate_args": null,
+ "disabled": false,
+ "disable_date": null,
+ "disable_reason": null,
+ "disable_replacement_formula": null,
+ "disable_replacement_cask": null,
+ "disable_args": null,
+ "tap_git_head": "d8dfa8edc688822d5aa5a32baff9576b77e4184e",
+ "languages": [],
+ "ruby_source_path": "Casks/b/background-music.rb",
+ "ruby_source_checksum": {
+  "sha256": "12c2c544e33bb642a8654f38aa7010d53d6be2126b9304a70daee9e1eba0b28e"
+ },
+ "variations": {},
+ "supported_platforms": [
+  "golden_gate",
+  "arm64_golden_gate",
+  "tahoe",
+  "arm64_tahoe",
+  "sequoia",
+  "arm64_sequoia",
+  "sonoma",
+  "arm64_sonoma",
+  "ventura",
+  "arm64_ventura",
+  "monterey",
+  "arm64_monterey",
+  "big_sur",
+  "arm64_big_sur"
+ ]
+}
