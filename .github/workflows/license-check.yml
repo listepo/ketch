@@ -1,0 +1,28 @@
+name: license-check
+
+# Fails when LICENSE, PRICING.md or the README license-sync block drift from the canonical
+# copies in pyrlyn/infra (licenses/, the single source of truth). The job summary shows the
+# diff; pyrlyn/infra's chore/license-sync pull request brings the copies back in line.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  license:
+    # TODO(pyrlyn/infra#22): until it merges, the workflow and the canonical files come from
+    # its head commit; then re-pin to the merge commit and drop canonical-ref (default main).
+    uses: pyrlyn/infra/.github/workflows/license-check.yml@1f1fa3f87f409788f082bb6f8c76d00eee382eb4
+    permissions:
+      contents: read
+      actions: write # cancel-run on failure
+    with:
+      canonical-ref: 1f1fa3f87f409788f082bb6f8c76d00eee382eb4
