@@ -15,6 +15,7 @@
 
 pub mod brew;
 mod fetch;
+pub mod linux;
 pub mod winget;
 
 #[cfg(test)]
@@ -436,9 +437,19 @@ impl Converted {
         for (key, artifact) in &self.artifacts {
             target.insert(key.clone(), asset_glob(&artifact.file, self));
         }
+        // A path naming the versioned file would stop matching at the next
+        // release, the same as an asset pin would.
+        let bin = self
+            .bins
+            .iter()
+            .map(|b| BinSpec {
+                path: b.path.as_deref().map(|p| asset_glob(p, self)),
+                name: b.name.clone(),
+            })
+            .collect();
         let manifest = Manifest {
             kind: self.kind,
-            bin: self.bins.clone(),
+            bin,
             asset: AssetSelector {
                 target,
                 ..AssetSelector::default()
