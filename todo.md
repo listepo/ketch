@@ -4,7 +4,6 @@
 - B65. Binary selection regression test
 - R3. Cross-platform CI
 - F8. Spinner and progress bar
-- M16.4. `wizard.rs` through the module
 - M16.5. Test-only TOML in `model.rs` and `extra.rs`
 - M16.6. `manifest.rs` (`ketch.toml` user manifests)
 - M16.7. `lockfile.rs` (`ketch.lock`)

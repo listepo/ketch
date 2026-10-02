@@ -1114,3 +1114,13 @@ Done when `push.rs` imports no `toml`, the push tests pass unchanged, and the co
 Execution plan (Claude Code / opus-5.5): `toml_file::Document::into_json` does the two steps `push::load` did (parse as TOML, convert to `serde_json::Value`, each error naming the file); `push::load` calls it and keeps the rest unchanged. A test for the conversion; fmt, clippy, nextest; `ketch registry push --dry-run` against a scratch root, on a valid file and on one with an unknown key.
 
 Status: done.
+
+### M16.4. `wizard.rs` through the module
+
+`wizard.rs` renders TOML string and string-array literals through `toml::Value` so escaping is never hand-rolled. Those two renderers move into the module, and `wizard.rs` calls them.
+
+Done when `wizard.rs` imports no `toml`, the wizard tests pass unchanged, and the module tests quotes, backslashes and control bytes.
+
+Execution plan (Claude Code / opus-5.5): move `string` and `list` from `wizard.rs` into `toml_file` as `string_literal` and `string_list_literal`, bodies unchanged, and rename the call sites; tests for quotes, backslashes, an escape byte and an empty item; fmt, clippy, nextest (the wizard and import tests render through them).
+
+Status: done.
