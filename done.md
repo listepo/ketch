@@ -1084,3 +1084,13 @@ Execution plan (Claude Code / opus-5.5):
 5. Verify: `cargo nextest run`, `cargo clippy --all-targets`, `cargo fmt --check`, `just ffi-test`. Commit as `feat(ffi)!:`.
 
 Status: done. Read-only calls (`search`, `outdated`, `changelog`, `doctor`) also take an optional reporter, so their warnings keep reaching the caller; `uninstall` checks the token before each package (progress and the leftover store folder stay with D2). On macOS the Swift test runs a looping shell script as the held binary: a relocated `/bin/sleep` is killed by the OS.
+
+### M16.1. The owning module, and `config.rs` through it
+
+A new `crates/ketch-core/src/toml_file.rs` owns parsing, rendering and the schema export for the TOML files ketch owns. It starts with the two calls `config.rs` needs — parse text into a `T: DeserializeOwned` naming the file in the error (`Error::parse(what, …)`), and render a `T: Serialize` pretty — and takes `assert_schema_current` from `config.rs`, with its callers (`config.rs`, `lockfile.rs`, `log.rs`, `model.rs` tests) pointed at the new path. A helper is added only with its first caller, so nothing is dead code.
+
+Done when `config.rs` imports neither `toml` nor `schemars`' drift helper, `config.toml` loads and `ketch config reset` writes byte-for-byte as before, the new module has its `//!` header and unit tests (a parse error names the file, render round-trips), and fmt, clippy and nextest are clean.
+
+Execution plan (Claude Code / opus-5.5): add `crates/ketch-core/src/toml_file.rs` with `parse` and `render` (both name the file in `Error::parse`); move `assert_schema_current` there verbatim and point its callers at it (`config.rs`, and the `lockfile.rs` and `model.rs` schema tests; `log.rs` only derives `JsonSchema` and needs no change); switch `Config::load` and `Config::default_toml` to the two calls; a row for the module in `AGENTS.md`'s layout table; verify with fmt, clippy, nextest, `ketch doctor` and `ketch config reset` against a scratch root.
+
+Status: done.
