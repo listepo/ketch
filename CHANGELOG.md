@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- *(ffi)* [**breaking**] foreign traits and per-call callbacks (d1) ([#231](https://github.com/listepo/ketch/pull/231))
 - ketch import from winget, homebrew and linux (m17) ([#215](https://github.com/listepo/ketch/pull/215))
 - ketch-ffi, the core through uniffi ([#208](https://github.com/listepo/ketch/pull/208))
 - json schema for the package manifest ([#206](https://github.com/listepo/ketch/pull/206))
