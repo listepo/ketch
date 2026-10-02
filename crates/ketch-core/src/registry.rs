@@ -341,9 +341,8 @@ pub fn age_phrase(fetched_at: u64) -> String {
 pub fn load_meta(cfg: &Config) -> Result<Option<UpdateMeta>> {
     match std::fs::read_to_string(&cfg.registry_meta) {
         Ok(text) => {
-            let meta: UpdateMeta = toml::from_str(&text).map_err(|e| {
-                Error::parse(cfg.registry_meta.display().to_string(), e.to_string())
-            })?;
+            let meta: UpdateMeta =
+                crate::toml_file::parse(&text, cfg.registry_meta.display().to_string())?;
             Ok(Some(meta))
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -352,8 +351,7 @@ pub fn load_meta(cfg: &Config) -> Result<Option<UpdateMeta>> {
 }
 
 fn write_meta(cfg: &Config, meta: &UpdateMeta) -> Result<()> {
-    let body = toml::to_string_pretty(meta)
-        .map_err(|e| Error::parse(cfg.registry_meta.display().to_string(), e.to_string()))?;
+    let body = crate::toml_file::render(meta, cfg.registry_meta.display().to_string())?;
     let text = format!("# Written by `ketch update`. Do not edit.\n{body}");
     std::fs::write(&cfg.registry_meta, text).map_err(|e| Error::io(&cfg.registry_meta, e))
 }
@@ -505,24 +503,12 @@ pub(crate) fn validate_registry_entry(
 pub(crate) fn read_package(path: &Path, folder: &str) -> Result<Manifest> {
     let what = path.display().to_string();
     let text = std::fs::read_to_string(path).map_err(|e| Error::io(path, e))?;
-    let mut value: toml::Value =
-        toml::from_str(&text).map_err(|e| Error::parse(what.as_str(), e.to_string()))?;
-    let table = value.as_table_mut().ok_or_else(|| {
-        Error::parse(
-            what.as_str(),
-            "expected a table of package fields".to_string(),
-        )
-    })?;
-
-    let declared_name = table
-        .get("name")
-        .and_then(|v| v.as_str())
-        .map(str::to_string);
+    let mut doc = crate::toml_file::Document::parse(&text, what.as_str())?;
+    let declared_name = doc.str("name").map(str::to_string);
     if declared_name.is_none() {
-        table.insert("name".into(), toml::Value::String(folder.to_string()));
+        doc.set_str("name", folder);
     }
-    let manifest =
-        Manifest::deserialize(value).map_err(|e| Error::parse(what.as_str(), e.to_string()))?;
+    let manifest: Manifest = doc.deserialize()?;
     manifest
         .validate()
         .map_err(|e| Error::parse(what.as_str(), e.to_string()))?;

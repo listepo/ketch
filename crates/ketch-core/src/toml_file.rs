@@ -28,6 +28,45 @@ pub(crate) fn render<T: Serialize>(value: &T, what: impl Into<String>) -> Result
     toml::to_string_pretty(value).map_err(|e| Error::parse(what, e.to_string()))
 }
 
+/// A parsed TOML document whose keys a caller reads, or fills in, before it
+/// becomes a typed value.
+///
+/// A registry folder's `ketch.toml` may leave `name` out, because the folder
+/// supplies it; serde cannot see the folder, so the key is added to the
+/// document first and the result deserialized as if the file had said it.
+pub(crate) struct Document {
+    table: toml::Table,
+    what: String,
+}
+
+impl Document {
+    /// Parse `text`; `what` names the file in this and every later error.
+    pub(crate) fn parse(text: &str, what: impl Into<String>) -> Result<Self> {
+        let what = what.into();
+        // A TOML document is a table by definition, so parsing into one is
+        // the whole shape check; no other top level can come back.
+        let table = parse(text, what.as_str())?;
+        Ok(Self { table, what })
+    }
+
+    /// The top-level `key`, when it is a string.
+    pub(crate) fn str(&self, key: &str) -> Option<&str> {
+        self.table.get(key).and_then(toml::Value::as_str)
+    }
+
+    /// Set the top-level `key` to the string `value`.
+    pub(crate) fn set_str(&mut self, key: &str, value: &str) {
+        self.table
+            .insert(key.to_string(), toml::Value::String(value.to_string()));
+    }
+
+    /// Deserialize the document, keys added or not, into `T`.
+    pub(crate) fn deserialize<T: DeserializeOwned>(self) -> Result<T> {
+        T::deserialize(toml::Value::Table(self.table))
+            .map_err(|e| Error::parse(self.what, e.to_string()))
+    }
+}
+
 /// Fails when the JSON Schema committed at `relative` (from the repository
 /// root) is not what `T` generates. `KETCH_BLESS=1` rewrites the file
 /// instead: the types are the source, the file only publishes them.
@@ -105,5 +144,29 @@ mod tests {
         };
         let text = render(&sample, "sample").unwrap();
         assert_eq!(parse::<Sample>(&text, "sample").unwrap(), sample);
+    }
+
+    #[test]
+    fn a_key_set_on_a_document_is_deserialized_as_if_the_file_had_it() {
+        let mut doc = Document::parse("tags = [\"a\"]\n", "sample").unwrap();
+        assert_eq!(doc.str("name"), None);
+        doc.set_str("name", "rg");
+        assert_eq!(doc.str("name"), Some("rg"));
+        let sample: Sample = doc.deserialize().unwrap();
+        assert_eq!(sample.name, "rg");
+        assert_eq!(sample.tags, vec!["a".to_string()]);
+    }
+
+    #[test]
+    fn a_key_that_is_not_a_string_reads_as_absent() {
+        let doc = Document::parse("name = 1\n", "sample").unwrap();
+        assert_eq!(doc.str("name"), None);
+    }
+
+    #[test]
+    fn a_document_that_does_not_fit_the_type_names_the_file() {
+        let doc = Document::parse("name = \"rg\"\n", "/r/rg/ketch.toml").unwrap();
+        let err = doc.deserialize::<Sample>().unwrap_err();
+        assert!(err.to_string().contains("/r/rg/ketch.toml"), "{err}");
     }
 }
