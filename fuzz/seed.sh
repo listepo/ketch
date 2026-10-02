@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 Ivan Tugay
+# SPDX-License-Identifier: GPL-3.0-only
+# Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 # Build the seed corpora in fuzz/corpus/<target>/ from files the repository
 # already has: tests/fixtures, the root ketch.toml, src/builtin.toml, the code
 # blocks in docs/, the example plugin, and archives made here from a tiny tree.

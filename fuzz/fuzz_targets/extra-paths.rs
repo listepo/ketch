@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! One `extra_paths` entry, a bare path or a `{ path, kind, shell, section }`
 //! table, through `extra::classify`; a classified path must stay inside the
 //! payload.

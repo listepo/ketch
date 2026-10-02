@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! `ketch config`: writing a package file, and resetting ketch's own config.
 //!
 //! `create` is the questionnaire: it asks what each field of a `ketch.toml`

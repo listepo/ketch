@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Linux: a package from Arch Linux — the official repositories, then the AUR.
 //!
 //! No cross-distribution catalogue names an artifact URL (plan.md, M17), and

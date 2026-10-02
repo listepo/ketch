@@ -1,4 +1,8 @@
 #!/bin/sh
+# Copyright (c) 2026 Ivan Tugay
+# SPDX-License-Identifier: GPL-3.0-only
+# Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 # The macOS app's update feed, end to end without the release secrets: the
 # disk image and appcast scripts the release workflow runs, on a copy of the
 # app built by `just macos-app`, signed with a throwaway EdDSA key.

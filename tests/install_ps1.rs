@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! `install.ps1`: argument handling, and the paths it installs into.
 //!
 //! Like `install.sh`, this script runs before any ketch binary exists, so its

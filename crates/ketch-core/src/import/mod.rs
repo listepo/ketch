@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! `ketch import`: a package from another package manager, as a ketch manifest.
 //!
 //! Each backend looks a name up in its own catalogue (`winget.rs`,

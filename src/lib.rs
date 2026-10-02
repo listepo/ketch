@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! The fuzzing face of ketch: its modules as a library, for `fuzz/` only.
 //!
 //! ketch is a binary, and a cargo-fuzz target can only link a library. This

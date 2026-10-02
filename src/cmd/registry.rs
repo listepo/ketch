@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! `ketch registry`: validate a registry tree, show the local copy, offer packages.
 //!
 //! `validate` is the fail-closed check registry CI runs over every package

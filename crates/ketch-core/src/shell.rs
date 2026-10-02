@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Putting the ketch bin directory on PATH.
 //!
 //! On Unix that means a block in bash, zsh or fish startup files. On Windows

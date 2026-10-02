@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // Generates every derived copy of the macOS design tokens from tokens.json:
 //
 //   generated/Tokens.swift  SwiftUI constants the app uses instead of literals

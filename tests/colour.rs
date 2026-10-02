@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! When the real binary paints its status lines, and when it must not.
 //!
 //! The line shapes themselves are snapshotted beside `crates/ketch-core/src/ui.rs`. What only the

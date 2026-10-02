@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // Where the ketch root is, resolved the way the CLI resolves it, so the app
 // and the CLI share one state, one lock and one store.
 

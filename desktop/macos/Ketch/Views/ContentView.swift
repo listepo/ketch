@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // The main window: a glass sidebar of sections with their counts, Settings and
 // the ketch root at its foot, and the app-wide sheets and alerts (binary
 // choice, errors, upgrade-all confirmation) that any section — or the menu

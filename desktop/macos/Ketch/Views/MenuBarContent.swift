@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // The menu-bar extra: the update count with Update all, a row per pending
 // update, the running operation, then Open, Check for updates, Settings and
 // Quit as menu rows — a glass panel (`.menuBarExtraStyle(.window)`) rather

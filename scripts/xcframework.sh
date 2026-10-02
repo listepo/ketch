@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 Ivan Tugay
+# SPDX-License-Identifier: GPL-3.0-only
+# Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 # Builds ketch-ffi into the local Swift package desktop/macos/KetchCore:
 # an XCFramework holding one static library for both macOS architectures, and
 # the Swift bindings UniFFI generates from that library's metadata. Both are

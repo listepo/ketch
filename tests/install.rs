@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! End-to-end tests: the real binary, a real install tree, real archives.
 //!
 //! These exist because the unit tests each prove one function and none of them

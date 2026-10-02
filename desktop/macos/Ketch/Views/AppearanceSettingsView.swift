@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // Settings -> Appearance: the window tint, regular or clear glass, the accent
 // and the strength of the backdrop wash. Every change applies at once through
 // `AppSettings.appearance`; the system's Reduce Transparency and Increase

@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Resolution trace shared by install and `ketch why`.
 //!
 //! Install and `ketch why` share these functions so an explanation cannot drift

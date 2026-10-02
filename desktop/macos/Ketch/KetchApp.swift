@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // The app's scenes: the main window, the menu-bar extra, Settings and About.
 // One `KetchStore` serves all of them, so the menu bar and the window always
 // agree on what is installed and what is running.

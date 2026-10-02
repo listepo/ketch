@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // What the user may change about the app's look, and what the app draws once
 // the system's accessibility settings have had their say. Liquid Glass stays
 // the system material, so the choices are the ones it allows: a tint, regular

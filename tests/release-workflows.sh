@@ -1,4 +1,8 @@
 #!/bin/sh
+# Copyright (c) 2026 Ivan Tugay
+# SPDX-License-Identifier: GPL-3.0-only
+# Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 # The release workflows must parse, and the strings that hold them together
 # must stay: the patches scripts/dist-generate.sh makes to the generated
 # release.yml, the one entry point that tags and dispatches it (bump.yml), and
