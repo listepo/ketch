@@ -334,7 +334,7 @@ mod tests {
 
     #[test]
     fn committed_lock_schema_matches_lockfile() {
-        crate::config::assert_schema_current::<Lockfile>("docs/lock.schema.json");
+        crate::toml_file::assert_schema_current::<Lockfile>("docs/lock.schema.json");
     }
 
     fn installed(name: &str, repo: &str, tag: &str) -> InstalledPackage {

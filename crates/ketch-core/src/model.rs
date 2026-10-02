@@ -1774,7 +1774,7 @@ mod tests {
 
     #[test]
     fn committed_manifest_schema_matches_manifest() {
-        crate::config::assert_schema_current::<Manifest>("docs/manifest.schema.json");
+        crate::toml_file::assert_schema_current::<Manifest>("docs/manifest.schema.json");
     }
 
     /// The committed schema, as an editor would load it.
