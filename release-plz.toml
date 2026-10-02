@@ -1,34 +1,24 @@
-# release-plz proposes the version bump and writes the changelog entry, in a
-# pull request. Merging it is what releases ketch: release-plz.yml sees the
-# merge and runs `scripts/release.sh patch --no-bump`, which dispatches the
-# dist-generated `.github/workflows/release.yml`.
-#
-# Three defaults are deliberately off, two are deliberately on, and one command
-# is deliberately never run — `.github/workflows/release-plz.yml` runs only
-# `release-pr`:
+# release-plz no longer runs in CI: the Bump workflow (bump.yml) is the only
+# way to a release and the only thing that tags. What is left here is for a
+# local `release-plz update` preview, with every way release-plz could release
+# turned off:
 #
 # - `publish`, because ketch is distributed as tarballs attached to a GitHub
-#   release, not as a crate. Nobody installs it with `cargo install`, and
-#   leaving this on would start publishing to crates.io on every merge.
-# - `git_release_enable`, because dist creates the GitHub release and attaches
-#   the tarballs and the aggregate `SHA256SUMS`. Two tools creating the same
-#   release is a race, and losing it leaves a release with no assets — which
-#   is the one thing `install.sh` and `ketch self upgrade` both read.
-# - tagging, because a tag is a promise that a release exists. dist creates it
-#   with the release, once every target has built, so a failed build leaves
-#   main untagged rather than tagged with nothing behind it. That is why the
-#   `release` command is not run here at all.
+#   release, not as a crate.
+# - `git_release_enable` and `git_tag_enable`, because bump.yml creates the tag
+#   on the merged version commit and the draft release, and dist only uploads
+#   the tarballs and the aggregate `SHA256SUMS` to it.
 
 [workspace]
 publish = false
 git_release_enable = false
+git_tag_enable = false
 
 # Without this, release-plz never proposes a bump. It asks the cargo registry
 # for the last released version, and `ketch` is not on crates.io — so the
 # lookup comes back empty, release-plz concludes the package has never been
 # released, and proposes the version already in `Cargo.toml`. Git tags are the
-# only record that a ketch release happened, which release.yml makes literally
-# true: dist creates the tag by publishing the release.
+# only record that a ketch release happened: bump.yml creates them.
 git_only = true
 
 # Below 1.0 release-plz sends a `feat:` to the patch. ketch is documented the
@@ -37,15 +27,14 @@ git_only = true
 # upgrade, 1.0 or not.
 features_always_increment_minor = true
 
-# Still a contract, even though nothing here creates the tag: scripts/release.sh
-# dispatches `v<version>` from `Cargo.toml`, and cliff.toml links each entry to
+# Still a contract, even though nothing here creates the tag: bump.yml tags
+# `v<version>` from `Cargo.toml`, and cliff.toml links each entry to
 # `releases/tag/v<version>` — a link `tests/release_changelog.rs` checks.
 # Changing this name means changing all three.
 git_tag_name = "v{{ version }}"
 
-# The pull request title is a contract too: release-plz.yml recognises the
-# merge of this pull request by exactly this line, and cliff.toml leaves it out
-# of the next entry. scripts/release.sh writes the same subject.
+# The version commit subject: scripts/release.sh writes the same one, and
+# cliff.toml leaves it out of the next entry.
 pr_name = "chore: release v{{ version }}"
 
 # The entry's shape is cliff.toml's, shared with scripts/release.sh so both
@@ -64,7 +53,7 @@ changelog_config = "cliff.toml"
 # git_only reads each package at its last tag, and no tag before the split has
 # a ketch-core in it: until one does, `release-plz` stops with "cannot find
 # package ketch-core". The first release after the split is therefore cut
-# with bump.yml or `just release`; from its tag on, the group works as above.
+# with bump.yml; from its tag on, the group works as above.
 [[package]]
 name = "ketch"
 version_group = "ketch"

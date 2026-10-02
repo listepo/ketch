@@ -491,17 +491,16 @@ KETCH_ROOT=/tmp/ketch-scratch cargo run -- doctor
 
 ## Releasing
 
-Nothing is typed. [release-plz](https://release-plz.dev) keeps one pull request
-up to date on every push to `main`, holding the next version and the
-`CHANGELOG.md` entry for it, both read off the conventional commits since the
-last tag. Merging that pull request is the release; so is Actions → **Bump and
-release** (`bump.yml`), which raises the version and commits the entry itself.
-Either way `scripts/release.sh` dispatches `release.yml`, which
+Nothing is typed. Actions → **Bump and release** (`bump.yml`) is the only way
+to release: `scripts/release.sh` raises the version and writes the
+`CHANGELOG.md` entry in one commit, bump opens a pull request with it, waits for
+every required check, rebase-merges it, and only then tags the commit that
+landed on `main`, creates the release and dispatches `release.yml`, which
 [cargo-dist](https://github.com/axodotdev/cargo-dist) generates: it builds and
 signs both macOS architectures (Linux and Windows unsigned), and only once
-every target has built does it create the tag and the release, after which the
-`tap` job bumps `pyrlyn/homebrew-tap`'s cask. So `v0.4.1` existing means
-v0.4.1 shipped, and a build that fails leaves nothing to clean up.
+every target has built does it upload the tarballs and publish the release,
+after which the `tap` job bumps `pyrlyn/homebrew-tap`'s cask. Red checks leave
+no tag and no release.
 
 CI (`ci.yml`) runs on pushes to `main`, on pull requests that are not drafts,
 and on manual `workflow_dispatch`. Before merging a branch, dispatch the gate
@@ -513,12 +512,11 @@ gh workflow run ci.yml --ref <branch>
 
 ```bash
 just release minor --dry-run    # the version a release would get; changes nothing
-just release minor              # the same thing from a clean, up-to-date main
+just release minor              # starts Bump and release (gh workflow run bump.yml)
 ```
 
 ketch is not on crates.io — it ships as a tarball on a GitHub release, so
-release-plz proposes the version and writes the changelog, and never publishes
-a crate.
+nothing publishes a crate.
 
 ## Where to share
 

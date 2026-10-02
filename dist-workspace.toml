@@ -39,10 +39,12 @@ macos-sign = true
 allow-dirty = ["ci"]
 # Injected into build-local-artifacts after checkout; discovers CODESIGN_IDENTITY on macOS.
 github-build-setup = "../build-setup.yml"
-# Releases start from `bump.yml` or the release-plz merge, both through
-# scripts/release.sh, which dispatches this workflow with the tag. dist creates
-# the tag itself, with the GitHub release, once every target has built.
+# Releases start only from the Bump workflow (pyrlyn/infra bump.yml): it
+# merges the version pull request, tags the commit that landed on main,
+# creates a draft release and dispatches this workflow with --ref <tag>
+# -f tag=<tag>. dist never tags: it uploads to that draft and publishes it.
 dispatch-releases = true
+create-release = false
 install-updater = false
 # The Homebrew cask in pyrlyn/homebrew-tap, regenerated from the published
 # release by .github/workflows/tap.yml.
@@ -50,8 +52,8 @@ publish-jobs = ["./tap"]
 # The test gate is NOT a dist `plan-jobs` entry: `host` runs when
 # `build-local-artifacts` is skipped, and a failed custom job skips it — so a
 # red gate would publish a release with no binaries instead of stopping one.
-# The gate is .github/workflows/verify.yml, run by the two workflows that
-# dispatch this one, before any tag exists.
+# The gate is the required checks of the bump pull request, which must pass
+# before bump.yml tags anything.
 
 # Runners the release has always used. dist's default for Intel macOS is a
 # macos-13 runner, which GitHub has retired; the arm64 runner cross-builds it.

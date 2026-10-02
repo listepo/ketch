@@ -1,7 +1,8 @@
 #!/bin/sh
 # scripts/release.sh decides the version, writes the changelog entry and makes
 # the version commit — exercised in a throwaway repository whose origin is a
-# local bare one, so nothing is pushed anywhere real and nothing is dispatched.
+# local bare one, so nothing is pushed anywhere real and nothing is dispatched
+# (the script itself never pushes or tags; bump.yml does the rest).
 set -eu
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -77,9 +78,8 @@ git push -q origin main --tags
 out="$(scripts/release.sh minor --dry-run)"
 echo "$out" | grep -q 'release v1.3.0' || fail "tagged 1.2.3 raised by minor is not 1.3.0: $out"
 
-out="$(scripts/release.sh patch --no-bump)"
-echo "$out" | grep -q 'already released' || fail "--no-bump went ahead on a tagged version: $out"
-[ "$(git rev-list --count HEAD)" = 2 ] || fail "--no-bump made a commit"
+out="$(scripts/release.sh patch --bogus 2>&1)" && fail "an unknown option was accepted: $out"
+[ "$(git rev-list --count HEAD)" = 2 ] || fail "an unknown option made a commit"
 
 scripts/release.sh patch --local >/dev/null 2>&1 || fail "--local failed"
 [ "$(git log -1 --format=%s)" = "chore: release v1.2.4" ] || fail "wrong version commit subject"
