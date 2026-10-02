@@ -280,10 +280,9 @@ jobs:
 
       # Everything install.sh and `ketch self upgrade` rely on, per tarball: the
       # asset name, a `ketch` binary inside it, a Developer ID signature on macOS.
-      # A binary built for another architecture than the runner's is not run — the
-      # arm64 runner builds the Intel slice but cannot execute it. Extraction goes
-      # to a workspace-relative dir: Git Bash on Windows mangles `$RUNNER_TEMP`
-      # (`D:\a\_temp` → `D\:\a\\_temp`) so GNU tar cannot open it.
+      # A binary built for another architecture than the runner's is not run.
+      # Extraction goes to a workspace-relative dir: Git Bash on Windows mangles
+      # `$RUNNER_TEMP` (`D:\a\_temp` → `D\:\a\\_temp`) so GNU tar cannot open it.
       - name: Smoke test
         shell: bash
         env:

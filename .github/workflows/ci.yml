@@ -28,9 +28,9 @@ jobs:
   # The shared pyrlyn/infra workflow, pinned by commit, with Rust from
   # mise.toml and a check that rustc is that pin: fmt once, then per target of
   # its shared matrix clippy (--all-targets --all-features, so the tui feature
-  # is linted too), check, and the tests where the runner executes the target
-  # (Linux x86_64 and aarch64, macOS aarch64, Windows x86_64) or a build where
-  # it does not (macOS x86_64). The tests are the unit tests and the offline
+  # is linted too), check, and the tests on every target (Linux x86_64 and
+  # aarch64, macOS aarch64, Windows x86_64; macOS is Apple Silicon only). The
+  # tests are the unit tests and the offline
   # end-to-end suite in tests/ (install_linux.rs, install_windows.rs and the
   # macOS ones are cfg-gated to their platform), default build and the
   # optional TUI feature, which is not in the release tarball but must still
@@ -154,12 +154,12 @@ jobs:
           xcodebuild -version
           xcodegen generate --spec project.yml
 
-      # Both architectures, unsigned: what `just macos-app` builds.
+      # Apple Silicon (arm64) only, unsigned: what `just macos-app` builds.
       - name: Build
         run: >-
           xcodebuild -project Ketch.xcodeproj -scheme Ketch -derivedDataPath build
           -configuration Debug -destination 'generic/platform=macOS'
-          ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO build
+          ARCHS=arm64 ONLY_ACTIVE_ARCH=NO build
 
       - name: Test
         run: >-
@@ -318,11 +318,7 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           mkdir -p cask/Casks
-          # Two different digests: rubocop rejects a cask that gives both
-          # architectures the same one, which is a real mistake worth catching
-          # and a pointless way to fail this check.
-          scripts/cask.sh 0.0.0 "$(printf '%064d' 0)" "$(printf '%064d' 1)" \
-            > cask/Casks/ketch.rb
+          scripts/cask.sh 0.0.0 "$(printf '%064d' 0)" > cask/Casks/ketch.rb
           brew style cask/Casks/ketch.rb
 
   # A `/review` comment in a pull request re-runs CI on that PR's head by
