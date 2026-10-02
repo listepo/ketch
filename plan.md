@@ -8,7 +8,6 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | B65 | in progress | P0 | 2 | 0% | Cursor / grok 4.7 high |
 | R3 | in progress | P1 | 3 | 67% | Cursor / grok 4.7 high |
 | F8 | in progress | P2 | 3 | 0% | Cursor / grok 4.7 high |
-| M16.3 | in progress | P2 | 1 | 10% | Claude Code / opus-5.5 |
 | M16.4 | todo | P2 | 1 | 0% | |
 | M16.5 | todo | P2 | 1 | 0% | |
 | M16.6 | todo | P2 | 3 | 0% | |
@@ -325,14 +324,6 @@ review of the file and the merge of the PR.
 `AGENTS.md`: one module owns all config loading, validation and editing, and the rest of the code does not import `toml` or `toml_edit`. Every use today is in `crates/ketch-core`: `config.rs` (`config.toml`, and the schema drift helper `assert_schema_current`), `registry.rs` (`registry.toml` update metadata and package folders), `push.rs` (a project's `ketch.toml`), `wizard.rs` (TOML string and array literals), `manifest.rs` (user manifests and `builtin.toml`, the only `toml_edit` user), `lockfile.rs` (`ketch.lock`), and tests in `model.rs` and `extra.rs`. The binary (`src/`) and `crates/ketch-ffi` import neither; `tests/` is a separate crate that writes fixtures and stays out of scope.
 
 The creator decided (2026-10-03) to split M16 into the subtasks below, one pull request each, in id order: M16.1 first, since the rest call into the module it creates; M16.8 last of the ready ones. M16.6 and M16.7 wait for the creator's choice of scope. Behaviour does not change in any subtask: same files read and written, same bytes, same error texts. The whole is done when every subtask is.
-
-### M16.3. `push.rs` through the module
-
-`push::load` parses a project's `ketch.toml` into TOML and then into `serde_json::Value`. The module gains that conversion as one call (same two steps, same error texts), and `push.rs` uses it.
-
-Done when `push.rs` imports no `toml`, the push tests pass unchanged, and the conversion has a test.
-
-Execution plan (Claude Code / opus-5.5): `toml_file::Document::into_json` does the two steps `push::load` did (parse as TOML, convert to `serde_json::Value`, each error naming the file); `push::load` calls it and keeps the rest unchanged. A test for the conversion; fmt, clippy, nextest; `ketch registry push --dry-run` against a scratch root, on a valid file and on one with an unknown key.
 
 ### M16.4. `wizard.rs` through the module
 

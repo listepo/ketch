@@ -1104,3 +1104,13 @@ Done when `registry.rs` imports neither `toml` nor `toml_edit`, the existing reg
 Execution plan (Claude Code / opus-5.5): `load_meta`/`write_meta` call `toml_file::parse`/`render` with the same file name in the error; `toml_file::Document` (parse into a table, `str`, `set_str`, `deserialize`) carries `read_package`'s fill-in of `name`. Parsing straight into a table makes the old "expected a table of package fields" branch unreachable (a TOML document is a table), so it goes. Tests for `Document`; fmt, clippy, nextest; `ketch update` twice (writes then reads `registry.meta.toml`) and `ketch search ripgrep` against a scratch root.
 
 Status: done.
+
+### M16.3. `push.rs` through the module
+
+`push::load` parses a project's `ketch.toml` into TOML and then into `serde_json::Value`. The module gains that conversion as one call (same two steps, same error texts), and `push.rs` uses it.
+
+Done when `push.rs` imports no `toml`, the push tests pass unchanged, and the conversion has a test.
+
+Execution plan (Claude Code / opus-5.5): `toml_file::Document::into_json` does the two steps `push::load` did (parse as TOML, convert to `serde_json::Value`, each error naming the file); `push::load` calls it and keeps the rest unchanged. A test for the conversion; fmt, clippy, nextest; `ketch registry push --dry-run` against a scratch root, on a valid file and on one with an unknown key.
+
+Status: done.
