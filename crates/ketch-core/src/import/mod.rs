@@ -15,6 +15,7 @@
 
 pub mod brew;
 mod fetch;
+pub mod winget;
 
 #[cfg(test)]
 pub(crate) use fetch::Recorded;

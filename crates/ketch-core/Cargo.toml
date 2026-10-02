@@ -24,6 +24,9 @@ toml = "1.1"
 # Writing a chosen `bin` back into a user manifest without touching the rest
 # of the file, comments and layout included; `toml` alone would re-render it.
 toml_edit = "0.25"
+# `ketch import winget` reads winget-pkgs installer manifests, which are
+# YAML; serde_yaml is deprecated and serde-saphyr is the maintained one.
+serde-saphyr = { version = "1.3", default-features = false, features = ["deserialize"] }
 ureq = { version = "2", features = ["json", "proxy-from-env"] }
 sha2 = "0.11"
 hex = "0.4"
