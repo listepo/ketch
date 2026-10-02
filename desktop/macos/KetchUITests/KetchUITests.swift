@@ -101,7 +101,8 @@ final class KetchUITests: XCTestCase {
                 app.windows.firstMatch.frame.intersects(element.frame)
             else { return true }
             findings.append(
-                "\(issue.compactDescription): \(element.elementType.rawValue) id '\(element.identifier)' frame \(element.frame)")
+                "\(issue.compactDescription): \(element.elementType.rawValue) id '\(element.identifier)' frame \(element.frame)"
+            )
             return true
         }
         XCTAssertTrue(findings.isEmpty, "\(screen) has unlabeled controls:\n" + findings.joined(separator: "\n"))
