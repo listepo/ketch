@@ -277,15 +277,17 @@ func run(_ program: String, _ arguments: String...) throws -> String {
 
     let recorder = Recorder()
     _ = try core.uninstall(names: [name], reporter: recorder, decider: nil, cancel: CancelToken())
-    #expect(recorder.received.contains { event in
-        if case .success(verb: "removed", let detail) = event { detail.hasPrefix(name) } else { false }
-    })
+    #expect(
+        recorder.received.contains { event in
+            if case .success(verb: "removed", let detail) = event { detail.hasPrefix(name) } else { false }
+        })
 
     let leftover = scratch.dir.appending(path: "root/store/ghost/1.0.0.old")
     try FileManager.default.createDirectory(at: leftover, withIntermediateDirectories: true)
     #expect(throws: KetchError.NotFound(name: "ghost")) {
         try core.uninstall(names: ["ghost"], reporter: nil, decider: nil, cancel: nil)
     }
-    #expect(!FileManager.default.fileExists(
-        atPath: scratch.dir.appending(path: "root/store/ghost").path(percentEncoded: false)))
+    #expect(
+        !FileManager.default.fileExists(
+            atPath: scratch.dir.appending(path: "root/store/ghost").path(percentEncoded: false)))
 }
