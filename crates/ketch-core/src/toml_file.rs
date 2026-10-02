@@ -60,6 +60,12 @@ impl Document {
             .insert(key.to_string(), toml::Value::String(value.to_string()));
     }
 
+    /// The document as JSON, for code that works on `serde_json::Value`.
+    pub(crate) fn into_json(self) -> Result<serde_json::Value> {
+        serde_json::to_value(toml::Value::Table(self.table))
+            .map_err(|e| Error::parse(self.what, e.to_string()))
+    }
+
     /// Deserialize the document, keys added or not, into `T`.
     pub(crate) fn deserialize<T: DeserializeOwned>(self) -> Result<T> {
         T::deserialize(toml::Value::Table(self.table))
@@ -155,6 +161,19 @@ mod tests {
         let sample: Sample = doc.deserialize().unwrap();
         assert_eq!(sample.name, "rg");
         assert_eq!(sample.tags, vec!["a".to_string()]);
+    }
+
+    #[test]
+    fn a_document_as_json_keeps_its_nesting_and_types() {
+        let doc = Document::parse(
+            "name = \"rg\"\njobs = 4\n[asset]\ninclude = [\"*.tar.gz\"]\n",
+            "sample",
+        )
+        .unwrap();
+        assert_eq!(
+            doc.into_json().unwrap(),
+            serde_json::json!({"name": "rg", "jobs": 4, "asset": {"include": ["*.tar.gz"]}})
+        );
     }
 
     #[test]

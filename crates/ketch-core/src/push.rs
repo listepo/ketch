@@ -45,10 +45,7 @@ pub struct Proposal {
 pub fn load(path: &Path) -> Result<Proposal> {
     let what = path.display().to_string();
     let body = std::fs::read_to_string(path).map_err(|e| Error::io(path, e))?;
-    let parsed: toml::Value =
-        toml::from_str(&body).map_err(|e| Error::parse(what.as_str(), e.to_string()))?;
-    let mut value =
-        serde_json::to_value(parsed).map_err(|e| Error::parse(what.as_str(), e.to_string()))?;
+    let mut value = crate::toml_file::Document::parse(&body, what.as_str())?.into_json()?;
     let table = value.as_object_mut().ok_or_else(|| {
         Error::parse(
             what.as_str(),
