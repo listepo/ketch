@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // One package: a large header with its actions (update or install, the
 // repository, uninstall), Overview / Changelog / Files tabs, and the facts
 // ketch knows about it beside them.

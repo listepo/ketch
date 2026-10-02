@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // The app's look: macOS 26 Liquid Glass from the system (`glassEffect`,
 // `GlassEffectContainer`, the glass button styles), with depth from the
 // backdrop wash behind the glass and a soft shadow under it. Glass stays the
