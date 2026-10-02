@@ -11,6 +11,7 @@
 - F12. Native macOS app (SwiftUI) on `ketch-ffi`
 - F13. macOS app release pipeline
 - F14. Design system for the macOS app: `DESIGN.md` and tokens
+- F18. Figma design for macOS, Windows and Linux
 - D1. `ketch-ffi`: foreign traits and per-operation callbacks
 - D2. `ketch-ffi`: records and operations the apps need
 - D3. `ketch-ffi`: the remaining CLI operations
