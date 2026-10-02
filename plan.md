@@ -31,7 +31,6 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | D7 | todo | P3 | 2 | 0% | |
 | D8 | todo | P3 | 2 | 0% | |
 | D9 | todo | P3 | 2 | 0% | |
-| D10 | todo | P2 | 3 | 0% | |
 | D11 | todo | P3 | 5 | 0% | |
 | D12 | todo | P3 | 4 | 0% | |
 | D13 | todo | P3 | 3 | 0% | |
@@ -423,12 +422,6 @@ Done when `CFBundleURLTypes` registers `ketch`, `onOpenURL` opens the package pa
 The macOS app's accessibility was only checked on the fake core. F14 keeps its own Accessibility Inspector pass on the real glass; this task covers labels. Localisation is not needed for now (creator, 2026-10-01, open decision 7), so no String Catalog. Research: section 1.
 
 Done when every icon-only control has an accessibility label, and a VoiceOver walk through the nine screens finds no unlabeled control.
-
-### D10. Windows: C# binding for `ketch-ffi`
-
-The Windows app is C# + WinUI 3 over `ketch-ffi` (creator, 2026-10-01). `uniffi-bindgen-cs` last released for UniFFI 0.31.0; `ketch-ffi` is on 0.32.2. Decided by the creator (2026-10-01, open decision 4): first try the generator built from PR #176 (UniFFI 0.32.0), pinned to commit `0fc022aa1d73fb1dda91a778b63f2824d7dca58b`; if it fails against 0.32.2, use the C ABI from D15 through `LibraryImport`. Downgrading `ketch-ffi` to UniFFI 0.31.2 is not an option. Research: section 4.
-
-Done when the chosen route generates C# for `ketch-ffi`, the generator is pinned (a commit or a version, no system install), a .NET 10 test calls `installed`, `doctor` and a cancelled install against a scratch root on Windows CI, and the route taken and why is in the research page.
 
 ### D11. Windows: WinUI 3 app shell on a fake core
 
