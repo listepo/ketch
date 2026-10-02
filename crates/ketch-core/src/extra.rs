@@ -511,7 +511,7 @@ mod tests {
 
     #[test]
     fn extra_paths_toml_accepts_strings_and_tables() {
-        let manifest: crate::model::Manifest = toml::from_str(
+        let manifest: crate::model::Manifest = crate::toml_file::parse(
             r#"
 name = "rg"
 source = "github:BurntSushi/ripgrep"
@@ -520,6 +520,7 @@ extra_paths = [
   { path = "misc/custom", kind = "man", section = "1" },
 ]
 "#,
+            "test",
         )
         .unwrap();
         manifest.validate().unwrap();
