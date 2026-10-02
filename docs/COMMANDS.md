@@ -141,6 +141,54 @@ state.
 ketch unlink ripgrep   # keep it, take it off PATH
 ketch link ripgrep     # put it back
 ```
+### `ketch import winget|brew|linux <NAME> [--dry-run] [--yes]`
+
+Add a package another package manager already knows. ketch reads that
+manager's definition, converts it to a user manifest in
+`~/.ketch/manifests/<name>.toml`, and installs it the normal way, with the
+asset and checksum the definition names.
+
+```bash
+ketch import brew codex                    # a Homebrew cask (or formula)
+ketch import brew fly --cask               # only look for a cask; --formula for a formula
+ketch import winget BurntSushi.ripgrep.MSVC  # a winget id, case-sensitive
+ketch import linux lazygit                 # Arch Linux, then the AUR
+ketch import linux obsidian --dry-run      # print the manifest, change nothing
+```
+
+| Source | Where the definition comes from |
+| --- | --- |
+| `winget` | the installer manifest of the newest version in [winget-pkgs](https://github.com/microsoft/winget-pkgs) |
+| `brew` | the cask or formula JSON from [formulae.brew.sh](https://formulae.brew.sh/docs/api/) |
+| `linux` | the `.SRCINFO` of the [Arch Linux](https://archlinux.org/packages/) package, or of the AUR's `-bin`/`-appimage` package when Arch builds it from source |
+
+Only a package whose downloads are GitHub release assets
+(`https://github.com/<owner>/<repo>/releases/download/...`) converts. A
+download from anywhere else — a vendor's CDN, SourceForge, a source tarball,
+a GitHub homepage with downloads hosted elsewhere, or a mix — writes
+nothing and exits 1 with
+`<name> can't be converted: it is not distributed through GitHub Releases, and that is not supported yet.`
+So do installers ketch cannot run (`.msi`, `.msix`, Inno or NSIS `.exe`,
+`.deb`, `.rpm`), cask artifacts beyond an app or binaries (`pkg`,
+`installer`), and two files for one platform.
+
+The manifest holds only what ketch needs: `name`, `source`, `kind` for an
+app, `bin`, and one `[asset.target]` pattern per platform, with the version
+replaced by `*` so it keeps matching. It starts with a
+``# Written by `ketch import …` `` line; a file of that name without it is
+yours, and import refuses to replace it.
+
+Running it again is safe: when the converted manifest and the installed
+version are already what the source says, it prints
+`Everything is up to date` and does nothing. A new version upstream rewrites
+the file and upgrades; a changed manifest at the same version reinstalls.
+
+The catalogue addresses can be pointed elsewhere (a mirror, or a test
+double) with `KETCH_IMPORT_BREW`, `KETCH_IMPORT_WINGET_API`,
+`KETCH_IMPORT_WINGET_RAW`, `KETCH_IMPORT_ARCH`, `KETCH_IMPORT_ARCH_GITLAB` and
+`KETCH_IMPORT_AUR`. The winget listing goes through the GitHub API, so it uses
+your GitHub token when one is set.
+
 ## Inspect
 
 ### `ketch list`

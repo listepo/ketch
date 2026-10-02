@@ -9,7 +9,7 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | R3 | in progress | P1 | 3 | 67% | Cursor / grok 4.7 high |
 | F8 | in progress | P2 | 3 | 0% | Cursor / grok 4.7 high |
 | M16 | todo | P2 | 4 | 0% | |
-| M17 | in progress | P2 | 4 | 10% | Cursor / grok 4.7 |
+| M17 | in progress | P2 | 4 | 90% | Cursor / grok 4.7 |
 | R5 | in progress | P2 | 4 | 90% | Claude Code / opus-5.5 |
 | R6 | in progress | P2 | 4 | 90% | Claude Code / opus-5.5 |
 | R8 | in progress | P3 | 3 | 90% | Claude Code / sonnet-5.5 |
@@ -464,7 +464,7 @@ Research (sources checked 2026-10-02):
 Execution plan:
 1. This card.
 2. `serde-saphyr` for the winget YAML (one commit, `toolchain.md` and `rust.md` rows).
-3. Core `crates/ketch-core/src/import/`: the shared rules (a GitHub release URL, the tag, per-target asset globs, the rejection error) and one converter per source on plain data, with recorded fixtures under `crates/ketch-core/src/import/fixtures/`; the fetching behind a small trait so tests never reach the network; base URLs overridable by `KETCH_IMPORT_BREW`, `KETCH_IMPORT_WINGET_API`, `KETCH_IMPORT_WINGET_RAW`, `KETCH_IMPORT_ARCH`, `KETCH_IMPORT_AUR`.
+3. Core `crates/ketch-core/src/import/`: the shared rules (a GitHub release URL, the tag, per-target asset globs, the rejection error) and one converter per source on plain data, with recorded fixtures under `crates/ketch-core/src/import/fixtures/`; the fetching behind a small trait so tests never reach the network; base URLs overridable by `KETCH_IMPORT_BREW`, `KETCH_IMPORT_WINGET_API`, `KETCH_IMPORT_WINGET_RAW`, `KETCH_IMPORT_ARCH`, `KETCH_IMPORT_ARCH_GITLAB`, `KETCH_IMPORT_AUR`.
 4. Writing the manifest through `manifest.rs` (the module that owns user-manifest files), rendering through `wizard::render`, and the idempotency decision in the core.
 5. `ketch import` in `cli.rs` and `cmd/import.rs`; end-to-end tests in `tests/import.rs` against a local mock of the sources and of the GitHub API.
 6. Docs: `docs/COMMANDS.md`, `docs/MANIFESTS.md`, help snapshots, man pages.
@@ -474,3 +474,9 @@ Rules decided here:
 - Mixed installers: if any artifact ketch would use, on any architecture, is hosted elsewhere, nothing converts — one manifest has one source, and a partial conversion would install on one machine and silently fall back to guessing on another.
 - An artifact that is a source archive (an archive naming neither an OS nor an architecture, for a Homebrew formula) is not a release artifact.
 - Installer formats ketch cannot place (winget `msi`, `msix`, `exe`, `inno`, `nullsoft`, `wix`, `burn`; cask `pkg`, `installer` and the other non-`app`, non-`binary` artifacts; Linux `.deb`/`.rpm`) are refused with their own message, after the GitHub check.
+- A file at the manifest path that does not start with the ``# Written by `ketch import`` header is the user's and is never replaced; the command refuses instead.
+- The host must be one of the converted targets, or nothing is written: a manifest this machine cannot install from would leave a package `ketch install` fails on.
+- Idempotency: the rendered file is compared byte for byte with the one on disk, the installed version with the source's tag. Same file and installed ≥ source → "Everything is up to date", nothing touched; a newer tag → rewrite and upgrade; same version, changed file → reinstall (`force`); installed newer than the source → the installed release stays and only the manifest is redone. The install pins the source's asset (`asset_override`) and checksum (`expected_sha256`); a missing checksum warns and installs, checked the usual way.
+- Bin paths and asset patterns have the version replaced by `*`, so the manifest keeps matching after the next release.
+
+Status (2026-10-02): steps 1–6 in, on `feat/import-foreign-packages` (draft PR #215). Not done: `docs/ru` and `docs/uk` do not exist on `main` (only on the unmerged `ci/sync-docs-i18n`), so the doc changes are English only; the `serde-saphyr` MSRV question is open for the creator; the binaries inside a cask's `.app` (`binary` under `$APPDIR`) are not linked.
