@@ -293,18 +293,41 @@ pub fn write_bins(path: &Path, package: &str, bins: &[String]) -> Result<bool> {
     table.insert("bin", toml_edit::value(list));
     let body = doc.to_string();
     parse_registry(&body, &label)?;
+    replace_file(&target, &body)?;
+    Ok(true)
+}
 
+/// Write a whole user manifest that `ketch import` generated, creating the
+/// manifest directory on first use. The text is parsed as a manifest first,
+/// so a converter bug fails here instead of leaving a file every later
+/// command warns about; a file linked from elsewhere is written through.
+pub fn write_manifest(path: &Path, text: &str) -> Result<()> {
+    let target = match std::fs::canonicalize(path) {
+        Ok(real) => real,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => path.to_path_buf(),
+        Err(e) => return Err(Error::io(path, e)),
+    };
+    parse_registry(text, &target.display().to_string())?;
+    if let Some(dir) = target.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| Error::io(dir, e))?;
+    }
+    replace_file(&target, text)
+}
+
+/// Replace `target` by renaming a finished copy over it, so an interrupted
+/// write leaves the old file whole.
+fn replace_file(target: &Path, body: &str) -> Result<()> {
     let dir = target.parent().unwrap_or_else(|| Path::new("."));
     let mut temp = tempfile::NamedTempFile::new_in(dir).map_err(|e| Error::io(dir, e))?;
     std::io::Write::write_all(&mut temp, body.as_bytes()).map_err(|e| Error::io(temp.path(), e))?;
-    if let Ok(meta) = std::fs::metadata(&target) {
+    if let Ok(meta) = std::fs::metadata(target) {
         // A temporary file is created private; the manifest keeps the mode
         // the user gave it.
         let _ = std::fs::set_permissions(temp.path(), meta.permissions());
     }
-    temp.persist(&target)
-        .map_err(|e| Error::io(&target, e.error))?;
-    Ok(true)
+    temp.persist(target)
+        .map_err(|e| Error::io(target, e.error))?;
+    Ok(())
 }
 
 /// The table in a manifest file that describes `package`: the whole document
@@ -557,5 +580,30 @@ mod tests {
         assert!(std::fs::read_to_string(&target)
             .unwrap()
             .contains("rtok-cli"));
+    }
+
+    #[test]
+    fn write_manifest_creates_the_directory_and_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("manifests").join("fly.toml");
+        let body = "name = \"fly\"\nsource = \"github:superfly/flyctl\"\n";
+        write_manifest(&path, body).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), body);
+    }
+
+    #[test]
+    fn write_manifest_refuses_text_that_is_not_a_manifest_and_writes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("fly.toml");
+        assert!(write_manifest(&path, "name = [\n").is_err());
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn write_manifest_replaces_an_older_copy_whole() {
+        let (_dir, path) = user_file("name = \"rtok\"\nsource = \"github:me/rtok\"\n");
+        let body = "name = \"rtok\"\nsource = \"github:me/rtok-fork\"\n";
+        write_manifest(&path, body).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), body);
     }
 }

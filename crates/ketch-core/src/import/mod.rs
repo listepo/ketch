@@ -13,6 +13,7 @@
 //! `config::validate_repo`, names through `Manifest::validate`, and only the
 //! handful of fields ketch needs is carried over at all.
 
+pub mod apply;
 pub mod brew;
 mod fetch;
 pub mod linux;
