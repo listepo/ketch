@@ -8,7 +8,7 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | B65 | in progress | P0 | 2 | 0% | Cursor / grok 4.7 high |
 | R3 | in progress | P1 | 3 | 67% | Cursor / grok 4.7 high |
 | F8 | in progress | P2 | 3 | 0% | Cursor / grok 4.7 high |
-| M16.4 | todo | P2 | 1 | 0% | |
+| M16.4 | in progress | P2 | 1 | 10% | Claude Code / opus-5.5 |
 | M16.5 | todo | P2 | 1 | 0% | |
 | M16.6 | todo | P2 | 3 | 0% | |
 | M16.7 | todo | P2 | 3 | 0% | |
@@ -330,6 +330,8 @@ The creator decided (2026-10-03) to split M16 into the subtasks below, one pull 
 `wizard.rs` renders TOML string and string-array literals through `toml::Value` so escaping is never hand-rolled. Those two renderers move into the module, and `wizard.rs` calls them.
 
 Done when `wizard.rs` imports no `toml`, the wizard tests pass unchanged, and the module tests quotes, backslashes and control bytes.
+
+Execution plan (Claude Code / opus-5.5): move `string` and `list` from `wizard.rs` into `toml_file` as `string_literal` and `string_list_literal`, bodies unchanged, and rename the call sites; tests for quotes, backslashes, an escape byte and an empty item; fmt, clippy, nextest (the wizard and import tests render through them).
 
 ### M16.5. Test-only TOML in `model.rs` and `extra.rs`
 
