@@ -8,7 +8,7 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | B65 | in progress | P0 | 2 | 0% | Cursor / grok 4.7 high |
 | R3 | in progress | P1 | 3 | 67% | Cursor / grok 4.7 high |
 | F8 | in progress | P2 | 3 | 0% | Cursor / grok 4.7 high |
-| M16.1 | todo | P2 | 2 | 0% | |
+| M16.1 | in progress | P2 | 2 | 10% | Claude Code / opus-5.5 |
 | M16.2 | todo | P2 | 2 | 0% | |
 | M16.3 | todo | P2 | 1 | 0% | |
 | M16.4 | todo | P2 | 1 | 0% | |
@@ -333,6 +333,8 @@ The creator decided (2026-10-03) to split M16 into the subtasks below, one pull 
 A new `crates/ketch-core/src/toml_file.rs` owns parsing, rendering and the schema export for the TOML files ketch owns. It starts with the two calls `config.rs` needs — parse text into a `T: DeserializeOwned` naming the file in the error (`Error::parse(what, …)`), and render a `T: Serialize` pretty — and takes `assert_schema_current` from `config.rs`, with its callers (`config.rs`, `lockfile.rs`, `log.rs`, `model.rs` tests) pointed at the new path. A helper is added only with its first caller, so nothing is dead code.
 
 Done when `config.rs` imports neither `toml` nor `schemars`' drift helper, `config.toml` loads and `ketch config reset` writes byte-for-byte as before, the new module has its `//!` header and unit tests (a parse error names the file, render round-trips), and fmt, clippy and nextest are clean.
+
+Execution plan (Claude Code / opus-5.5): add `crates/ketch-core/src/toml_file.rs` with `parse` and `render` (both name the file in `Error::parse`); move `assert_schema_current` there verbatim and point its callers at it (`config.rs`, and the `lockfile.rs` and `model.rs` schema tests; `log.rs` only derives `JsonSchema` and needs no change); switch `Config::load` and `Config::default_toml` to the two calls; a row for the module in `AGENTS.md`'s layout table; verify with fmt, clippy, nextest, `ketch doctor` and `ketch config reset` against a scratch root.
 
 ### M16.2. `registry.rs` through the module
 
