@@ -140,6 +140,17 @@ final class FakeKetchCore: KetchCoreProtocol {
         }
     }
 
+    func packageName(forLink link: String) throws -> String {
+        state.withLock { $0.calls.append("link \(link)") }
+        let prefix = "ketch://package/"
+        let name = link.hasPrefix(prefix) ? String(link.dropFirst(prefix.count)) : ""
+        // The real grammar is the core's (`ketch_core::link`); the fake only
+        // needs to tell a package page from everything else.
+        guard !name.isEmpty, name.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || "-_.+".contains($0)) })
+        else { throw KetchError.other(message: "ketch link is not a package page") }
+        return name.lowercased()
+    }
+
     func changelog(name: String, from: String?, to: String?) throws -> String {
         pause()
         state.withLock { $0.calls.append("changelog \(name)") }

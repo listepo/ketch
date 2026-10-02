@@ -19,7 +19,6 @@
 - D4. Contract fixtures for every app's fake core
 - D5. Design tokens for XAML and GTK
 - D7. macOS: update notifications
-- D8. macOS: `ketch://` links
 - D9. macOS: VoiceOver pass
 - D10. Windows: C# binding for `ketch-ffi`
 - D11. Windows: WinUI 3 app shell on a fake core

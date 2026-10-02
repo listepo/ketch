@@ -41,6 +41,11 @@ struct Scratch: ~Copyable {
     #expect(!ketchVersion().isEmpty)
 }
 
+@Test func aPackageLinkYieldsItsNameAndAnInstallLinkIsRefused() throws {
+    #expect(try packageForLink(url: "ketch://package/ripgrep") == "ripgrep")
+    #expect(throws: KetchError.self) { try packageForLink(url: "ketch://install/ripgrep") }
+}
+
 @Test func aLocalPackageInstallsIntoAScratchRootAndReportsItsStages() throws {
     let scratch = try Scratch()
     let recorder = Recorder()

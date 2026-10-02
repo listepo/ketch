@@ -59,6 +59,10 @@ struct ContentView: View {
         .onChange(of: appearsActive) { _, active in
             if active { Task { await store.refresh() } }
         }
+        .onOpenURL { url in Task { await store.open(link: url) } }
+        .onChange(of: store.linkedPackage) { _, name in
+            if name != nil { section = .discover }
+        }
         .task {
             await store.refresh()
             // The sidebar counts Doctor's problems before Doctor is opened.

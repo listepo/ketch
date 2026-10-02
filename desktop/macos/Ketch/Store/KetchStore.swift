@@ -81,6 +81,8 @@ final class KetchStore {
     var errorMessage: String?
     /// A question from the core's decider, shown as a sheet.
     var pendingChoice: BinaryChoice?
+    /// A package a `ketch://` link asked to show; Discover consumes it.
+    var linkedPackage: String?
     /// Upgrade-all waits for this confirmation, which the menu bar can raise.
     var confirmingUpgradeAll = false
 
@@ -144,6 +146,25 @@ final class KetchStore {
         } catch {
             report(error, retry: nil)
             return nil
+        }
+    }
+
+    /// Handles a `ketch://` link. It only ever shows a package page: nothing a
+    /// link says installs, upgrades or removes anything. The core validates the
+    /// link, and a refusal or an unknown package is shown like any other error.
+    func open(link: URL) async {
+        let text = link.absoluteString
+        do {
+            let known = installed.map(\.name)
+            linkedPackage = try await background { core in
+                let name = try core.packageName(forLink: text)
+                let results = known.contains(name) ? [] : try core.search(query: name)
+                guard known.contains(name) || results.contains(where: { $0.name == name })
+                else { throw KetchError.notFound(name: name) }
+                return name
+            }
+        } catch {
+            report(error, retry: nil)
         }
     }
 
