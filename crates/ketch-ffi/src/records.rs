@@ -12,7 +12,7 @@
 //! their files) is passed through `changelog::sanitize` on the way out.
 
 use ketch_core::changelog::{self, Entry, Origin};
-use ketch_core::listing::{Latest, Row};
+use ketch_core::listing::{self, Latest, Local, Row};
 use ketch_core::model::{InstalledPackage, Manifest, SourceInfo};
 use ketch_core::platform::{CheckStatus, DoctorCheck};
 
@@ -116,14 +116,18 @@ pub struct RegistryPackage {
     pub name: String,
     pub source: String,
     pub description: Option<String>,
+    /// The newest version an earlier listing found, `None` when no fresh
+    /// answer is cached. A search asks no source for it.
+    pub latest: Option<String>,
 }
 
-impl From<&Manifest> for RegistryPackage {
-    fn from(m: &Manifest) -> Self {
+impl RegistryPackage {
+    pub(crate) fn new(m: &Manifest, latest: Option<String>) -> Self {
         RegistryPackage {
             name: m.name.clone(),
             source: m.source.to_string(),
             description: m.description.as_deref().map(changelog::sanitize),
+            latest,
         }
     }
 }
@@ -162,20 +166,36 @@ pub struct Upgrade {
     pub latest: String,
     /// The release tag `upgrade` installs.
     pub tag: String,
+    /// Held at `installed` by a pin: `upgrade` leaves it alone until it is
+    /// unpinned.
+    pub pinned: bool,
+    /// The `ketch.lock` that holds the pin, when ketch knows one. `ketch
+    /// sync` restores a pin without recording which file it came from, so
+    /// today this is always `None`.
+    pub held_by: Option<String>,
 }
 
 impl Upgrade {
-    /// The upgrade a listing row offers, when it offers one.
+    /// The upgrade a listing row offers, when it offers one. A pinned package
+    /// is offered one too, marked as held, so an app can show what the pin is
+    /// keeping back; the update rules are otherwise the ones `ketch outdated`
+    /// uses.
     pub(crate) fn from_row(row: &Row) -> Option<Self> {
         let local = row.local.as_ref()?;
         let Latest::Found(found) = &row.latest else {
             return None;
         };
-        row.update_available().then(|| Upgrade {
+        let unpinned = Local {
+            pinned: false,
+            ..local.clone()
+        };
+        listing::update_available(&unpinned, found).then(|| Upgrade {
             name: local.name.clone(),
             installed: local.version.to_string(),
             latest: found.version.to_string(),
             tag: found.tag.clone(),
+            pinned: local.pinned,
+            held_by: None,
         })
     }
 }
@@ -254,7 +274,7 @@ impl From<&DoctorCheck> for Check {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ketch_core::listing::{Found, Local};
+    use ketch_core::listing::Found;
     use ketch_core::model::{
         LinkKind, LinkRecord, ManifestOrigin, PackageRef, RetainedVersion, TargetSpec, Version,
     };
@@ -349,14 +369,24 @@ mod tests {
                 installed: "14.0.0".into(),
                 latest: "14.1.0".into(),
                 tag: "14.1.0".into(),
+                pinned: false,
+                held_by: None,
             })
         );
     }
 
     #[test]
-    fn a_pinned_or_current_package_is_no_upgrade() {
-        assert_eq!(Upgrade::from_row(&row(true, "14.1.0")), None);
+    fn a_pinned_package_with_a_newer_release_is_an_upgrade_marked_held() {
+        let held = Upgrade::from_row(&row(true, "14.1.0")).expect("offered");
+        assert!(held.pinned);
+        assert_eq!(held.latest, "14.1.0");
+        assert_eq!(held.held_by, None);
+    }
+
+    #[test]
+    fn a_current_package_is_no_upgrade_pinned_or_not() {
         assert_eq!(Upgrade::from_row(&row(false, "14.0.0")), None);
+        assert_eq!(Upgrade::from_row(&row(true, "14.0.0")), None);
     }
 
     #[test]

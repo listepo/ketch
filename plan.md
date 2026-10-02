@@ -17,7 +17,6 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | F13 | in progress | P3 | 4 | 80% | Claude Code / opus-5.5 |
 | F14 | in progress | P2 | 3 | 90% | Claude Code / opus-5.5 |
 | F18 | in progress | P2 | 4 | 90% | Claude Code / opus-5.5 |
-| D2 | todo | P2 | 3 | 0% | |
 | D3 | todo | P3 | 3 | 0% | |
 | D4 | todo | P3 | 2 | 0% | |
 | D5 | todo | P3 | 3 | 0% | |
@@ -320,12 +319,6 @@ review of the file and the merge of the PR.
 `AGENTS.md`: one module owns all config loading, validation and editing, and the rest of the code does not import `toml` or `toml_edit`. Today `registry.rs`, `manifest.rs`, `extra.rs`, `push.rs`, `wizard.rs` and `model.rs` use them directly, besides `config.rs` and `lockfile.rs`.
 
 Done when TOML parsing, rendering and editing for the files ketch owns go through one module, and no other module imports `toml` or `toml_edit`. Behaviour does not change. Before starting, confirm with the creator whether `ketch.toml` manifests and `ketch.lock` belong to that module or keep their own, with only the TOML calls moved.
-
-### D2. `ketch-ffi`: records and operations the apps need
-
-The macOS app's protocol needs things `ketch-ffi` does not give: a changelog across a version range, pinned packages in `outdated` with what holds them, `latest` in search results, and an `uninstall` that can be cancelled, reports progress and removes a leftover store folder for a name with no record, as the CLI does. Research: section 3a, gaps G2–G5.
-
-Done when `changelog_range(package, from, to)`, `Upgrade.pinned` (and the lock that holds it, when known), `RegistryPackage.latest` and the new `uninstall` exist with unit tests, the Swift binding test exercises each, and D4's fixtures can model them.
 
 ### D3. `ketch-ffi`: the remaining CLI operations
 
