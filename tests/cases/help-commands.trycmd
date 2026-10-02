@@ -98,3 +98,49 @@ Options:
   -V, --version     Print version
 
 ```
+
+```console
+$ ketch import --help
+Add a winget, Homebrew or Linux package as a ketch manifest and install it
+
+Usage: ketch[EXE] import [OPTIONS] <COMMAND>
+
+Commands:
+  winget  A winget package, by its `Publisher.Package` identifier (case-sensitive)
+  brew    A Homebrew cask or formula, by its token
+  linux   An Arch Linux or AUR package, by its name
+
+Options:
+      --root <DIR>  ketch root directory (default: ~/.ketch)
+  -v, --verbose     Show what ketch is doing, including every request
+  -q, --quiet       Only print errors and requested data
+      --no-color    Never emit ANSI colour
+      --no-emoji    Never put an emoji icon in front of a status line
+  -h, --help        Print help
+  -V, --version     Print version
+
+```
+
+```console
+$ ketch import brew --help
+A Homebrew cask or formula, by its token
+
+Usage: ketch[EXE] import brew [OPTIONS] <NAME>
+
+Arguments:
+  <NAME>  The cask or formula name, e.g. `codex`
+
+Options:
+      --cask        Only look for a cask
+      --formula     Only look for a formula
+      --dry-run     Print the manifest that would be written, and change nothing
+  -y, --yes         Answer yes to every prompt
+      --root <DIR>  ketch root directory (default: ~/.ketch)
+  -v, --verbose     Show what ketch is doing, including every request
+  -q, --quiet       Only print errors and requested data
+      --no-color    Never emit ANSI colour
+      --no-emoji    Never put an emoji icon in front of a status line
+  -h, --help        Print help
+  -V, --version     Print version
+
+```

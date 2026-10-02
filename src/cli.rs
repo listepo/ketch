@@ -58,6 +58,12 @@ pub enum Command {
     #[command(visible_alias = "i")]
     Install(InstallArgs),
 
+    /// Add a winget, Homebrew or Linux package as a ketch manifest and install it
+    Import {
+        #[command(subcommand)]
+        command: ImportCommand,
+    },
+
     /// Remove installed packages
     #[command(visible_aliases = ["remove", "rm"])]
     Uninstall(UninstallArgs),
@@ -465,6 +471,58 @@ pub enum ConfigCommand {
         #[arg(long, short = 'y')]
         yes: bool,
     },
+}
+
+/// Where `ketch import` looks the name up. Each source only converts a
+/// package whose downloads are GitHub release assets.
+#[derive(Subcommand, Debug, Clone)]
+pub enum ImportCommand {
+    /// A winget package, by its `Publisher.Package` identifier (case-sensitive)
+    Winget {
+        /// The winget identifier, e.g. `BurntSushi.ripgrep.MSVC`
+        #[arg(value_name = "ID")]
+        id: String,
+
+        #[command(flatten)]
+        opts: ImportOpts,
+    },
+    /// A Homebrew cask or formula, by its token
+    Brew {
+        /// The cask or formula name, e.g. `codex`
+        #[arg(value_name = "NAME")]
+        name: String,
+
+        /// Only look for a cask
+        #[arg(long, conflicts_with = "formula")]
+        cask: bool,
+
+        /// Only look for a formula
+        #[arg(long)]
+        formula: bool,
+
+        #[command(flatten)]
+        opts: ImportOpts,
+    },
+    /// An Arch Linux or AUR package, by its name
+    Linux {
+        /// The package name, e.g. `lazygit`
+        #[arg(value_name = "NAME")]
+        name: String,
+
+        #[command(flatten)]
+        opts: ImportOpts,
+    },
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct ImportOpts {
+    /// Print the manifest that would be written, and change nothing
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// Answer yes to every prompt
+    #[arg(long, short = 'y')]
+    pub yes: bool,
 }
 
 #[derive(Subcommand, Debug, Clone)]

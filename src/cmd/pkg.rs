@@ -520,7 +520,7 @@ pub(crate) fn jobs(cfg: &Config, flag: Option<usize>) -> usize {
     flag.filter(|n| *n > 0).unwrap_or(cfg.jobs).max(1)
 }
 
-fn report(out: &Installed) {
+pub(crate) fn report(out: &Installed) {
     let pkg = &out.package;
     let detail = match &out.replaced {
         Some(old) if old != &pkg.version => format!("{} {} (was {old})", pkg.name, pkg.version),
@@ -551,7 +551,7 @@ fn report(out: &Installed) {
 }
 
 /// Say so once, at the end, when the links we just made are not reachable.
-fn path_hint(cfg: &Config, state: &State) {
+pub(crate) fn path_hint(cfg: &Config, state: &State) {
     if cfg.bin_dir_on_path() || !state.iter().any(|p| p.binaries().next().is_some()) {
         return;
     }
