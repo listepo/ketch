@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! What the foreign side implements and holds: the reporter that receives the
 //! core's events, the decider that answers its questions, and the token that
 //! cancels an operation.
@@ -5,6 +9,11 @@
 //! Each is a thin adapter onto the core trait or type R6, R7 and R8 introduced
 //! (`report::Reporter`, `decide::Decider`, `cancel::Cancel`), so the core
 //! knows nothing about bindings and the CLI's implementations stay as they are.
+//!
+//! `Reporter` and `Decider` are foreign traits (`export(foreign)`), not
+//! callback interfaces: UniFFI calls the latter (soft) deprecated, and a
+//! foreign trait crosses as an `Arc`, so one implementation can be handed to
+//! several calls and kept by the caller.
 
 use ketch_core::cancel::Cancel;
 use ketch_core::decide;
@@ -143,7 +152,7 @@ impl From<report::Event> for Event {
 /// Receives the core's events. Called from whichever thread the work runs on,
 /// several at once during a batch: an implementation hops to its UI thread
 /// itself and must not block.
-#[uniffi::export(callback_interface)]
+#[uniffi::export(foreign)]
 pub trait Reporter: Send + Sync {
     fn event(&self, event: Event);
 }
@@ -159,7 +168,7 @@ pub struct Holder {
 /// Answers the questions the pipeline cannot infer. Called on the operation's
 /// worker thread, which waits for the answer: an implementation may block on a
 /// dialog.
-#[uniffi::export(callback_interface)]
+#[uniffi::export(foreign)]
 pub trait Decider: Send + Sync {
     /// Pick one of `candidates`, the files of `package` sharing its name: the
     /// index of the pick, or `None` to leave it to the fixed rules (which fail
@@ -181,7 +190,7 @@ impl report::Reporter for ForeignReporter {
 }
 
 /// The foreign decider, as the core's.
-pub(crate) struct ForeignDecider(pub(crate) Box<dyn Decider>);
+pub(crate) struct ForeignDecider(pub(crate) Arc<dyn Decider>);
 
 impl decide::Decider for ForeignDecider {
     fn choose_binary(&self, package: &str, candidates: &[String]) -> Option<usize> {
@@ -316,11 +325,11 @@ mod tests {
     #[test]
     fn the_decider_picks_by_index_and_rejects_one_out_of_range() {
         let candidates = ["rg-a".to_string(), "rg-b".to_string()];
-        let second = ForeignDecider(Box::new(Scripted(Some(1), false)));
+        let second = ForeignDecider(Arc::new(Scripted(Some(1), false)));
         assert_eq!(second.choose_binary("rg", &candidates), Some(1));
-        let beyond = ForeignDecider(Box::new(Scripted(Some(2), false)));
+        let beyond = ForeignDecider(Arc::new(Scripted(Some(2), false)));
         assert_eq!(beyond.choose_binary("rg", &candidates), None);
-        let none = ForeignDecider(Box::new(Scripted(None, false)));
+        let none = ForeignDecider(Arc::new(Scripted(None, false)));
         assert_eq!(none.choose_binary("rg", &candidates), None);
     }
 
@@ -330,8 +339,8 @@ mod tests {
             pid: 7,
             path: "/k/bin/rg".into(),
         }];
-        assert!(ForeignDecider(Box::new(Scripted(None, true))).stop_processes(&occupants));
-        assert!(!ForeignDecider(Box::new(Scripted(None, false))).stop_processes(&occupants));
+        assert!(ForeignDecider(Arc::new(Scripted(None, true))).stop_processes(&occupants));
+        assert!(!ForeignDecider(Arc::new(Scripted(None, false))).stop_processes(&occupants));
     }
 
     #[test]

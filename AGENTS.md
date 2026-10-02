@@ -11,12 +11,8 @@ it too — nothing here is agent-specific except the framing and the rule below.
   `no-agent-attribution` in `commitlint.config.mjs` rejects such a trailer or
   line in every commit a pull request brings, and in the commit-msg hook. A
   pull request description is not checked — that part is on the agent.
-- **English for repository files.** Commits, pull request titles and bodies,
-  comments, docs, and user-facing strings in this repository are written in
-  English. Do not leave non-English prose in tracked files.
 - If a directory above this repository contains an `AGENTS.md` or
   `CLAUDE.md`, follow it too. If it conflicts with this file, ask the creator.
-- **Config files.** A config file this project owns has a schema generated from its types (Rust: `schemars`), committed and checked by a drift test, and one module owns all config loading, validation and editing. A config file another program owns (an agent host's or an editor's) gets no schema from us: check only our own entry in it and leave the rest byte-for-byte, comments included.
 
 ## What ketch is
 
@@ -111,26 +107,6 @@ KETCH_ROOT=/tmp/ketch-scratch cargo run -- doctor
 
 ## Rust CLI testing
 
-Testing a Rust CLI application requires a combination of unit tests for
-internal business logic and integration tests to verify end-to-end binary
-execution, argument parsing, and output formatting. Prefer these crates for
-the integration layer:
-
-- `assert_cmd` executes the compiled CLI binary and runs assertions against
-  exit codes, stdout, and stderr.
-- `predicates` composes boolean assertions for output matching, including
-  string containment and regular expressions.
-- `assert_fs` automates setup, tear-down, and verification of temporary files
-  and directories.
-- `trycmd` orchestrates snapshot testing with plain-text or Markdown files so
-  lengthy or complex CLI output doubles as documentation and test assertions.
-- `rstest` expresses related cases as parameterized tests and fixtures without
-  duplicating setup.
-- `insta` records reviewed snapshots for stable structured values or output;
-  use its redactions for volatile values rather than weakening the assertion.
-- `pretty_assertions` makes equality failures readable; import its `assert_eq`
-  and `assert_ne` macros in unit tests that compare non-trivial values.
-
 Keep fast, deterministic business-logic tests beside the Rust module they
 exercise. Put binary-level behavior in `tests/`, using `assert_cmd` and
 `assert_fs`; use `trycmd` for commands whose complete output is easier to
@@ -194,21 +170,6 @@ count it, and on a machine that redirects `build.target-dir` the two figures
 differ by orders of magnitude — the cargo home is the small one. Set
 `CARGO_CACHE=cargo-cache` to bypass mise if you have it activated already.
 
-## Task runner choice
-
-Choose **Just** when you want a fast, lightweight, and simple command alias
-tool that feels like `make` without the baggage, or when the repository manages
-multiple languages alongside Rust.
-
-Choose **cargo-make** when you need complex CI/CD build pipelines,
-cross-platform conditional flows, automated crate installations, or built-in
-scripting extensions such as duckscript tailored specifically for Rust.
-
-For this repository, prefer **Just** if a task runner is introduced: the
-project combines Rust with shell and site tooling, and its current commands
-are simple aliases. Use cargo-make instead only when the workflow grows into
-conditional, multi-stage Rust automation.
-
 ## Layout
 
 | Path | Owns |
@@ -246,7 +207,7 @@ conditional, multi-stage Rust automation.
 | `crates/ketch-core/src/decide.rs` | what the core asks a person mid-run: the `Decider` trait and `NoDecider`, carried in `Ctx` |
 | `crates/ketch-core/src/text.rs` | byte counts and truncation, spelled the same by the core and every renderer |
 | `crates/ketch-core/src/doctor.rs` | `ketch doctor`'s checks, shared by the command and `ketch-ffi` |
-| `crates/ketch-ffi/` | the core through UniFFI: a coarse, language-neutral surface of plain records, callback interfaces for `Reporter` and `Decider`, a cancel token and a typed `KetchError` |
+| `crates/ketch-ffi/` | the core through UniFFI: a coarse, language-neutral surface of plain records, foreign traits for `Reporter` and `Decider` passed with a cancel token to each call, and a typed `KetchError` |
 | `scripts/xcframework.sh` | `ketch-ffi` as an XCFramework for both macOS architectures, and its generated Swift bindings; `just xcframework` |
 | `desktop/macos/KetchCore/` | the Swift package wrapping that XCFramework and bindings (both build output), and the Swift test that drives the real core through them |
 | `src/ui.rs` | all terminal output, `Terminal`: the `Reporter` that draws the core's events, and `TerminalDecider`: the `Decider` that prompts on the terminal |
@@ -580,10 +541,10 @@ Seven things about that handoff are easy to break:
   push the branch and open the pull request; it merges, tags, releases and
   dispatches with `GITHUB_TOKEN`, and a tag or release made with that token
   starts no workflow, which is why bump dispatches `release.yml` itself.
-- **Merge the bump pull request with nothing but bump.** It is rebase-merged
-  (one commit per release; the repository allows rebase merging for it), and
-  only bump knows to tag the commit that lands. A bump pull request merged by
-  hand leaves an untagged version on `main`.
+- **Merge the bump pull request with nothing but bump.** Only bump knows to
+  tag the commit that lands (merge method: pyrlyn/.github
+  `docs/pull-requests.md`). A bump pull request merged by hand leaves an
+  untagged version on `main`.
 - **release-plz reads the tags, not crates.io** (`git_only = true`). By
   default it asks the registry for the last released version, and `ketch` is
   not published there — so the lookup comes back empty, release-plz decides

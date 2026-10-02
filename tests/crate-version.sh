@@ -1,4 +1,8 @@
 #!/bin/sh
+# Copyright (c) 2026 Ivan Tugay
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 # The crate version must match the latest git tag, and the changelog must
 # carry an entry for it — otherwise `ketch self upgrade` and install.sh
 # look for a tag whose binaries never shipped.

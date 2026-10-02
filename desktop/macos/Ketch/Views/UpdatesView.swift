@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // Updates: every installed package with a newer release, each with its own
 // Update and Update all in the header, then the packages a ketch.lock holds
 // back. The busy banner above the list (from `Page`) is where a refused
