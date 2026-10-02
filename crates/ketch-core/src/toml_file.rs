@@ -143,6 +143,30 @@ pub(crate) fn assert_schema_current<T: schemars::JsonSchema>(relative: &str) {
     );
 }
 
+/// Whether `line` reaches the `toml` or `toml_edit` crate: a path through
+/// one (`toml::from_str`) or an import of one (`use toml_edit;`). File names
+/// such as `"ketch.toml"` and mentions in comments do not count.
+#[cfg(test)]
+fn names_toml_crate(line: &str) -> bool {
+    let code = line.trim_start();
+    if code.starts_with("//") {
+        return false;
+    }
+    let imports = ["use ", "pub use ", "pub(crate) use ", "extern crate "]
+        .iter()
+        .any(|p| code.starts_with(p));
+    let ident = |c: char| c.is_alphanumeric() || c == '_';
+    ["toml_edit", "toml"].iter().any(|name| {
+        code.match_indices(name).any(|(at, _)| {
+            let before = code[..at].chars().next_back();
+            let after = &code[at + name.len()..];
+            let whole = !before.is_some_and(|c| ident(c) || c == '.' || c == '-')
+                && !after.starts_with(ident);
+            whole && (after.trim_start().starts_with("::") || imports)
+        })
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -223,5 +247,88 @@ mod tests {
         let doc = Document::parse("name = \"rg\"\n", "/r/rg/ketch.toml").unwrap();
         let err = doc.deserialize::<Sample>().unwrap_err();
         assert!(err.to_string().contains("/r/rg/ketch.toml"), "{err}");
+    }
+
+    #[test]
+    fn the_scan_finds_paths_and_imports_but_not_file_names_or_comments() {
+        for line in [
+            "    let v: toml::Value = toml::from_str(t)?;",
+            "use toml_edit::DocumentMut;",
+            "use toml;",
+            "    let doc = ::toml_edit::DocumentMut::new();",
+        ] {
+            assert!(names_toml_crate(line), "{line}");
+        }
+        for line in [
+            "    let path = root.join(\"ketch.toml\");",
+            "// toml::from_str would drop the comments",
+            "    /// Built by rendering a `toml::Value`.",
+            "    let tomlish = 1;",
+            "    crate::toml_file::parse(text, what)",
+        ] {
+            assert!(!names_toml_crate(line), "{line}");
+        }
+    }
+
+    /// Modules that still call `toml` themselves, each until its M16 subtask
+    /// moves the calls here. Waiting for the creator's choice of how much of
+    /// each moves; whoever does it removes the entry, which this test then
+    /// insists on.
+    const NOT_YET_MOVED: [&str; 2] = [
+        // M16.6: user manifests, `builtin.toml` and the `toml_edit` edit.
+        "crates/ketch-core/src/manifest.rs",
+        // M16.7: `ketch.lock`.
+        "crates/ketch-core/src/lockfile.rs",
+    ];
+
+    #[test]
+    fn no_module_but_this_one_names_the_toml_crates() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut dirs = vec![root.join("src")];
+        for entry in std::fs::read_dir(root.join("crates")).expect("read crates/") {
+            dirs.push(entry.expect("crate dir").path().join("src"));
+        }
+        let mut offenders = Vec::new();
+        let mut still_using = Vec::new();
+        for dir in dirs {
+            for entry in walkdir::WalkDir::new(&dir) {
+                let entry = entry.expect("walk sources");
+                if entry.path().extension().is_none_or(|e| e != "rs") {
+                    continue;
+                }
+                // Forward slashes, so the names match on Windows too.
+                let relative = entry
+                    .path()
+                    .strip_prefix(&root)
+                    .expect("under the repository")
+                    .components()
+                    .map(|c| c.as_os_str().to_string_lossy())
+                    .collect::<Vec<_>>()
+                    .join("/");
+                if relative == "crates/ketch-core/src/toml_file.rs" {
+                    continue;
+                }
+                let text = std::fs::read_to_string(entry.path()).expect("read source");
+                if !text.lines().any(names_toml_crate) {
+                    continue;
+                }
+                if NOT_YET_MOVED.contains(&relative.as_str()) {
+                    still_using.push(relative);
+                } else {
+                    offenders.push(relative);
+                }
+            }
+        }
+        assert!(
+            offenders.is_empty(),
+            "{offenders:?} name `toml` or `toml_edit`; go through crate::toml_file instead"
+        );
+        still_using.sort();
+        let mut expected = NOT_YET_MOVED.map(str::to_string).to_vec();
+        expected.sort();
+        assert_eq!(
+            still_using, expected,
+            "a file in NOT_YET_MOVED no longer names `toml`; take it off the list"
+        );
     }
 }
