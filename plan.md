@@ -8,7 +8,7 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | B65 | in progress | P0 | 2 | 0% | Cursor / grok 4.7 high |
 | R3 | in progress | P1 | 3 | 67% | Cursor / grok 4.7 high |
 | F8 | in progress | P2 | 3 | 0% | Cursor / grok 4.7 high |
-| M16.5 | todo | P2 | 1 | 0% | |
+| M16.5 | in progress | P2 | 1 | 10% | Claude Code / opus-5.5 |
 | M16.6 | todo | P2 | 3 | 0% | |
 | M16.7 | todo | P2 | 3 | 0% | |
 | M16.8 | todo | P2 | 2 | 0% | |
@@ -329,6 +329,8 @@ The creator decided (2026-10-03) to split M16 into the subtasks below, one pull 
 The manifest tests in `model.rs` (hooks round trip, schema validation of `ketch.toml`, `builtin.toml` and the docs' examples) and `extra_paths_toml_accepts_strings_and_tables` in `extra.rs` call `toml` directly. They switch to the module's parse, render and TOML-to-JSON calls; the assertions stay as they are.
 
 Done when neither file names `toml` and every test in both passes with unchanged assertions.
+
+Execution plan (Claude Code / opus-5.5): the hooks, schema and docs-example tests in `model.rs` and the `extra_paths` test in `extra.rs` call `toml_file::parse`, `render` and `Document::into_json` instead of `toml`; the builtin check validates the JSON entries directly, since they already are JSON; assertions untouched; fmt, clippy, nextest.
 
 ### M16.6. `manifest.rs` (`ketch.toml` user manifests) — waiting for the creator's choice of scope
 
