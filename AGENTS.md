@@ -58,13 +58,16 @@ cargo fmt --all                  # must be clean
 cargo build                      # debug binary at target/debug/ketch
 ```
 
-The repository is a Cargo workspace of three crates: the root package `ketch`
-(the binary), `crates/ketch-core` (the library it is built on) and
-`crates/ketch-ffi` (the core exported through UniFFI for the desktop apps).
+The repository is a Cargo workspace of four crates: the root package `ketch`
+(the binary), `crates/ketch-core` (the library it is built on),
+`crates/ketch-ffi` (the core exported through UniFFI for the desktop apps) and
+`crates/ketch-capi` (`ketch-ffi` behind a C ABI, for the Vala app).
 All are default members, so a bare `cargo test` or `cargo clippy` at the root
 covers them; `--workspace` says so explicitly, and is what the Justfile and CI
 pass. `just xcframework` builds `ketch-ffi` into the macOS app's XCFramework
 and Swift bindings; `just ffi-test` builds a debug one and runs its Swift test.
+`just capi-test` builds `ketch-capi` and runs its Vala test through Meson
+(Linux, with valac and json-glib installed).
 
 The Justfile wraps the same commands with `--locked`: `just fmt`, `just clippy`
 (or `just lint`), `just test`, and `just check` runs what CI runs on this
@@ -208,6 +211,7 @@ differ by orders of magnitude — the cargo home is the small one. Set
 | `crates/ketch-core/src/text.rs` | byte counts and truncation, spelled the same by the core and every renderer |
 | `crates/ketch-core/src/doctor.rs` | `ketch doctor`'s checks, shared by the command and `ketch-ffi` |
 | `crates/ketch-ffi/` | the core through UniFFI: a coarse, language-neutral surface of plain records, foreign traits for `Reporter` and `Decider` passed with a cancel token to each call, and a typed `KetchError` |
+| `crates/ketch-capi/` | `ketch-ffi` as `extern "C"` functions with JSON records, for front ends no UniFFI generator reaches: the cbindgen header (`include/ketch.h`), the payload schema, the hand-written `vapi/ketch.vapi` and its Meson-built Vala test. The one crate allowed hand-written `unsafe`, scoped to `src/abi.rs` |
 | `scripts/xcframework.sh` | `ketch-ffi` as an XCFramework for both macOS architectures, and its generated Swift bindings; `just xcframework` |
 | `desktop/macos/KetchCore/` | the Swift package wrapping that XCFramework and bindings (both build output), and the Swift test that drives the real core through them |
 | `src/ui.rs` | all terminal output, `Terminal`: the `Reporter` that draws the core's events, and `TerminalDecider`: the `Decider` that prompts on the terminal |

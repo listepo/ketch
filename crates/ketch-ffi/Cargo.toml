@@ -30,9 +30,15 @@ required-features = ["bindgen"]
 
 [features]
 bindgen = ["uniffi/cli"]
+# The JSON Schema of the records, for ketch-capi's payload schema; only its
+# drift test turns it on.
+schema = ["dep:schemars"]
 
 [dependencies]
 ketch-core = { path = "../ketch-core" }
+schemars = { version = "1.2", optional = true }
+# The records also cross ketch-capi's C ABI, as JSON.
+serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 # Proc-macro mode: the exported surface is the Rust code itself, no UDL file.
 uniffi = "0.32.2"

@@ -273,6 +273,14 @@ ffi-test:
     scripts/xcframework.sh --debug
     swift test --package-path {{macos_dir}}/KetchCore
 
+# Needs valac, Meson, Ninja and json-glib; the ketch-capi CI job runs it.
+# ketch-capi as the Linux app links it: the library, then the Vala test.
+capi-test:
+    cargo build --locked -p ketch-capi
+    rm -rf target/capi-meson
+    meson setup target/capi-meson crates/ketch-capi -Dcapi_dir="$PWD/target/debug"
+    meson test -C target/capi-meson --print-errorlogs
+
 # libFuzzer targets in fuzz/ (fuzz/README.md), on nightly and never part of `check`.
 # `just fuzz` lists them, `just fuzz <target> [secs]` runs one, `just fuzz all [secs]` each in turn.
 fuzz target="" secs="60":
