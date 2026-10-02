@@ -28,6 +28,25 @@ pub(crate) fn render<T: Serialize>(value: &T, what: impl Into<String>) -> Result
     toml::to_string_pretty(value).map_err(|e| Error::parse(what, e.to_string()))
 }
 
+/// A quoted, escaped TOML string, for text that writes TOML line by line.
+///
+/// Built by rendering a `toml::Value` so escaping is never hand-rolled: one
+/// writer, one answer to what quotes, backslashes and control bytes mean.
+pub(crate) fn string_literal(text: &str) -> String {
+    toml::Value::String(text.to_string()).to_string()
+}
+
+/// A TOML array of strings, escaped the same way [`string_literal`] escapes.
+pub(crate) fn string_list_literal(items: &[String]) -> String {
+    toml::Value::Array(
+        items
+            .iter()
+            .map(|i| toml::Value::String(i.clone()))
+            .collect(),
+    )
+    .to_string()
+}
+
 /// A parsed TOML document whose keys a caller reads, or fills in, before it
 /// becomes a typed value.
 ///
@@ -150,6 +169,23 @@ mod tests {
         };
         let text = render(&sample, "sample").unwrap();
         assert_eq!(parse::<Sample>(&text, "sample").unwrap(), sample);
+    }
+
+    #[test]
+    fn a_string_literal_escapes_quotes_backslashes_and_control_bytes() {
+        let text = "say \"hi\" \\ tab\there\u{1b}";
+        let literal = string_literal(text);
+        assert!(!literal.contains('\u{1b}'), "{literal}");
+        let parsed: toml::Table = parse(&format!("v = {literal}"), "literal").unwrap();
+        assert_eq!(parsed["v"].as_str(), Some(text));
+    }
+
+    #[test]
+    fn a_string_list_literal_parses_back_to_the_same_items() {
+        let items = vec!["a\"b".to_string(), "c\\d".to_string(), String::new()];
+        let literal = string_list_literal(&items);
+        let parsed: Sample = parse(&format!("name = \"x\"\ntags = {literal}"), "list").unwrap();
+        assert_eq!(parsed.tags, items);
     }
 
     #[test]

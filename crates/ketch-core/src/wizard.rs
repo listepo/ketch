@@ -11,6 +11,7 @@
 
 use crate::error::{Error, Result};
 use crate::model::{normalize_name, BinSpec, ExtraPath, Manifest, PackageKind, PackageRef};
+use crate::toml_file::{string_list_literal, string_literal};
 use std::collections::BTreeMap;
 
 /// The answers the questionnaire collected, before they become a manifest.
@@ -129,19 +130,19 @@ pub fn render(manifest: &Manifest) -> String {
 pub fn render_with_header(manifest: &Manifest, header: &str) -> String {
     let mut out = String::from(header);
     out.push_str("name = ");
-    out.push_str(&string(&manifest.name));
+    out.push_str(&string_literal(&manifest.name));
     out.push('\n');
     out.push_str("source = ");
-    out.push_str(&string(&manifest.source.to_string()));
+    out.push_str(&string_literal(&manifest.source.to_string()));
     out.push('\n');
     if let Some(description) = &manifest.description {
         out.push_str("description = ");
-        out.push_str(&string(description));
+        out.push_str(&string_literal(description));
         out.push('\n');
     }
     if let Some(homepage) = &manifest.homepage {
         out.push_str("homepage = ");
-        out.push_str(&string(homepage));
+        out.push_str(&string_literal(homepage));
         out.push('\n');
     }
     if manifest.kind != PackageKind::Auto {
@@ -151,7 +152,7 @@ pub fn render_with_header(manifest: &Manifest, header: &str) -> String {
             // Ruled out by the `if`; spelled out so a new variant fails here.
             PackageKind::Auto => "",
         };
-        out.push_str(&format!("kind = {}\n", string(kind)));
+        out.push_str(&format!("kind = {}\n", string_literal(kind)));
     }
     if manifest.prerelease {
         out.push_str("prerelease = true\n");
@@ -160,10 +161,13 @@ pub fn render_with_header(manifest: &Manifest, header: &str) -> String {
         out.push_str(&format!("strip_prefix = {levels}\n"));
     }
     if !manifest.provides.is_empty() {
-        out.push_str(&format!("provides = {}\n", list(&manifest.provides)));
+        out.push_str(&format!(
+            "provides = {}\n",
+            string_list_literal(&manifest.provides)
+        ));
     }
     if let Some(notes) = &manifest.notes {
-        out.push_str(&format!("notes = {}\n", string(notes)));
+        out.push_str(&format!("notes = {}\n", string_literal(notes)));
     }
     // A blank line before the list-shaped fields keeps the scalar block and
     // the list block readable as two groups, the way the documented example
@@ -184,16 +188,26 @@ pub fn render_with_header(manifest: &Manifest, header: &str) -> String {
     if !manifest.asset.include.is_empty() || !manifest.asset.exclude.is_empty() {
         out.push_str("\n[asset]\n");
         if !manifest.asset.include.is_empty() {
-            out.push_str(&format!("include = {}\n", list(&manifest.asset.include)));
+            out.push_str(&format!(
+                "include = {}\n",
+                string_list_literal(&manifest.asset.include)
+            ));
         }
         if !manifest.asset.exclude.is_empty() {
-            out.push_str(&format!("exclude = {}\n", list(&manifest.asset.exclude)));
+            out.push_str(&format!(
+                "exclude = {}\n",
+                string_list_literal(&manifest.asset.exclude)
+            ));
         }
     }
     if !manifest.asset.target.is_empty() {
         out.push_str("\n[asset.target]\n");
         for (target, glob) in &manifest.asset.target {
-            out.push_str(&format!("{} = {}\n", string(target), string(glob)));
+            out.push_str(&format!(
+                "{} = {}\n",
+                string_literal(target),
+                string_literal(glob)
+            ));
         }
     }
     out
@@ -237,46 +251,27 @@ pub fn split_list(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// A quoted, escaped TOML string.
-///
-/// Built by rendering a `toml::Value` so escaping is never hand-rolled: one
-/// writer, one answer to what quotes, backslashes and control bytes mean.
-fn string(text: &str) -> String {
-    toml::Value::String(text.to_string()).to_string()
-}
-
-/// A TOML array of strings, escaped the same way [`string`] escapes.
-fn list(items: &[String]) -> String {
-    toml::Value::Array(
-        items
-            .iter()
-            .map(|i| toml::Value::String(i.clone()))
-            .collect(),
-    )
-    .to_string()
-}
-
 fn extra_paths_toml(items: &[ExtraPath]) -> String {
     let atoms: Vec<String> = items
         .iter()
         .map(|entry| match entry {
-            ExtraPath::Path(path) => string(path),
+            ExtraPath::Path(path) => string_literal(path),
             ExtraPath::Spec(spec) => {
                 let mut parts = vec![
-                    format!("path = {}", string(&spec.path)),
+                    format!("path = {}", string_literal(&spec.path)),
                     format!(
                         "kind = {}",
-                        string(match spec.kind {
+                        string_literal(match spec.kind {
                             crate::model::ExtraKind::Man => "man",
                             crate::model::ExtraKind::Completion => "completion",
                         })
                     ),
                 ];
                 if let Some(shell) = spec.shell {
-                    parts.push(format!("shell = {}", string(shell.as_str())));
+                    parts.push(format!("shell = {}", string_literal(shell.as_str())));
                 }
                 if let Some(section) = &spec.section {
-                    parts.push(format!("section = {}", string(section)));
+                    parts.push(format!("section = {}", string_literal(section)));
                 }
                 format!("{{ {} }}", parts.join(", "))
             }
@@ -290,10 +285,14 @@ fn extra_paths_toml(items: &[ExtraPath]) -> String {
 fn bin_entry(spec: &BinSpec) -> String {
     match (&spec.path, &spec.name) {
         (Some(path), Some(name)) => {
-            format!("{{ path = {}, name = {} }}", string(path), string(name))
+            format!(
+                "{{ path = {}, name = {} }}",
+                string_literal(path),
+                string_literal(name)
+            )
         }
-        (Some(path), None) => format!("{{ path = {} }}", string(path)),
-        (None, Some(name)) => format!("{{ name = {} }}", string(name)),
+        (Some(path), None) => format!("{{ path = {} }}", string_literal(path)),
+        (None, Some(name)) => format!("{{ name = {} }}", string_literal(name)),
         // `Manifest::validate` refuses this before a render could reach it;
         // empty keeps the output well-formed if that ever changes.
         (None, None) => String::new(),
