@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Copyright (c) 2026 Ivan Tugay
-# SPDX-License-Identifier: GPL-3.0-only
-# Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
 
 # Install Hugo HUGO_VERSION (linux-amd64) from the project's own release, checked against the
 # checksum published beside it: the same thing ketch does for everything it installs.
