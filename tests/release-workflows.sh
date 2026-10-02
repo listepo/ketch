@@ -1,8 +1,8 @@
 #!/bin/sh
 # The release workflows must parse, and the strings that hold them together
 # must stay: the patches scripts/dist-generate.sh makes to the generated
-# release.yml, the two entry points that dispatch it, and the title contract
-# between release-plz.toml, release-plz.yml and cliff.toml.
+# release.yml, the one entry point that tags and dispatches it (bump.yml), and
+# the subject contract between release-plz.toml, release.sh and cliff.toml.
 set -eu
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -10,7 +10,7 @@ wf="$ROOT/.github/workflows"
 
 command -v ruby >/dev/null 2>&1 \
     || { echo "release-workflows: ruby is required to parse the workflows" >&2; exit 1; }
-for f in release bump release-plz tap; do
+for f in release bump tap; do
     [ -f "$wf/$f.yml" ] || { echo "release-workflows: missing $wf/$f.yml" >&2; exit 1; }
     ruby -ryaml -e "YAML.load_file(ARGV[0])" "$wf/$f.yml"
 done
@@ -38,23 +38,25 @@ need "$r" 'name: Smoke test' 'the smoke test'
 need "$r" 'sha256sum $(ls ketch-\*.tar.gz | sort) > SHA256SUMS' 'the aggregate SHA256SUMS'
 need "$r" 'uses: ./.github/workflows/tap.yml' 'the tap publish job'
 need "$r" 'pyrlyn/infra/.github/actions/notify-release-failure@' 'the release-failure job'
+need "$r" 'gh release upload "${{ needs.plan.outputs.tag }}" artifacts/\*' 'the upload to bump'"'"'s draft (create-release = false)'
+if grep -q 'gh release create' "$r"; then
+    echo "release-workflows: release.yml creates a release (and a tag); bump.yml does that" >&2
+    exit 1
+fi
+[ ! -f "$wf/release-plz.yml" ] \
+    || { echo "release-workflows: release-plz.yml is back; bump.yml is the only release path" >&2; exit 1; }
+need "$ROOT/dist-workspace.toml" '^create-release = false' 'create-release = false'
+need "$ROOT/release-plz.toml" '^git_tag_enable = false' 'git_tag_enable = false'
 
 b="$wf/bump.yml"
 need "$b" 'options: \[patch, minor, major\]' 'the patch/minor/major choice'
 need "$b" 'uses: pyrlyn/infra/.github/workflows/bump.yml@' 'the shared bump workflow'
 need "$b" 'release-script: scripts/release.sh' 'the release.sh call'
-need "$b" 'verify-command:' 'the verify gate'
+need "$b" 'BUMP_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}' 'the token that gives the bump pull request its CI'
+need "$b" 'release-workflows: release.yml' 'the release.yml dispatch'
 need "$b" 'issues: write' 'issues: write for the shared notify-failure job'
 
-p="$wf/release-plz.yml"
-need "$p" 'uses: pyrlyn/infra/.github/workflows/release-plz.yml@' 'the shared release-plz workflow'
-need "$p" '  ^chore: release v' 'the merge gate'
-need "$p" 'release-branch-prefix: release-plz-' 'the release-plz branch check'
-need "$p" 'verify-command:' 'the verify gate'
-need "$p" 'release-workflow: release.yml' 'the release.yml dispatch'
-need "$p" 'issues: write' 'issues: write for the shared notify-failure job'
-
-need "$ROOT/release-plz.toml" 'pr_name = "chore: release v{{ version }}"' 'the pull request title the gate matches'
+need "$ROOT/release-plz.toml" 'pr_name = "chore: release v{{ version }}"' 'the version commit subject'
 need "$ROOT/release-plz.toml" 'changelog_config = "cliff.toml"' 'the shared git-cliff config'
 need "$ROOT/cliff.toml" 'message = "^chore: release v", skip = true' 'the skipped version commit'
 need "$ROOT/scripts/release.sh" 'git commit --quiet -m "chore: release v$version"' 'the version commit subject'

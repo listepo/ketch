@@ -1,20 +1,19 @@
 #!/usr/bin/env bash
-# The one place a release version is decided, so `just release`, bump.yml and
-# release-plz.yml cannot drift apart.
+# The one place a release version is decided, so `just release` and bump.yml
+# cannot drift apart.
 #
-#   scripts/release.sh [patch|minor|major] [--dry-run|--local|--no-bump]
+#   scripts/release.sh [patch|minor|major] [--dry-run|--local]
 #
 # The version in Cargo.toml is the version to release. It is raised only when
-# that version is already tagged, so a version a merged release pull request
-# wrote is released as it stands. dist creates the tag and the GitHub release
-# itself, once every target has built (dispatch-releases in
-# dist-workspace.toml), so this script's job ends at "the version commit is on
-# origin/main and release.yml is running".
+# that version is already tagged. This script never pushes and never tags: the
+# Bump workflow (pyrlyn/infra bump.yml) runs it with --local, opens a pull
+# request with the version commit, rebase-merges it once the required checks
+# pass, then tags the commit that landed on main, creates the draft release and
+# dispatches release.yml, where dist uploads the tarballs and publishes it.
 #
+#   (none)     start the Bump workflow (gh workflow run bump.yml -f level=...)
 #   --dry-run  print the version that would be released; change nothing
-#   --local    make the version commit, but neither push nor dispatch
-#   --no-bump  release the version in Cargo.toml only if it is untagged; never
-#              raise it (release-plz.yml, after a merged release pull request)
+#   --local    make the version commit and stop (what bump.yml runs)
 #
 # The version is written in one place and read as the tag: `ketch self upgrade`
 # compares the running binary's version against the release tag. Bumping it by
@@ -33,7 +32,12 @@ case "$level" in
   *) echo "level must be patch, minor or major (got '$level')" >&2; exit 2 ;;
 esac
 case "$mode" in
-  "" | --dry-run | --local | --no-bump) ;;
+  "")
+    # The only way to a release: the Bump workflow (PR, checks, merge, tag).
+    gh workflow run bump.yml -f level="$level"
+    echo "Bump and release ($level) started: gh run list --workflow bump.yml"
+    exit 0 ;;
+  --dry-run | --local) ;;
   *) echo "unknown option: $mode" >&2; exit 2 ;;
 esac
 
@@ -70,11 +74,7 @@ if git rev-parse -q --verify "refs/tags/v$current" >/dev/null; then
 fi
 
 echo "current $current -> release v$version"
-if [ "$mode" = "--no-bump" ] && [ "$version" != "$current" ]; then
-  echo "v$current is already released; the next version comes from a release pull request"
-  exit 0
-fi
-# The workflow reads this to know which tag it dispatched. Not a `&&` one-liner:
+# The workflow reads this to know which tag to make. Not a `&&` one-liner:
 # when the variable is unset the test fails, and under `set -e` a failing
 # top-level list ends the script.
 if [ -n "${GITHUB_OUTPUT:-}" ]; then
@@ -121,21 +121,7 @@ if [ "$version" != "$current" ]; then
 
   git add Cargo.toml Cargo.lock CHANGELOG.md
   git commit --quiet -m "chore: release v$version"
-
-  if [ "$mode" = "--local" ]; then
-    echo "local: version commit made, not pushed"
-    exit 0
-  fi
-  git push --quiet origin HEAD:main
-elif [ "$mode" = "--local" ]; then
+  echo "local: version commit made, not pushed, not tagged"
+else
   echo "local: v$version is not tagged yet; nothing to commit"
-  exit 0
 fi
-
-# dist lifts this section as the release notes, and tests/release_changelog.rs
-# requires it; a release pull request that lost it must not ship.
-git show "origin/main:CHANGELOG.md" 2>/dev/null | grep -q "^## \[$version\](" \
-  || die "CHANGELOG.md on origin/main has no entry for $version"
-
-gh workflow run release.yml --ref main --field tag="v$version"
-echo "release v$version dispatched"

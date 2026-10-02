@@ -1,15 +1,19 @@
 name: Bump and release
 
-# The first way in: raise the version, land one commit, and start the dist
-# release workflow for it, through pyrlyn/infra's bump.yml. It first runs the
-# gate every pull request passes (verify-command, on macOS, Linux and Windows)
-# on the commit the release is cut from, then `scripts/release.sh <level>`,
-# which commits `chore: release vX.Y.Z` and dispatches release.yml. The version
-# commit touches only Cargo.toml, Cargo.lock and CHANGELOG.md, so what is
-# tested is what ships. No `dry_run` input: a green "Bump and release" reads as
-# a release. The preview is local only: `scripts/release.sh <level> --dry-run`.
-# A failed run opens a `release-failure` issue (infra notify-failure job, issues: write).
-# Pinned to pyrlyn/infra ci/notify-release-failure (on top of #11); repin to its merge commit.
+# The only way to a release, and the only thing that creates a `v*` tag
+# (pyrlyn/infra bump.yml). `scripts/release.sh <level> --local` makes one
+# `chore: release vX.Y.Z` commit (Cargo.toml, Cargo.lock, CHANGELOG.md); bump
+# pushes it to `release/bump-vX.Y.Z` and opens a pull request into main with
+# RELEASE_PLZ_TOKEN, so the pull request's own CI (ci.yml, pipeline.yml) runs
+# and reports every required check of protect-main. Once they are all green,
+# bump rebase-merges it with GITHUB_TOKEN (no ruleset bypass), reads back the
+# commit that landed on main, tags it, creates a draft release with the
+# CHANGELOG.md entry and dispatches release.yml on the tag: dist
+# (`create-release = false`) uploads the tarballs and SHA256SUMS, publishes the
+# release, and the tap job updates the cask. Red checks, a timeout or a failed
+# merge close the pull request: no tag, no release. `dry-run` stops after the
+# checks. The local preview: `scripts/release.sh <level> --dry-run`.
+# A failed run opens a `release-failure` issue (issues: write).
 on:
   workflow_dispatch:
     inputs:
@@ -18,27 +22,39 @@ on:
         default: patch
         type: choice
         options: [patch, minor, major]
+      dry-run:
+        description: open the version pull request and wait for its checks, then close it
+        default: false
+        type: boolean
+      release-untagged-head:
+        description: release the untagged version already on main (nothing to commit) as it stands
+        default: false
+        type: boolean
 
 permissions:
   contents: read
 
 jobs:
   bump:
-    uses: pyrlyn/infra/.github/workflows/bump.yml@d709124d53dd4923eff8f594b3155842508b0049
+    uses: pyrlyn/infra/.github/workflows/bump.yml@a4f93a2606a5dd8f697ad3d876440ab3e2eb4ae9 # main
     permissions:
-      contents: write # push the version commit
-      actions: write # dispatch release.yml, cancel-run
+      contents: write # the bump branch, the tag and the release
+      pull-requests: write # merge or close the bump pull request
+      actions: write # dispatch release.yml (and ci.yml, pipeline.yml for release-untagged-head)
+      checks: read # wait for the required checks
+      statuses: read
       issues: write # notify-failure: a failed run opens a release-failure issue
     with:
       level: ${{ inputs.level }}
+      dry-run: ${{ inputs.dry-run }}
+      release-untagged-head: ${{ inputs.release-untagged-head }}
       release-script: scripts/release.sh
       # git-cliff and the Rust (scripts/release.sh runs cargo) at the mise.toml pins.
       mise-install-args: rust git-cliff
-      verify-os: '["macos-latest", "ubuntu-latest", "windows-latest"]'
-      verify-mise-install-args: rust
-      verify-tools: nextest
-      verify-command: |
-        if [ "$RUNNER_OS" = macOS ]; then cargo fmt --all -- --check; fi
-        cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
-        cargo nextest run --workspace --all-targets --locked
-        cargo nextest run --workspace --all-targets --locked --features tui
+      # The workflows that report protect-main's required checks when dispatched.
+      ci-workflows: |
+        ci.yml
+        pipeline.yml
+      release-workflows: release.yml
+    secrets:
+      BUMP_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}

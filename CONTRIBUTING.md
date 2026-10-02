@@ -29,7 +29,8 @@ gh workflow run ci.yml --ref <branch>
 
 Commits follow [conventional commits](https://www.conventionalcommits.org). A
 change that alters or removes existing CLI behavior is `feat!:` / `fix!:` or
-carries a `BREAKING CHANGE:` footer so release-plz bumps the minor.
+carries a `BREAKING CHANGE:` footer, so the changelog marks it breaking and the
+next Bump and release is run with `level: minor`.
 
 ## Docs
 
