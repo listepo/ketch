@@ -1134,3 +1134,13 @@ Done when neither file names `toml` and every test in both passes with unchanged
 Execution plan (Claude Code / opus-5.5): the hooks, schema and docs-example tests in `model.rs` and the `extra_paths` test in `extra.rs` call `toml_file::parse`, `render` and `Document::into_json` instead of `toml`; the builtin check validates the JSON entries directly, since they already are JSON; assertions untouched; fmt, clippy, nextest.
 
 Status: done.
+
+### M16.8. A guard that only the owner imports `toml`
+
+A test in the owning module scans the Rust sources of every workspace crate (`src/`, `crates/*/src/`) and fails when a file other than the owner names `toml::`, `toml_edit` or `use toml`. Until M16.6 and M16.7 land, `manifest.rs` and `lockfile.rs` sit on an explicit allow-list in that test, each with a comment naming the subtask that removes it.
+
+Done when the test fails on a deliberate `toml::` use in another module (checked once by hand, not committed), passes on the tree, and the allow-list holds only the files of subtasks still open.
+
+Execution plan (Claude Code / opus-5.5): a test in `toml_file.rs` walks `src/` and `crates/*/src/` with `walkdir`, flags a line that paths through or imports `toml`/`toml_edit` (comments and file names such as `"ketch.toml"` excepted), and fails on any file but the owner; `manifest.rs` and `lockfile.rs` sit on a commented `NOT_YET_MOVED` list, and the test also fails when a listed file stops naming `toml`, so M16.6 and M16.7 must take their entry off. A unit test for the line scan; a deliberate `toml::` line in `push.rs` made the guard fail (not committed); fmt, clippy, nextest.
+
+Status: done. `manifest.rs` and `lockfile.rs` stay on the guard's `NOT_YET_MOVED` list until M16.6 and M16.7.

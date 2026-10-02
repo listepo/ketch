@@ -10,7 +10,6 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | F8 | in progress | P2 | 3 | 0% | Cursor / grok 4.7 high |
 | M16.6 | todo | P2 | 3 | 0% | |
 | M16.7 | todo | P2 | 3 | 0% | |
-| M16.8 | in progress | P2 | 2 | 10% | Claude Code / opus-5.5 |
 | M17 | in progress | P2 | 4 | 90% | Cursor / grok 4.7 |
 | R5 | in progress | P2 | 4 | 90% | Claude Code / opus-5.5 |
 | R6 | in progress | P2 | 4 | 90% | Claude Code / opus-5.5 |
@@ -340,14 +339,6 @@ Not to be started before the creator picks A or B. Done when `manifest.rs` impor
 - **B. TOML calls only.** `lockfile.rs` keeps its types, `validate`, header and file handling; only the parse and render calls go through the module.
 
 Not to be started before the creator picks A or B. Done when `lockfile.rs` imports no `toml`, `ketch.lock` is written byte-for-byte as before, `docs/LOCKFILE.md` still matches, its entry is gone from M16.8's allow-list, and the tests pass unchanged.
-
-### M16.8. A guard that only the owner imports `toml`
-
-A test in the owning module scans the Rust sources of every workspace crate (`src/`, `crates/*/src/`) and fails when a file other than the owner names `toml::`, `toml_edit` or `use toml`. Until M16.6 and M16.7 land, `manifest.rs` and `lockfile.rs` sit on an explicit allow-list in that test, each with a comment naming the subtask that removes it.
-
-Done when the test fails on a deliberate `toml::` use in another module (checked once by hand, not committed), passes on the tree, and the allow-list holds only the files of subtasks still open.
-
-Execution plan (Claude Code / opus-5.5): a test in `toml_file.rs` walks `src/` and `crates/*/src/` with `walkdir`, flags a line that paths through or imports `toml`/`toml_edit` (comments and file names such as `"ketch.toml"` excepted), and fails on any file but the owner; `manifest.rs` and `lockfile.rs` sit on a commented `NOT_YET_MOVED` list, and the test also fails when a listed file stops naming `toml`, so M16.6 and M16.7 must take their entry off. A unit test for the line scan; a deliberate `toml::` line in `push.rs` made the guard fail (not committed); fmt, clippy, nextest.
 
 ### D2. `ketch-ffi`: records and operations the apps need
 
