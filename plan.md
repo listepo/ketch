@@ -329,7 +329,7 @@ The creator decided (2026-10-03) to split M16 into the subtasks below, one pull 
 - **A. Whole move.** Reading, validating, editing and atomically writing manifest files move into the owning module (or a submodule of it); `manifest.rs` keeps only resolution across the four tiers.
 - **B. TOML calls only.** `manifest.rs` keeps `parse_registry`, `write_bins`, `write_manifest` and `replace_file`; only the `toml`/`toml_edit` calls move into the module, behind an edit helper for "insert this key into the table for this package, keep the rest of the document as it was".
 
-Not to be started before the creator picks A or B. Done when `manifest.rs` imports neither `toml` nor `toml_edit`, `write_bins` still leaves the rest of the file byte-for-byte, the fuzz entry point still builds, its entry is gone from M16.8's allow-list, and the tests pass unchanged.
+Not to be started before the creator picks A or B. Done when `manifest.rs` imports neither `toml` nor `toml_edit`, `write_bins` still leaves the rest of the file byte-for-byte, the fuzz entry point still builds, its entry is gone from `NOT_YET_MOVED` in `toml_file.rs` (M16.8's guard), and the tests pass unchanged.
 
 ### M16.7. `lockfile.rs` (`ketch.lock`) — waiting for the creator's choice of scope
 
@@ -338,7 +338,7 @@ Not to be started before the creator picks A or B. Done when `manifest.rs` impor
 - **A. Whole move.** The `Lockfile` types' loading, `validate` and writing move into the owning module (or a submodule of it); `lockfile.rs` keeps what `ketch lock` and `ketch sync` do with a lockfile.
 - **B. TOML calls only.** `lockfile.rs` keeps its types, `validate`, header and file handling; only the parse and render calls go through the module.
 
-Not to be started before the creator picks A or B. Done when `lockfile.rs` imports no `toml`, `ketch.lock` is written byte-for-byte as before, `docs/LOCKFILE.md` still matches, its entry is gone from M16.8's allow-list, and the tests pass unchanged.
+Not to be started before the creator picks A or B. Done when `lockfile.rs` imports no `toml`, `ketch.lock` is written byte-for-byte as before, `docs/LOCKFILE.md` still matches, its entry is gone from `NOT_YET_MOVED` in `toml_file.rs` (M16.8's guard), and the tests pass unchanged.
 
 ### D2. `ketch-ffi`: records and operations the apps need
 
