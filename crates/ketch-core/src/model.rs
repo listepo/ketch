@@ -647,7 +647,7 @@ impl AssetSelector {
 }
 
 /// One executable to expose on PATH.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 // `Manifest::validate` refuses an entry with neither key.
 #[cfg_attr(

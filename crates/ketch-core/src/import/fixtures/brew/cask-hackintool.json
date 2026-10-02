@@ -1,0 +1,94 @@
+{
+ "token": "hackintool",
+ "full_token": "hackintool",
+ "old_tokens": [],
+ "tap": "homebrew/cask",
+ "name": [
+  "Hackintool"
+ ],
+ "desc": "Hackintosh patching tool",
+ "homepage": "https://github.com/headkaze/Hackintool",
+ "url": "https://github.com/headkaze/Hackintool/releases/download/4.1.5/Hackintool.zip",
+ "url_specs": {},
+ "version": "4.1.5",
+ "autobump": true,
+ "no_autobump_message": null,
+ "skip_livecheck": false,
+ "installed": null,
+ "installed_time": null,
+ "bundle_version": null,
+ "bundle_short_version": null,
+ "pinned": false,
+ "pinned_version": null,
+ "outdated": false,
+ "sha256": "no_check",
+ "artifacts": [
+  {
+   "app": [
+    "Hackintool.app"
+   ],
+   "target": "/Applications/Hackintool.app"
+  },
+  {
+   "zap": [
+    {
+     "trash": [
+      "~/Library/Caches/com.apple.helpd/Generated/com.Headsoft.Hackintool.help*",
+      "~/Library/Caches/com.Headsoft.Hackintool",
+      "~/Library/Cookies/com.Headsoft.Hackintool.binarycookies",
+      "~/Library/Preferences/com.Headsoft.Hackintool.plist"
+     ]
+    }
+   ]
+  }
+ ],
+ "caveats": null,
+ "caveats_rosetta": null,
+ "depends_on": {
+  "macos": {}
+ },
+ "conflicts_with": null,
+ "container": null,
+ "rename": [],
+ "auto_updates": true,
+ "deprecated": false,
+ "deprecation_date": null,
+ "deprecation_reason": null,
+ "deprecation_replacement_formula": null,
+ "deprecation_replacement_cask": null,
+ "deprecate_args": null,
+ "disabled": true,
+ "disable_date": "2026-09-01",
+ "disable_reason": "fails_gatekeeper_check",
+ "disable_replacement_formula": null,
+ "disable_replacement_cask": null,
+ "disable_args": {
+  "date": "2026-09-01",
+  "because": "fails_gatekeeper_check",
+  "replacement_formula": null,
+  "replacement_cask": null
+ },
+ "tap_git_head": "d8dfa8edc688822d5aa5a32baff9576b77e4184e",
+ "languages": [],
+ "ruby_source_path": "Casks/h/hackintool.rb",
+ "ruby_source_checksum": {
+  "sha256": "128a7e4aa336bea120b92bcd613a3833cda5c1395fcc5dcffafd61ff27734371"
+ },
+ "variations": {},
+ "supported_platforms": [
+  "golden_gate",
+  "arm64_golden_gate",
+  "tahoe",
+  "arm64_tahoe",
+  "sequoia",
+  "arm64_sequoia",
+  "sonoma",
+  "arm64_sonoma",
+  "ventura",
+  "arm64_ventura",
+  "monterey",
+  "arm64_monterey",
+  "big_sur",
+  "arm64_big_sur"
+ ]
+}

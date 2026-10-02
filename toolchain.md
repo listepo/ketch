@@ -75,6 +75,7 @@ Project programs and direct packages from manifests.
 | uniffi | local (`crates/ketch-ffi`) | https://github.com/mozilla/uniffi-rs | Exports the core to Swift (and later other languages) as `ketch-ffi`; its `cli` feature is the in-tree `uniffi-bindgen` (`just xcframework`) |
 | toml | local | https://crates.io/crates/toml | Config |
 | toml_edit | local | https://crates.io/crates/toml_edit | Writing a chosen `bin` into a user manifest, keeping the rest of the file |
+| serde-saphyr | local | https://crates.io/crates/serde-saphyr | Reading winget-pkgs installer manifests (YAML) for `ketch import winget` |
 | trycmd | local | https://crates.io/crates/trycmd | Rust dependency |
 | typed-path | local | https://crates.io/crates/typed-path | Cross-platform path types for archive members |
 | ureq | local | https://crates.io/crates/ureq | Rust dependency |

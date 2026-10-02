@@ -7,6 +7,7 @@ Usage: ketch[EXE] [OPTIONS] <COMMAND>
 
 Commands:
   install      Install one or more packages [alias: i]
+  import       Add a winget, Homebrew or Linux package as a ketch manifest and install it
   uninstall    Remove installed packages [aliases: remove, rm]
   list         Show installed and available packages [alias: ls]
   outdated     Show installed packages that have a newer release

@@ -17,8 +17,8 @@ mod ui;
 // when they lived here, so `crate::config` and the rest keep resolving in
 // `cmd/`, `ui` and `tui` and the binary's own paths did not have to change.
 use ketch_core::{
-    cancel, changelog, config, decide, diff, doctor, error, install, listing, lockfile, log,
-    manifest, model, platform, process, push, registry, report, resolve, self_update, shell,
+    cancel, changelog, config, decide, diff, doctor, error, import, install, listing, lockfile,
+    log, manifest, model, platform, process, push, registry, report, resolve, self_update, shell,
     source, state, stats, text, wizard,
 };
 
@@ -125,6 +125,7 @@ fn run(cli: Cli) -> Result<()> {
 
     match cli.command {
         Command::Install(args) => cmd::pkg::install(&cfg, args),
+        Command::Import { command } => cmd::import::run(&cfg, command),
         Command::Uninstall(args) => cmd::pkg::uninstall(&cfg, args),
         Command::Upgrade(args) => cmd::pkg::upgrade(&cfg, args),
         Command::Rollback(args) => cmd::pkg::rollback(&cfg, args),

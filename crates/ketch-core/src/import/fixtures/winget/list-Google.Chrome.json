@@ -1,0 +1,22 @@
+[
+ {
+  "name": "154.0.8037.93",
+  "type": "dir"
+ },
+ {
+  "name": "Beta",
+  "type": "dir"
+ },
+ {
+  "name": "Canary",
+  "type": "dir"
+ },
+ {
+  "name": "Dev",
+  "type": "dir"
+ },
+ {
+  "name": "EXE",
+  "type": "dir"
+ }
+]

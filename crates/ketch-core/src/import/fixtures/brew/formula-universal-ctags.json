@@ -1,0 +1,165 @@
+{
+ "name": "universal-ctags",
+ "full_name": "universal-ctags",
+ "tap": "homebrew/core",
+ "oldnames": [],
+ "aliases": [],
+ "versioned_formulae": [],
+ "desc": "Maintained ctags implementation",
+ "license": "GPL-2.0-or-later",
+ "homepage": "https://ctags.io/",
+ "versions": {
+  "stable": "6.2.1",
+  "head": "HEAD",
+  "bottle": true
+ },
+ "urls": {
+  "stable": {
+   "url": "https://github.com/universal-ctags/ctags/releases/download/v6.2.1/universal-ctags-6.2.1.tar.gz",
+   "tag": null,
+   "revision": null,
+   "using": null,
+   "checksum": "2c63efe9e0e083dc50e6fdd8c5414781cc8873d8c8940cf553c01870ed962f8c"
+  },
+  "head": {
+   "url": "https://github.com/universal-ctags/ctags.git",
+   "branch": "master",
+   "using": null
+  }
+ },
+ "patches": [],
+ "revision": 0,
+ "version_scheme": 0,
+ "compatibility_version": 1,
+ "autobump": true,
+ "no_autobump_message": null,
+ "skip_livecheck": false,
+ "bottle": {
+  "stable": {
+   "rebuild": 0,
+   "root_url": "https://ghcr.io/v2/homebrew/core",
+   "files": {
+    "arm64_golden_gate": {
+     "cellar": ":any",
+     "url": "https://ghcr.io/v2/homebrew/core/universal-ctags/blobs/sha256:71c3e7972e8e16641229b740e4357f2a888b29ff7130f2e05037ba71bd7e810a",
+     "sha256": "71c3e7972e8e16641229b740e4357f2a888b29ff7130f2e05037ba71bd7e810a"
+    },
+    "arm64_tahoe": {
+     "cellar": ":any",
+     "url": "https://ghcr.io/v2/homebrew/core/universal-ctags/blobs/sha256:04462c7b1fad942219dd2eabd936b74d882663299c9463774cb0f903ddb1aaa0",
+     "sha256": "04462c7b1fad942219dd2eabd936b74d882663299c9463774cb0f903ddb1aaa0"
+    },
+    "arm64_sequoia": {
+     "cellar": ":any",
+     "url": "https://ghcr.io/v2/homebrew/core/universal-ctags/blobs/sha256:25fe4f06afaa90e2ae0a9ff5db65907d7b10661277d1a059fc4acafdf903ec5c",
+     "sha256": "25fe4f06afaa90e2ae0a9ff5db65907d7b10661277d1a059fc4acafdf903ec5c"
+    },
+    "arm64_sonoma": {
+     "cellar": ":any",
+     "url": "https://ghcr.io/v2/homebrew/core/universal-ctags/blobs/sha256:abac0bf20153b9a1cbdccf1f95ab8fee907adf4607873b5b63fda6758d47edd6",
+     "sha256": "abac0bf20153b9a1cbdccf1f95ab8fee907adf4607873b5b63fda6758d47edd6"
+    },
+    "sonoma": {
+     "cellar": ":any",
+     "url": "https://ghcr.io/v2/homebrew/core/universal-ctags/blobs/sha256:b0b3270037bd744571517a734136213474ba9aaa304977137d4f78cc35490d62",
+     "sha256": "b0b3270037bd744571517a734136213474ba9aaa304977137d4f78cc35490d62"
+    },
+    "arm64_linux": {
+     "cellar": ":any_skip_relocation",
+     "url": "https://ghcr.io/v2/homebrew/core/universal-ctags/blobs/sha256:b4529f5ea92739c6a603e9d8a301e7f2fdd5c0ee07aeeeb39f9852f50d805de9",
+     "sha256": "b4529f5ea92739c6a603e9d8a301e7f2fdd5c0ee07aeeeb39f9852f50d805de9"
+    },
+    "x86_64_linux": {
+     "cellar": ":any_skip_relocation",
+     "url": "https://ghcr.io/v2/homebrew/core/universal-ctags/blobs/sha256:2970ae4a8b7332e017abf1f4e0286864ef48ca5f6f7f0c93224347f26c05458a",
+     "sha256": "2970ae4a8b7332e017abf1f4e0286864ef48ca5f6f7f0c93224347f26c05458a"
+    }
+   }
+  }
+ },
+ "pour_bottle_only_if": null,
+ "keg_only": false,
+ "keg_only_reason": null,
+ "options": [],
+ "build_dependencies": [
+  "docutils",
+  "pkgconf",
+  "python@3.14"
+ ],
+ "dependencies": [
+  "jansson",
+  "libyaml",
+  "pcre2"
+ ],
+ "test_dependencies": [],
+ "recommended_dependencies": [],
+ "optional_dependencies": [],
+ "uses_from_macos": [
+  "libxml2"
+ ],
+ "uses_from_macos_bounds": [
+  {}
+ ],
+ "requirements": [],
+ "conflicts_with": [
+  "ctags"
+ ],
+ "conflicts_with_reasons": [
+  "both install `ctags` binaries"
+ ],
+ "link_overwrite": [],
+ "caveats": null,
+ "installed": [],
+ "linked_keg": null,
+ "pinned": false,
+ "outdated": false,
+ "deprecated": false,
+ "deprecation_date": null,
+ "deprecation_reason": null,
+ "deprecation_replacement_formula": null,
+ "deprecation_replacement_cask": null,
+ "deprecate_args": null,
+ "disabled": false,
+ "disable_date": null,
+ "disable_reason": null,
+ "disable_replacement_formula": null,
+ "disable_replacement_cask": null,
+ "disable_args": null,
+ "post_install_steps": [],
+ "post_install_defined": false,
+ "service": null,
+ "tap_git_head": "3a68ac0da05ebd71709b351c82a6353104945c4e",
+ "ruby_source_path": "Formula/u/universal-ctags.rb",
+ "ruby_source_checksum": {
+  "sha256": "80212b71e807c565c97aeb691be47abcaa46e8cff286cc28629843f168dcdac3"
+ },
+ "head_dependencies": {
+  "build_dependencies": [
+   "autoconf",
+   "automake",
+   "docutils",
+   "pkgconf",
+   "python@3.14"
+  ],
+  "dependencies": [
+   "jansson",
+   "libyaml",
+   "pcre2"
+  ],
+  "test_dependencies": [],
+  "recommended_dependencies": [],
+  "optional_dependencies": [],
+  "uses_from_macos": [
+   "libxml2"
+  ],
+  "uses_from_macos_bounds": [
+   {}
+  ]
+ },
+ "variations": {},
+ "executables": [
+  "ctags",
+  "optscript",
+  "readtags"
+ ]
+}

@@ -5,6 +5,7 @@
 //! implementation, so the same logic serves every command.
 
 pub mod config;
+pub mod import;
 pub mod lock;
 pub mod pkg;
 pub mod query;

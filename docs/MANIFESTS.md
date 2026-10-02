@@ -37,6 +37,15 @@ so the questionnaire works from a script as well as a terminal. From there,
 offering the file to everyone is a registry pull request — see
 [REGISTRY.md](REGISTRY.md).
 
+When the package is already in winget, Homebrew or Arch Linux, `ketch import`
+writes the manifest from that definition instead, keeping only the fields
+below that ketch needs — see
+[`ketch import`](COMMANDS.md#ketch-import-wingetbrewlinux-name---dry-run---yes).
+
+```bash
+ketch import brew codex --dry-run   # print ~/.ketch/manifests/codex.toml
+```
+
 ## Editor support
 
 [manifest.schema.json](https://github.com/pyrlyn/ketch/blob/main/docs/manifest.schema.json)
