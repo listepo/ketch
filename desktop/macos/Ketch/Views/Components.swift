@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // The pieces every screen is built from, one per component in the design's
 // Components page: the page header, the package row, app icon, badge, tint
 // button, search field, busy banner and the running-operation bar. Kept apart

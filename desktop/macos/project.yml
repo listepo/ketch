@@ -55,7 +55,7 @@ targets:
         INFOPLIST_FILE: Ketch/Info.plist
         INFOPLIST_KEY_CFBundleDisplayName: Ketch
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
-        INFOPLIST_KEY_NSHumanReadableCopyright: "GPL-3.0-only OR royalty-free OR commercial licence"
+        INFOPLIST_KEY_NSHumanReadableCopyright: "GPL-3.0-or-later OR royalty-free OR commercial licence"
         # Not sandboxed: the app manages ~/.ketch (or KETCH_ROOT), links into
         # /Applications and shares the CLI's lock, none of which a sandbox
         # container allows.

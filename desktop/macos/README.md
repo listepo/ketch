@@ -169,7 +169,7 @@ XCFramework and the UniFFI bindings. Then:
 2. Add `Ketch/Core/LiveKetchCore.swift`: a `KetchCoreProtocol` over the
    generated `KetchCore` object that converts its records and events to the
    types in `KetchCoreProtocol.swift`, maps its `KetchError`, wraps the
-   app's `Reporter`/`Decider` in the generated callback interfaces, and
+   app's `Reporter`/`Decider` in the generated foreign traits per call, and
    forwards `CancelToken.onCancel` to the FFI token.
 3. Return it from `CoreFactory.make`.
 
