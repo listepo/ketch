@@ -22,7 +22,7 @@ lint:
 # the same gate under the name people type
 alias clippy := lint
 
-test: && dunnage
+test: && swarfr
     cargo nextest run --workspace --all-targets --locked
 
 test-install:
@@ -228,11 +228,11 @@ cache-autoclean:
     {{cache}} --autoclean
 
 # Lossless cleanup of this checkout's cargo target dir (compress + dedupe); never deletes.
-dunnage:
+swarfr:
     #!/usr/bin/env sh
-    command -v dunnage >/dev/null || { echo "dunnage not found; install it with: ketch install dunnage"; exit 0; }
+    command -v swarfr >/dev/null || { echo "swarfr not found; install it with: ketch install swarfr"; exit 0; }
     [ -d target ] || exit 0
-    dunnage run target || test $? -eq 2
+    swarfr run target || test $? -eq 2
 
 # The macOS app (desktop/macos). XcodeGen writes Ketch.xcodeproj from
 # project.yml; the project file and build/ are gitignored. Builds are unsigned:

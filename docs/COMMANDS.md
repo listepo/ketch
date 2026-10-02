@@ -248,11 +248,11 @@ rtok     v0.9.0 (pinned)  github:pyrlyn/rtok
 $ ketch list remote
 package  latest   description
 cox      v0.1.0   Modular terminal coding agent
-dunnage  v0.1.0   Shrink Cargo target directories without slowing builds
 ketch    v0.6.1   Catch releases straight from GitHub
 ripgrep  15.2.0   Recursively search directories for a regex pattern
 rtok     v0.10.0  Reduce the context AI coding agents must carry
 runa     ?        Run AI models locally (GGUF via llama.cpp) or through the OpenAI and Anthropic APIs
+swarfr   v0.1.0   Shrink Cargo target directories without slowing builds
 ? means the latest release could not be checked: runa
 ```
 
@@ -260,12 +260,12 @@ runa     ?        Run AI models locally (GGUF via llama.cpp) or through the Open
 $ ketch list
    package  installed        latest                      source
    cox                       v0.1.0                      github:pyrlyn/cox
-   dunnage                   v0.1.0                      github:listepo/dunnage
 *  fd       v10.4.2          v10.5.0 (update available)  github:sharkdp/fd
    ketch                     v0.6.1                      github:pyrlyn/ketch
 *  ripgrep  14.1.1           15.2.0 (update available)   github:BurntSushi/ripgrep
 *  rtok     v0.9.0 (pinned)  v0.10.0                     github:pyrlyn/rtok
    runa                      ?                           github:pyrlyn/runa
+   swarfr                    v0.1.0                      github:listepo/swarfr
 2 updates available: ketch upgrade fd ripgrep
 ? means the latest release could not be checked: runa
 ```
