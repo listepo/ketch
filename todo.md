@@ -17,7 +17,6 @@
 - D2. `ketch-ffi`: records and operations the apps need
 - D3. `ketch-ffi`: the remaining CLI operations
 - D4. Contract fixtures for every app's fake core
-- D5. Design tokens for XAML and GTK
 - D7. macOS: update notifications
 - D8. macOS: `ketch://` links
 - D9. macOS: VoiceOver pass

@@ -21,7 +21,6 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | D2 | todo | P2 | 3 | 0% | |
 | D3 | todo | P3 | 3 | 0% | |
 | D4 | todo | P3 | 2 | 0% | |
-| D5 | in progress | P3 | 3 | 0% | Claude Code / sonnet-5.5 |
 | D7 | todo | P3 | 2 | 0% | |
 | D8 | todo | P3 | 2 | 0% | |
 | D9 | todo | P3 | 2 | 0% | |
@@ -345,19 +344,6 @@ Done when history (`stats.db`), info, pin/unpin, rollback, prune, registry refre
 Three apps each test against a fake core; if each fake invents its own records and event streams, they will drift from the real one and from each other. Research: section 2, "Written once".
 
 Done when a set of language-neutral JSON scenarios (records, event streams with progress and `Abandoned`, `Busy`, `Cancelled`, decisions) is generated from the Rust types by a test that fails on drift, and the macOS app's fake core reads them; the Windows and Linux fakes read the same files when they exist.
-
-### D5. Design tokens for XAML and GTK
-
-`tokens.json` feeds only Swift today. The Windows and Linux apps should share ketch's brand (accent, status colours, spacing, radii, type scale) without imitating the glass. Style Dictionary has no XAML or GTK format, so it takes two custom ones. Research: section 2.
-
-Done when the token source lives in `desktop/design/`, `just design-tokens` also writes a XAML `ResourceDictionary` (Light, Dark, HighContrast theme dictionaries) and a GTK stylesheet setting libadwaita's CSS variables, glass and elevation tokens stay macOS-only, generated files say so in their first lines, and a drift check covers all outputs. Brand tokens on every platform, with native surfaces, were decided by the creator (2026-10-01, open decision 6).
-
-Execution plan:
-
-1. `git mv desktop/macos/design desktop/design`; fix every path (Justfile, `ci.yml`, `project.yml`, READMEs, DESIGN.md links, AGENTS.md, toolchain.md).
-2. `build.mjs`: a `BRAND` path list and two Style Dictionary formats, `ketch/xaml` (`ThemeDictionaries` Light, Dark, HighContrast; plain resources for spacing, radii, type scale) and `ketch/gtk` (libadwaita variables plus `--ketch-*` custom properties, dark and high contrast as media queries), both written to `desktop/design/generated/`.
-3. `just design-check` and the CI `design` job compare all five generated files, including one that is missing.
-4. Verify: `just design-check`, `xmllint` on the XAML, a deliberate edit of a generated file fails the check, `just macos-test` still builds against the moved `Tokens.swift`.
 
 ### D7. macOS: update notifications
 
