@@ -568,12 +568,17 @@ mod tests {
     struct Recorded(std::sync::Mutex<Vec<Event>>);
 
     impl Recorded {
-        fn installed(&self, package: &str) -> bool {
+        /// Whether a package reached the installing stage. Not checked by
+        /// name: the name a local file installs under differs on Windows.
+        fn saw_installing(&self) -> bool {
             self.0.lock().unwrap().iter().any(|e| {
-                *e == Event::Step {
-                    package: package.into(),
-                    stage: Stage::Installing,
-                }
+                matches!(
+                    e,
+                    Event::Step {
+                        stage: Stage::Installing,
+                        ..
+                    }
+                )
             })
         }
     }
@@ -607,7 +612,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![name.clone()]
         );
-        assert!(recorded.installed(&name));
+        assert!(recorded.saw_installing());
 
         let removed = core
             .uninstall(vec![name.clone()], None, None, None)
@@ -619,20 +624,22 @@ mod tests {
     #[test]
     fn each_call_reports_to_its_own_reporter_only() {
         let (dir, core) = scratch();
-        let first = Arc::new(Recorded::default());
-        let second = Arc::new(Recorded::default());
-        for (name, reporter) in [("one", &first), ("two", &second)] {
-            core.install(
-                vec![payload(dir.path(), name)],
+        let installing = Arc::new(Recorded::default());
+        let removing = Arc::new(Recorded::default());
+        let placed = core
+            .install(
+                vec![payload(dir.path(), "hello")],
                 InstallOptions::default(),
-                Some(reporter.clone()),
+                Some(installing.clone()),
                 None,
                 None,
             )
             .unwrap();
-        }
-        assert!(first.installed("one") && !first.installed("two"));
-        assert!(second.installed("two") && !second.installed("one"));
+        let name = placed[0].package.name.clone();
+        core.uninstall(vec![name], Some(removing.clone()), None, None)
+            .unwrap();
+        assert!(installing.saw_installing());
+        assert!(!removing.saw_installing());
     }
 
     #[test]
@@ -657,12 +664,14 @@ mod tests {
     fn a_cancelled_uninstall_removes_nothing() {
         let (dir, core) = scratch();
         let spec = payload(dir.path(), "hello");
-        core.install(vec![spec], InstallOptions::default(), None, None, None)
+        let placed = core
+            .install(vec![spec], InstallOptions::default(), None, None, None)
             .unwrap();
+        let name = placed[0].package.name.clone();
         let token = CancelToken::new();
         token.cancel();
         let err = core
-            .uninstall(vec!["hello".into()], None, None, Some(token))
+            .uninstall(vec![name.clone()], None, None, Some(token))
             .unwrap_err();
         assert_eq!(err, KetchError::Cancelled);
         assert_eq!(
@@ -671,7 +680,7 @@ mod tests {
                 .into_iter()
                 .map(|p| p.name)
                 .collect::<Vec<_>>(),
-            vec!["hello".to_string()]
+            vec![name]
         );
     }
 
