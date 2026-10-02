@@ -19,7 +19,7 @@ struct AboutView: View {
                 .multilineTextAlignment(.center)
             VStack(alignment: .leading, spacing: 4) {
                 Text("Licensed under any of, at your choice:").font(.headline)
-                Text("• GNU GPL-3.0-only")
+                Text("• GNU GPL-3.0-or-later")
                 Text("• the ketch Royalty-free License")
                 Text("• a commercial licence")
             }
