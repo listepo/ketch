@@ -13,7 +13,7 @@ use crate::error::{Error, Result};
 use crate::platform::{worst_status, CheckStatus, DoctorCheck};
 use crate::registry;
 use crate::self_update;
-use crate::shell::{self, Outcome, Shell};
+use crate::shell::{self, Outcome, Setup, Shell, ShellState};
 use crate::source::{plugin, Source};
 use crate::state::State;
 use crate::ui;
@@ -87,51 +87,10 @@ fn doctor_report(checks: &[DoctorCheck]) -> serde_json::Value {
     })
 }
 
-/// Repair what `doctor` can repair on its own.
-///
-/// Only the PATH setup qualifies today: it needs no network and no choice from
-/// the user. Everything else doctor reports either is already a one-line
-/// command or needs a decision ketch has no business making, and a `--fix`
-/// that quietly reinstalls packages would be a worse tool than one that says
-/// what to run.
-///
-/// Failures are warned about rather than returned: `doctor` exists to finish
-/// its report even when part of the machine is broken.
+/// Repair what `doctor` can repair on its own, and say what changed.
 fn fix(cfg: &Config) {
-    if cfg.bin_dir_on_path()
-        || !shell::configured_in(cfg).is_empty()
-        || shell::user_path_configured(cfg)
-    {
-        return;
-    }
-    #[cfg(windows)]
-    {
-        match shell::install_user(cfg, false) {
-            Ok(outcome) => report_user(outcome, false),
-            Err(e) => ui::warn(&e.to_string()),
-        }
-    }
-    #[cfg(not(windows))]
-    {
-        let shells = match shell::detect() {
-            Ok(shells) if !shells.is_empty() => shells,
-            Ok(_) => {
-                ui::warn(
-                    "could not tell which shell you use; run `ketch path install --shell <name>`",
-                );
-                return;
-            }
-            Err(e) => {
-                ui::warn(&e.to_string());
-                return;
-            }
-        };
-        for sh in shells {
-            match shell::install(cfg, sh, false) {
-                Ok(change) => report(&change, false),
-                Err(e) => ui::warn(&format!("{}: {e}", sh.name())),
-            }
-        }
+    for setup in crate::doctor::fix(&crate::ui::ctx(cfg)) {
+        report_setup(&setup, false);
     }
 }
 
@@ -198,25 +157,23 @@ pub fn path(cfg: &Config, command: Option<PathCommand>) -> Result<()> {
 }
 
 fn status(cfg: &Config) -> Result<()> {
-    let check = shell::path_check(cfg);
+    let status = shell::status(cfg)?;
     ui::out(&format!("{}  {}", ui::bold("bin"), cfg.bin_dir.display()));
     ui::out(&format!(
         "{}  {}",
         ui::bold("now"),
-        if cfg.bin_dir_on_path() {
+        if status.on_path {
             "on PATH".to_string()
         } else {
-            check.detail
+            status.detail
         }
     ));
 
-    let detected = shell::detect().unwrap_or_default();
-    let configured = shell::configured_in(cfg);
     let mut rows = Vec::new();
-    if cfg!(windows) {
+    if let Some(configured) = status.user_path {
         rows.push(vec![
             "user PATH".to_string(),
-            if shell::user_path_configured(cfg) {
+            if configured {
                 "configured".to_string()
             } else {
                 "not set up".to_string()
@@ -224,19 +181,16 @@ fn status(cfg: &Config) -> Result<()> {
             r"HKCU\Environment\Path".to_string(),
         ]);
     }
-    for sh in Shell::ALL {
-        let file = shell_file(sh)?;
-        let state = if configured.contains(&file) {
-            "configured"
-        } else if detected.contains(&sh) {
-            "not set up"
-        } else {
-            "not in use"
+    for row in status.shells {
+        let state = match row.state {
+            ShellState::Configured => "configured",
+            ShellState::NotSetUp => "not set up",
+            ShellState::NotInUse => "not in use",
         };
         rows.push(vec![
-            sh.name().to_string(),
+            row.shell.name().to_string(),
             state.to_string(),
-            file.display().to_string(),
+            row.file.display().to_string(),
         ]);
     }
     ui::table(&["shell", "state", "file"], &rows);
@@ -308,24 +262,7 @@ fn chosen(args: &PathArgs) -> Result<Vec<Shell>> {
         shells.dedup();
         return Ok(shells);
     }
-    let detected = shell::detect()?;
-    if detected.is_empty() {
-        // Guessing here would edit a startup file the user's shell never
-        // reads, and they would have no reason to look for it.
-        return Err(Error::msg(format!(
-            "could not tell which shell you use (SHELL={}). \
-             Pass --shell bash|zsh|fish, or --all, or `ketch path install --print` \
-             for the line to add by hand.",
-            std::env::var("SHELL").unwrap_or_else(|_| "unset".to_string())
-        )));
-    }
-    Ok(detected)
-}
-
-/// Where a shell would be edited, without editing it.
-fn shell_file(sh: Shell) -> Result<std::path::PathBuf> {
-    let home = dirs::home_dir().ok_or_else(|| Error::msg("no home directory; set HOME"))?;
-    Ok(sh.config_file(&home))
+    shell::detected()
 }
 
 /// What `self uninstall` is about to delete, one line per kind of thing.
@@ -368,6 +305,16 @@ fn report_user(outcome: Outcome, dry_run: bool) {
         Outcome::Updated => ui::success("updated", detail),
         Outcome::Removed => ui::success("removed", detail),
         Outcome::Unchanged => ui::step("unchanged", detail),
+    }
+}
+
+fn report_setup(setup: &Setup, dry_run: bool) {
+    match setup {
+        Setup::Shell(change) => report(change, dry_run),
+        #[cfg(windows)]
+        Setup::UserPath(outcome) => report_user(*outcome, dry_run),
+        #[cfg(not(windows))]
+        Setup::UserPath(_) => {}
     }
 }
 

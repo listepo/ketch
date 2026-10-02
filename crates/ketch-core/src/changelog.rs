@@ -21,7 +21,7 @@
 
 use crate::error::{Error, Result};
 use crate::manifest::Resolver;
-use crate::model::{InstalledPackage, Manifest, PackageSpec, Release, Version, VersionSpec};
+use crate::model::{InstalledPackage, PackageSpec, Release, Version, VersionSpec};
 use crate::report::Ctx;
 use crate::source::{ListOpts, SourceRegistry};
 use std::path::{Path, PathBuf};
@@ -302,7 +302,7 @@ pub fn published(
     installed: Option<InstalledPackage>,
     latest: bool,
 ) -> Result<(String, String, Entry)> {
-    let manifest = manifest_for(cx, spec, installed.as_ref())?;
+    let (manifest, _) = Resolver::new(cx)?.resolve_or_recorded(spec, installed.as_ref())?;
     // Without `--latest` or an explicit version, the notes wanted are the ones
     // for the release that is installed, not whatever is newest.
     let want = match &spec.version {
@@ -351,7 +351,7 @@ pub fn published_range(
     from: Option<&str>,
     to: Option<&str>,
 ) -> Result<(String, Vec<(String, Entry)>)> {
-    let manifest = manifest_for(cx, spec, installed.as_ref())?;
+    let (manifest, _) = Resolver::new(cx)?.resolve_or_recorded(spec, installed.as_ref())?;
     let from = from
         .map(Version::parse)
         .or_else(|| installed.as_ref().map(|pkg| pkg.version.clone()));
@@ -397,26 +397,6 @@ pub fn between<'a>(
         .collect();
     kept.sort_by(|a, b| b.version.cmp(&a.version));
     kept
-}
-
-/// The manifest `spec` resolves to, falling back to the one recorded when
-/// `installed` was installed, so a package the registry has since dropped
-/// still has notes.
-fn manifest_for(
-    cx: &Ctx<'_>,
-    spec: &PackageSpec,
-    installed: Option<&InstalledPackage>,
-) -> Result<Manifest> {
-    match Resolver::new(cx)?.resolve(spec) {
-        Ok((m, _)) => Ok(m),
-        Err(e) => match installed {
-            Some(pkg) => Ok(pkg
-                .manifest
-                .clone()
-                .unwrap_or_else(|| Manifest::inferred(pkg.source.clone()))),
-            None => Err(e),
-        },
-    }
 }
 
 #[cfg(test)]

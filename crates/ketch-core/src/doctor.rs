@@ -76,6 +76,63 @@ pub fn failed(checks: &[DoctorCheck]) -> usize {
         .count()
 }
 
+/// Repair what `doctor` can repair on its own, returning what changed.
+///
+/// Only the PATH setup qualifies today: it needs no network and no choice from
+/// the user. Everything else doctor reports either is already a one-line
+/// command or needs a decision ketch has no business making, and a fix that
+/// quietly reinstalls packages would be a worse tool than one that says what
+/// to run.
+///
+/// Failures are warnings on `cx.report` rather than errors: `doctor` exists to
+/// finish its report even when part of the machine is broken, and one shell's
+/// unwritable startup file must not keep the others from being set up.
+pub fn fix(cx: &Ctx<'_>) -> Vec<shell::Setup> {
+    let cfg = cx.cfg;
+    if cfg.bin_dir_on_path()
+        || !shell::configured_in(cfg).is_empty()
+        || shell::user_path_configured(cfg)
+    {
+        return Vec::new();
+    }
+    #[cfg(windows)]
+    {
+        match shell::install_user(cfg, false) {
+            Ok(outcome) => vec![shell::Setup::UserPath(outcome)],
+            Err(e) => {
+                cx.report.warn(&e.to_string());
+                Vec::new()
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let shells = match shell::detect() {
+            Ok(shells) if !shells.is_empty() => shells,
+            Ok(_) => {
+                cx.report.warn(
+                    "could not tell which shell you use; run `ketch path install --shell <name>`",
+                );
+                return Vec::new();
+            }
+            Err(e) => {
+                cx.report.warn(&e.to_string());
+                return Vec::new();
+            }
+        };
+        shells
+            .into_iter()
+            .filter_map(|sh| match shell::install(cfg, sh, false) {
+                Ok(change) => Some(shell::Setup::Shell(change)),
+                Err(e) => {
+                    cx.report.warn(&format!("{}: {e}", sh.name()));
+                    None
+                }
+            })
+            .collect()
+    }
+}
+
 /// Where this machine's log is, so nobody has to be told twice.
 fn log_check(cfg: &Config) -> DoctorCheck {
     if cfg.log_level == crate::log::Level::Off {

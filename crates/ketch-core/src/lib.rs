@@ -28,6 +28,7 @@ pub mod extract;
 pub mod hooks;
 pub(crate) mod http;
 pub mod import;
+pub mod info;
 pub mod install;
 pub mod listing;
 pub mod lockfile;

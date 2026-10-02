@@ -12,9 +12,11 @@
 //! their files) is passed through `changelog::sanitize` on the way out.
 
 use ketch_core::changelog::{self, Entry, Origin};
+use ketch_core::config::Config;
 use ketch_core::listing::{self, Latest, Local, Row};
 use ketch_core::model::{InstalledPackage, Manifest, SourceInfo};
 use ketch_core::platform::{CheckStatus, DoctorCheck};
+use ketch_core::{info, shell, stats};
 
 /// One installed package.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -267,6 +269,244 @@ impl From<&DoctorCheck> for Check {
             },
             detail: changelog::sanitize(&c.detail),
             fix: c.fix.as_deref().map(changelog::sanitize),
+        }
+    }
+}
+
+/// One thing that happened to a package, as `stats.db` recorded it.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct HistoryEvent {
+    pub package: String,
+    /// `install`, `upgrade`, `uninstall`, `rollback` and the rest.
+    pub action: String,
+    pub version: String,
+    /// The version it replaced, for an upgrade or a rollback.
+    pub previous_version: Option<String>,
+    pub tag: String,
+    pub source: String,
+    /// Seconds since the Unix epoch.
+    pub at: i64,
+    pub checksum_verified: bool,
+    pub duration_ms: Option<i32>,
+}
+
+impl From<&stats::Event> for HistoryEvent {
+    fn from(e: &stats::Event) -> Self {
+        HistoryEvent {
+            package: e.package.clone(),
+            action: e.action.clone(),
+            version: e.version.clone(),
+            previous_version: e.previous_version.clone(),
+            tag: e.tag.clone(),
+            source: e.source.clone(),
+            at: e.at,
+            checksum_verified: e.checksum_verified,
+            duration_ms: e.duration_ms,
+        }
+    }
+}
+
+/// What `ketch info` says about a package.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct PackageInfo {
+    pub name: String,
+    /// Where it comes from, as `scheme:id`.
+    pub source: String,
+    /// The project's page on its forge.
+    pub url: Option<String>,
+    pub description: Option<String>,
+    pub homepage: Option<String>,
+    pub stars: Option<u64>,
+    pub license: Option<String>,
+    /// The repository is archived: nobody maintains it any more.
+    pub archived: bool,
+    /// The newest release, `None` when the source could not say.
+    pub latest: Option<String>,
+    pub latest_tag: Option<String>,
+    /// The installed record, when it is installed.
+    pub installed: Option<Package>,
+}
+
+impl From<&info::Info> for PackageInfo {
+    fn from(found: &info::Info) -> Self {
+        let clean = |text: Option<&str>| text.map(changelog::sanitize);
+        let described = found.described.as_ref();
+        PackageInfo {
+            name: found.manifest.name.clone(),
+            source: found.manifest.source.to_string(),
+            url: clean(found.url.as_deref()),
+            description: clean(found.description()),
+            homepage: clean(found.homepage()),
+            stars: described.and_then(|d| d.stars),
+            license: clean(described.and_then(|d| d.license.as_deref())),
+            archived: described.is_some_and(|d| d.archived),
+            latest: found.latest.as_ref().map(|r| r.version.to_string()),
+            latest_tag: found.latest.as_ref().map(|r| changelog::sanitize(&r.tag)),
+            installed: found.installed.as_ref().map(Package::from),
+        }
+    }
+}
+
+/// The retained versions `prune` removed from one package.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct Pruned {
+    pub name: String,
+    pub versions: Vec<String>,
+}
+
+/// Where one shell stands with ketch's PATH block.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum ShellState {
+    /// Its startup file has the block for this bin dir.
+    Configured,
+    /// It is in use here and not set up yet.
+    NotSetUp,
+    /// Nothing says it is used on this machine.
+    NotInUse,
+}
+
+/// One shell's row in [`PathStatus`].
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ShellSetup {
+    /// `bash`, `zsh` or `fish`.
+    pub shell: String,
+    pub state: ShellState,
+    /// The startup file `path_install` would edit.
+    pub file: String,
+}
+
+/// Whether the bin dir is on `PATH`, and where it is or could be set up:
+/// what `ketch path` shows.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct PathStatus {
+    pub bin_dir: String,
+    /// On `PATH` in the environment this process was started with.
+    pub on_path: bool,
+    /// The doctor's PATH check, in words.
+    pub detail: String,
+    /// Whether the Windows user PATH names the bin dir; `None` off Windows.
+    pub user_path: Option<bool>,
+    pub shells: Vec<ShellSetup>,
+}
+
+impl PathStatus {
+    pub(crate) fn new(bin_dir: &std::path::Path, status: shell::Status) -> Self {
+        PathStatus {
+            bin_dir: bin_dir.display().to_string(),
+            on_path: status.on_path,
+            detail: status.detail,
+            user_path: status.user_path,
+            shells: status
+                .shells
+                .into_iter()
+                .map(|row| ShellSetup {
+                    shell: row.shell.name().to_string(),
+                    state: match row.state {
+                        shell::ShellState::Configured => ShellState::Configured,
+                        shell::ShellState::NotSetUp => ShellState::NotSetUp,
+                        shell::ShellState::NotInUse => ShellState::NotInUse,
+                    },
+                    file: row.file.display().to_string(),
+                })
+                .collect(),
+        }
+    }
+}
+
+/// What a PATH setup step did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum PathOutcome {
+    /// The block was written for the first time.
+    Added,
+    /// A block naming another directory was rewritten.
+    Updated,
+    /// The block was taken out.
+    Removed,
+    /// Nothing to do: already right, or set up by hand.
+    Unchanged,
+}
+
+/// One place `path_install` or `doctor_fix` set up, or would set up.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct PathChange {
+    /// The shell's name, or `user PATH` for the Windows user environment.
+    pub target: String,
+    /// The startup file, for a shell.
+    pub file: Option<String>,
+    pub outcome: PathOutcome,
+}
+
+impl From<&shell::Setup> for PathChange {
+    fn from(setup: &shell::Setup) -> Self {
+        let outcome = |o: shell::Outcome| match o {
+            shell::Outcome::Added => PathOutcome::Added,
+            shell::Outcome::Updated => PathOutcome::Updated,
+            shell::Outcome::Removed => PathOutcome::Removed,
+            shell::Outcome::Unchanged => PathOutcome::Unchanged,
+        };
+        match setup {
+            shell::Setup::Shell(change) => PathChange {
+                target: change.shell.name().to_string(),
+                file: Some(change.file.display().to_string()),
+                outcome: outcome(change.outcome),
+            },
+            shell::Setup::UserPath(o) => PathChange {
+                target: "user PATH".to_string(),
+                file: None,
+                outcome: outcome(*o),
+            },
+        }
+    }
+}
+
+/// ketch's effective configuration: `config.toml` and the environment over
+/// the defaults, as the next call will see it.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct Settings {
+    pub root: String,
+    pub bin_dir: String,
+    pub store_dir: String,
+    /// Where `.app` bundles are linked.
+    pub apps_dir: String,
+    pub config_file: String,
+    pub log_file: String,
+    /// `owner/repo` of the package registry.
+    pub registry: String,
+    /// The target releases are picked for, such as `aarch64-apple-darwin`.
+    pub target: String,
+    pub jobs: u32,
+    pub prerelease: bool,
+    pub allow_emulation: bool,
+    pub link_apps: bool,
+    pub require_checksums: bool,
+    pub strip_quarantine: bool,
+    pub auto_update: bool,
+    /// Whether a GitHub token is set. The token itself never crosses.
+    pub github_token: bool,
+    pub log_level: String,
+}
+
+impl From<&Config> for Settings {
+    fn from(cfg: &Config) -> Self {
+        let path = |p: &std::path::Path| p.display().to_string();
+        Settings {
+            root: path(&cfg.root),
+            bin_dir: path(&cfg.bin_dir),
+            store_dir: path(&cfg.store_dir),
+            apps_dir: path(&cfg.apps_dir),
+            config_file: path(&cfg.config_file),
+            log_file: path(&cfg.log_file),
+            registry: cfg.registry.clone(),
+            target: cfg.target.to_string(),
+            jobs: u32::try_from(cfg.jobs).unwrap_or(u32::MAX),
+            prerelease: cfg.prerelease,
+            allow_emulation: cfg.allow_emulation,
+            link_apps: cfg.link_apps,
+            require_checksums: cfg.require_checksums,
+            strip_quarantine: cfg.strip_quarantine,
+            auto_update: cfg.auto_update,
+            github_token: cfg.github_token.is_some(),
+            log_level: cfg.log_level.to_string(),
         }
     }
 }

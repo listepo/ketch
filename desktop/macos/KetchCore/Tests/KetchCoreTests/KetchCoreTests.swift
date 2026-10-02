@@ -291,3 +291,44 @@ func run(_ program: String, _ arguments: String...) throws -> String {
         !FileManager.default.fileExists(
             atPath: scratch.dir.appending(path: "root/store/ghost").path(percentEncoded: false)))
 }
+
+@Test func aPinHoldsAnUpgradeAndARollbackUndoesOneTheHistoryRecords() throws {
+    let scratch = try Scratch()
+    let core = KetchCore(root: scratch.root)
+    try scratch.publishSleeper(["1.0.0"])
+    try scratch.describeSleeper()
+    let placed = try core.install(
+        specs: ["test:sleeper"], options: InstallOptions(),
+        reporter: nil, decider: nil, cancel: nil)
+    let name = try #require(placed.first).package.name
+
+    try scratch.publishSleeper(["1.0.0", "1.1.0"])
+    #expect(try core.pin(names: [name]).map(\.pinned) == [true])
+    #expect(try core.outdated(reporter: nil).map(\.pinned) == [true])
+    #expect(try core.upgrade(names: [], reporter: nil, decider: nil, cancel: nil).isEmpty)
+
+    #expect(try core.unpin(names: [name]).map(\.pinned) == [false])
+    let upgraded = try core.upgrade(names: [name], reporter: nil, decider: nil, cancel: nil)
+    #expect(upgraded.map(\.package.version) == ["1.1.0"])
+
+    let back = try core.rollback(package: name, to: nil, reporter: nil, decider: nil)
+    #expect(back.package.version == "1.0.0")
+    #expect(back.replaced == "1.1.0")
+    let actions = try core.history(package: name, limit: 10).map(\.action)
+    #expect(Set(actions).isSuperset(of: ["install", "upgrade", "rollback"]))
+
+    let info = try core.info(package: name, reporter: nil)
+    #expect(info.installed?.version == "1.0.0")
+    #expect(info.latest == "1.1.0")
+}
+
+@Test func thePathStatusAndSettingsDescribeThisRoot() throws {
+    let scratch = try Scratch()
+    let core = KetchCore(root: scratch.root)
+    let settings = try core.config()
+    #expect(settings.root == scratch.root)
+    let status = try core.pathStatus()
+    #expect(status.binDir == settings.binDir)
+    #expect(status.shells.map(\.shell) == ["bash", "zsh", "fish"])
+    #expect(!status.onPath)
+}
