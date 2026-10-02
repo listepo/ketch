@@ -24,7 +24,6 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | D5 | todo | P3 | 3 | 0% | |
 | D7 | todo | P3 | 2 | 0% | |
 | D8 | todo | P3 | 2 | 0% | |
-| D9 | todo | P3 | 2 | 0% | |
 | D10 | todo | P2 | 3 | 0% | |
 | D11 | todo | P3 | 5 | 0% | |
 | D12 | todo | P3 | 4 | 0% | |
@@ -363,12 +362,6 @@ Done when new upgrades since the last notice post one `UNUserNotificationCenter`
 A link on a web page or in the registry could open a package in the app. Whatever a link carries is untrusted input, so it is validated by the core. A link only opens a package page and never starts an install (creator, 2026-10-01, open decision 10). Research: section 1, "Deep links".
 
 Done when `CFBundleURLTypes` registers `ketch`, `onOpenURL` opens the package page a valid link names, through the core's validation, any other action is refused, and tests cover malformed and hostile links.
-
-### D9. macOS: VoiceOver pass
-
-The macOS app's accessibility was only checked on the fake core. F14 keeps its own Accessibility Inspector pass on the real glass; this task covers labels. Localisation is not needed for now (creator, 2026-10-01, open decision 7), so no String Catalog. Research: section 1.
-
-Done when every icon-only control has an accessibility label, and a VoiceOver walk through the nine screens finds no unlabeled control.
 
 ### D10. Windows: C# binding for `ketch-ffi`
 

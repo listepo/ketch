@@ -11,11 +11,22 @@ struct MenuBarLabel: View {
 
     var body: some View {
         let symbol = isRunning ? "arrow.down.circle" : "shippingbox"
-        if count > 0 {
-            Label("\(count)", systemImage: symbol).labelStyle(.titleAndIcon)
-        } else {
-            Image(systemName: symbol)
+        Group {
+            if count > 0 {
+                Label("\(count)", systemImage: symbol).labelStyle(.titleAndIcon)
+            } else {
+                Image(systemName: symbol)
+            }
         }
+        // A bare symbol or a bare number says nothing in the menu bar.
+        .accessibilityLabel(accessibilityTitle)
+    }
+
+    private var accessibilityTitle: String {
+        var parts = ["Ketch"]
+        if count > 0 { parts.append(count == 1 ? "1 update available" : "\(count) updates available") }
+        if isRunning { parts.append("working") }
+        return parts.joined(separator: ", ")
     }
 }
 
