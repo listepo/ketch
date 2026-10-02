@@ -1124,3 +1124,13 @@ Done when `wizard.rs` imports no `toml`, the wizard tests pass unchanged, and th
 Execution plan (Claude Code / opus-5.5): move `string` and `list` from `wizard.rs` into `toml_file` as `string_literal` and `string_list_literal`, bodies unchanged, and rename the call sites; tests for quotes, backslashes, an escape byte and an empty item; fmt, clippy, nextest (the wizard and import tests render through them).
 
 Status: done.
+
+### M16.5. Test-only TOML in `model.rs` and `extra.rs`
+
+The manifest tests in `model.rs` (hooks round trip, schema validation of `ketch.toml`, `builtin.toml` and the docs' examples) and `extra_paths_toml_accepts_strings_and_tables` in `extra.rs` call `toml` directly. They switch to the module's parse, render and TOML-to-JSON calls; the assertions stay as they are.
+
+Done when neither file names `toml` and every test in both passes with unchanged assertions.
+
+Execution plan (Claude Code / opus-5.5): the hooks, schema and docs-example tests in `model.rs` and the `extra_paths` test in `extra.rs` call `toml_file::parse`, `render` and `Document::into_json` instead of `toml`; the builtin check validates the JSON entries directly, since they already are JSON; assertions untouched; fmt, clippy, nextest.
+
+Status: done.
