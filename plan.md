@@ -8,7 +8,7 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | B65 | in progress | P0 | 2 | 0% | Cursor / grok 4.7 high |
 | R3 | in progress | P1 | 3 | 67% | Cursor / grok 4.7 high |
 | F8 | in progress | P2 | 3 | 0% | Cursor / grok 4.7 high |
-| M16.6 | todo | P2 | 3 | 0% | |
+| M16.6 | in progress | P2 | 3 | 10% | Claude Code / opus-5.5 |
 | M16.7 | todo | P2 | 3 | 0% | |
 | M17 | in progress | P2 | 4 | 90% | Cursor / grok 4.7 |
 | R5 | in progress | P2 | 4 | 90% | Claude Code / opus-5.5 |
@@ -329,6 +329,8 @@ The creator decided (2026-10-03) to split M16 into the subtasks below, one pull 
 Scope B chosen by the creator (2026-10-03): TOML calls only. `manifest.rs` keeps `parse_registry`, `write_bins`, `write_manifest` and `replace_file`; only the `toml`/`toml_edit` calls move into the module, behind an edit helper for "insert this key into the table for this package, keep the rest of the document as it was". `Manifest::validate` stays where it is, the single guard every manifest tier passes through.
 
 Done when `manifest.rs` imports neither `toml` nor `toml_edit`, `write_bins` still leaves the rest of the file byte-for-byte, the fuzz entry point still builds, its entry is gone from `NOT_YET_MOVED` in `toml_file.rs` (M16.8's guard), and the tests pass unchanged.
+
+Execution plan (Claude Code / opus-5.5): `parse_registry` goes through `toml_file::Document` (new `is_array` for the `[[package]]` shape check, `deserialize` for both shapes, same error texts); `to_toml` through `render`; `write_bins` hands the edit to a new `toml_file::insert_inline_list`, which owns the `toml_edit` work `package_table` did and reports `Inserted`, `AlreadySet` or `NoTable`, so `manifest.rs` keeps its error text, the re-parse and `replace_file`. `Manifest::validate` stays where it is. `manifest.rs` comes off `NOT_YET_MOVED`. Tests that the edit keeps comments and order byte-for-byte, never overwrites, and reports a missing package; fmt, clippy, nextest; `ketch-core` checked with `--cfg fuzzing`.
 
 ### M16.7. `lockfile.rs` (`ketch.lock`)
 
