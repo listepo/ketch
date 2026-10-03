@@ -1201,6 +1201,14 @@ Execution plan:
 
 Status: done.
 
+### M16.2. `registry.rs` through the module
+
+`load_meta` and `write_meta` (`registry.meta.toml`) use M16.1's parse and render. `read_package` parses a package folder's `ketch.toml` as a table, fills `name` from the folder when the file leaves it out, and deserializes the manifest; the module gains what that needs (reading and inserting a string key of a parsed document, then deserializing it), with tests.
+
+Done when `registry.rs` imports neither `toml` nor `toml_edit`, the existing registry tests pass unchanged, the new helper has tests, and `ketch update` plus `ketch search` against a scratch root behave as before.
+
+Execution plan (Claude Code / opus-5.5): `load_meta`/`write_meta` call `toml_file::parse`/`render` with the same file name in the error; `toml_file::Document` (parse into a table, `str`, `set_str`, `deserialize`) carries `read_package`'s fill-in of `name`. Parsing straight into a table makes the old "expected a table of package fields" branch unreachable (a TOML document is a table), so it goes. Tests for `Document`; fmt, clippy, nextest; `ketch update` twice (writes then reads `registry.meta.toml`) and `ketch search ripgrep` against a scratch root.
+
 ### D7. macOS: update notifications
 
 The macOS app checks for updates on a timer (F12) but tells nobody unless the window or menu-bar panel is open. Builds on F12's live core; F12's remaining work (the `LiveKetchCore` adapter and the manual checks) stays in F12. Research: section 1.
