@@ -3,7 +3,7 @@
 # pyrlyn organization signing, notarisation and Sparkle secrets
 # (MACOS_CERTIFICATE, MACOS_CERTIFICATE_PWD, APPSTORE_CONNECT_KEY,
 # APPSTORE_CONNECT_KEY_ID, APPSTORE_CONNECT_ISSUER_ID, SPARKLE_ED_PRIVATE_KEY),
-# passed with `secrets: inherit`, and refuses to run without them. Test builds
+# passed to it by name, and refuses to run without them. Test builds
 # of the app (CI's macos-app job, `just macos-app` on a local Mac) are unsigned
 # and need none of these secrets.
 name: release-apple-desktop
@@ -32,13 +32,13 @@ permissions:
   contents: read
 
 jobs:
-  # Pinned to pyrlyn/infra ci/release-apple-desktop (pyrlyn/infra#30); repin to its merge commit.
+  # Pinned to the pyrlyn/infra#30 merge commit (main).
   release:
     permissions:
       contents: write # the desktop-v tag, its release, and the appcast release
       actions: read # notify-failure: failed job names
       issues: write # notify-failure: the release-failure issue
-    uses: pyrlyn/infra/.github/workflows/release-apple-desktop.yml@bc16125632594c8511f61b9b64f36a956675ebd3
+    uses: pyrlyn/infra/.github/workflows/release-apple-desktop.yml@9b57e680c6841bd330369777f2d1385ecaf8ce97
     with:
       version: ${{ inputs.version }}
       tag-prefix: desktop-v
@@ -63,6 +63,13 @@ jobs:
       sparkle: true
       appcast-tag: desktop-appcast
       cliff-config: desktop/cliff.toml
-    # The org's own workflow, pinned by SHA, reading the pyrlyn organization
-    # secrets it declares; `secrets: inherit` is the org convention for it.
-    secrets: inherit # nosemgrep: yaml.github-actions.security.secrets-inherit.secrets-inherit
+    # Exactly the pyrlyn organization secrets the infra workflow declares, by
+    # name, rather than `secrets: inherit` (least privilege: nothing else of
+    # this repository's secrets reaches it).
+    secrets:
+      MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+      MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+      APPSTORE_CONNECT_KEY: ${{ secrets.APPSTORE_CONNECT_KEY }}
+      APPSTORE_CONNECT_KEY_ID: ${{ secrets.APPSTORE_CONNECT_KEY_ID }}
+      APPSTORE_CONNECT_ISSUER_ID: ${{ secrets.APPSTORE_CONNECT_ISSUER_ID }}
+      SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}

@@ -596,7 +596,7 @@ halfway through a release.
 
 The app in `desktop/macos/` is released from this repository too, by
 `.github/workflows/release-apple-desktop.yml`, a thin caller of the org-level reusable
-workflow `pyrlyn/infra/.github/workflows/release-apple-desktop.yml` (`secrets: inherit`),
+workflow `pyrlyn/infra/.github/workflows/release-apple-desktop.yml` (the organization secrets passed by name),
 with a version of its own: tags are
 `desktop-vX.Y.Z`, never `vX.Y.Z`, and the version is the workflow's input, not
 `Cargo.toml`'s or `project.yml`'s.

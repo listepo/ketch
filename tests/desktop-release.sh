@@ -8,7 +8,7 @@
 #
 # - release-apple-desktop.yml is dispatch-only and a thin caller of the
 #   org-level pyrlyn/infra release-apple-desktop.yml, pinned by commit SHA,
-#   with the org secrets through `secrets: inherit` and the desktop-v tag
+#   with exactly the org secrets it needs, by name, and the desktop-v tag
 #   prefix; that workflow checks the version, the secrets and the placeholder
 #   Sparkle key, and creates every release with make_latest=false;
 # - the CLI's release tooling never takes a desktop-v tag for its own.
@@ -48,7 +48,11 @@ ruby -ryaml -e '
   abort "local steps in the release job" if job.key?("steps")
   uses = job["uses"].to_s
   abort "not the infra workflow: #{uses}" unless uses =~ %r{\Apyrlyn/infra/\.github/workflows/release-apple-desktop\.yml@[0-9a-f]{40}\z}
-  abort "secrets are not inherited" unless job["secrets"] == "inherit"
+  want = %w[MACOS_CERTIFICATE MACOS_CERTIFICATE_PWD APPSTORE_CONNECT_KEY APPSTORE_CONNECT_KEY_ID APPSTORE_CONNECT_ISSUER_ID SPARKLE_ED_PRIVATE_KEY]
+  secrets = job["secrets"]
+  abort "secrets must be passed by name, not #{secrets.inspect}" unless secrets.is_a?(Hash)
+  abort "secrets are #{secrets.keys.sort.join(",")}, not #{want.sort.join(",")}" unless secrets.keys.sort == want.sort
+  secrets.each { |k, v| abort "#{k} is not secrets.#{k}" unless v == "${{ secrets.#{k} }}" }
   with = job["with"] || {}
   abort "version is not the dispatch input" unless with["version"] == "${{ inputs.version }}"
   abort "tag-prefix is not desktop-v" unless with.fetch("tag-prefix", "desktop-v") == "desktop-v"
