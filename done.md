@@ -1085,6 +1085,69 @@ Execution plan (Claude Code / opus-5.5):
 
 Status: done. Read-only calls (`search`, `outdated`, `changelog`, `doctor`) also take an optional reporter, so their warnings keep reaching the caller; `uninstall` checks the token before each package (progress and the leftover store folder stay with D2). On macOS the Swift test runs a looping shell script as the held binary: a relocated `/bin/sleep` is killed by the OS.
 
+### D5. Design tokens for XAML and GTK
+
+`tokens.json` feeds only Swift today. The Windows and Linux apps should share ketch's brand (accent, status colours, spacing, radii, type scale) without imitating the glass. Style Dictionary has no XAML or GTK format, so it takes two custom ones. Research: section 2.
+
+Done when the token source lives in `desktop/design/`, `just design-tokens` also writes a XAML `ResourceDictionary` (Light, Dark, HighContrast theme dictionaries) and a GTK stylesheet setting libadwaita's CSS variables, glass and elevation tokens stay macOS-only, generated files say so in their first lines, and a drift check covers all outputs. Brand tokens on every platform, with native surfaces, were decided by the creator (2026-10-01, open decision 6).
+
+Execution plan:
+
+1. `git mv desktop/macos/design desktop/design`; fix every path (Justfile, `ci.yml`, `project.yml`, READMEs, DESIGN.md links, AGENTS.md, toolchain.md).
+2. `build.mjs`: a `BRAND` path list and two Style Dictionary formats, `ketch/xaml` (`ThemeDictionaries` Light, Dark, HighContrast; plain resources for spacing, radii, type scale) and `ketch/gtk` (libadwaita variables plus `--ketch-*` custom properties, dark and high contrast as media queries), both written to `desktop/design/generated/`.
+3. `just design-check` and the CI `design` job compare all five generated files, including one that is missing.
+4. Verify: `just design-check`, `xmllint` on the XAML, a deliberate edit of a generated file fails the check, `just macos-test` still builds against the moved `Tokens.swift`.
+
+Status: done. The token source moved to `desktop/design/`; `just design-tokens` now also writes `generated/KetchTokens.xaml` and `generated/ketch-tokens.css`. Brand tokens only (the `BRAND` list in `build.mjs`: accent, status colours, spacing, radii, type scale). Windows has no dark high-contrast theme, so `HighContrast` takes the `highContrast` values. The GTK file uses `@media (prefers-color-scheme)` and `(prefers-contrast)`, which GTK documents in css-properties.md (checked 2026-10-03) and AdwApplication autoloads from libadwaita 1.8. Not run: the XAML was checked for well-formedness only (no WinUI toolchain here), and the GTK CSS was not loaded in a GTK app.
+
+### D10. Windows: C# binding for `ketch-ffi`
+
+The Windows app is C# + WinUI 3 over `ketch-ffi` (creator, 2026-10-01). `uniffi-bindgen-cs` last released for UniFFI 0.31.0; `ketch-ffi` is on 0.32.2. Decided by the creator (2026-10-01, open decision 4): first try the generator built from PR #176 (UniFFI 0.32.0), pinned to commit `0fc022aa1d73fb1dda91a778b63f2824d7dca58b`; if it fails against 0.32.2, use the C ABI from D15 through `LibraryImport`. Downgrading `ketch-ffi` to UniFFI 0.31.2 is not an option. Research: section 4.
+
+Done when the chosen route generates C# for `ketch-ffi`, the generator is pinned (a commit or a version, no system install), a .NET 10 test calls `installed`, `doctor` and a cancelled install against a scratch root on Windows CI, and the route taken and why is in the research page.
+
+Execution plan (Claude Code / opus-5.5):
+
+1. Route B: pin the generator in `mise.toml` as `cargo:` from `dennisameling/uniffi-bindgen-cs` at `0fc022aa1d73fb1dda91a778b63f2824d7dca58b`, and the .NET 10 SDK beside it, so nothing is installed system-wide.
+2. `scripts/csharp.sh` (`just csharp`): build `ketch-ffi`'s shared library, generate `ketch_ffi.cs` from it with `desktop/windows/uniffi.toml` (public types, a `Ketch.Ffi` namespace), and put both in `desktop/windows/KetchCore/Generated/`, which is not committed, as the Swift bindings are not.
+3. `desktop/windows/KetchCore` (a `net10.0` class library over the generated file and the native library) and `desktop/windows/KetchCore.Tests` (MSTest): `installed` on a scratch root, `doctor`, and a cancelled install that throws `Cancelled` and places nothing.
+4. CI: a `ketch-cs` job on `windows-latest` that installs the pins through mise and runs `just csharp-test`'s steps.
+5. Research page section 4: the route taken and why; `toolchain.md` and the AGENTS.md layout rows.
+6. If the generator fails against 0.32.2: fall back to D15's C ABI through `LibraryImport`, and say so in the research page.
+
+Status: done. Route B, the generator from PR #176 at the pinned commit, works against `ketch-ffi` on UniFFI 0.32.2 without a change to the generator; routes C and D were not needed. Three adjustments, recorded in the research page: `TaskKind::Download`'s `batch` field became `batch_id`, because a C# property named `Batch` clashes with the inherited `Batch` variant (a breaking change to the binding); `desktop/windows/uniffi.toml` makes the generated types public; and `scripts/csharp.sh` uses the mise install of the generator and checks its version, because an older `uniffi-bindgen-cs` in `~/.cargo/bin` shadows it on `PATH`. The MSTest project also covers `ketch_version` and an install reported to a C# `Reporter`.
+
+### D9. macOS: VoiceOver pass
+
+The macOS app's accessibility was only checked on the fake core. F14 keeps its own Accessibility Inspector pass on the real glass; this task covers labels. Localisation is not needed for now (creator, 2026-10-01, open decision 7), so no String Catalog. Research: section 1.
+
+Done when every icon-only control has an accessibility label, and a VoiceOver walk through the nine screens finds no unlabeled control.
+
+Execution plan:
+
+1. Read every view for symbol-only controls and bare text fields; the existing icon-only buttons already name themselves through their title.
+2. `KetchUITests`: one test visits the nine screens (Installed, Discover, Updates, Activity, Doctor, General and Appearance settings, package detail, uninstall sheet) and runs `performAccessibilityAudit(for: [.sufficientElementDescription, .elementDetection])`, ignoring layout containers; it also looks up by label the controls a quiet screen does not show (colour wells, the running operation's Cancel button, the menu-bar extra).
+3. Fix what it finds: the search field, the colour wells, the wash slider, the menu-bar label.
+4. Verify: `just macos-test`.
+
+Status: done. No manual VoiceOver walk was possible, so the automated audit stands in for it; it finds elements with no description but cannot judge whether a label reads well. Fixed: the search field (its prompt was only a placeholder, now labelled, glyph hidden), the two colour wells (labelled "Custom tint" and "Custom accent" instead of both "Custom"), the wash slider (label and percentage value), and the menu-bar extra ("Ketch, 2 updates available"). The symbol-only Clear, Dismiss and Cancel buttons already carry their titles; Cancel is checked in the test, Clear (needs typed text, which XCUITest could not enter here) and Dismiss (needs a held lock) are not. The Touch Bar, layout containers and a slider thumb are excluded from the audit.
+
+### D2. `ketch-ffi`: records and operations the apps need
+
+The macOS app's protocol needs things `ketch-ffi` does not give: a changelog across a version range, pinned packages in `outdated` with what holds them, `latest` in search results, and an `uninstall` that can be cancelled, reports progress and removes a leftover store folder for a name with no record, as the CLI does. Research: section 3a, gaps G2–G5.
+
+Done when `changelog_range(package, from, to)`, `Upgrade.pinned` (and the lock that holds it, when known), `RegistryPackage.latest` and the new `uninstall` exist with unit tests, the Swift binding test exercises each, and D4's fixtures can model them.
+
+Execution plan (Claude Code / opus-5.5):
+
+1. `ketch-core::changelog`: a `published_range` beside `published`, sharing its manifest resolution, plus a pure `between` that keeps the releases newer than `from` and no newer than `to`, newest first, drafts and unasked-for prereleases out. Unit tests on `between`.
+2. `ketch-core::listing`: `fill_cached`, which answers `latest` from the listing cache only — no network — so search can show it.
+3. `ketch-ffi`: `changelog_range` (`from` defaults to the installed version, `to` to the newest); `Upgrade.pinned` and `Upgrade.held_by` (ketch does not record which `ketch.lock` restored a pin, so `held_by` stays `None` until it does), `outdated` reports pinned packages and `upgrade` still skips them; `RegistryPackage.latest` from the cache; `uninstall` removes a leftover `store/<name>/` through `install::remove_package_dir` for a name with no record, then answers `NotFound` as the CLI does. Unit tests in `lib.rs` / `records.rs`.
+4. Swift binding test: a range over the `test:` plugin's releases with notes, `pinned`/`heldBy` on an upgrade, `latest` on a search result, a cancelled uninstall that reports nothing removed, and a leftover folder removed.
+5. Verify: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo nextest run`, `just ffi-test`.
+
+Status: done. `changelog_range` reads release notes only: the installed payload's file belongs to the old version and has no sections for the newer ones. `held_by` is always `None` for now, because `ketch sync` restores a pin without recording which `ketch.lock` it came from; recording that is a state change left for a later task. `outdated` now reports pinned packages, marked, and `upgrade` still skips them. `uninstall` reports a `removing` status and a `removed` success per package. Core gained `changelog::published_range` / `between` and `listing::fill_cached`; `published` shares its manifest fallback with the range through `manifest_for`. A breaking change to the binding (new record fields, pinned rows in `outdated`).
+
 ### M16.1. The owning module, and `config.rs` through it
 
 A new `crates/ketch-core/src/toml_file.rs` owns parsing, rendering and the schema export for the TOML files ketch owns. It starts with the two calls `config.rs` needs — parse text into a `T: DeserializeOwned` naming the file in the error (`Error::parse(what, …)`), and render a `T: Serialize` pretty — and takes `assert_schema_current` from `config.rs`, with its callers (`config.rs`, `lockfile.rs`, `log.rs`, `model.rs` tests) pointed at the new path. A helper is added only with its first caller, so nothing is dead code.
@@ -1092,6 +1155,33 @@ A new `crates/ketch-core/src/toml_file.rs` owns parsing, rendering and the schem
 Done when `config.rs` imports neither `toml` nor `schemars`' drift helper, `config.toml` loads and `ketch config reset` writes byte-for-byte as before, the new module has its `//!` header and unit tests (a parse error names the file, render round-trips), and fmt, clippy and nextest are clean.
 
 Execution plan (Claude Code / opus-5.5): add `crates/ketch-core/src/toml_file.rs` with `parse` and `render` (both name the file in `Error::parse`); move `assert_schema_current` there verbatim and point its callers at it (`config.rs`, and the `lockfile.rs` and `model.rs` schema tests; `log.rs` only derives `JsonSchema` and needs no change); switch `Config::load` and `Config::default_toml` to the two calls; a row for the module in `AGENTS.md`'s layout table; verify with fmt, clippy, nextest, `ketch doctor` and `ketch config reset` against a scratch root.
+
+### D4. Contract fixtures for every app's fake core
+
+Three apps each test against a fake core; if each fake invents its own records and event streams, they will drift from the real one and from each other. Research: section 2, "Written once".
+
+Done when a set of language-neutral JSON scenarios (records, event streams with progress and `Abandoned`, `Busy`, `Cancelled`, decisions) is generated from the Rust types by a test that fails on drift, and the macOS app's fake core reads them; the Windows and Linux fakes read the same files when they exist.
+
+Execution plan:
+
+1. `ketch-ffi`: derive `serde::Serialize` on the exported records, `Event`, `TaskKind`, `Stage`, `Holder` and `KetchError` (internally tagged by `type`, snake_case), so the wire shape is the Rust shape.
+2. `crates/ketch-ffi/tests/contract.rs` builds each scenario from those Rust values (a call, an ordered script of events and decisions, an outcome) and compares the JSON with `desktop/contract/scenarios/*.json`; `KETCH_BLESS=1` rewrites them, as the schema drift tests do. Scenarios: every read, install (progress, `Abandoned`, binary choice), upgrade (stopping processes), uninstall, and each error (`Busy` with and without a pid, `Cancelled`, `NotFound`, `Network`, `Verification`, `Other`).
+3. macOS: `Ketch/Core/ContractScenario.swift` decodes them and maps events and records to the app's types; `FakeKetchCore` replays a scenario for reads and for install, upgrade and uninstall. Store tests run Busy, Cancelled, a network failure, a binary choice and a normal install from the files, and every file must decode.
+4. `desktop/contract/README.md` states the file format for the Windows and Linux fakes, which read the same files once they exist.
+5. Verify: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo nextest run`, `just ffi-test`, `just macos-test`, `swift-format lint --strict`.
+
+### D8. macOS: `ketch://` links
+
+A link on a web page or in the registry could open a package in the app. Whatever a link carries is untrusted input, so it is validated by the core. A link only opens a package page and never starts an install (creator, 2026-10-01, open decision 10). Research: section 1, "Deep links".
+
+Done when `CFBundleURLTypes` registers `ketch`, `onOpenURL` opens the package page a valid link names, through the core's validation, any other action is refused, and tests cover malformed and hostile links.
+
+Execution plan:
+
+1. Core: `crates/ketch-core/src/link.rs`, `package_name(raw) -> Result<String>`. The one accepted shape is `ketch://package/<name>`: ASCII only, no query, fragment, userinfo, port or percent-escapes, at most 512 bytes; any other host (an install, uninstall or upgrade "action") is refused by name. The name must pass the existing `usable_file_name` guard (`config::sanitize_component` unchanged) and a stricter ASCII charset, then goes through `normalize_name` like any typed name. Rust tests: a table of valid, malformed and hostile links.
+2. FFI: one free function `package_for_link` next to `ketch_version`; Swift binding test through `just ffi-test`.
+3. App: `packageName(forLink:)` on `KetchCoreProtocol` (the fake only tells a package page from anything else; the grammar and its test table stay in the core), `CFBundleURLTypes` for `ketch` in `Ketch/Info.plist`, `onOpenURL` in the main window handing the URL to `KetchStore`, which asks the core, then looks the package up (installed or registry) before opening its page; a refused or unknown link shows the error alert and opens nothing. It never calls `install`.
+4. Verify: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo nextest run`, `just ffi-test`, `just macos-test`, and the registered scheme opened through `open ketch://package/ripgrep` against the built app.
 
 Status: done.
 

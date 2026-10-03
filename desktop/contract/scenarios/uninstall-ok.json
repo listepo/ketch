@@ -1,0 +1,39 @@
+{
+  "name": "uninstall-ok",
+  "description": "Removing an installed package returns the record that was removed.",
+  "call": {
+    "operation": "uninstall",
+    "names": [
+      "ripgrep"
+    ]
+  },
+  "script": [
+    {
+      "type": "event",
+      "event": {
+        "type": "success",
+        "verb": "uninstalled",
+        "detail": "ripgrep 14.1.0"
+      }
+    }
+  ],
+  "outcome": {
+    "type": "ok",
+    "value": [
+      {
+        "binaries": [
+          "/Users/me/.ketch/bin/ripgrep"
+        ],
+        "installed_at": 1760000000,
+        "name": "ripgrep",
+        "pinned": false,
+        "prefix": "/Users/me/.ketch/store/ripgrep/14.1.0",
+        "retained": [],
+        "source": "github:BurntSushi/ripgrep",
+        "tag": "14.1.0",
+        "trust": "checksum",
+        "version": "14.1.0"
+      }
+    ]
+  }
+}

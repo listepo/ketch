@@ -1,0 +1,78 @@
+{
+  "name": "install-cancelled",
+  "description": "The person cancels during the download: the task is abandoned, then Cancelled. Nothing is left installed, and Cancelled is logged rather than shown as an alert.",
+  "call": {
+    "operation": "install",
+    "specs": [
+      "ripgrep"
+    ],
+    "options": {
+      "force": false,
+      "prerelease": false,
+      "link": true,
+      "require_checksum": false,
+      "bin": null
+    }
+  },
+  "script": [
+    {
+      "type": "event",
+      "event": {
+        "type": "step",
+        "package": "ripgrep",
+        "stage": "resolving"
+      }
+    },
+    {
+      "type": "event",
+      "event": {
+        "type": "began",
+        "id": 1,
+        "task": {
+          "type": "download",
+          "label": "ripgrep",
+          "batch": null
+        }
+      }
+    },
+    {
+      "type": "event",
+      "event": {
+        "type": "sized",
+        "id": 1,
+        "name": "ripgrep.tar.gz",
+        "total": 2000000
+      }
+    },
+    {
+      "type": "event",
+      "event": {
+        "type": "step",
+        "package": "ripgrep",
+        "stage": "downloading"
+      }
+    },
+    {
+      "type": "event",
+      "event": {
+        "type": "progress",
+        "id": 1,
+        "done": 700000,
+        "total": 2000000
+      }
+    },
+    {
+      "type": "event",
+      "event": {
+        "type": "abandoned",
+        "id": 1
+      }
+    }
+  ],
+  "outcome": {
+    "type": "error",
+    "error": {
+      "type": "cancelled"
+    }
+  }
+}
