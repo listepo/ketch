@@ -667,6 +667,13 @@ The design is specified with its fallbacks, not retrofitted.
   decorative sheen. Every Appearance choice is paused, the accent included:
   the system accent has a high-contrast variant, a custom colour may not.
   Settings → Appearance says so while either setting is on.
+- **Windows contrast themes**: the `highContrast` values are macOS ink for a
+  light background and are not used on Windows. `KetchTokens.xaml`'s
+  `HighContrast` dictionary holds no hex: each colour references a WinUI
+  `SystemColor*` resource (accent fills `Highlight`, text on them
+  `HighlightText`, text and status colours `WindowText`, tinted surfaces
+  `Window`), so Aquatic, Desert, Dusk and Night sky each show their own palette.
+  `contrast.mjs` does not check those pairs: the user's theme decides them.
 - **Reduce Motion** (`@Environment(\.accessibilityReduceMotion)`): see Motion.
 - **Contrast**: `../design/contrast.mjs` checks every text/background pair the
   components use, in all four appearances, against WCAG 2.2 AA (4.5:1 for text,
