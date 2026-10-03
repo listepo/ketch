@@ -20,8 +20,8 @@ Project programs and direct packages from manifests.
 | rust-std aarch64-apple-darwin | rustup (`scripts/xcframework.sh` adds it to the pinned toolchain when missing) | `ketch-ffi`'s arm64 XCFramework (`just xcframework`) | https://github.com/rust-lang/rust |
 | swift-format | with Xcode (`xcrun swift-format`) | Formats and lints the macOS app's Swift | https://github.com/swiftlang/swift-format |
 | notarytool, stapler | with Xcode (`xcrun`) | Notarise and staple the macOS app and its `.dmg` (`release-apple-desktop.yml`) | https://developer.apple.com/documentation/security/customizing-the-notarization-workflow |
-| hdiutil, codesign, spctl | with macOS | Build the app's `.dmg` (`scripts/desktop-dmg.sh`), sign it, and assess what Gatekeeper will decide | https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution |
-| generate_appcast | with the Sparkle package (`build/SourcePackages/artifacts/sparkle/Sparkle/bin/`) | Writes and signs the macOS app's appcast (`scripts/desktop-appcast.sh`) | https://github.com/sparkle-project/Sparkle |
+| hdiutil, codesign, spctl | with macOS | Build the app's `.dmg` (`release-apple-desktop.yml`, in pyrlyn/infra), sign it, and assess what Gatekeeper will decide | https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution |
+| generate_appcast | with the Sparkle package (`build/SourcePackages/artifacts/sparkle/Sparkle/bin/`) | Writes and signs the macOS app's appcast (`release-apple-desktop.yml`, in pyrlyn/infra) | https://github.com/sparkle-project/Sparkle |
 | cargo-fuzz | mise | Builds and runs the libFuzzer targets in `fuzz/` (`just fuzz`) | https://github.com/rust-fuzz/cargo-fuzz |
 | rustc nightly | rustup (`rustup toolchain install nightly`) | Only for `cargo +nightly fuzz`; every build stays on the `mise.toml` pin | https://github.com/rust-lang/rust |
 | release-plz | local only | `release-plz update` preview; no longer run in CI (bump.yml releases) | https://github.com/release-plz/release-plz |

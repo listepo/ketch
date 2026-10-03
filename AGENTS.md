@@ -240,8 +240,7 @@ differ by orders of magnitude — the cargo home is the small one. Set
 | `desktop/macos/` | the SwiftUI macOS app: `project.yml` (XcodeGen), `Ketch/` sources, `KetchTests/`, `KetchUITests/`; see its `README.md` |
 | `desktop/macos/DESIGN.md` | the macOS app's design system in the DESIGN.md format; its front matter is generated |
 | `desktop/design/` | `tokens.json`, the one source of design tokens, and `build.mjs`, which generates `generated/Tokens.swift` (macOS), `generated/KetchTokens.xaml` (Windows), `generated/ketch-tokens.css` (Linux), the macOS DESIGN.md front matter and `preview.html`'s CSS (`just design-tokens`) |
-| `.github/workflows/release-apple-desktop.yml` | the macOS app's release: signed, notarised `.dmg` under a `desktop-v*` tag, and its Sparkle appcast |
-| `scripts/desktop-version.sh`, `scripts/desktop-dmg.sh`, `scripts/desktop-appcast.sh` | the app release's version check, disk image and appcast, shared with `tests/desktop-appcast.sh` |
+| `.github/workflows/release-apple-desktop.yml` | the macOS app's release: a thin caller of pyrlyn/infra `release-apple-desktop.yml` (signed, notarised `.dmg` under a `desktop-v*` tag, and its Sparkle appcast) |
 | `desktop/cliff.toml` | the app's release notes: commits under `desktop/` and `crates/ketch-ffi/` since the last `desktop-v*` tag |
 
 The rule that keeps `cmd/` thin: anything touching the install tree belongs in
@@ -596,7 +595,9 @@ halfway through a release.
 ### macOS app releases
 
 The app in `desktop/macos/` is released from this repository too, by
-`.github/workflows/release-apple-desktop.yml`, with a version of its own: tags are
+`.github/workflows/release-apple-desktop.yml`, a thin caller of the org-level reusable
+workflow `pyrlyn/infra/.github/workflows/release-apple-desktop.yml` (`secrets: inherit`),
+with a version of its own: tags are
 `desktop-vX.Y.Z`, never `vX.Y.Z`, and the version is the workflow's input, not
 `Cargo.toml`'s or `project.yml`'s.
 
@@ -605,8 +606,8 @@ and `ketch self upgrade` (the GitHub source's `/releases/latest` fast path)
 all install whatever GitHub calls the latest release. An app release marked
 latest would hand every CLI installer a release with no `ketch-<target>.tar.gz`
 in it. So every `gh release create` in the workflow passes `--latest=false`
-(`make_latest: false`), the feed release is a prerelease as well, and the last
-step checks that `/releases/latest` did not move — restoring the CLI release
+(`make_latest: false`), the feed release is a prerelease as well, and the infra
+workflow's last step checks that `/releases/latest` did not move — restoring the CLI release
 and failing if it did. Likewise the CLI's release tooling never takes a
 `desktop-v*` tag for its own: `cliff.toml`'s `tag_pattern` is anchored
 (`^v[0-9]`; git-cliff matches it anywhere in a tag name), `tests/crate-version.sh`
@@ -621,13 +622,13 @@ outranks one that is (`select_release` in `src/source/mod.rs`). `tests/desktop-r
 To cut one: Actions → release-apple-desktop → Run workflow on `main` with the
 version, or `gh workflow run release-apple-desktop.yml --ref main -f version=X.Y.Z`.
 The version must be plain `X.Y.Z` and above the last `desktop-v*` tag
-(`scripts/desktop-version.sh`), because it is also `CFBundleVersion`, which
+(checked by the infra workflow), because it is also `CFBundleVersion`, which
 Sparkle compares. The run archives an Apple Silicon (arm64) Release build with the
 hardened runtime, exports it for Developer ID (`desktop/macos/ExportOptions.plist`),
-notarises and staples the app, builds the `.dmg` (`scripts/desktop-dmg.sh`,
-hdiutil), signs, notarises and staples that, runs `spctl --assess` on both,
-writes `Ketch-X.Y.Z.dmg.sha256`, and writes the Sparkle appcast
-(`scripts/desktop-appcast.sh`). Only then does it create the tag and the
+notarises and staples the app, builds the `.dmg` (hdiutil), signs, notarises
+and staples that, runs `spctl --assess` on both, writes
+`Ketch-X.Y.Z.dmg.sha256`, and writes the Sparkle appcast (`generate_appcast`).
+Only then does it create the tag and the
 release, with release notes from `desktop/cliff.toml`, and replace
 `appcast.xml` on the `desktop-appcast` release, the stable URL the app's
 `SUFeedURL` names. A failed run creates nothing; re-run it. If it failed after
@@ -635,8 +636,9 @@ the versioned release was created but before the feed was replaced, upload
 that release's `appcast.xml` to `desktop-appcast` with `gh release upload
 --clobber` rather than re-running, since the version is then taken.
 
-Secrets, all required; the first step names any that are missing and stops
-before building:
+Secrets, all required and held at the pyrlyn organization level (not in this
+repository); the infra workflow's first steps name any that are missing and
+stop before building:
 
 - `MACOS_CERTIFICATE`, `MACOS_CERTIFICATE_PWD` — the same Developer ID
   Application `.p12` the CLI is signed with.
@@ -647,15 +649,13 @@ before building:
   (the base64 seed). Its public half is `SUPublicEDKey` in
   `desktop/macos/Ketch/Info.plist`, still a placeholder that the workflow
   refuses; commit the real one first. The appcast is checked against the
-  exported app's key before anything is published
-  (`scripts/desktop-appcast-verify.swift`), because `generate_appcast` only
+  exported app's key before anything is published (by the infra workflow),
+  because `generate_appcast` only
   warns on a mismatch. Losing or rotating this key strands every installed
   copy on its version.
 
-`just macos-appcast` runs the disk-image and appcast scripts on a local build
-with a throwaway key, as CI's `macos-app` job does. The ketch-ffi XCFramework
-(R9) does not exist yet: the workflow's XCFramework step is off
-(`XCFRAMEWORK: 'false'`, marked `TODO(R9)`), so a release made before R9
+The ketch-ffi XCFramework (R9) does not exist yet: the caller's
+`pre-build-command` is empty (marked `TODO(R9)`), so a release made before R9
 ships the app on `FakeKetchCore`.
 
 ## Before you call it done

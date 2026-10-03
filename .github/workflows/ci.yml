@@ -166,11 +166,6 @@ jobs:
           xcodebuild -project Ketch.xcodeproj -scheme Ketch -derivedDataPath build
           -destination 'platform=macOS' test
 
-      # The release's disk image and appcast scripts on the app just built,
-      # with a throwaway key: `just macos-appcast`.
-      - name: Update feed round trip
-        run: sh ../../tests/desktop-appcast.sh
-
   # ketch-ffi as the macOS app will link it: the XCFramework for both
   # architectures, the Swift bindings UniFFI generates from it, and the Swift
   # test that runs the real core against a scratch root through them. What
@@ -316,9 +311,6 @@ jobs:
           bash -n install.sh
           bash -n scripts/release.sh
           bash -n scripts/dist-generate.sh
-          bash -n scripts/desktop-version.sh
-          bash -n scripts/desktop-dmg.sh
-          bash -n scripts/desktop-appcast.sh
           sh tests/release-sh.sh
           sh tests/crate-version.sh
           sh tests/release-workflows.sh

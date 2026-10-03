@@ -101,9 +101,6 @@ lint-shell:
     bash -n install.sh
     bash -n scripts/release.sh
     bash -n scripts/dist-generate.sh
-    bash -n scripts/desktop-version.sh
-    bash -n scripts/desktop-dmg.sh
-    bash -n scripts/desktop-appcast.sh
     bash -n scripts/xcframework.sh
     bash -n scripts/csharp.sh
     bash -n fuzz/seed.sh
@@ -257,11 +254,6 @@ macos-app: macos-project
 # Swift Testing unit tests on the fake core, then the UI smoke test
 macos-test: macos-project
     {{macos_build}} -destination 'platform=macOS' test
-
-# the release's disk image and Sparkle appcast, round-tripped with a throwaway
-# key: what release-apple-desktop.yml runs, minus signing and notarisation
-macos-appcast: macos-app
-    sh tests/desktop-appcast.sh
 
 # Built into desktop/macos/KetchCore with the `ffi` profile the app ships.
 #
