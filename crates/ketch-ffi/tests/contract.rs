@@ -141,7 +141,7 @@ fn install_stream(name: &str, version: &str) -> Vec<Step> {
             id: 1,
             task: TaskKind::Download {
                 label: name.into(),
-                batch: None,
+                batch_id: None,
             },
         }),
         event(Event::Sized {
@@ -197,7 +197,7 @@ fn abandoned_download(name: &str) -> Vec<Step> {
             id: 1,
             task: TaskKind::Download {
                 label: name.into(),
-                batch: None,
+                batch_id: None,
             },
         }),
         event(Event::Sized {
