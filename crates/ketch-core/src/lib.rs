@@ -47,5 +47,6 @@ pub mod source;
 pub mod state;
 pub mod stats;
 pub mod text;
+pub(crate) mod toml_file;
 pub(crate) mod trust;
 pub mod wizard;

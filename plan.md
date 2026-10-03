@@ -8,7 +8,6 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | B65 | in progress | P0 | 2 | 0% | Cursor / grok 4.7 high |
 | R3 | in progress | P1 | 3 | 67% | Cursor / grok 4.7 high |
 | F8 | in progress | P2 | 3 | 0% | Cursor / grok 4.7 high |
-| M16.1 | todo | P2 | 2 | 0% | |
 | M16.2 | todo | P2 | 2 | 0% | |
 | M16.3 | todo | P2 | 1 | 0% | |
 | M16.4 | todo | P2 | 1 | 0% | |
@@ -321,12 +320,6 @@ review of the file and the merge of the PR.
 `AGENTS.md`: one module owns all config loading, validation and editing, and the rest of the code does not import `toml` or `toml_edit`. Every use today is in `crates/ketch-core`: `config.rs` (`config.toml`, and the schema drift helper `assert_schema_current`), `registry.rs` (`registry.toml` update metadata and package folders), `push.rs` (a project's `ketch.toml`), `wizard.rs` (TOML string and array literals), `manifest.rs` (user manifests and `builtin.toml`, the only `toml_edit` user), `lockfile.rs` (`ketch.lock`), and tests in `model.rs` and `extra.rs`. The binary (`src/`) and `crates/ketch-ffi` import neither; `tests/` is a separate crate that writes fixtures and stays out of scope.
 
 The creator decided (2026-10-03) to split M16 into the subtasks below, one pull request each, in id order: M16.1 first, since the rest call into the module it creates; M16.8 last of the ready ones. M16.6 and M16.7 wait for the creator's choice of scope. Behaviour does not change in any subtask: same files read and written, same bytes, same error texts. The whole is done when every subtask is.
-
-### M16.1. The owning module, and `config.rs` through it
-
-A new `crates/ketch-core/src/toml_file.rs` owns parsing, rendering and the schema export for the TOML files ketch owns. It starts with the two calls `config.rs` needs — parse text into a `T: DeserializeOwned` naming the file in the error (`Error::parse(what, …)`), and render a `T: Serialize` pretty — and takes `assert_schema_current` from `config.rs`, with its callers (`config.rs`, `lockfile.rs`, `log.rs`, `model.rs` tests) pointed at the new path. A helper is added only with its first caller, so nothing is dead code.
-
-Done when `config.rs` imports neither `toml` nor `schemars`' drift helper, `config.toml` loads and `ketch config reset` writes byte-for-byte as before, the new module has its `//!` header and unit tests (a parse error names the file, render round-trips), and fmt, clippy and nextest are clean.
 
 ### M16.2. `registry.rs` through the module
 
