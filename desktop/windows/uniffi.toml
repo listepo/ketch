@@ -1,0 +1,7 @@
+# What scripts/csharp.sh generates ketch-ffi's C# bindings with
+# (uniffi-bindgen-cs, `just csharp`).
+[bindings.csharp]
+# The generator's default is `internal`, which only a test compiled into the
+# same assembly could reach; the app links KetchCore as a library.
+access_modifier = "public"
+namespace = "Ketch.Ffi"

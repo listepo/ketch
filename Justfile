@@ -105,6 +105,7 @@ lint-shell:
     bash -n scripts/desktop-dmg.sh
     bash -n scripts/desktop-appcast.sh
     bash -n scripts/xcframework.sh
+    bash -n scripts/csharp.sh
     bash -n fuzz/seed.sh
     sh tests/crate-version.sh
     sh tests/release-sh.sh
@@ -275,6 +276,15 @@ xcframework:
 ffi-test:
     scripts/xcframework.sh --debug
     swift test --package-path {{macos_dir}}/KetchCore
+
+# ketch-ffi as a C# library: native library and bindings in desktop/windows/KetchCore/Generated.
+csharp:
+    scripts/csharp.sh
+
+# The C# binding's .NET test against the real core, on a debug build of ketch-ffi.
+csharp-test:
+    scripts/csharp.sh --debug
+    cd desktop/windows && dotnet test --project KetchCore.Tests
 
 # libFuzzer targets in fuzz/ (fuzz/README.md), on nightly and never part of `check`.
 # `just fuzz` lists them, `just fuzz <target> [secs]` runs one, `just fuzz all [secs]` each in turn.

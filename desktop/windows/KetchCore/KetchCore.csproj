@@ -1,0 +1,30 @@
+<!--
+  Copyright (c) 2026 Ivan Tugay
+  SPDX-License-Identifier: GPL-3.0-or-later
+
+  ketch-ffi for C#: the bindings uniffi-bindgen-cs generates and the native
+  library they load, both written into Generated/ by scripts/csharp.sh
+  (`just csharp`). The Windows app references this project.
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <!-- The generated bindings pass pointers to the native library. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Generated code; its warnings are the generator's to fix, not ours. -->
+    <NoWarn>$(NoWarn);CS1591;CS8618;CS8625;CS8603;CS8604;CS0618</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Beside every assembly that references this one, where .NET looks for
+         a [LibraryImport("ketch_ffi")] library first. -->
+    <None Include="Generated/*ketch_ffi.dll;Generated/*ketch_ffi.dylib;Generated/*ketch_ffi.so"
+          CopyToOutputDirectory="PreserveNewest" Link="%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <Target Name="RequireGeneratedBindings" BeforeTargets="BeforeBuild"
+          Condition="!Exists('Generated/ketch_ffi.cs')">
+    <Error Text="Generated/ketch_ffi.cs is missing: run `just csharp` (scripts/csharp.sh) first." />
+  </Target>
+</Project>
