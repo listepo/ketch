@@ -1,0 +1,13 @@
+{
+  "name": "upgrade-nothing-to-do",
+  "description": "Nothing is outdated, or everything outdated is pinned: no events, an empty result.",
+  "call": {
+    "operation": "upgrade",
+    "names": []
+  },
+  "script": [],
+  "outcome": {
+    "type": "ok",
+    "value": []
+  }
+}

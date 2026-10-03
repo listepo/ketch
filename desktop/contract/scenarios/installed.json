@@ -1,0 +1,43 @@
+{
+  "name": "installed",
+  "description": "Two installed packages, one of them pinned with an older version kept.",
+  "call": {
+    "operation": "installed"
+  },
+  "script": [],
+  "outcome": {
+    "type": "ok",
+    "value": [
+      {
+        "binaries": [
+          "/Users/me/.ketch/bin/fd"
+        ],
+        "installed_at": 1760000000,
+        "name": "fd",
+        "pinned": true,
+        "prefix": "/Users/me/.ketch/store/fd/10.1.0",
+        "retained": [
+          "10.0.0"
+        ],
+        "source": "github:sharkdp/fd",
+        "tag": "10.1.0",
+        "trust": "checksum",
+        "version": "10.1.0"
+      },
+      {
+        "binaries": [
+          "/Users/me/.ketch/bin/ripgrep"
+        ],
+        "installed_at": 1760000000,
+        "name": "ripgrep",
+        "pinned": false,
+        "prefix": "/Users/me/.ketch/store/ripgrep/14.1.0",
+        "retained": [],
+        "source": "github:BurntSushi/ripgrep",
+        "tag": "14.1.0",
+        "trust": "checksum",
+        "version": "14.1.0"
+      }
+    ]
+  }
+}

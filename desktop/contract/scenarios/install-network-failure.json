@@ -1,0 +1,79 @@
+{
+  "name": "install-network-failure",
+  "description": "The download fails part way: the task is abandoned, then Network with the core's wording.",
+  "call": {
+    "operation": "install",
+    "specs": [
+      "ripgrep"
+    ],
+    "options": {
+      "force": false,
+      "prerelease": false,
+      "link": true,
+      "require_checksum": false,
+      "bin": null
+    }
+  },
+  "script": [
+    {
+      "type": "event",
+      "event": {
+        "type": "step",
+        "package": "ripgrep",
+        "stage": "resolving"
+      }
+    },
+    {
+      "type": "event",
+      "event": {
+        "type": "began",
+        "id": 1,
+        "task": {
+          "type": "download",
+          "label": "ripgrep",
+          "batch": null
+        }
+      }
+    },
+    {
+      "type": "event",
+      "event": {
+        "type": "sized",
+        "id": 1,
+        "name": "ripgrep.tar.gz",
+        "total": 2000000
+      }
+    },
+    {
+      "type": "event",
+      "event": {
+        "type": "step",
+        "package": "ripgrep",
+        "stage": "downloading"
+      }
+    },
+    {
+      "type": "event",
+      "event": {
+        "type": "progress",
+        "id": 1,
+        "done": 700000,
+        "total": 2000000
+      }
+    },
+    {
+      "type": "event",
+      "event": {
+        "type": "abandoned",
+        "id": 1
+      }
+    }
+  ],
+  "outcome": {
+    "type": "error",
+    "error": {
+      "type": "network",
+      "message": "HTTP 503 from https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep.tar.gz"
+    }
+  }
+}
