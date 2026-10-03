@@ -8,7 +8,7 @@ native surfaces of their own. Everything else is generated from it:
 | Output | What it is | Who reads it |
 | --- | --- | --- |
 | `generated/Tokens.swift` | `Tokens.Colors…`, `Tokens.Space…`, `Tokens.Typography…` as SwiftUI values; colours follow light, dark and Increase Contrast without an asset catalog | the app (`desktop/macos/`) |
-| `generated/KetchTokens.xaml` | a XAML `ResourceDictionary`: colours (a `Color` and a `SolidColorBrush` each) in `ThemeDictionaries` keyed `Light`, `Dark` and `HighContrast`; spacing, `CornerRadius` and type-scale sizes, weights and pixel line heights outside them. Brand tokens only | the Windows app |
+| `generated/KetchTokens.xaml` | a XAML `ResourceDictionary`: colours (a `Color` and a `SolidColorBrush` each) in `ThemeDictionaries` keyed `Light`, `Dark` and `HighContrast` (the last as `SystemColor*` references, see below); spacing, `CornerRadius` and type-scale sizes, weights and pixel line heights outside them. Brand tokens only | the Windows app |
 | `generated/ketch-tokens.css` | a GTK stylesheet: libadwaita's `--accent-bg-color`, `--accent-fg-color`, `--accent-color`, `--success-color`, `--warning-color`, `--error-color` and `--destructive-color` set from the brand colours, and every brand token as a `--ketch-*` custom property; dark and high-contrast values in `prefers-color-scheme` / `prefers-contrast` media queries. Brand tokens only | the Linux app |
 | `../macos/DESIGN.md` front matter | the YAML block at the top, in the [DESIGN.md format](https://github.com/google-labs-code/design.md) | coding agents, the DESIGN.md linter |
 | `preview.html`, between `BEGIN/END GENERATED TOKENS` | CSS variables and a token index | the review page |
@@ -16,9 +16,14 @@ native surfaces of their own. Everything else is generated from it:
 Which tokens leave macOS is the `BRAND` list in `build.mjs`. Glass, wash,
 elevation, blur, motion, the macOS layout sizes and the preset tints stay in
 Swift, the preview and DESIGN.md. Font families are not exported: each
-platform uses its own. Windows has no dark high-contrast theme (a contrast
-theme is the user's own palette), so `HighContrast` takes the `highContrast`
-values and `highContrastDark` is Swift and CSS only.
+platform uses its own. Windows has no dark high-contrast theme: a contrast
+theme is the user's own palette (Aquatic, Desert, Dusk, Night sky), and the
+`highContrast` hex is macOS ink for a light background. So XAML's
+`HighContrast` dictionary holds no hex; it references WinUI's `SystemColor*`
+resources (`XAML_HIGH_CONTRAST` in `build.mjs`, after Microsoft's
+[contrast-themes pairings](https://learn.microsoft.com/en-us/windows/apps/design/accessibility/high-contrast-themes),
+checked 2026-10-03), and `contrast.mjs` does not check those pairs.
+`highContrast` and `highContrastDark` are Swift and CSS only.
 
 The prose of `DESIGN.md` and the rest of `preview.html` are hand-written.
 

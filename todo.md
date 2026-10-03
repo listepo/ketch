@@ -30,4 +30,3 @@
 - D17. Linux: the app on the real core
 - D18. Linux: notifications, background and autostart
 - D19. Linux: packaging and release
-- D20. Windows: XAML `HighContrast` follows the user's contrast theme
