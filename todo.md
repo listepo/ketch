@@ -4,7 +4,6 @@
 - B65. Binary selection regression test
 - R3. Cross-platform CI
 - F8. Spinner and progress bar
-- M16.1. The owning module, and `config.rs` through it
 - M16.2. `registry.rs` through the module
 - M16.3. `push.rs` through the module
 - M16.4. `wizard.rs` through the module
@@ -21,7 +20,6 @@
 - F14. Design system for the macOS app: `DESIGN.md` and tokens
 - F18. Figma design for macOS, Windows and Linux
 - D7. macOS: update notifications
-- D8. macOS: `ketch://` links
 - D11. Windows: WinUI 3 app shell on a fake core
 - D12. Windows: the app on the real core
 - D13. Windows: tray icon, notifications, start at login, links

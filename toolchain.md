@@ -29,7 +29,7 @@ Project programs and direct packages from manifests.
 | swarfr | `ketch` | Lossless cleanup of `target/` after tests | https://github.com/listepo/swarfr |
 | mandoc | ships with macOS; `apt install mandoc` on Linux | `just lint-man` checks the generated man pages | https://mandoc.bsd.lv |
 | uniffi-bindgen-cs | mise (`cargo:` from git, PR #176's commit) | C# bindings for `ketch-ffi` (`just csharp`); no release supports UniFFI 0.32 yet | https://github.com/NordSecurity/uniffi-bindgen-cs |
-| .NET SDK | mise | Builds and runs the C# binding's test (`just csharp-test`) | https://github.com/dotnet/sdk |
+| .NET SDK | mise | Builds and runs the C# binding's test (`just csharp-test`), the Windows app's tests (`just windows-app-test`) and, on Windows, the WinUI app (`ketch-win-app` CI job) | https://github.com/dotnet/sdk |
 
 ## cargo
 
@@ -97,7 +97,8 @@ Project programs and direct packages from manifests.
 
 | Package | Where | Source | Why here |
 | --- | --- | --- | --- |
-| MSTest.Sdk | local (`desktop/windows/KetchCore.Tests`, 4.4.1) | https://github.com/microsoft/testfx | Test framework and runner for the C# binding's test |
+| MSTest.Sdk | local (`desktop/windows/KetchCore.Tests` and `Ketch.AppCore.Tests`, 4.4.1) | https://github.com/microsoft/testfx | Test framework and runner for the C# binding's test and the Windows app's tests |
+| Microsoft.WindowsAppSDK | local (`desktop/windows/Ketch.App`, 2.5.1) | https://github.com/microsoft/WindowsAppSDK | WinUI 3, the XAML compiler and the Windows SDK build tools the Windows app builds with, so no Visual Studio is needed |
 
 ## SwiftPM
 

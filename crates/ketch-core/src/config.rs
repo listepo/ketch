@@ -130,8 +130,7 @@ impl Config {
         let file: ConfigFile = if config_file.is_file() {
             let text =
                 std::fs::read_to_string(&config_file).map_err(|e| Error::io(&config_file, e))?;
-            toml::from_str(&text)
-                .map_err(|e| Error::parse(config_file.display().to_string(), e.to_string()))?
+            crate::toml_file::parse(&text, config_file.display().to_string())?
         } else {
             ConfigFile::default()
         };
@@ -312,7 +311,7 @@ impl Config {
         };
         format!(
             "# Written by `ketch config reset`. Edit freely.\n{}",
-            toml::to_string_pretty(&file).unwrap_or_default()
+            crate::toml_file::render(&file, "config.toml").unwrap_or_default()
         )
     }
 
@@ -466,64 +465,13 @@ pub fn sanitize_component(raw: &str) -> String {
     }
 }
 
-/// Fails when the JSON Schema committed at `relative` (from the repository
-/// root) is not what `T` generates. `KETCH_BLESS=1` rewrites the file
-/// instead: the types are the source, the file only publishes them.
-///
-/// The schema files stay next to the other docs, while this crate's manifest
-/// is `crates/ketch-core`, so the repository root is two directories up.
-#[cfg(test)]
-pub(crate) fn assert_schema_current<T: schemars::JsonSchema>(relative: &str) {
-    // TOML has no null: an absent key is how an `Option` says `None`, so a
-    // schema allowing `null`, or offering it as a default an editor fills
-    // in, would describe a file ketch cannot read.
-    let drop_null = schemars::transform::RecursiveTransform(|s: &mut schemars::Schema| {
-        if s.get("default").is_some_and(serde_json::Value::is_null) {
-            s.remove("default");
-        }
-        if let Some(serde_json::Value::Array(types)) = s.get_mut("type") {
-            types.retain(|t| t != "null");
-            if let [only] = types.as_slice() {
-                let only = only.clone();
-                s.insert("type".into(), only);
-            }
-        }
-    });
-    let mut schema = schemars::generate::SchemaSettings::draft2020_12()
-        .with_transform(drop_null)
-        .into_generator()
-        .into_root_schema_for::<T>();
-    schema.insert(
-        "$comment".into(),
-        "Generated from the Rust types by `KETCH_BLESS=1 cargo nextest run schema`. Do not edit."
-            .into(),
-    );
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join(relative);
-    let rendered = serde_json::to_string_pretty(&schema).expect("render schema") + "\n";
-    if std::env::var_os("KETCH_BLESS").is_some() {
-        std::fs::write(&path, &rendered).expect("write schema");
-        return;
-    }
-    // A Windows checkout may have turned LF into CRLF; the schema is the same.
-    let committed = std::fs::read_to_string(&path)
-        .unwrap_or_default()
-        .replace("\r\n", "\n");
-    pretty_assertions::assert_eq!(
-        committed,
-        rendered,
-        "{relative} is stale; regenerate it with KETCH_BLESS=1 cargo nextest run schema"
-    );
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn committed_config_schema_matches_config_file() {
-        assert_schema_current::<ConfigFile>("docs/config.schema.json");
+        crate::toml_file::assert_schema_current::<ConfigFile>("docs/config.schema.json");
     }
 
     #[test]
@@ -695,7 +643,7 @@ mod tests {
 
     #[test]
     fn default_toml_parses_back_to_compiled_defaults() {
-        let file: ConfigFile = toml::from_str(&Config::default_toml()).unwrap();
+        let file: ConfigFile = crate::toml_file::parse(&Config::default_toml(), "default").unwrap();
         assert_eq!(file.prerelease, Some(false));
         assert_eq!(file.allow_emulation, Some(true));
         assert_eq!(file.link_apps, Some(false));

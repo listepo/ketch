@@ -11,13 +11,14 @@ import SwiftUI
 struct DiscoverView: View {
     @Environment(KetchStore.self) private var store
     @State private var query = ""
+    @State private var path: [String] = []
 
     /// Quick searches. The registry has no categories, so a chip is a search
     /// for a word most packages of that kind mention.
     private static let chips = ["Search", "Git", "JSON", "Python", "Shell"]
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             Page(title: "Discover") {
                 SearchField(prompt: "Search the registry", text: $query)
             } content: {
@@ -44,6 +45,14 @@ struct DiscoverView: View {
                 try? await Task.sleep(for: .milliseconds(250))
                 guard !Task.isCancelled else { return }
                 await store.search(query)
+            }
+            // A `ketch://package/<name>` link opens that package's page. It is
+            // consumed here, so a link that arrives before this view exists
+            // is still shown once it does.
+            .task(id: store.linkedPackage) {
+                guard let name = store.linkedPackage else { return }
+                store.linkedPackage = nil
+                path = [name]
             }
             .navigationDestination(for: String.self) { name in
                 PackageDetailView(name: name)

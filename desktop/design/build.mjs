@@ -8,7 +8,8 @@
 //                              literals (every token)
 //   generated/KetchTokens.xaml the Windows app's ResourceDictionary, with Light,
 //                              Dark and HighContrast theme dictionaries (brand
-//                              tokens only)
+//                              tokens only; HighContrast references the user's
+//                              SystemColor* contrast-theme palette, no hex)
 //   generated/ketch-tokens.css the Linux app's GTK stylesheet, which sets
 //                              libadwaita's CSS variables (brand tokens only)
 //   preview.html            the CSS variables and token index between its
@@ -361,9 +362,38 @@ const XAML_WEIGHT = {
 };
 
 // The XAML theme key for each appearance. Windows has no dark high-contrast
-// theme: a contrast theme is the user's own palette, so one HighContrast
-// dictionary carries the high-contrast values.
-const XAML_THEMES = [["Light", "light"], ["Dark", "dark"], ["HighContrast", "highContrast"]];
+// theme: a contrast theme is the user's own palette (Aquatic, Desert, Dusk and
+// Night sky, three of them dark), so no hex value can be right under all four.
+// The `highContrast` mode in tokens.json is macOS Increase Contrast ink for a
+// light background and never reaches XAML; HighContrast below holds references
+// to the system colours instead.
+const XAML_THEMES = [["Light", "light"], ["Dark", "dark"]];
+
+// Windows' own rule for a contrast theme, from the pairings on
+// https://learn.microsoft.com/en-us/windows/apps/design/accessibility/high-contrast-themes
+// (checked 2026-10-03): Window/WindowText for page, pane and popup backgrounds
+// and for headings, body text, borders and other non-interactive UI;
+// Highlight/HighlightText for selected or interacted UI; ButtonFace/ButtonText
+// for buttons. Hotlight is for hyperlinks and GrayText for disabled UI only, so
+// no brand token maps to either. A token with no row here fails the build, so a
+// new colour has to pick its system pair on purpose.
+const XAML_HIGH_CONTRAST = {
+  "color.accent.default": "Highlight",
+  "color.accent.pressed": "Highlight",
+  "color.accent.on": "HighlightText",
+  "color.accent.subtle": "Window",
+  "color.accent.ink": "WindowText",
+  "color.status.installed": "WindowText",
+  "color.status.update": "WindowText",
+  "color.status.busy": "WindowText",
+  "color.status.warning": "WindowText",
+  "color.status.error": "WindowText",
+  "color.status.installedSubtle": "Window",
+  "color.status.updateSubtle": "Window",
+  "color.status.busySubtle": "Window",
+  "color.status.warningSubtle": "Window",
+  "color.status.errorSubtle": "Window",
+};
 
 function formatXaml({ dictionary }) {
   const tokens = brandTokens(dictionary.allTokens);
@@ -380,6 +410,22 @@ function formatXaml({ dictionary }) {
     }
     return `    <ResourceDictionary x:Key="${theme}">\n${lines.join("\n")}\n    </ResourceDictionary>`;
   });
+
+  // The brush follows the docs' own pattern: a SolidColorBrush whose Color is a
+  // ThemeResource of the system colour, so it tracks a contrast theme switched
+  // while the app runs. The Color entry aliases the same system resource.
+  const highContrast = [];
+  for (const t of tokens.filter((x) => x.$type === "color")) {
+    const where = t.path.join(".");
+    const system = XAML_HIGH_CONTRAST[where];
+    if (!system) throw new Error(`${where}: no system colour for XAML HighContrast`);
+    const key = xamlKey(t.path);
+    highContrast.push(
+      `      <StaticResource x:Key="${key}" ResourceKey="SystemColor${system}Color" />`,
+      `      <SolidColorBrush x:Key="${key}Brush" Color="{ThemeResource SystemColor${system}Color}" />`,
+    );
+  }
+  themed.push(`    <ResourceDictionary x:Key="HighContrast">\n${highContrast.join("\n")}\n    </ResourceDictionary>`);
 
   // Not themed: spacing, radii and the type scale are the same in every theme.
   const plain = [];
@@ -411,7 +457,9 @@ function formatXaml({ dictionary }) {
     `<?xml version="1.0" encoding="utf-8"?>\n<!--\n${HEADER_LINES.map((l) => `  ${xmlEscape(l)}`).join("\n")}\n` +
     `  Brand tokens only (accent, status colours, spacing, radii, type scale): glass, wash,\n` +
     `  blur and elevation stay macOS-only. Font families are left to the app's own theme;\n` +
-    `  LineHeight and Spacing (letter spacing) are in pixels, as XAML expects.\n-->\n` +
+    `  LineHeight and Spacing (letter spacing) are in pixels, as XAML expects.\n` +
+    `  HighContrast holds no hex: it references the SystemColor* resources, so the user's\n` +
+    `  contrast theme (Aquatic, Desert, Dusk or Night sky) decides every colour.\n-->\n` +
     `<ResourceDictionary\n    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"\n` +
     `    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">\n` +
     `  <ResourceDictionary.ThemeDictionaries>\n${themed.join("\n")}\n  </ResourceDictionary.ThemeDictionaries>\n\n` +

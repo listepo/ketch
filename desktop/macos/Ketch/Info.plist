@@ -3,6 +3,9 @@
 <!--
   Sparkle's keys, merged into the Info.plist Xcode generates from project.yml.
 
+  CFBundleURLTypes registers ketch:// so a link opens the app. The app only
+  ever shows a package page for one; it never installs from a link.
+
   SUFeedURL is the one appcast every release rewrites, attached to the
   `desktop-appcast` release. It never goes through /releases/latest: that
   endpoint belongs to the CLI, and app releases are created with
@@ -15,6 +18,17 @@
 -->
 <plist version="1.0">
 <dict>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>io.github.pyrlyn.ketch.link</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>ketch</string>
+			</array>
+		</dict>
+	</array>
 	<key>SUFeedURL</key>
 	<string>https://github.com/pyrlyn/ketch/releases/download/desktop-appcast/appcast.xml</string>
 	<key>SUPublicEDKey</key>

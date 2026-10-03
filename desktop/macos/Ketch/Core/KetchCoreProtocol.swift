@@ -169,4 +169,8 @@ protocol KetchCoreProtocol: Sendable {
     /// The changelog between two versions, already sanitized by the core.
     func changelog(name: String, from: String?, to: String?) throws -> String
     func doctor() throws -> [Finding]
+    /// The package a `ketch://package/<name>` link names. Everything in a link
+    /// is untrusted, so the core validates it; a link that names anything but
+    /// a package page throws.
+    func packageName(forLink link: String) throws -> String
 }

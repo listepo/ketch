@@ -8,7 +8,6 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | B65 | in progress | P0 | 2 | 0% | Cursor / grok 4.7 high |
 | R3 | in progress | P1 | 3 | 67% | Cursor / grok 4.7 high |
 | F8 | in progress | P2 | 3 | 0% | Cursor / grok 4.7 high |
-| M16.1 | todo | P2 | 2 | 0% | |
 | M16.2 | todo | P2 | 2 | 0% | |
 | M16.3 | todo | P2 | 1 | 0% | |
 | M16.4 | todo | P2 | 1 | 0% | |
@@ -25,8 +24,7 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | F14 | in progress | P2 | 3 | 90% | Claude Code / opus-5.5 |
 | F18 | in progress | P2 | 4 | 90% | Claude Code / opus-5.5 |
 | D7 | todo | P3 | 2 | 0% | |
-| D8 | todo | P3 | 2 | 0% | |
-| D11 | todo | P3 | 5 | 0% | |
+| D11 | in progress | P3 | 5 | 10% | Claude Code / sonnet-5.5 |
 | D12 | todo | P3 | 4 | 0% | |
 | D13 | todo | P3 | 3 | 0% | |
 | D14 | todo | P3 | 4 | 0% | |
@@ -322,12 +320,6 @@ review of the file and the merge of the PR.
 
 The creator decided (2026-10-03) to split M16 into the subtasks below, one pull request each, in id order: M16.1 first, since the rest call into the module it creates; M16.8 last of the ready ones. M16.6 and M16.7 wait for the creator's choice of scope. Behaviour does not change in any subtask: same files read and written, same bytes, same error texts. The whole is done when every subtask is.
 
-### M16.1. The owning module, and `config.rs` through it
-
-A new `crates/ketch-core/src/toml_file.rs` owns parsing, rendering and the schema export for the TOML files ketch owns. It starts with the two calls `config.rs` needs — parse text into a `T: DeserializeOwned` naming the file in the error (`Error::parse(what, …)`), and render a `T: Serialize` pretty — and takes `assert_schema_current` from `config.rs`, with its callers (`config.rs`, `lockfile.rs`, `log.rs`, `model.rs` tests) pointed at the new path. A helper is added only with its first caller, so nothing is dead code.
-
-Done when `config.rs` imports neither `toml` nor `schemars`' drift helper, `config.toml` loads and `ketch config reset` writes byte-for-byte as before, the new module has its `//!` header and unit tests (a parse error names the file, render round-trips), and fmt, clippy and nextest are clean.
-
 ### M16.2. `registry.rs` through the module
 
 `load_meta` and `write_meta` (`registry.meta.toml`) use M16.1's parse and render. `read_package` parses a package folder's `ketch.toml` as a table, fills `name` from the folder when the file leaves it out, and deserializes the manifest; the module gains what that needs (reading and inserting a string key of a parsed document, then deserializing it), with tests.
@@ -383,24 +375,28 @@ The macOS app checks for updates on a timer (F12) but tells nobody unless the wi
 
 Done when new upgrades since the last notice post one `UNUserNotificationCenter` notification, authorisation is asked only when the user turns notifications on in Settings, clicking it opens Updates, and a unit test covers which upgrades count as new.
 
-### D8. macOS: `ketch://` links
-
-A link on a web page or in the registry could open a package in the app. Whatever a link carries is untrusted input, so it is validated by the core. A link only opens a package page and never starts an install (creator, 2026-10-01, open decision 10). Research: section 1, "Deep links".
-
-Done when `CFBundleURLTypes` registers `ketch`, `onOpenURL` opens the package page a valid link names, through the core's validation, any other action is refused, and tests cover malformed and hostile links.
-
-
 ### D11. Windows: WinUI 3 app shell on a fake core
 
 The Windows app's screens can be built before the binding is settled, the way F12 started on macOS. Research: sections 3b and 3c.
 
 Done when a WinUI 3 app (Windows App SDK, .NET 10, built with `dotnet build`, no Visual Studio required) has the common screens in a `NavigationView` with a `TitleBar` over Mica, `ContentDialog` and `InfoBar` for decisions and busy, light, dark and contrast themes, all on a fake core reading D4's fixtures, with a Windows CI job that builds and runs its tests.
 
+Execution plan:
+
+1. `desktop/windows/Ketch.AppCore` (net10.0, no UI types, so it builds and tests anywhere): `IKetchCore`, the records, `CancelToken`, `ContractScenario` (System.Text.Json over `desktop/contract/scenarios`, the same mapping as `ContractScenario.swift`), `FakeKetchCore` (a port of the macOS fake: samples, simulated pipeline, scripted replay, lock switch) and `KetchStore` (`INotifyPropertyChanged`; installed, updates, held, search, doctor, activity, log, busy, pending binary choice; install, upgrade, uninstall, cancel, retry).
+2. `desktop/windows/Ketch.AppCore.Tests` (MSTest, as `KetchCore.Tests`): every scenario decodes and maps, the fake replays them (events, questions, busy, cancelled, errors), and the store's states.
+3. `desktop/windows/Ketch.App` (WinUI 3, `WindowsPackageType=None`, self-contained, built by `dotnet build`): `App.xaml` merges `desktop/design/generated/KetchTokens.xaml`; `MainWindow` with a `TitleBar` over `MicaBackdrop` and a `NavigationView` (Installed, Discover, Updates, Activity, Doctor, Settings pinned at the bottom); a package detail page; `ContentDialog` for uninstall, upgrade-all and binary choice; `InfoBar` for busy and errors; Settings picks light, dark or system, and high contrast follows Windows through the token file's `HighContrast` dictionary.
+4. CI: a `ketch-win-app` job on `windows-latest` with SHA-pinned actions: `dotnet test` for `Ketch.AppCore.Tests`, `dotnet build` for `Ketch.App`. If the Windows App SDK cannot build without Visual Studio, stop and report rather than work around it.
+5. `toolchain.md` rows (Windows App SDK, `Microsoft.WindowsAppSDK`), `desktop/windows/README`-level notes in the contract README (the Windows fake is now here), SPDX headers on every new source file.
+6. Verify: `dotnet test` for `Ketch.AppCore.Tests` locally (net10.0 builds on this Mac), `dotnet build` of the WinUI project only in CI (not buildable on macOS; noted in the PR).
+
 ### D12. Windows: the app on the real core
 
 Swap the Windows app's fake core for the binding. Depends on D10, D11, D1 and D2.
 
 Done when the app runs every screen on `ketch-ffi` through D10's binding, work runs off the UI thread with events marshalled to the `DispatcherQueue`, cancel and `Busy` behave as in the contract, and a manual pass against a scratch root is recorded.
+
+The app ships both as an MSIX and unpackaged (D14), and an unpackaged app has no `ApplicationData`, so settings go in a file under `%LOCALAPPDATA%\ketch` that works in both.
 
 ### D13. Windows: tray icon, notifications, start at login, links
 
@@ -412,7 +408,9 @@ Done when a notification-area icon opens the tray panel, `AppNotificationManager
 
 How the Windows app reaches users and updates itself, separate from the CLI's release. R10's open decisions on distribution and the Windows App SDK licence come first.
 
-Done when CI builds an unpackaged, signed (Artifact Signing or the creator's choice) release on `desktop-windows-v*` tags without touching `/releases/latest`, updates arrive through the chosen route (Velopack or winget), and the creator's answers to R10's decisions are recorded.
+Done when CI builds, on `desktop-windows-v*` tags and without touching `/releases/latest`, both an MSIX and an unpackaged self-contained zip, signed (Artifact Signing or the creator's choice), updates arrive through the chosen route (Velopack or winget), and the creator's answers to R10's decisions are recorded. The creator chose to ship both forms. The MSIX is signed with a certificate held in repository secrets named the way the macOS ones are (`MACOS_CERTIFICATE`, `MACOS_CERTIFICATE_PWD`), and the release fails when they are missing rather than shipping unsigned.
+
+Settings persistence differs between the two: an MSIX has `ApplicationData`, an unpackaged app has none (D12 stores settings in a way that works in both).
 
 ### D15. Linux: `ketch-capi`, a C ABI and VAPI for Vala
 
