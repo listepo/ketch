@@ -369,6 +369,22 @@ pub fn fill_latest(cx: &Ctx<'_>, sources: &SourceRegistry, rows: &mut [Row]) -> 
     }
 }
 
+/// Fill in `latest` from earlier listings' answers alone, asking no source.
+///
+/// For callers that show a `latest` beside something else — search results —
+/// where a lookup per row would cost a network round trip each for a value
+/// that is only a hint. A row the cache has no fresh answer for stays
+/// `NotChecked`, which reads as unknown.
+pub fn fill_cached(cx: &Ctx<'_>, rows: &mut [Row]) {
+    let mut cache = Cache::load(&cache_path(cx.cfg), cx.report);
+    cache.expire(now_unix());
+    for row in rows.iter_mut() {
+        if let Some(entry) = row.lookup().and_then(|l| cache.entries.get(&l.key())) {
+            row.latest = Latest::Found(entry.found());
+        }
+    }
+}
+
 /// The lookups that the cache could not answer, in parallel, with a counter
 /// on stderr while they run.
 fn ask_all(
@@ -854,6 +870,31 @@ mod tests {
         );
         std::fs::write(&path, "not json").expect("write");
         assert!(Cache::load(&path, &Report::silent()).entries.is_empty());
+    }
+
+    #[test]
+    fn a_cached_latest_is_filled_in_and_an_unknown_one_stays_unchecked() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let report = Report::silent();
+        let cfg = Config::load(Some(dir.path().join("root")), &report).expect("config");
+        let mut cache = Cache::default();
+        cache.entries.insert(
+            "test:alpha#stable".into(),
+            CacheEntry::new(&found("1.2.3"), now_unix()),
+        );
+        cache.entries.insert(
+            "test:stale#stable".into(),
+            CacheEntry::new(&found("9.9.9"), 0),
+        );
+        cache.save(&cache_path(&cfg), &report);
+
+        let mut rows = merge(
+            Vec::new(),
+            vec![offer("alpha"), offer("beta"), offer("stale")],
+        );
+        fill_cached(&Ctx::new(&cfg, &report), &mut rows);
+        let latest: Vec<Option<String>> = rows.iter().map(Row::latest_version).collect();
+        assert_eq!(latest, vec![Some("1.2.3".to_string()), None, None]);
     }
 
     #[test]
