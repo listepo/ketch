@@ -23,6 +23,7 @@ private struct GeneralSettingsView: View {
     @Environment(KetchStore.self) private var store
     @Environment(AppSettings.self) private var settings
     @State private var opensAtLogin = false
+    @State private var notifies = false
     @State private var message: String?
 
     var body: some View {
@@ -34,6 +35,14 @@ private struct GeneralSettingsView: View {
                 }
             }
             Toggle("Include prereleases when installing", isOn: $settings.includePrereleases)
+            Toggle("Notify when updates are available", isOn: $notifies)
+                .onChange(of: notifies) { _, enabled in
+                    guard enabled != settings.notifiesOfUpdates else { return }
+                    Task {
+                        message = await store.setNotifications(enabled)
+                        notifies = settings.notifiesOfUpdates
+                    }
+                }
             Toggle("Open at login", isOn: $opensAtLogin)
                 .onChange(of: opensAtLogin) { _, enabled in
                     guard enabled != settings.opensAtLogin else { return }
@@ -57,7 +66,10 @@ private struct GeneralSettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .onAppear { opensAtLogin = settings.opensAtLogin }
+        .onAppear {
+            opensAtLogin = settings.opensAtLogin
+            notifies = settings.notifiesOfUpdates
+        }
         .onChange(of: settings.updateCheckIntervalMinutes) { store.startUpdateChecks() }
     }
 

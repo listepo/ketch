@@ -23,7 +23,6 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | F13 | in progress | P3 | 4 | 80% | Claude Code / opus-5.5 |
 | F14 | in progress | P2 | 3 | 90% | Claude Code / opus-5.5 |
 | F18 | in progress | P2 | 4 | 90% | Claude Code / opus-5.5 |
-| D7 | todo | P3 | 2 | 0% | |
 | D11 | in progress | P3 | 5 | 10% | Claude Code / sonnet-5.5 |
 | D12 | todo | P3 | 4 | 0% | |
 | D13 | todo | P3 | 3 | 0% | |
@@ -368,12 +367,6 @@ A test in the owning module scans the Rust sources of every workspace crate (`sr
 
 Done when the test fails on a deliberate `toml::` use in another module (checked once by hand, not committed), passes on the tree, and the allow-list holds only the files of subtasks still open.
 
-
-### D7. macOS: update notifications
-
-The macOS app checks for updates on a timer (F12) but tells nobody unless the window or menu-bar panel is open. Builds on F12's live core; F12's remaining work (the `LiveKetchCore` adapter and the manual checks) stays in F12. Research: section 1.
-
-Done when new upgrades since the last notice post one `UNUserNotificationCenter` notification, authorisation is asked only when the user turns notifications on in Settings, clicking it opens Updates, and a unit test covers which upgrades count as new.
 
 ### D11. Windows: WinUI 3 app shell on a fake core
 
