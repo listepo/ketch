@@ -1,0 +1,80 @@
+{
+  "name": "install-binary-choice",
+  "description": "Two binaries share the package's name, so the core asks which to link and the app answers with an index.",
+  "call": {
+    "operation": "install",
+    "specs": [
+      "uv"
+    ],
+    "options": {
+      "force": false,
+      "prerelease": false,
+      "link": true,
+      "require_checksum": false,
+      "bin": null
+    }
+  },
+  "script": [
+    {
+      "type": "event",
+      "event": {
+        "type": "step",
+        "package": "uv",
+        "stage": "resolving"
+      }
+    },
+    {
+      "type": "event",
+      "event": {
+        "type": "step",
+        "package": "uv",
+        "stage": "installing"
+      }
+    },
+    {
+      "type": "ask",
+      "question": {
+        "type": "choose_binary",
+        "package": "uv",
+        "candidates": [
+          "uv",
+          "uvx"
+        ]
+      },
+      "answer": {
+        "type": "index",
+        "index": 1
+      }
+    },
+    {
+      "type": "event",
+      "event": {
+        "type": "success",
+        "verb": "installed",
+        "detail": "uv 0.9.0"
+      }
+    }
+  ],
+  "outcome": {
+    "type": "ok",
+    "value": [
+      {
+        "package": {
+          "binaries": [
+            "/Users/me/.ketch/bin/uv"
+          ],
+          "installed_at": 1760000000,
+          "name": "uv",
+          "pinned": false,
+          "prefix": "/Users/me/.ketch/store/uv/0.9.0",
+          "retained": [],
+          "source": "github:astral-sh/uv",
+          "tag": "0.9.0",
+          "trust": "checksum",
+          "version": "0.9.0"
+        },
+        "replaced": null
+      }
+    ]
+  }
+}

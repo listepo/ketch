@@ -25,7 +25,6 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | F14 | in progress | P2 | 3 | 90% | Claude Code / opus-5.5 |
 | F18 | in progress | P2 | 4 | 90% | Claude Code / opus-5.5 |
 | D3 | todo | P3 | 3 | 0% | |
-| D4 | todo | P3 | 2 | 0% | |
 | D5 | todo | P3 | 3 | 0% | |
 | D7 | todo | P3 | 2 | 0% | |
 | D8 | todo | P3 | 2 | 0% | |
@@ -385,12 +384,6 @@ Done when the test fails on a deliberate `toml::` use in another module (checked
 Screens the apps already draw (Activity history, package info, pin, rollback, Doctor fixes, PATH status) have no core call behind them. Research: section 3a, gap G6.
 
 Done when history (`stats.db`), info, pin/unpin, rollback, prune, registry refresh, `path` status and install, a doctor fix action and reading ketch's config are exported as thin calls into existing core code, each with a test; `registry push` stays out (it owns a tokio runtime).
-
-### D4. Contract fixtures for every app's fake core
-
-Three apps each test against a fake core; if each fake invents its own records and event streams, they will drift from the real one and from each other. Research: section 2, "Written once".
-
-Done when a set of language-neutral JSON scenarios (records, event streams with progress and `Abandoned`, `Busy`, `Cancelled`, decisions) is generated from the Rust types by a test that fails on drift, and the macOS app's fake core reads them; the Windows and Linux fakes read the same files when they exist.
 
 ### D5. Design tokens for XAML and GTK
 
