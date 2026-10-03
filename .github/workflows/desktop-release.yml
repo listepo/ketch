@@ -139,7 +139,7 @@ jobs:
             echo "TEAM_ID=$team"
           } >> "$GITHUB_ENV"
 
-      # Universal, Release, signed with the hardened runtime; the version is
+      # Apple Silicon (arm64) only, Release, signed with the hardened runtime; the version is
       # both CFBundleShortVersionString and CFBundleVersion, which Sparkle
       # compares.
       - name: Archive the app
@@ -150,7 +150,7 @@ jobs:
           xcodegen generate --spec project.yml
           xcodebuild archive -project Ketch.xcodeproj -scheme Ketch -configuration Release \
             -derivedDataPath build -archivePath "$RUNNER_TEMP/Ketch.xcarchive" \
-            -destination 'generic/platform=macOS' ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO \
+            -destination 'generic/platform=macOS' ARCHS=arm64 ONLY_ACTIVE_ARCH=NO \
             MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$VERSION" \
             CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="$IDENTITY" DEVELOPMENT_TEAM="$TEAM_ID" \
             OTHER_CODE_SIGN_FLAGS="--keychain $KEYCHAIN --timestamp" ENABLE_HARDENED_RUNTIME=YES
@@ -171,9 +171,7 @@ jobs:
           grep -Eq 'flags=0x[0-9a-f]+\(runtime\)' <<<"$details" \
             || { echo "the hardened runtime is off" >&2; exit 1; }
           archs="$(lipo -archs "$app/Contents/MacOS/Ketch")"
-          case " $archs " in *" arm64 "*" x86_64 "* | *" x86_64 "*" arm64 "*) ;; *)
-            echo "not universal: $archs" >&2; exit 1 ;;
-          esac
+          [ "$archs" = arm64 ] || { echo "expected arm64 only: $archs" >&2; exit 1; }
           plist="$app/Contents/Info.plist"
           for key in CFBundleShortVersionString CFBundleVersion; do
             [ "$(/usr/libexec/PlistBuddy -c "Print :$key" "$plist")" = "$VERSION" ] \
