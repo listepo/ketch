@@ -468,10 +468,7 @@ pub fn pin(cfg: &Config, args: NameArgs, pinned: bool) -> Result<()> {
     let mut state = State::load(cfg)?;
 
     for name in select(&state, &args.names)? {
-        let Some(entry) = state.get_mut(&name) else {
-            continue;
-        };
-        entry.pinned = pinned;
+        let entry = install::pin(&mut state, &name, pinned)?;
         ui::success(
             if pinned { "pinned" } else { "unpinned" },
             &format!("{} {}", entry.name, entry.version),

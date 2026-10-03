@@ -1148,6 +1148,22 @@ Execution plan (Claude Code / opus-5.5):
 
 Status: done. `changelog_range` reads release notes only: the installed payload's file belongs to the old version and has no sections for the newer ones. `held_by` is always `None` for now, because `ketch sync` restores a pin without recording which `ketch.lock` it came from; recording that is a state change left for a later task. `outdated` now reports pinned packages, marked, and `upgrade` still skips them. `uninstall` reports a `removing` status and a `removed` success per package. Core gained `changelog::published_range` / `between` and `listing::fill_cached`; `published` shares its manifest fallback with the range through `manifest_for`. A breaking change to the binding (new record fields, pinned rows in `outdated`).
 
+### D3. `ketch-ffi`: the remaining CLI operations
+
+Screens the apps already draw (Activity history, package info, pin, rollback, Doctor fixes, PATH status) have no core call behind them. Research: section 3a, gap G6.
+
+Done when history (`stats.db`), info, pin/unpin, rollback, prune, registry refresh, `path` status and install, a doctor fix action and reading ketch's config are exported as thin calls into existing core code, each with a test; `registry push` stays out (it owns a tokio runtime).
+
+Execution plan (Claude Code / opus-5.5):
+
+1. Core first, so the CLI and the binding share one path: `shell::status`, `shell::detected` and `shell::install_here` (the PATH report and setup the CLI computed inline), `doctor::fix` (moved from `cmd/system.rs`), `install::pin` (from `cmd/pkg.rs`), `Resolver::resolve_or_recorded` (the registry, else the manifest recorded at install time), and a new `info` module whose `gather` is what `ketch info` assembled. The CLI commands call these and only format.
+2. `crates/ketch-ffi`: `history`, `info`, `pin`/`unpin`, `rollback`, `prune`, `registry_refresh`, `path_status`, `path_install`, `doctor_fix` and `config`, each a thin call into step 1 or existing core code, with records `HistoryEvent`, `PackageInfo`, `Pruned`, `PathStatus`, `ShellSetup`, `PathChange` and `Settings`. Mutating calls hold the lock, as the CLI does.
+3. A Rust unit test per call in `lib.rs`; `doctor_fix` runs against a scratch `HOME` on Unix only.
+4. Swift binding test: pin holds an upgrade, unpin lets it through, rollback undoes it, history records all three, info carries the record, and path status plus settings describe the scratch root.
+5. Verify: `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo nextest run --workspace`, `just ffi-test`.
+
+Status: done. `Settings` reports only whether a GitHub token is set, never the token. `prune` with a `keep` stores it as the retention setting, as `ketch prune --keep` does. An empty name list means every installed package for `pin`, `unpin` and `prune`, as on the command line. `registry push` stays out: it owns a tokio runtime. `changelog::manifest_for` from D2 became `Resolver::resolve_or_recorded`, shared with `info`.
+
 ### M16.1. The owning module, and `config.rs` through it
 
 A new `crates/ketch-core/src/toml_file.rs` owns parsing, rendering and the schema export for the TOML files ketch owns. It starts with the two calls `config.rs` needs — parse text into a `T: DeserializeOwned` naming the file in the error (`Error::parse(what, …)`), and render a `T: Serialize` pretty — and takes `assert_schema_current` from `config.rs`, with its callers (`config.rs`, `lockfile.rs`, `log.rs`, `model.rs` tests) pointed at the new path. A helper is added only with its first caller, so nothing is dead code.
@@ -1192,5 +1208,28 @@ Status: done.
 Done when `registry.rs` imports neither `toml` nor `toml_edit`, the existing registry tests pass unchanged, the new helper has tests, and `ketch update` plus `ketch search` against a scratch root behave as before.
 
 Execution plan (Claude Code / opus-5.5): `load_meta`/`write_meta` call `toml_file::parse`/`render` with the same file name in the error; `toml_file::Document` (parse into a table, `str`, `set_str`, `deserialize`) carries `read_package`'s fill-in of `name`. Parsing straight into a table makes the old "expected a table of package fields" branch unreachable (a TOML document is a table), so it goes. Tests for `Document`; fmt, clippy, nextest; `ketch update` twice (writes then reads `registry.meta.toml`) and `ketch search ripgrep` against a scratch root.
+
+### D7. macOS: update notifications
+
+The macOS app checks for updates on a timer (F12) but tells nobody unless the window or menu-bar panel is open. Builds on F12's live core; F12's remaining work (the `LiveKetchCore` adapter and the manual checks) stays in F12. Research: section 1.
+
+Done when new upgrades since the last notice post one `UNUserNotificationCenter` notification, authorisation is asked only when the user turns notifications on in Settings, clicking it opens Updates, and a unit test covers which upgrades count as new.
+
+Execution plan:
+
+1. `Ketch/Store/UpdateNotices.swift`: the pure rule (`fresh(updates:notified:)`: held packages never count, an upgrade is new by `name@version`, a version already noticed is not new again), the notice text (at most three names, control characters stripped, since versions come from release tags), an `UpdateNotifier` protocol, and `SystemUpdateNotifier` over `UNUserNotificationCenter` plus its delegate.
+2. `AppSettings`: `notifiesOfUpdates` (off by default) and the set of already-noticed upgrades, in UserDefaults.
+3. `KetchStore`: after each background check, post one notice for the new upgrades and remember them; `setNotifications(_:)` asks authorisation only when the user turns the switch on, and turns it back off with an explanation when macOS refuses. A click sets `requestedSection = .updates` and asks for the main window; `ContentView` switches to Updates, `MenuBarLabel` (always alive) opens the window if it was closed.
+4. Settings: a "Notify when updates are available" toggle in General.
+5. Tests: `UpdateNoticesTests` for which upgrades count as new, store tests against a fake notifier (one notice for several new upgrades, none for held or already-noticed ones, none when off, authorisation asked only on turning on, refusal turns it off).
+6. Verify: `swift-format lint --strict`, `just macos-test` unit tests (the UI test needs an unlocked screen; CI runs it).
+
+### D20. Windows: XAML `HighContrast` follows the user's contrast theme
+
+Requested by the creator (2026-10-03). `KetchTokens.xaml`'s `HighContrast` dictionary carries the tokens' `highContrast` hex values, which are macOS Increase Contrast ink tuned for a light background (AccentInk `#003A75`, StatusInstalled `#0B5A31`). Windows applies that one dictionary under all four contrast themes (Aquatic, Desert, Dusk, Night sky), three of them dark, so text becomes unreadable, and an app in a contrast theme is expected to use the user's palette rather than brand colours.
+
+Execution plan: (1) `desktop/design/build.mjs` writes the XAML `HighContrast` dictionary as references to WinUI's `SystemColor*` resources, chosen from Microsoft's contrast-themes pairings (https://learn.microsoft.com/en-us/windows/apps/design/accessibility/high-contrast-themes, checked 2026-10-03): accent fills to Highlight, text on accent to HighlightText, text, status glyphs and focus ring to WindowText, surfaces to Window; brushes use `{ThemeResource SystemColor...Color}` as the page shows. (2) Light, Dark and the GTK output stay as they are. (3) `contrast.mjs` skips these pairs, with a comment. (4) Regenerate, then `just design-check` and `xmllint` on the XAML. (5) The generated header, `DESIGN.md`, `desktop/design/README.md` and `desktop/contract/README.md` state the rule.
+
+Done when the generated `HighContrast` dictionary holds no hex values, `just design-check` passes with its drift check covering the output, and the docs say so.
 
 Status: done.

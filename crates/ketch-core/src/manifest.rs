@@ -14,7 +14,9 @@
 
 use crate::config::Config;
 use crate::error::{Error, Result};
-use crate::model::{normalize_name, Manifest, ManifestOrigin, PackageRef, PackageSpec};
+use crate::model::{
+    normalize_name, InstalledPackage, Manifest, ManifestOrigin, PackageRef, PackageSpec,
+};
 use crate::report::{Ctx, Report};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
@@ -79,6 +81,28 @@ impl Resolver {
             registry: crate::registry::load(cx),
             builtin,
         })
+    }
+
+    /// Resolve a spec, or fall back to the manifest recorded when `installed`
+    /// was installed, so a package the registry has since dropped can still be
+    /// described. The origin is `None` for the recorded one.
+    pub fn resolve_or_recorded(
+        &self,
+        spec: &PackageSpec,
+        installed: Option<&InstalledPackage>,
+    ) -> Result<(Manifest, Option<ManifestOrigin>)> {
+        match self.resolve(spec) {
+            Ok((m, origin)) => Ok((m, Some(origin))),
+            Err(e) => match installed {
+                Some(pkg) => Ok((
+                    pkg.manifest
+                        .clone()
+                        .unwrap_or_else(|| Manifest::inferred(pkg.source.clone())),
+                    None,
+                )),
+                None => Err(e),
+            },
+        }
     }
 
     /// Resolve a spec, reporting where the manifest came from.

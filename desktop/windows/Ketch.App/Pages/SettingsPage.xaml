@@ -1,0 +1,63 @@
+<!--
+  Copyright (c) 2026 Ivan Tugay
+  SPDX-License-Identifier: GPL-3.0-or-later
+-->
+<Page
+    x:Class="KetchApp.Pages.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:app="using:KetchApp"
+    xmlns:core="using:Ketch.AppCore">
+    <ScrollViewer>
+        <StackPanel Padding="32,16,32,24" Spacing="16">
+            <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="Settings" />
+
+            <StackPanel Spacing="4">
+                <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Appearance" />
+                <!-- High contrast is not a choice here: Windows switches the
+                     tokens' HighContrast colours in by itself when it is on. -->
+                <ComboBox
+                    x:Name="Theme"
+                    MinWidth="260"
+                    Header="Theme"
+                    SelectionChanged="OnThemeChanged">
+                    <ComboBoxItem Content="Use system setting" Tag="Default" />
+                    <ComboBoxItem Content="Light" Tag="Light" />
+                    <ComboBoxItem Content="Dark" Tag="Dark" />
+                </ComboBox>
+            </StackPanel>
+
+            <StackPanel Spacing="4">
+                <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="ketch root" />
+                <TextBlock
+                    x:Name="Root"
+                    FontFamily="Cascadia Mono"
+                    IsTextSelectionEnabled="True" />
+                <TextBlock
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    Text="Shared with the ketch CLI. The app stores no tokens."
+                    TextWrapping="Wrap" />
+            </StackPanel>
+
+            <StackPanel Spacing="4">
+                <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Fake core (development)" />
+                <TextBlock
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    Text="The app runs on a fake core that replays the contract scenarios. Pick one to play it for the next install, upgrade or uninstall."
+                    TextWrapping="Wrap" />
+                <ComboBox
+                    x:Name="Scenario"
+                    MinWidth="320"
+                    Header="Next mutation plays"
+                    SelectionChanged="OnScenarioChanged" />
+                <TextBlock
+                    x:Name="ScenarioText"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    TextWrapping="Wrap" />
+            </StackPanel>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

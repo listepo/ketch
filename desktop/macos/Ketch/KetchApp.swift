@@ -22,6 +22,8 @@ struct KetchApp: App {
         // A hosted unit-test run launches the app too; its timer would race
         // the tests' own store.
         if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
+            NotificationRouter.shared.onOpen = { [weak store] in store?.openUpdates() }
+            NotificationRouter.shared.install()
             store.startUpdateChecks()
         }
     }
@@ -43,6 +45,7 @@ struct KetchApp: App {
                 .environment(settings)
         } label: {
             MenuBarLabel(count: store.pendingUpgradeCount, isRunning: store.isRunning)
+                .environment(store)
         }
         .menuBarExtraStyle(.window)
 

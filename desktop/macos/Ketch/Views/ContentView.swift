@@ -63,6 +63,11 @@ struct ContentView: View {
         .onChange(of: appearsActive) { _, active in
             if active { Task { await store.refresh() } }
         }
+        .onChange(of: store.requestedSection, initial: true) { _, requested in
+            guard let requested else { return }
+            section = requested
+            store.requestedSection = nil
+        }
         .onOpenURL { url in Task { await store.open(link: url) } }
         .onChange(of: store.linkedPackage) { _, name in
             if name != nil { section = .discover }
