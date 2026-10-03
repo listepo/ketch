@@ -1,0 +1,36 @@
+{
+  "name": "search",
+  "description": "A search with a curated package whose latest version is unknown, and a repository.",
+  "call": {
+    "operation": "search",
+    "query": "grep",
+    "limit": 10
+  },
+  "script": [],
+  "outcome": {
+    "type": "ok",
+    "value": {
+      "known": [
+        {
+          "description": "Line-oriented search tool",
+          "latest": "14.1.1",
+          "name": "ripgrep",
+          "source": "github:BurntSushi/ripgrep"
+        },
+        {
+          "description": null,
+          "latest": null,
+          "name": "ugrep",
+          "source": "github:Genivia/ugrep"
+        }
+      ],
+      "repositories": [
+        {
+          "description": "rga: ripgrep, but also search in PDFs",
+          "spec": "github:phiresky/ripgrep-all",
+          "stars": 12000
+        }
+      ]
+    }
+  }
+}

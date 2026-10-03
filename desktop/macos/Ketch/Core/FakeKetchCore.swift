@@ -22,6 +22,14 @@ final class FakeKetchCore: KetchCoreProtocol {
         var lockHolder: UInt32?
         /// Every operation called, in order, for tests to assert on.
         var calls: [String] = []
+        /// Contract scenarios to replay for install, upgrade and uninstall,
+        /// by operation name.
+        var scripted: [String: ContractScenario] = [:]
+        /// Answers a contract scenario fixed for the reads, instead of the
+        /// samples' own.
+        var upgrades: [Upgrade]?
+        var findings: [Finding]?
+        var changelogText: String?
     }
 
     let root: URL
@@ -50,6 +58,34 @@ final class FakeKetchCore: KetchCoreProtocol {
 
     var calls: [String] { state.withLock { $0.calls } }
 
+    /// Makes the fake answer as the core did in `scenario`: a read returns the
+    /// scenario's records, and install, upgrade and uninstall replay its
+    /// events, questions and outcome. Scenarios come from
+    /// `desktop/contract/scenarios`, generated from `ketch-ffi`'s types.
+    func script(_ scenario: ContractScenario) throws {
+        switch scenario.call.operation {
+        case "installed":
+            let packages = try scenario.value(as: [ContractScenario.Package].self)
+            state.withLock { $0.installed = packages.map(\.asInstalled) }
+        case "search":
+            let known = try scenario.value(as: ContractScenario.SearchResults.self).known
+            state.withLock { $0.registry = known.map(\.asRegistryPackage) }
+        case "outdated":
+            let upgrades = try scenario.value(as: [ContractScenario.UpgradeEntry].self)
+            state.withLock { $0.upgrades = upgrades.map(\.asUpgrade) }
+        case "doctor":
+            let checks = try scenario.value(as: [ContractScenario.CheckEntry].self)
+            state.withLock { $0.findings = checks.map(\.asFinding) }
+        case "changelog_range":
+            let entries = try scenario.value(as: [ContractScenario.ChangelogEntry].self)
+            state.withLock { $0.changelogText = ContractScenario.markdown(entries) }
+        case "install", "upgrade", "uninstall":
+            state.withLock { $0.scripted[scenario.call.operation] = scenario }
+        case let other:
+            throw KetchError.other(message: "no fake behaviour for the scenario operation \(other)")
+        }
+    }
+
     // MARK: KetchCoreProtocol
 
     func installed() throws -> [InstalledPackage] {
@@ -74,6 +110,7 @@ final class FakeKetchCore: KetchCoreProtocol {
     func outdated() throws -> [Upgrade] {
         state.withLock { state in
             state.calls.append("outdated")
+            if let upgrades = state.upgrades { return upgrades }
             return state.installed.compactMap { package in
                 guard let latest = state.registry.first(where: { $0.name == package.name })?.latest,
                     latest != package.version
@@ -88,6 +125,10 @@ final class FakeKetchCore: KetchCoreProtocol {
         spec: String, options: InstallOptions,
         reporter: any Reporter, decider: any Decider, cancel: CancelToken
     ) throws {
+        if let scenario = scripted("install") {
+            state.withLock { $0.calls.append("install \(spec)") }
+            return try replay(scenario, reporter: reporter, decider: decider, cancel: cancel)
+        }
         let parts = spec.split(separator: "@", maxSplits: 1, omittingEmptySubsequences: false)
         let name = String(parts[0])
         let entry = try state.withLock { state -> RegistryPackage in
@@ -115,6 +156,10 @@ final class FakeKetchCore: KetchCoreProtocol {
         names: [String],
         reporter: any Reporter, decider: any Decider, cancel: CancelToken
     ) throws {
+        if let scenario = scripted("upgrade") {
+            state.withLock { $0.calls.append("upgrade \(names.joined(separator: " "))") }
+            return try replay(scenario, reporter: reporter, decider: decider, cancel: cancel)
+        }
         try checkLock("upgrade \(names.joined(separator: " "))")
         let targets = try outdated().filter { $0.heldBy == nil && (names.isEmpty || names.contains($0.name)) }
         if targets.isEmpty { reporter.event(.status("Everything is up to date")) }
@@ -130,6 +175,10 @@ final class FakeKetchCore: KetchCoreProtocol {
     }
 
     func uninstall(names: [String], reporter: any Reporter, cancel: CancelToken) throws {
+        if let scenario = scripted("uninstall") {
+            state.withLock { $0.calls.append("uninstall \(names.joined(separator: " "))") }
+            return try replay(scenario, reporter: reporter, decider: NoDecider(), cancel: cancel)
+        }
         try checkLock("uninstall \(names.joined(separator: " "))")
         for name in names {
             if cancel.isCancelled { throw KetchError.cancelled }
@@ -147,6 +196,7 @@ final class FakeKetchCore: KetchCoreProtocol {
     func changelog(name: String, from: String?, to: String?) throws -> String {
         pause()
         state.withLock { $0.calls.append("changelog \(name)") }
+        if let text = state.withLock({ $0.changelogText }) { return text }
         let to = to ?? "latest"
         return """
             ## \(to)
@@ -169,6 +219,7 @@ final class FakeKetchCore: KetchCoreProtocol {
     func doctor() throws -> [Finding] {
         pause()
         state.withLock { $0.calls.append("doctor") }
+        if let findings = state.withLock({ $0.findings }) { return findings }
         return [
             Finding(id: "root", severity: .ok, message: "ketch root is \(root.path)", fix: nil),
             Finding(id: "path", severity: .warning, message: "The bin dir is not on PATH in zsh", fix: "Add to PATH"),
@@ -210,6 +261,50 @@ final class FakeKetchCore: KetchCoreProtocol {
                 pause()
             default:
                 pause()
+            }
+        }
+    }
+
+    private func scripted(_ operation: String) -> ContractScenario? {
+        state.withLock { $0.scripted[operation] }
+    }
+
+    /// Plays a contract scenario: its events to the reporter, its questions to
+    /// the decider (which answers, not the file), then its outcome. A cancel
+    /// is honoured between steps, as the real pipeline does.
+    private func replay(
+        _ scenario: ContractScenario,
+        reporter: any Reporter, decider: any Decider, cancel: CancelToken
+    ) throws {
+        var mapper = ContractEventMapper()
+        for step in scenario.script {
+            if cancel.isCancelled { throw KetchError.cancelled }
+            switch step {
+            case .event(let event):
+                for mapped in mapper.map(event) { reporter.event(mapped) }
+            case .ask(let question):
+                // `stop_processes` has no counterpart in the app's decider yet
+                // (the live adapter adds it); only the binary choice is asked.
+                guard question.type == "choose_binary", let package = question.package,
+                    let candidates = question.candidates
+                else { continue }
+                let pick = decider.chooseBinary(package: package, candidates: candidates)
+                state.withLock { $0.calls.append("decision \(package) \(pick.map(String.init) ?? "none")") }
+                guard let pick, candidates.indices.contains(pick) else { throw KetchError.cancelled }
+            }
+            pause()
+        }
+        switch scenario.call.operation {
+        case "uninstall":
+            let removed = try scenario.value(as: [ContractScenario.Package].self).map(\.name)
+            state.withLock { state in state.installed.removeAll { removed.contains($0.name) } }
+        default:
+            let placed = try scenario.value(as: [ContractScenario.Installed].self).map(\.package.asInstalled)
+            state.withLock { state in
+                for package in placed {
+                    state.installed.removeAll { $0.name == package.name }
+                    state.installed.append(package)
+                }
             }
         }
     }
@@ -258,4 +353,9 @@ extension FakeKetchCore {
         RegistryPackage(
             name: "zoxide", repo: "ajeetdsouza/zoxide", description: "A smarter cd command", latest: "0.9.8"),
     ]
+}
+
+/// For an operation that never asks.
+private struct NoDecider: Decider {
+    func chooseBinary(package: String, candidates: [String]) -> Int? { nil }
 }
