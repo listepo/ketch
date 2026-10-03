@@ -1,0 +1,25 @@
+{
+  "name": "install-busy-unknown-holder",
+  "description": "The lock is held but its file names no process, so there is no pid to show.",
+  "call": {
+    "operation": "install",
+    "specs": [
+      "ripgrep"
+    ],
+    "options": {
+      "force": false,
+      "prerelease": false,
+      "link": true,
+      "require_checksum": false,
+      "bin": null
+    }
+  },
+  "script": [],
+  "outcome": {
+    "type": "error",
+    "error": {
+      "type": "busy",
+      "pid": null
+    }
+  }
+}

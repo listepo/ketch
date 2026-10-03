@@ -105,6 +105,7 @@ lint-shell:
     bash -n scripts/desktop-dmg.sh
     bash -n scripts/desktop-appcast.sh
     bash -n scripts/xcframework.sh
+    bash -n scripts/csharp.sh
     bash -n fuzz/seed.sh
     sh tests/crate-version.sh
     sh tests/release-sh.sh
@@ -182,10 +183,10 @@ dist-check:
     diff -u "$before" .github/workflows/release.yml \
         || { echo "release.yml is stale: commit what just dist-generate wrote" >&2; exit 1; }
 
-# regenerate the macOS app's Tokens.swift, DESIGN.md front matter and
-# preview.html tokens from desktop/macos/design/tokens.json
+# regenerate every design-token output (Swift, XAML, GTK CSS, the macOS
+# DESIGN.md front matter and preview.html tokens) from desktop/design/tokens.json
 design-tokens:
-    mise exec -- node desktop/macos/design/build.mjs
+    mise exec -- node desktop/design/build.mjs
 
 # the generated design files are what design-tokens writes (compared with the
 # files as they stand, like dist-check), DESIGN.md lints clean, and text meets
@@ -195,16 +196,20 @@ design-check:
     set -eu
     before="$(mktemp -d)"
     trap 'rm -rf "$before"' EXIT
-    d=desktop/macos
-    cp "$d/DESIGN.md" "$d/design/preview.html" "$d/design/generated/Tokens.swift" "$before/"
-    mise exec -- node "$d/design/build.mjs"
+    files="desktop/macos/DESIGN.md desktop/design/preview.html desktop/design/generated/Tokens.swift desktop/design/generated/KetchTokens.xaml desktop/design/generated/ketch-tokens.css"
+    for f in $files; do
+        mkdir -p "$before/$(dirname "$f")"
+        # A missing output is stale too: the diff below then shows it whole.
+        if [ -f "$f" ]; then cp "$f" "$before/$f"; else : > "$before/$f"; fi
+    done
+    mise exec -- node desktop/design/build.mjs
     stale=0
-    for f in DESIGN.md design/preview.html design/generated/Tokens.swift; do
-        diff -u "$before/$(basename "$f")" "$d/$f" || stale=1
+    for f in $files; do
+        diff -u "$before/$f" "$f" || stale=1
     done
     [ "$stale" = 0 ] || { echo "design tokens were stale: commit what just design-tokens wrote" >&2; exit 1; }
-    mise exec -- node "$d/design/contrast.mjs"
-    mise exec -- npx --no-install designmd lint "$d/DESIGN.md" > "$before/lint.json" \
+    mise exec -- node desktop/design/contrast.mjs
+    mise exec -- npx --no-install designmd lint desktop/macos/DESIGN.md > "$before/lint.json" \
         || { cat "$before/lint.json"; exit 1; }
 
 # release Cargo.toml's version, or the next one if it is tagged (`just release minor --dry-run`)
@@ -271,6 +276,15 @@ xcframework:
 ffi-test:
     scripts/xcframework.sh --debug
     swift test --package-path {{macos_dir}}/KetchCore
+
+# ketch-ffi as a C# library: native library and bindings in desktop/windows/KetchCore/Generated.
+csharp:
+    scripts/csharp.sh
+
+# The C# binding's .NET test against the real core, on a debug build of ketch-ffi.
+csharp-test:
+    scripts/csharp.sh --debug
+    cd desktop/windows && dotnet test --project KetchCore.Tests
 
 # libFuzzer targets in fuzz/ (fuzz/README.md), on nightly and never part of `check`.
 # `just fuzz` lists them, `just fuzz <target> [secs]` runs one, `just fuzz all [secs]` each in turn.

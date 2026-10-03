@@ -194,8 +194,34 @@ jobs:
       - name: Swift test
         run: swift test --package-path desktop/macos/KetchCore
 
-  # The macOS app's design tokens: every generated copy is what
-  # desktop/macos/design/build.mjs writes from tokens.json, DESIGN.md passes
+  # ketch-ffi as the Windows app will link it: ketch_ffi.dll, the C# bindings
+  # the pinned uniffi-bindgen-cs generates from it, and the .NET test that runs
+  # the real core against a scratch root through them. What `just csharp-test`
+  # runs. The generator and the .NET SDK are mise.toml pins.
+  ketch-cs:
+    if: github.event.pull_request.draft != true
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ./.github/actions/rust
+        with:
+          install-args: rust dotnet cargo:https://github.com/dennisameling/uniffi-bindgen-cs
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Library and bindings
+        run: scripts/csharp.sh --debug
+
+      - name: .NET test
+        working-directory: desktop/windows
+        run: dotnet test --project KetchCore.Tests
+
+  # The design tokens: every generated copy (Swift, XAML, GTK CSS, DESIGN.md,
+  # preview.html) is what desktop/design/build.mjs writes from tokens.json, DESIGN.md passes
   # the DESIGN.md linter, and text meets WCAG AA on its glass backgrounds.
   # Offline after npm ci; the same steps as `just design-check`.
   design:
@@ -218,10 +244,11 @@ jobs:
       - name: Design tokens
         run: |
           npm ci
-          node desktop/macos/design/build.mjs
-          git diff --exit-code -- desktop/macos \
-              || { echo "design tokens are stale: run just design-tokens and commit" >&2; exit 1; }
-          node desktop/macos/design/contrast.mjs
+          node desktop/design/build.mjs
+          # status, not diff: a generated file nobody committed is untracked.
+          [ -z "$(git status --porcelain -- desktop)" ] \
+              || { git status --porcelain -- desktop; echo "design tokens are stale: run just design-tokens and commit" >&2; exit 1; }
+          node desktop/design/contrast.mjs
           npx --no-install designmd lint desktop/macos/DESIGN.md > lint.json \
               || { cat lint.json; exit 1; }
 
