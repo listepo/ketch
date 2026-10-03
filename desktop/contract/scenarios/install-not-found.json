@@ -1,0 +1,25 @@
+{
+  "name": "install-not-found",
+  "description": "No package or release answers to the name.",
+  "call": {
+    "operation": "install",
+    "specs": [
+      "nope"
+    ],
+    "options": {
+      "force": false,
+      "prerelease": false,
+      "link": true,
+      "require_checksum": false,
+      "bin": null
+    }
+  },
+  "script": [],
+  "outcome": {
+    "type": "error",
+    "error": {
+      "type": "not_found",
+      "name": "nope"
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "name": "outdated",
+  "description": "One upgrade available and one held back by a pin.",
+  "call": {
+    "operation": "outdated"
+  },
+  "script": [],
+  "outcome": {
+    "type": "ok",
+    "value": [
+      {
+        "held_by": null,
+        "installed": "14.1.0",
+        "latest": "14.1.1",
+        "name": "ripgrep",
+        "pinned": false,
+        "tag": "14.1.1"
+      },
+      {
+        "held_by": "/work/app/ketch.lock",
+        "installed": "10.1.0",
+        "latest": "10.2.0",
+        "name": "fd",
+        "pinned": true,
+        "tag": "v10.2.0"
+      }
+    ]
+  }
+}

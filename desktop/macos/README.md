@@ -21,7 +21,7 @@ progress. The real core arrives with `ketch-ffi` (R9); see
 From the repository root:
 
 ```bash
-just macos-app    # generate Ketch.xcodeproj, build a universal (arm64 + x86_64) Debug app
+just macos-app    # generate Ketch.xcodeproj, build an Apple Silicon (arm64) Debug app
 just macos-test   # Swift Testing unit tests, then the UI smoke test
 open desktop/macos/build/Build/Products/Debug/Ketch.app
 ```
@@ -60,7 +60,7 @@ from this directory; CI runs `lint --strict`.
 | `Ketch/Views/` | the window sections, the menu-bar panel, Settings, About, the glass styling |
 | `Ketch/Views/Theme.swift` | the views' spacing, radius, shadow and status-colour roles, mapped onto the generated tokens |
 | `Ketch/Views/Glass.swift` | the `appearance` environment value, `ketchAppearance()`, glass cards and the backdrop wash |
-| `design/generated/Tokens.swift` | generated from `design/tokens.json` (`just design-tokens`) and compiled into the app; see `DESIGN.md` |
+| `../design/generated/Tokens.swift` | generated from `../design/tokens.json` (`just design-tokens`) and compiled into the app; see `DESIGN.md` |
 | `KetchTests/` | Swift Testing tests of the store, settings and root on the fake core |
 | `KetchUITests/` | one XCUITest smoke test: launch against a scratch `KETCH_ROOT` |
 
@@ -119,7 +119,7 @@ hand with a version:
 gh workflow run desktop-release.yml --ref main -f version=0.1.0
 ```
 
-It builds a universal Release app, signs it with the Developer ID
+It builds an Apple Silicon (arm64) Release app, signs it with the Developer ID
 certificate and the hardened runtime, notarises and staples it, packs it into
 `Ketch-X.Y.Z.dmg` (hdiutil, with an `/Applications` link), signs, notarises
 and staples the image, checks both with `spctl`, and publishes the image, its

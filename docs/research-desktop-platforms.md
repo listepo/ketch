@@ -42,14 +42,14 @@ Repository facts used throughout (`main` at 68f9a56):
 - The macOS app runs on `FakeKetchCore`; its view of the core is
   `desktop/macos/Ketch/Core/KetchCoreProtocol.swift`, written before R9 and
   not identical to it (gaps below).
-- The design tokens live in `desktop/macos/design/tokens.json` (W3C DTCG
+- The design tokens live in `desktop/design/tokens.json` (W3C DTCG
   2025.10) and Style Dictionary 5.5.5 generates Swift, CSS for the preview and
   the `DESIGN.md` front matter through custom formats
-  (`desktop/macos/design/build.mjs`, `docs/research-design-system.md`).
+  (`desktop/design/build.mjs`, `docs/research-design-system.md`).
 - The Figma file "ketch for macOS — Liquid glass" has nine screens in Light
   and Dark: Installed, Discover, Updates, Package detail, Activity, Doctor,
   Settings · Appearance, Uninstall sheet, Menu bar extra
-  (`desktop/macos/design/figma.md`).
+  (`desktop/design/figma.md`).
 
 Sources are cited by key (`[M3]`, `[W4]`, `[L9]`, `[X1]`) and listed with
 their URL and version or date under [Sources](#sources) at the end, so the
@@ -294,6 +294,34 @@ Recommended: **B first**, as the first Windows task, with the result recorded.
 If the pinned PR fails against 0.32.2, fall back to **D** when the Linux C ABI
 exists, else **C** with the creator's approval. Upstreaming any fix to PR #176
 is part of B.
+
+**Result (D10, 2026-10-03): route B works.** The generator built from PR #176
+at `0fc022aa1d73fb1dda91a778b63f2824d7dca58b` builds against UniFFI 0.32.0
+and calls itself `0.12.0+v0.32.0` [W23], yet it reads the
+metadata of `ketch-ffi` built against 0.32.2 and its C# runs against that
+library: `desktop/windows/KetchCore.Tests` calls `ketch_version`,
+`installed`, `doctor`, a cancelled install and an install with a C# reporter,
+on macOS locally and on `windows-latest` in CI (the `ketch-cs` job). Three
+things were needed, none of them a change to the generator:
+
+- **One field renamed.** `TaskKind::Download { batch }` became `batch_id`.
+  C# turns each field into a property of the variant's nested record, and a
+  property named `Batch` inside `TaskKind.Download` collides with the inherited
+  `TaskKind.Batch` variant (CS8866). Swift and Kotlin have no such clash; the
+  rename is a breaking change to the binding, made in D10. Worth reporting to
+  the generator upstream; not reported from here.
+- **Public types.** The generator emits `internal` by default;
+  `desktop/windows/uniffi.toml` sets `access_modifier = "public"` and the
+  `Ketch.Ffi` namespace [W23].
+- **The pinned binary, not the first on `PATH`.** `cargo install` from git
+  (mise's `cargo:` backend) builds the pin, but an older
+  `uniffi-bindgen-cs 0.11.0+v0.31.0` in `~/.cargo/bin` shadows it and reads
+  0.32 metadata as garbage ("Invalid string data"). `scripts/csharp.sh` takes
+  the mise install path and refuses any generator whose version is not
+  `+v0.32.*`.
+
+Routes C and D stay unused. When the generator publishes a 0.32 release, the
+`mise.toml` pin moves from the commit to that version.
 
 ## 5. Linux in Vala
 
@@ -573,6 +601,13 @@ Windows:
 - **W22** csbindgen 1.9.8, 2026-05-20: https://crates.io/api/v1/crates/csbindgen;
   `LibraryImport`:
   https://learn.microsoft.com/en-us/dotnet/standard/native-interop/pinvoke-source-generation
+- **W23** `uniffi-bindgen-cs` at PR #176's head, checked 2026-10-03:
+  https://github.com/dennisameling/uniffi-bindgen-cs/blob/0fc022aa1d73fb1dda91a778b63f2824d7dca58b/bindgen/Cargo.toml
+  (`0.12.0+v0.32.0`),
+  https://github.com/dennisameling/uniffi-bindgen-cs/blob/0fc022aa1d73fb1dda91a778b63f2824d7dca58b/Cargo.toml
+  (uniffi 0.32.0),
+  https://github.com/dennisameling/uniffi-bindgen-cs/blob/0fc022aa1d73fb1dda91a778b63f2824d7dca58b/docs/CONFIGURATION.md
+  (`access_modifier`, `namespace`)
 
 Linux:
 

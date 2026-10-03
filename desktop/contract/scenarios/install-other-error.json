@@ -1,0 +1,25 @@
+{
+  "name": "install-other-error",
+  "description": "Any other failure is shown as an alert with the core's own wording.",
+  "call": {
+    "operation": "install",
+    "specs": [
+      "local:/tmp/missing"
+    ],
+    "options": {
+      "force": false,
+      "prerelease": false,
+      "link": true,
+      "require_checksum": false,
+      "bin": null
+    }
+  },
+  "script": [],
+  "outcome": {
+    "type": "error",
+    "error": {
+      "type": "other",
+      "message": "`/tmp/missing` does not exist"
+    }
+  }
+}

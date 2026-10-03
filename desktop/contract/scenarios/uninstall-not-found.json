@@ -1,0 +1,18 @@
+{
+  "name": "uninstall-not-found",
+  "description": "Uninstalling a name that is not installed.",
+  "call": {
+    "operation": "uninstall",
+    "names": [
+      "nope"
+    ]
+  },
+  "script": [],
+  "outcome": {
+    "type": "error",
+    "error": {
+      "type": "not_found",
+      "name": "nope"
+    }
+  }
+}

@@ -11,9 +11,9 @@ one carries its Swift name as iOS code syntax, so Dev Mode shows
 `Tokens.Colors.Glass.window` rather than a hex value. When a token changes,
 change `tokens.json` first, then the variable in Figma.
 
-This file stays in `desktop/macos/design/` for now. Task D5 moves the token
-source and this note to `desktop/design/`, since the tokens now serve every
-platform; moving them here would collide with that task.
+The token source and this note live in `desktop/design/`, since the tokens
+serve every platform. Windows and Linux take only the brand tokens (accent,
+status colours, spacing, radii, type scale); glass and elevation stay macOS-only.
 
 ## Pages
 

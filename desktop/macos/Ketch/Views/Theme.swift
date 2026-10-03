@@ -3,8 +3,8 @@
 // Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
 
 // The names the views use for spacing, radii, shadow, type and status colour,
-// mapped onto the generated design tokens (design/generated/Tokens.swift, from
-// design/tokens.json). Views keep these role names; which token a role takes
+// mapped onto the generated design tokens (../design/generated/Tokens.swift, from
+// ../design/tokens.json). Views keep these role names; which token a role takes
 // is decided here, so a palette change never touches a view. Liquid Glass
 // itself stays a system material; the user's tint, glass style, accent and wash
 // arrive through the `appearance` environment value (Store/Appearance.swift).
