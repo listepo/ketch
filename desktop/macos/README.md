@@ -112,11 +112,12 @@ API names were checked against the macOS 27.0 SDK's
 
 ## Releases
 
-Releases are made by `.github/workflows/desktop-release.yml`, dispatched by
+Releases are made by `.github/workflows/release-apple-desktop.yml` (a thin
+caller of pyrlyn/infra's reusable `release-apple-desktop.yml`), dispatched by
 hand with a version:
 
 ```bash
-gh workflow run desktop-release.yml --ref main -f version=0.1.0
+gh workflow run release-apple-desktop.yml --ref main -f version=0.1.0
 ```
 
 It builds an Apple Silicon (arm64) Release app, signs it with the Developer ID
@@ -128,7 +129,8 @@ release notes are the commits under `desktop/` and `crates/ketch-ffi/` since
 the last app release (`desktop/cliff.toml`). App releases are never marked
 latest, because the CLI's installers follow `/releases/latest`; the
 repository's `AGENTS.md` ("macOS app releases") has why, the secrets it needs,
-and what to do when a run fails half-way.
+and what to do when a run fails half-way. The secrets are pyrlyn organization
+secrets.
 
 The app version is the workflow input, set as both `CFBundleShortVersionString`
 and `CFBundleVersion`; `MARKETING_VERSION` in `project.yml` only labels local
@@ -140,8 +142,8 @@ Before the first release, the creator generates the update key once with the
 public key as `SUPublicEDKey` in `Ketch/Info.plist`, and store
 `generate_keys -x <file>`'s output as the `SPARKLE_ED_PRIVATE_KEY` secret.
 
-Until R9 ships the ketch-ffi XCFramework, the workflow's XCFramework step is
-switched off (`TODO(R9)`), and a release carries the app on `FakeKetchCore`.
+Until R9 ships the ketch-ffi XCFramework, the caller's `pre-build-command` is
+empty (`TODO(R9)`), and a release carries the app on `FakeKetchCore`.
 
 ### Updates
 
@@ -154,10 +156,6 @@ feed and every archive are EdDSA-signed (`SURequireSignedFeed`,
 `SUVerifyUpdateBeforeExtraction`). Only a Release build with a real public
 key starts the updater; Debug builds and test runs leave "Check for Updates…"
 disabled.
-
-`just macos-appcast` builds the app and runs the release's disk-image and
-appcast scripts on it with a throwaway key: two releases in a row, a
-tampered signature and a mismatched key.
 
 ## Wiring the real core
 

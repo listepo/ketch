@@ -4,7 +4,7 @@
 # each one's tag_pattern is anchored so neither ever mistakes the other's tag
 # for its own previous release. git-cliff is pinned in mise.toml.
 #
-# Nothing writes a CHANGELOG file from this: .github/workflows/desktop-release.yml
+# Nothing writes a CHANGELOG file from this: .github/workflows/release-apple-desktop.yml
 # renders the unreleased section as the GitHub release's notes, and the
 # release page is the app's changelog.
 

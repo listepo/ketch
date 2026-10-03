@@ -47,7 +47,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.pyrlyn.ketch
         PRODUCT_NAME: Ketch
         # Local builds only. A release sets both from the workflow's `version`
-        # input (.github/workflows/desktop-release.yml): Sparkle compares
+        # input (.github/workflows/release-apple-desktop.yml): Sparkle compares
         # CFBundleVersion, so it has to grow with every release.
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "0.1.0"

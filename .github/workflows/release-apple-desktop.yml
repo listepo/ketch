@@ -1,0 +1,75 @@
+# PRODUCTION / RELEASE BUILDS ONLY. Releases the macOS app through the org-level
+# reusable workflow pyrlyn/infra release-apple-desktop.yml, which needs the
+# pyrlyn organization signing, notarisation and Sparkle secrets
+# (MACOS_CERTIFICATE, MACOS_CERTIFICATE_PWD, APPSTORE_CONNECT_KEY,
+# APPSTORE_CONNECT_KEY_ID, APPSTORE_CONNECT_ISSUER_ID, SPARKLE_ED_PRIVATE_KEY),
+# passed to it by name, and refuses to run without them. Test builds
+# of the app (CI's macos-app job, `just macos-app` on a local Mac) are unsigned
+# and need none of these secrets.
+name: release-apple-desktop
+
+# A signed, notarised, stapled Ketch-X.Y.Z.dmg under the tag desktop-vX.Y.Z, and
+# the Sparkle appcast on the desktop-appcast prerelease that installed copies
+# update from. Dispatch-only, like release.yml: Actions ->
+# release-apple-desktop -> Run workflow, or
+# `gh workflow run release-apple-desktop.yml --ref main -f version=X.Y.Z`.
+# AGENTS.md, "Releasing" / "macOS app releases".
+#
+# The app shares this repository with the CLI, whose installers (install.sh,
+# install.ps1, `ketch self upgrade`) ask GitHub for /releases/latest; the infra
+# workflow creates every release with --latest=false and fails (restoring it)
+# if /releases/latest moved. The tag and the release exist only once every
+# check has passed: a failed run leaves nothing behind but logs.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: App version to release, X.Y.Z (tagged desktop-vX.Y.Z)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  # Pinned to the pyrlyn/infra#30 merge commit (main).
+  release:
+    permissions:
+      contents: write # the desktop-v tag, its release, and the appcast release
+      actions: read # notify-failure: failed job names
+      issues: write # notify-failure: the release-failure issue
+    uses: pyrlyn/infra/.github/workflows/release-apple-desktop.yml@9b57e680c6841bd330369777f2d1385ecaf8ce97
+    with:
+      version: ${{ inputs.version }}
+      tag-prefix: desktop-v
+      # The runner and Xcode CI's macos-app job builds the app with.
+      runs-on: macos-26
+      mise-install-args: xcodegen git-cliff
+      # TODO(R9): crates/ketch-ffi does not exist yet, so there is no
+      # XCFramework to link and the app runs on FakeKetchCore. When R9 lands:
+      # set pre-build-command to `just xcframework`, add `rust` to
+      # mise-install-args, and add the KetchCore package to project.yml
+      # (desktop/macos/README.md, "Wiring the real core").
+      pre-build-command: ""
+      working-directory: desktop/macos
+      xcodegen-spec: project.yml
+      project: Ketch.xcodeproj
+      scheme: Ketch
+      archs: arm64
+      app-name: Ketch
+      export-options: desktop/macos/ExportOptions.plist
+      info-plist: desktop/macos/Ketch/Info.plist
+      minimum-system-version: "26.0"
+      sparkle: true
+      appcast-tag: desktop-appcast
+      cliff-config: desktop/cliff.toml
+    # Exactly the pyrlyn organization secrets the infra workflow declares, by
+    # name, rather than `secrets: inherit` (least privilege: nothing else of
+    # this repository's secrets reaches it).
+    secrets:
+      MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+      MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+      APPSTORE_CONNECT_KEY: ${{ secrets.APPSTORE_CONNECT_KEY }}
+      APPSTORE_CONNECT_KEY_ID: ${{ secrets.APPSTORE_CONNECT_KEY_ID }}
+      APPSTORE_CONNECT_ISSUER_ID: ${{ secrets.APPSTORE_CONNECT_ISSUER_ID }}
+      SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
