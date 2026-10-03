@@ -115,12 +115,13 @@ pub(crate) mod tests {
             std::fs::write(&path, rendered).unwrap();
             return;
         }
-        // A Windows checkout may have turned LF into CRLF; the file is the same.
+        // A Windows checkout may have turned LF into CRLF, in the committed
+        // file and in inputs such as cbindgen.toml's header; the text is the same.
         let committed = std::fs::read_to_string(&path)
             .unwrap_or_default()
             .replace("\r\n", "\n");
         assert!(
-            committed == rendered,
+            committed == rendered.replace("\r\n", "\n"),
             "{relative} is stale: run `KETCH_BLESS=1 cargo nextest run -p ketch-capi`"
         );
     }
