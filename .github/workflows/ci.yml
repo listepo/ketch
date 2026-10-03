@@ -194,6 +194,32 @@ jobs:
       - name: Swift test
         run: swift test --package-path desktop/macos/KetchCore
 
+  # ketch-ffi as the Windows app will link it: ketch_ffi.dll, the C# bindings
+  # the pinned uniffi-bindgen-cs generates from it, and the .NET test that runs
+  # the real core against a scratch root through them. What `just csharp-test`
+  # runs. The generator and the .NET SDK are mise.toml pins.
+  ketch-cs:
+    if: github.event.pull_request.draft != true
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ./.github/actions/rust
+        with:
+          install-args: rust dotnet cargo:https://github.com/dennisameling/uniffi-bindgen-cs
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Library and bindings
+        run: scripts/csharp.sh --debug
+
+      - name: .NET test
+        working-directory: desktop/windows
+        run: dotnet test --project KetchCore.Tests
+
   # The macOS app's design tokens: every generated copy is what
   # desktop/macos/design/build.mjs writes from tokens.json, DESIGN.md passes
   # the DESIGN.md linter, and text meets WCAG AA on its glass backgrounds.

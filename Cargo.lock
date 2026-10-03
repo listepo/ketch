@@ -2990,6 +2990,8 @@ version = "0.10.0"
 dependencies = [
  "ketch-core",
  "pretty_assertions",
+ "serde",
+ "serde_json",
  "tempfile",
  "thiserror 2.0.21",
  "uniffi",

@@ -1,0 +1,35 @@
+{
+  "name": "changelog-range",
+  "description": "Everything between the installed and the latest version, newest first: a section of a file, then release notes.",
+  "call": {
+    "operation": "changelog_range",
+    "package": "ripgrep",
+    "from": "14.1.0",
+    "to": null
+  },
+  "script": [],
+  "outcome": {
+    "type": "ok",
+    "value": [
+      {
+        "body": "Bug fixes:\n\n- Fix a regression in `--json`.",
+        "heading": "14.1.1",
+        "name": "ripgrep",
+        "source": {
+          "path": "/Users/me/.ketch/store/ripgrep/14.1.1/CHANGELOG.md",
+          "type": "file"
+        },
+        "version": "14.1.1"
+      },
+      {
+        "body": "Performance improvements.",
+        "heading": null,
+        "name": "ripgrep",
+        "source": {
+          "type": "release"
+        },
+        "version": "14.1.0"
+      }
+    ]
+  }
+}

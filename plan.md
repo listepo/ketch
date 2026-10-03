@@ -24,12 +24,9 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | F14 | in progress | P2 | 3 | 90% | Claude Code / opus-5.5 |
 | F18 | in progress | P2 | 4 | 90% | Claude Code / opus-5.5 |
 | D3 | todo | P3 | 3 | 0% | |
-| D4 | todo | P3 | 2 | 0% | |
 | D5 | todo | P3 | 3 | 0% | |
 | D7 | todo | P3 | 2 | 0% | |
 | D8 | todo | P3 | 2 | 0% | |
-| D9 | todo | P3 | 2 | 0% | |
-| D10 | todo | P2 | 3 | 0% | |
 | D11 | todo | P3 | 5 | 0% | |
 | D12 | todo | P3 | 4 | 0% | |
 | D13 | todo | P3 | 3 | 0% | |
@@ -380,12 +377,6 @@ Screens the apps already draw (Activity history, package info, pin, rollback, Do
 
 Done when history (`stats.db`), info, pin/unpin, rollback, prune, registry refresh, `path` status and install, a doctor fix action and reading ketch's config are exported as thin calls into existing core code, each with a test; `registry push` stays out (it owns a tokio runtime).
 
-### D4. Contract fixtures for every app's fake core
-
-Three apps each test against a fake core; if each fake invents its own records and event streams, they will drift from the real one and from each other. Research: section 2, "Written once".
-
-Done when a set of language-neutral JSON scenarios (records, event streams with progress and `Abandoned`, `Busy`, `Cancelled`, decisions) is generated from the Rust types by a test that fails on drift, and the macOS app's fake core reads them; the Windows and Linux fakes read the same files when they exist.
-
 ### D5. Design tokens for XAML and GTK
 
 `tokens.json` feeds only Swift today. The Windows and Linux apps should share ketch's brand (accent, status colours, spacing, radii, type scale) without imitating the glass. Style Dictionary has no XAML or GTK format, so it takes two custom ones. Research: section 2.
@@ -404,17 +395,6 @@ A link on a web page or in the registry could open a package in the app. Whateve
 
 Done when `CFBundleURLTypes` registers `ketch`, `onOpenURL` opens the package page a valid link names, through the core's validation, any other action is refused, and tests cover malformed and hostile links.
 
-### D9. macOS: VoiceOver pass
-
-The macOS app's accessibility was only checked on the fake core. F14 keeps its own Accessibility Inspector pass on the real glass; this task covers labels. Localisation is not needed for now (creator, 2026-10-01, open decision 7), so no String Catalog. Research: section 1.
-
-Done when every icon-only control has an accessibility label, and a VoiceOver walk through the nine screens finds no unlabeled control.
-
-### D10. Windows: C# binding for `ketch-ffi`
-
-The Windows app is C# + WinUI 3 over `ketch-ffi` (creator, 2026-10-01). `uniffi-bindgen-cs` last released for UniFFI 0.31.0; `ketch-ffi` is on 0.32.2. Decided by the creator (2026-10-01, open decision 4): first try the generator built from PR #176 (UniFFI 0.32.0), pinned to commit `0fc022aa1d73fb1dda91a778b63f2824d7dca58b`; if it fails against 0.32.2, use the C ABI from D15 through `LibraryImport`. Downgrading `ketch-ffi` to UniFFI 0.31.2 is not an option. Research: section 4.
-
-Done when the chosen route generates C# for `ketch-ffi`, the generator is pinned (a commit or a version, no system install), a .NET 10 test calls `installed`, `doctor` and a cancelled install against a scratch root on Windows CI, and the route taken and why is in the research page.
 
 ### D11. Windows: WinUI 3 app shell on a fake core
 

@@ -17,7 +17,7 @@ use ketch_core::model::{InstalledPackage, Manifest, SourceInfo};
 use ketch_core::platform::{CheckStatus, DoctorCheck};
 
 /// One installed package.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record, serde::Serialize)]
 pub struct Package {
     pub name: String,
     pub version: String,
@@ -60,7 +60,7 @@ impl From<&InstalledPackage> for Package {
 }
 
 /// What an install or upgrade placed.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record, serde::Serialize)]
 pub struct Installed {
     pub package: Package,
     /// The version it replaced, for an upgrade or a reinstall.
@@ -79,7 +79,7 @@ impl From<&ketch_core::install::Installed> for Installed {
 /// How to install. The defaults are `ketch install` with no flags, except that
 /// an installed package with a newer release is updated rather than asked
 /// about: the person already chose to install it in the front end.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record, serde::Serialize)]
 pub struct InstallOptions {
     /// Reinstall even when the resolved version is already present.
     #[uniffi(default = false)]
@@ -111,7 +111,7 @@ impl Default for InstallOptions {
 }
 
 /// A package the registry, or the person's own manifests, know.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record, serde::Serialize)]
 pub struct RegistryPackage {
     pub name: String,
     pub source: String,
@@ -133,7 +133,7 @@ impl RegistryPackage {
 }
 
 /// A repository a source found for a search, installable by `spec`.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record, serde::Serialize)]
 pub struct Repository {
     /// What to pass to `install`: `github:owner/repo`.
     pub spec: String,
@@ -152,14 +152,14 @@ impl Repository {
 }
 
 /// What a search found: curated packages first, then repositories.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record, serde::Serialize)]
 pub struct SearchResults {
     pub known: Vec<RegistryPackage>,
     pub repositories: Vec<Repository>,
 }
 
 /// An installed package with a newer release.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record, serde::Serialize)]
 pub struct Upgrade {
     pub name: String,
     pub installed: String,
@@ -201,7 +201,8 @@ impl Upgrade {
 }
 
 /// Where a changelog came from.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum, serde::Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum ChangelogSource {
     /// A file inside the installed payload.
     File { path: String },
@@ -210,7 +211,7 @@ pub enum ChangelogSource {
 }
 
 /// What changed in one release of a package.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record, serde::Serialize)]
 pub struct Changelog {
     pub name: String,
     pub version: String,
@@ -239,7 +240,8 @@ impl Changelog {
 }
 
 /// How a doctor check came out.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum CheckOutcome {
     Ok,
     Warn,
@@ -247,7 +249,7 @@ pub enum CheckOutcome {
 }
 
 /// One line of `ketch doctor`.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record, serde::Serialize)]
 pub struct Check {
     pub name: String,
     pub outcome: CheckOutcome,

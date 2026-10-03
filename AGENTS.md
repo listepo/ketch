@@ -65,6 +65,8 @@ All are default members, so a bare `cargo test` or `cargo clippy` at the root
 covers them; `--workspace` says so explicitly, and is what the Justfile and CI
 pass. `just xcframework` builds `ketch-ffi` into the macOS app's XCFramework
 and Swift bindings; `just ffi-test` builds a debug one and runs its Swift test.
+`just csharp-test` does the same for C#: a debug `ketch_ffi` shared library,
+its C# bindings, and the .NET test in `desktop/windows`.
 
 The Justfile wraps the same commands with `--locked`: `just fmt`, `just clippy`
 (or `just lint`), `just test`, and `just check` runs what CI runs on this
@@ -210,6 +212,8 @@ differ by orders of magnitude — the cargo home is the small one. Set
 | `crates/ketch-core/src/doctor.rs` | `ketch doctor`'s checks, shared by the command and `ketch-ffi` |
 | `crates/ketch-ffi/` | the core through UniFFI: a coarse, language-neutral surface of plain records, foreign traits for `Reporter` and `Decider` passed with a cancel token to each call, and a typed `KetchError` |
 | `scripts/xcframework.sh` | `ketch-ffi` as an XCFramework for both macOS architectures, and its generated Swift bindings; `just xcframework` |
+| `scripts/csharp.sh` | `ketch-ffi` as a shared library and the C# bindings the pinned uniffi-bindgen-cs generates from it, into `desktop/windows/KetchCore/Generated/`; `just csharp`, `just csharp-test` |
+| `desktop/windows/` | the Windows app's C# side: `KetchCore` (the generated binding as a .NET library), its MSTest project, and `uniffi.toml` for the generator |
 | `desktop/macos/KetchCore/` | the Swift package wrapping that XCFramework and bindings (both build output), and the Swift test that drives the real core through them |
 | `src/ui.rs` | all terminal output, `Terminal`: the `Reporter` that draws the core's events, and `TerminalDecider`: the `Decider` that prompts on the terminal |
 | `src/tui/` | the opt-in full-screen renderer (`tui` feature), driven by `ui.rs` |
