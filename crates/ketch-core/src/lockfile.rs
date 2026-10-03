@@ -15,8 +15,8 @@
 //! * The **tag** is. Every machine resolving the same tag gets the same
 //!   release, which is the whole point of writing one down.
 //! * The **asset and its hash** are reproducible only on the same target. A
-//!   lock written on Apple Silicon names an `aarch64` tarball an Intel machine
-//!   cannot run, so `sync` re-selects the asset there and verifies against the
+//!   lock written on Apple Silicon names an `aarch64` tarball an x86_64 Linux
+//!   machine cannot run, so `sync` re-selects the asset there and verifies against the
 //!   source's own checksum instead. Claiming the recorded hash still applied
 //!   would be a reproducibility guarantee that quietly is not one.
 //!

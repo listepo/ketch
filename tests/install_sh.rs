@@ -157,12 +157,10 @@ exit 0
             let payload = dir.child("payload.tar.gz");
             write_payload(payload.path());
             let digest = hex::encode(Sha256::digest(std::fs::read(payload.path()).unwrap()));
-            // Both names, because which one the script asks for depends on the
-            // machine and on whether it is running translated.
+            // Every name the script may ask for, which depends on the machine.
             dir.child("SHA256SUMS")
                 .write_str(&format!(
                     "{digest}  ketch-aarch64-apple-darwin.tar.gz\n\
-                     {digest}  ketch-x86_64-apple-darwin.tar.gz\n\
                      {digest}  ketch-aarch64-unknown-linux-gnu.tar.gz\n\
                      {digest}  ketch-x86_64-unknown-linux-gnu.tar.gz\n\
                      {digest}  ketch-x86_64-pc-windows-msvc.tar.gz\n"

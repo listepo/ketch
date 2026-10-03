@@ -13,6 +13,8 @@ settings:
     SWIFT_STRICT_CONCURRENCY: complete
     SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
     MACOSX_DEPLOYMENT_TARGET: "26.0"
+    # Apple Silicon only: KetchFFI.xcframework carries no x86_64 slice.
+    ARCHS: arm64
     # Unsigned local builds only; signing and notarisation belong to the
     # release pipeline (F13).
     CODE_SIGN_IDENTITY: "-"
@@ -35,9 +37,9 @@ targets:
       - path: Ketch
         excludes:
           - Info.plist
-      # Generated from design/tokens.json by `just design-tokens`; compiled
+      # Generated from ../design/tokens.json by `just design-tokens`; compiled
       # where it is generated, so the app never builds a stale copy.
-      - path: design/generated/Tokens.swift
+      - path: ../design/generated/Tokens.swift
     dependencies:
       - package: Sparkle
     settings:

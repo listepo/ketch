@@ -71,7 +71,7 @@ Decision: Style Dictionary, maintained and DTCG-aware, for
 reading, merging and reference-checking `tokens.json` and for writing the
 outputs; the three output formats (SwiftUI, CSS, DESIGN.md YAML) are ours,
 registered as Style Dictionary format hooks in
-`desktop/macos/design/build.mjs`. That keeps colours asset-free and dynamic:
+`desktop/design/build.mjs`. That keeps colours asset-free and dynamic:
 `NSColor(name:dynamicProvider:)` (macOS 10.15+,
 https://developer.apple.com/documentation/appkit/nscolor/init(name:dynamicprovider:))
 resolved against `.aqua`, `.darkAqua`, `.accessibilityHighContrastAqua` and

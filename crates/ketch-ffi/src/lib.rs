@@ -63,7 +63,7 @@ use ketch_core::changelog;
 use ketch_core::config::Config;
 use ketch_core::error::Error;
 use ketch_core::install::{self, InstallRequest};
-use ketch_core::listing::{self, Local};
+use ketch_core::listing::{self, Available, Local, Row};
 use ketch_core::log;
 use ketch_core::manifest::Resolver;
 use ketch_core::model::{PackageSpec, VersionSpec};
@@ -82,6 +82,15 @@ type Result<T> = std::result::Result<T, KetchError>;
 #[uniffi::export]
 pub fn ketch_version() -> String {
     ketch_core::self_update::display_version()
+}
+
+/// The package a `ketch://package/<name>` link opens, or the reason the link
+/// is refused. A link only ever opens a package page, never installs, and
+/// everything in it is untrusted: this is the validation a front end must
+/// pass a link through before it uses any part of it.
+#[uniffi::export]
+pub fn package_for_link(url: String) -> Result<String> {
+    Ok(ketch_core::link::package_name(&url)?)
 }
 
 /// The core, for one ketch root. Cheap to create and safe to share between
@@ -154,11 +163,18 @@ impl KetchCore {
         let op = self.operation(reporter, None)?;
         let cx = op.ctx();
         let resolver = Resolver::new(&cx)?;
-        let known: Vec<RegistryPackage> = resolver
-            .search(query)
-            .into_iter()
-            .take(limit)
-            .map(RegistryPackage::from)
+        let manifests: Vec<_> = resolver.search(query).into_iter().take(limit).collect();
+        // One row each, not `listing::merge`: that sorts by name, and search
+        // results keep the resolver's order.
+        let mut rows: Vec<Row> = manifests
+            .iter()
+            .map(|m| Row::offered(Available::from_manifest(&op.cfg, m)))
+            .collect();
+        listing::fill_cached(&cx, &mut rows);
+        let known: Vec<RegistryPackage> = manifests
+            .iter()
+            .zip(&rows)
+            .map(|(m, row)| RegistryPackage::new(m, row.latest_version()))
             .collect();
 
         let rest = limit.saturating_sub(known.len());
@@ -193,8 +209,10 @@ impl KetchCore {
     }
 
     /// Installed packages with a newer release, under the rules `ketch
-    /// outdated` uses: pinned and local packages never have one. An answer
-    /// looked up in the last ten minutes is reused.
+    /// outdated` uses, except that a pinned package is reported too, marked
+    /// [`Upgrade::pinned`], so an app can show what its pin holds back. Local
+    /// packages never have one. An answer looked up in the last ten minutes is
+    /// reused.
     pub fn outdated(&self, reporter: Option<Arc<dyn Reporter>>) -> Result<Vec<Upgrade>> {
         let op = self.operation(reporter, None)?;
         let cx = op.ctx();
@@ -250,9 +268,9 @@ impl KetchCore {
     }
 
     /// Upgrade `names`, or every installed package when empty, to the
-    /// releases `outdated` reports. Processes holding the files about to be
-    /// replaced are put to `decider`. Failures are returned as `install`
-    /// returns them.
+    /// releases `outdated` reports, leaving pinned packages where they are.
+    /// Processes holding the files about to be replaced are put to `decider`.
+    /// Failures are returned as `install` returns them.
     pub fn upgrade(
         &self,
         names: Vec<String>,
@@ -270,7 +288,8 @@ impl KetchCore {
         } else {
             Some(installed_names(&state, &names)?)
         };
-        let plan = upgrades(&cx, &state, wanted.as_ref())?;
+        let mut plan = upgrades(&cx, &state, wanted.as_ref())?;
+        plan.retain(|u| !u.pinned);
         if plan.is_empty() {
             return Ok(Vec::new());
         }
@@ -304,9 +323,11 @@ impl KetchCore {
     }
 
     /// Remove `names`: their links, their files and their records. Every name
-    /// is checked first, so an unknown one stops the call before anything is
-    /// removed. `cancel` is checked before each package: what was removed by
-    /// then stays removed.
+    /// is checked first, so an unknown one stops the call with `NotFound`
+    /// before any installed package is removed — though, as `ketch uninstall`
+    /// does, a `store/<name>/` folder a failed uninstall left behind for that
+    /// name is taken away, since nothing else ever will. `cancel` is checked
+    /// before each package: what was removed by then stays removed.
     pub fn uninstall(
         &self,
         names: Vec<String>,
@@ -318,17 +339,31 @@ impl KetchCore {
         let cx = op.ctx();
         let _lock = Lock::acquire(&cx)?;
         let mut state = State::load(&op.cfg)?;
+        let missing: Vec<&String> = names.iter().filter(|n| state.find(n).is_none()).collect();
+        if let Some(first) = missing.first() {
+            for name in &missing {
+                install::remove_package_dir(&op.cfg, name, &op.report);
+            }
+            return Err(KetchError::NotFound {
+                name: (*first).clone(),
+            });
+        }
         let targets = installed_names(&state, &names)?;
 
         let cancel = token(cancel);
         let mut removed = Vec::new();
         let mut failed = Vec::new();
         for name in &targets {
-            let outcome = cancel
-                .check()
-                .and_then(|()| install::uninstall(&cx, &mut state, name));
+            let outcome = cancel.check().and_then(|()| {
+                op.report.step("removing", name);
+                install::uninstall(&cx, &mut state, name)
+            });
             match outcome {
-                Ok(pkg) => removed.push(Package::from(&pkg)),
+                Ok(pkg) => {
+                    op.report
+                        .success("removed", &format!("{} {}", pkg.name, pkg.version));
+                    removed.push(Package::from(&pkg));
+                }
                 Err(e) => failed.push((name.clone(), e)),
             }
         }
@@ -385,6 +420,32 @@ impl KetchCore {
                 None => Err(e.into()),
             },
         }
+    }
+
+    /// What changed in `package` between two versions: one entry per release
+    /// newer than `from` and no newer than `to`, newest first, from the notes
+    /// each release published. `from` defaults to the installed version, so
+    /// the range is what an upgrade would bring, and `to` to the newest
+    /// release. A release that published no notes is left out. Text is
+    /// filtered of control characters.
+    pub fn changelog_range(
+        &self,
+        package: String,
+        from: Option<String>,
+        to: Option<String>,
+        reporter: Option<Arc<dyn Reporter>>,
+    ) -> Result<Vec<Changelog>> {
+        let op = self.operation(reporter, None)?;
+        let cx = op.ctx();
+        let state = State::load(&op.cfg)?;
+        let spec = PackageSpec::parse(&package);
+        let installed = state.find_spec(&spec).cloned();
+        let (name, entries) =
+            changelog::published_range(&cx, &spec, installed, from.as_deref(), to.as_deref())?;
+        Ok(entries
+            .into_iter()
+            .map(|(version, entry)| Changelog::new(&name, &version, entry))
+            .collect())
     }
 
     /// Every `ketch doctor` check. Repairs nothing.
@@ -541,6 +602,18 @@ mod tests {
     }
 
     #[test]
+    fn a_package_link_yields_its_name_and_an_install_link_is_refused() {
+        assert_eq!(
+            package_for_link("ketch://package/ripgrep".into()),
+            Ok("ripgrep".into())
+        );
+        assert!(matches!(
+            package_for_link("ketch://install/ripgrep".into()),
+            Err(KetchError::Other { .. })
+        ));
+    }
+
+    #[test]
     fn a_scratch_root_has_nothing_installed() {
         let (_dir, core) = scratch();
         assert_eq!(core.installed().unwrap(), Vec::new());
@@ -640,10 +713,14 @@ mod tests {
             )
             .unwrap();
         let name = placed[0].package.name.clone();
-        core.uninstall(vec![name], Some(removing.clone()), None, None)
+        core.uninstall(vec![name.clone()], Some(removing.clone()), None, None)
             .unwrap();
         assert!(installing.saw_installing());
         assert!(!removing.saw_installing());
+        assert!(removing.0.lock().unwrap().iter().any(|e| matches!(
+            e,
+            Event::Success { verb, detail } if verb == "removed" && detail.starts_with(&name)
+        )));
     }
 
     #[test]
@@ -730,5 +807,132 @@ mod tests {
             distinct(vec!["a".into(), "b".into(), "a".into()]),
             vec!["a".to_string(), "b".to_string()]
         );
+    }
+
+    #[test]
+    fn uninstalling_a_name_with_no_record_takes_its_leftover_folder() {
+        let (_dir, core) = scratch();
+        let store = core.operation(None, None).unwrap().cfg.store_dir;
+        let leftover = store.join("ghost");
+        std::fs::create_dir_all(leftover.join("1.0.0.old")).unwrap();
+        assert_eq!(
+            core.uninstall(vec!["ghost".into()], None, None, None),
+            Err(KetchError::NotFound {
+                name: "ghost".into()
+            })
+        );
+        assert!(!leftover.exists());
+    }
+
+    #[test]
+    fn an_unknown_name_beside_an_installed_one_removes_neither() {
+        let (dir, core) = scratch();
+        let placed = core
+            .install(
+                vec![payload(dir.path(), "hello")],
+                InstallOptions::default(),
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        let name = placed[0].package.name.clone();
+        let err = core
+            .uninstall(vec![name.clone(), "ghost".into()], None, None, None)
+            .unwrap_err();
+        assert_eq!(
+            err,
+            KetchError::NotFound {
+                name: "ghost".into()
+            }
+        );
+        assert_eq!(core.installed().unwrap().len(), 1);
+    }
+
+    /// A `test:` source plugin in `core`'s root serving `alpha`'s releases,
+    /// each with notes, and a user manifest naming it — enough for a search
+    /// and a changelog, which need no download. A shell script, so Unix only.
+    #[cfg(unix)]
+    fn publish_alpha(dir: &std::path::Path, core: &KetchCore, versions: &[&str]) {
+        use std::os::unix::fs::PermissionsExt;
+        let cfg = core.operation(None, None).unwrap().cfg;
+        let releases: Vec<String> = versions
+            .iter()
+            .map(|v| {
+                format!(r#"{{"version":"{v}","tag":"v{v}","notes":"notes for {v}","assets":[]}}"#)
+            })
+            .collect();
+        let feed = dir.join("alpha.releases.json");
+        std::fs::write(&feed, format!("[{}]", releases.join(","))).unwrap();
+        std::fs::create_dir_all(&cfg.plugin_dir).unwrap();
+        let plugin = cfg.plugin_dir.join("ketch-source-test");
+        std::fs::write(
+            &plugin,
+            format!(
+                "#!/bin/sh\ncase \"$1\" in\n\
+                 capabilities) printf '%s' '{{\"protocol\":1,\"scheme\":\"test\",\"download\":false,\"search\":false}}' ;;\n\
+                 describe) printf 'null' ;;\n\
+                 releases) cat '{}' ;;\n\
+                 search) printf '[]' ;;\n\
+                 *) exit 1 ;;\nesac\n",
+                feed.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&plugin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::create_dir_all(&cfg.manifest_dir).unwrap();
+        std::fs::write(
+            cfg.manifest_dir.join("alpha.toml"),
+            "name = \"alpha\"\nsource = \"test:alpha\"\ndescription = \"the alpha tool\"\n",
+        )
+        .unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_changelog_range_is_every_release_between_newest_first() {
+        let (dir, core) = scratch();
+        publish_alpha(dir.path(), &core, &["1.0.0", "1.1.0", "1.2.0", "1.3.0"]);
+        let range = core
+            .changelog_range(
+                "alpha".into(),
+                Some("1.0.0".into()),
+                Some("1.2.0".into()),
+                None,
+            )
+            .unwrap();
+        let versions: Vec<&str> = range.iter().map(|c| c.version.as_str()).collect();
+        assert_eq!(versions, ["1.2.0", "1.1.0"]);
+        assert_eq!(range[0].body, "notes for 1.2.0");
+        assert_eq!(range[0].source, ChangelogSource::Release);
+
+        let open = core
+            .changelog_range("alpha".into(), None, None, None)
+            .unwrap();
+        assert_eq!(open.len(), 4);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_search_result_carries_the_latest_an_earlier_listing_cached() {
+        let (dir, core) = scratch();
+        publish_alpha(dir.path(), &core, &["1.0.0", "2.0.0"]);
+        // A limit of one leaves no room for repositories, so no source is
+        // searched over the network.
+        let before = core.search("alpha".into(), 1, None).unwrap();
+        assert_eq!(before.known[0].latest, None);
+
+        let op = core.operation(None, None).unwrap();
+        let cx = op.ctx();
+        let (manifest, _) = Resolver::new(&cx)
+            .unwrap()
+            .resolve(&PackageSpec::parse("alpha"))
+            .unwrap();
+        let mut rows = vec![Row::offered(Available::from_manifest(&op.cfg, &manifest))];
+        listing::fill_latest(&cx, &SourceRegistry::load(&cx), &mut rows);
+
+        let after = core.search("alpha".into(), 1, None).unwrap();
+        assert_eq!(after.known[0].name, "alpha");
+        assert_eq!(after.known[0].latest.as_deref(), Some("2.0.0"));
     }
 }
