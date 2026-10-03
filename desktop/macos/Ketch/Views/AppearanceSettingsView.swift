@@ -18,7 +18,7 @@ struct AppearanceSettingsView: View {
         @Bindable var settings = settings
         Form {
             LabeledContent("Tint") {
-                Swatches(choice: $settings.appearance.tint, standardTitle: "Clear")
+                Swatches(choice: $settings.appearance.tint, standardTitle: "Clear", customTitle: "Custom tint")
             }
             .accessibilityIdentifier("appearance-tint")
             Picker("Glass", selection: $settings.appearance.glassStyle) {
@@ -28,13 +28,16 @@ struct AppearanceSettingsView: View {
             }
             .pickerStyle(.segmented)
             LabeledContent("Accent") {
-                Swatches(choice: $settings.appearance.accent, standardTitle: "System")
+                Swatches(choice: $settings.appearance.accent, standardTitle: "System", customTitle: "Custom accent")
             }
             .accessibilityIdentifier("appearance-accent")
             LabeledContent("Backdrop wash") {
                 HStack {
                     Slider(value: $settings.appearance.wash, in: 0...Tokens.Opacity.washMax)
                         .frame(width: 180)
+                        // The raw value is a fraction of full opacity; the label beside it is the share the setting allows.
+                        .accessibilityLabel("Backdrop wash")
+                        .accessibilityValue(percent(settings.appearance.wash))
                     Text(percent(settings.appearance.wash))
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
@@ -77,6 +80,8 @@ struct AppearanceSettingsView: View {
 private struct Swatches<Preset: ColorPreset>: View {
     @Binding var choice: ColorChoice<Preset>
     let standardTitle: String
+    /// Names the colour well for VoiceOver; the two rows would otherwise both say "Custom".
+    let customTitle: String
 
     var body: some View {
         HStack(spacing: Tokens.Space.sm) {
@@ -86,9 +91,9 @@ private struct Swatches<Preset: ColorPreset>: View {
                     choice = .preset(preset)
                 }
             }
-            ColorPicker("Custom", selection: custom, supportsOpacity: false)
+            ColorPicker(customTitle, selection: custom, supportsOpacity: false)
                 .labelsHidden()
-                .help("Custom")
+                .help(customTitle)
                 .overlay {
                     if case .custom = choice {
                         Circle().strokeBorder(.primary, lineWidth: 2).padding(-4).allowsHitTesting(false)

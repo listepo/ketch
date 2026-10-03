@@ -35,6 +35,44 @@ import Testing
         #expect(store.log.contains { $0.level == .success && $0.message == "Done: Installing jq" })
     }
 
+    @Test func aLinkToAPackagePageOpensItWithoutInstallingAnything() async throws {
+        let core = FakeKetchCore(installed: [])
+        let store = makeStore(core)
+
+        await store.open(link: try #require(URL(string: "ketch://package/RipGrep")))
+
+        #expect(store.linkedPackage == "ripgrep")
+        #expect(store.errorMessage == nil)
+        #expect(store.installed.isEmpty)
+        #expect(!core.calls.contains { $0.hasPrefix("install") })
+    }
+
+    @Test func aLinkThatNamesAnActionIsRefusedAndShowsTheError() async throws {
+        let core = FakeKetchCore(installed: [])
+        let store = makeStore(core)
+
+        await store.open(link: try #require(URL(string: "ketch://install/ripgrep")))
+
+        #expect(store.linkedPackage == nil)
+        #expect(store.errorMessage != nil)
+        #expect(!core.calls.contains { $0.hasPrefix("install") })
+    }
+
+    @Test func aLinkToAnUnknownPackageShowsTheErrorAndOpensNothing() async throws {
+        let store = makeStore()
+
+        await store.open(link: try #require(URL(string: "ketch://package/nope")))
+
+        #expect(store.linkedPackage == nil)
+        #expect(store.errorMessage == "No package named nope.")
+    }
+
+    @Test func theAppRegistersTheKetchLinkScheme() {
+        let types = Bundle.main.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]]
+        let schemes = types?.flatMap { $0["CFBundleURLSchemes"] as? [String] ?? [] }
+        #expect(schemes == ["ketch"])
+    }
+
     @Test func installOfAnUnknownPackageShowsTheError() async {
         let store = makeStore()
 

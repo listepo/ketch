@@ -28,9 +28,9 @@ jobs:
   # The shared pyrlyn/infra workflow, pinned by commit, with Rust from
   # mise.toml and a check that rustc is that pin: fmt once, then per target of
   # its shared matrix clippy (--all-targets --all-features, so the tui feature
-  # is linted too), check, and the tests where the runner executes the target
-  # (Linux x86_64 and aarch64, macOS aarch64, Windows x86_64) or a build where
-  # it does not (macOS x86_64). The tests are the unit tests and the offline
+  # is linted too), check, and the tests on every target (Linux x86_64 and
+  # aarch64, macOS aarch64, Windows x86_64; macOS is Apple Silicon only). The
+  # tests are the unit tests and the offline
   # end-to-end suite in tests/ (install_linux.rs, install_windows.rs and the
   # macOS ones are cfg-gated to their platform), default build and the
   # optional TUI feature, which is not in the release tarball but must still
@@ -39,7 +39,7 @@ jobs:
     # Draft PRs are skipped here and reported green: review happens when the PR
     # is marked ready, and a draft must not look broken meanwhile.
     if: github.event.pull_request.draft != true
-    uses: pyrlyn/infra/.github/workflows/ci-rust.yml@863d8960601216eec62d4aa78924f84ce61d72b9
+    uses: pyrlyn/infra/.github/workflows/ci-rust.yml@0603d0ae610af9f792c5caf925041292a857e480
     # actions: write for infra's cancel-run (the first failing job cancels the run).
     permissions:
       contents: read
@@ -154,12 +154,12 @@ jobs:
           xcodebuild -version
           xcodegen generate --spec project.yml
 
-      # Both architectures, unsigned: what `just macos-app` builds.
+      # Apple Silicon (arm64) only, unsigned: what `just macos-app` builds.
       - name: Build
         run: >-
           xcodebuild -project Ketch.xcodeproj -scheme Ketch -derivedDataPath build
           -configuration Debug -destination 'generic/platform=macOS'
-          ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO build
+          ARCHS=arm64 ONLY_ACTIVE_ARCH=NO build
 
       - name: Test
         run: >-
@@ -194,8 +194,34 @@ jobs:
       - name: Swift test
         run: swift test --package-path desktop/macos/KetchCore
 
-  # The macOS app's design tokens: every generated copy is what
-  # desktop/macos/design/build.mjs writes from tokens.json, DESIGN.md passes
+  # ketch-ffi as the Windows app will link it: ketch_ffi.dll, the C# bindings
+  # the pinned uniffi-bindgen-cs generates from it, and the .NET test that runs
+  # the real core against a scratch root through them. What `just csharp-test`
+  # runs. The generator and the .NET SDK are mise.toml pins.
+  ketch-cs:
+    if: github.event.pull_request.draft != true
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ./.github/actions/rust
+        with:
+          install-args: rust dotnet cargo:https://github.com/dennisameling/uniffi-bindgen-cs
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Library and bindings
+        run: scripts/csharp.sh --debug
+
+      - name: .NET test
+        working-directory: desktop/windows
+        run: dotnet test --project KetchCore.Tests
+
+  # The design tokens: every generated copy (Swift, XAML, GTK CSS, DESIGN.md,
+  # preview.html) is what desktop/design/build.mjs writes from tokens.json, DESIGN.md passes
   # the DESIGN.md linter, and text meets WCAG AA on its glass backgrounds.
   # Offline after npm ci; the same steps as `just design-check`.
   design:
@@ -218,10 +244,11 @@ jobs:
       - name: Design tokens
         run: |
           npm ci
-          node desktop/macos/design/build.mjs
-          git diff --exit-code -- desktop/macos \
-              || { echo "design tokens are stale: run just design-tokens and commit" >&2; exit 1; }
-          node desktop/macos/design/contrast.mjs
+          node desktop/design/build.mjs
+          # status, not diff: a generated file nobody committed is untracked.
+          [ -z "$(git status --porcelain -- desktop)" ] \
+              || { git status --porcelain -- desktop; echo "design tokens are stale: run just design-tokens and commit" >&2; exit 1; }
+          node desktop/design/contrast.mjs
           npx --no-install designmd lint desktop/macos/DESIGN.md > lint.json \
               || { cat lint.json; exit 1; }
 
@@ -318,11 +345,7 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           mkdir -p cask/Casks
-          # Two different digests: rubocop rejects a cask that gives both
-          # architectures the same one, which is a real mistake worth catching
-          # and a pointless way to fail this check.
-          scripts/cask.sh 0.0.0 "$(printf '%064d' 0)" "$(printf '%064d' 1)" \
-            > cask/Casks/ketch.rb
+          scripts/cask.sh 0.0.0 "$(printf '%064d' 0)" > cask/Casks/ketch.rb
           brew style cask/Casks/ketch.rb
 
   # A `/review` comment in a pull request re-runs CI on that PR's head by
