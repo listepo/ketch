@@ -25,7 +25,6 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | F14 | in progress | P2 | 3 | 90% | Claude Code / opus-5.5 |
 | F18 | in progress | P2 | 4 | 90% | Claude Code / opus-5.5 |
 | D3 | todo | P3 | 3 | 0% | |
-| D7 | in progress | P3 | 2 | 10% | Claude Code / sonnet-5.5 |
 | D11 | todo | P3 | 5 | 0% | |
 | D12 | todo | P3 | 4 | 0% | |
 | D13 | todo | P3 | 3 | 0% | |
@@ -382,21 +381,6 @@ Screens the apps already draw (Activity history, package info, pin, rollback, Do
 
 Done when history (`stats.db`), info, pin/unpin, rollback, prune, registry refresh, `path` status and install, a doctor fix action and reading ketch's config are exported as thin calls into existing core code, each with a test; `registry push` stays out (it owns a tokio runtime).
 
-
-### D7. macOS: update notifications
-
-The macOS app checks for updates on a timer (F12) but tells nobody unless the window or menu-bar panel is open. Builds on F12's live core; F12's remaining work (the `LiveKetchCore` adapter and the manual checks) stays in F12. Research: section 1.
-
-Done when new upgrades since the last notice post one `UNUserNotificationCenter` notification, authorisation is asked only when the user turns notifications on in Settings, clicking it opens Updates, and a unit test covers which upgrades count as new.
-
-Execution plan:
-
-1. `Ketch/Store/UpdateNotices.swift`: the pure rule (`fresh(updates:notified:)`: held packages never count, an upgrade is new by `name@version`, a version already noticed is not new again), the notice text (at most three names, control characters stripped, since versions come from release tags), an `UpdateNotifier` protocol, and `SystemUpdateNotifier` over `UNUserNotificationCenter` plus its delegate.
-2. `AppSettings`: `notifiesOfUpdates` (off by default) and the set of already-noticed upgrades, in UserDefaults.
-3. `KetchStore`: after each background check, post one notice for the new upgrades and remember them; `setNotifications(_:)` asks authorisation only when the user turns the switch on, and turns it back off with an explanation when macOS refuses. A click sets `requestedSection = .updates` and asks for the main window; `ContentView` switches to Updates, `MenuBarLabel` (always alive) opens the window if it was closed.
-4. Settings: a "Notify when updates are available" toggle in General.
-5. Tests: `UpdateNoticesTests` for which upgrades count as new, store tests against a fake notifier (one notice for several new upgrades, none for held or already-noticed ones, none when off, authorisation asked only on turning on, refusal turns it off).
-6. Verify: `swift-format lint --strict`, `just macos-test` unit tests (the UI test needs an unlocked screen; CI runs it).
 
 ### D11. Windows: WinUI 3 app shell on a fake core
 

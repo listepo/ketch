@@ -70,6 +70,7 @@ struct BusyState: Identifiable {
 final class KetchStore {
     let core: any KetchCoreProtocol
     let settings: AppSettings
+    private let notifier: any UpdateNotifier
 
     private(set) var installed: [InstalledPackage] = []
     private(set) var outdated: [Upgrade] = []
@@ -87,6 +88,11 @@ final class KetchStore {
     var pendingChoice: BinaryChoice?
     /// A package a `ketch://` link asked to show; Discover consumes it.
     var linkedPackage: String?
+    /// A section a notification click asked for; the window shows it and clears it.
+    var requestedSection: Section?
+    /// Counts requests to bring the main window forward, for the one view that
+    /// is always alive (the menu-bar label) to act on.
+    private(set) var windowRequests = 0
     /// Upgrade-all waits for this confirmation, which the menu bar can raise.
     var confirmingUpgradeAll = false
 
@@ -94,9 +100,13 @@ final class KetchStore {
     @ObservationIgnored private var updateLoop: Task<Void, Never>?
     @ObservationIgnored private var nextLogID = 0
 
-    init(core: any KetchCoreProtocol, settings: AppSettings) {
+    init(
+        core: any KetchCoreProtocol, settings: AppSettings,
+        notifier: any UpdateNotifier = SystemUpdateNotifier()
+    ) {
         self.core = core
         self.settings = settings
+        self.notifier = notifier
     }
 
     var root: URL { core.root }
@@ -257,6 +267,42 @@ final class KetchStore {
         pending.answer(choice)
     }
 
+    // MARK: Notifications
+
+    /// Turns update notifications on or off. Permission is asked only here, when
+    /// the user turns them on; a refusal leaves them off and returns what to
+    /// tell the user.
+    func setNotifications(_ enabled: Bool) async -> String? {
+        guard enabled else {
+            settings.notifiesOfUpdates = false
+            return nil
+        }
+        guard await notifier.requestAuthorization() else {
+            settings.notifiesOfUpdates = false
+            return "macOS is not allowing notifications for Ketch. Turn them on in System Settings > Notifications."
+        }
+        settings.notifiesOfUpdates = true
+        return nil
+    }
+
+    /// Posts one notification for the upgrades no earlier one announced.
+    func notifyOfNewUpdates() async {
+        guard settings.notifiesOfUpdates else { return }
+        let fresh = UpdateNotices.fresh(updates, notified: settings.notifiedUpgrades)
+        guard !fresh.isEmpty else { return }
+        let message = UpdateNotices.message(for: fresh)
+        await notifier.post(title: message.title, body: message.body)
+        // Replaced, not added to: an upgrade that was installed or superseded
+        // drops out, so a later release of the same package is news again.
+        settings.notifiedUpgrades = Set(updates.map(UpdateNotices.key))
+    }
+
+    /// A click on a notification: show Updates, with the window in front.
+    func openUpdates() {
+        requestedSection = .updates
+        windowRequests += 1
+    }
+
     // MARK: Update checks
 
     /// Checks now, then every `settings.updateCheckInterval` until stopped.
@@ -266,7 +312,10 @@ final class KetchStore {
         updateLoop = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
-                if !self.isRunning { await self.refresh() }
+                if !self.isRunning {
+                    await self.refresh()
+                    await self.notifyOfNewUpdates()
+                }
                 let interval = self.settings.updateCheckInterval
                 try? await Task.sleep(for: interval)
             }
