@@ -1,0 +1,23 @@
+<!--
+  Copyright (c) 2026 Ivan Tugay
+  SPDX-License-Identifier: GPL-3.0-or-later
+
+  What the Windows app shows and does, with no UI types in it: the core
+  contract, the fake core that replays desktop/contract/scenarios, and the
+  store the pages bind to. Kept apart from Ketch.App so it builds and tests on
+  any OS with the plain .NET SDK; only the WinUI project needs Windows.
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The contract scenarios the fake replays, beside every assembly that
+         references this project, under scenarios/. -->
+    <None Include="../../contract/scenarios/*.json"
+          CopyToOutputDirectory="PreserveNewest" Link="scenarios/%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

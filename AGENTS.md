@@ -214,6 +214,7 @@ differ by orders of magnitude — the cargo home is the small one. Set
 | `scripts/xcframework.sh` | `ketch-ffi` as an XCFramework for both macOS architectures, and its generated Swift bindings; `just xcframework` |
 | `scripts/csharp.sh` | `ketch-ffi` as a shared library and the C# bindings the pinned uniffi-bindgen-cs generates from it, into `desktop/windows/KetchCore/Generated/`; `just csharp`, `just csharp-test` |
 | `desktop/windows/` | the Windows app's C# side: `KetchCore` (the generated binding as a .NET library), its MSTest project, and `uniffi.toml` for the generator |
+| `desktop/windows/Ketch.AppCore/`, `Ketch.AppCore.Tests/`, `Ketch.App/` | the Windows app on a fake core: the core contract, the fake that replays `desktop/contract/scenarios` and the store (plain .NET, tested on any OS with `just windows-app-test`), and the WinUI 3 shell over them (`dotnet build -p:Platform=x64`, Windows only: the `ketch-win-app` CI job) |
 | `desktop/macos/KetchCore/` | the Swift package wrapping that XCFramework and bindings (both build output), and the Swift test that drives the real core through them |
 | `src/ui.rs` | all terminal output, `Terminal`: the `Reporter` that draws the core's events, and `TerminalDecider`: the `Decider` that prompts on the terminal |
 | `src/tui/` | the opt-in full-screen renderer (`tui` feature), driven by `ui.rs` |
