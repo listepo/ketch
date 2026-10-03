@@ -380,14 +380,6 @@ mod tests {
         }
     }
 
-    /// Modules that still call `toml` themselves, each until its M16 subtask
-    /// moves the calls here; whoever does it removes the entry, which this
-    /// test then insists on.
-    const NOT_YET_MOVED: [&str; 1] = [
-        // M16.7: `ketch.lock`.
-        "crates/ketch-core/src/lockfile.rs",
-    ];
-
     #[test]
     fn no_module_but_this_one_names_the_toml_crates() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -396,7 +388,6 @@ mod tests {
             dirs.push(entry.expect("crate dir").path().join("src"));
         }
         let mut offenders = Vec::new();
-        let mut still_using = Vec::new();
         for dir in dirs {
             for entry in walkdir::WalkDir::new(&dir) {
                 let entry = entry.expect("walk sources");
@@ -416,12 +407,7 @@ mod tests {
                     continue;
                 }
                 let text = std::fs::read_to_string(entry.path()).expect("read source");
-                if !text.lines().any(names_toml_crate) {
-                    continue;
-                }
-                if NOT_YET_MOVED.contains(&relative.as_str()) {
-                    still_using.push(relative);
-                } else {
+                if text.lines().any(names_toml_crate) {
                     offenders.push(relative);
                 }
             }
@@ -429,13 +415,6 @@ mod tests {
         assert!(
             offenders.is_empty(),
             "{offenders:?} name `toml` or `toml_edit`; go through crate::toml_file instead"
-        );
-        still_using.sort();
-        let mut expected = NOT_YET_MOVED.map(str::to_string).to_vec();
-        expected.sort();
-        assert_eq!(
-            still_using, expected,
-            "a file in NOT_YET_MOVED no longer names `toml`; take it off the list"
         );
     }
 }
