@@ -4,7 +4,7 @@
 # Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
 
 # Builds ketch-ffi into the local Swift package desktop/macos/KetchCore:
-# an XCFramework holding one static library for both macOS architectures, and
+# an XCFramework holding one arm64 static library (macOS is Apple Silicon only), and
 # the Swift bindings UniFFI generates from that library's metadata. Both are
 # build output (gitignored); Package.swift and the tests beside them are not.
 #
@@ -34,30 +34,24 @@ export MACOSX_DEPLOYMENT_TARGET=26.0
 
 package="$root/desktop/macos/KetchCore"
 work="$root/target/xcframework"
-targets=(aarch64-apple-darwin x86_64-apple-darwin)
+target=aarch64-apple-darwin
 
 # The Rust toolchain is mise.toml's pin; only its standard library for the
-# other architecture may be missing. Adding a target installs no program, and
-# pinning it in mise.toml would download it on every Linux and Windows job too.
-installed=$(rustup target list --installed)
-for target in "${targets[@]}"; do
-    grep -qx "$target" <<<"$installed" || rustup target add "$target"
-done
+# target may be missing. Adding a target installs no program, and pinning it
+# in mise.toml would download it on every Linux and Windows job too.
+grep -qx "$target" <<<"$(rustup target list --installed)" || rustup target add "$target"
 
-libs=()
-for target in "${targets[@]}"; do
-    cargo build --locked -p ketch-ffi --lib --profile "$profile" --target "$target"
-    libs+=("$root/target/$target/$dir/libketch_ffi.a")
-done
+cargo build --locked -p ketch-ffi --lib --profile "$profile" --target "$target"
+lib="$root/target/$target/$dir/libketch_ffi.a"
 
 rm -rf "$work"
 mkdir -p "$work/include"
-lipo -create "${libs[@]}" -output "$work/libketch_ffi.a"
+cp "$lib" "$work/libketch_ffi.a"
 
 # The bindings come from the metadata compiled into the library, so they can
 # never describe a different build than the one in the XCFramework.
 cargo run --locked -q -p ketch-ffi --features bindgen --bin uniffi-bindgen -- \
-    generate --library "${libs[0]}" --language swift --out-dir "$work/swift"
+    generate --library "$lib" --language swift --out-dir "$work/swift"
 
 # SwiftPM finds a binary target's module through a `module.modulemap` beside
 # its header; UniFFI names it after the crate.

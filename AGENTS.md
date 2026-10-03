@@ -617,7 +617,7 @@ To cut one: Actions → desktop-release → Run workflow on `main` with the
 version, or `gh workflow run desktop-release.yml --ref main -f version=X.Y.Z`.
 The version must be plain `X.Y.Z` and above the last `desktop-v*` tag
 (`scripts/desktop-version.sh`), because it is also `CFBundleVersion`, which
-Sparkle compares. The run archives a universal Release build with the
+Sparkle compares. The run archives an Apple Silicon (arm64) Release build with the
 hardened runtime, exports it for Developer ID (`desktop/macos/ExportOptions.plist`),
 notarises and staples the app, builds the `.dmg` (`scripts/desktop-dmg.sh`,
 hdiutil), signs, notarises and staples that, runs `spctl --assess` on both,
