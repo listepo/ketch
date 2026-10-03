@@ -133,6 +133,11 @@ case "${OS}" in
         ARCH="arm64"
       fi
     fi
+    if [ "${ARCH}" != "arm64" ]; then
+      echo "${RED}Error: Unsupported architecture: ${ARCH}${NC}" >&2
+      echo "ketch ships macOS releases for Apple Silicon (arm64) only." >&2
+      exit 1
+    fi
     ;;
   Linux)
     TRIPLE_VENDOR_OS="unknown-linux-gnu"
