@@ -10,6 +10,8 @@
 import SwiftUI
 
 struct MenuBarLabel: View {
+    @Environment(KetchStore.self) private var store
+    @Environment(\.openWindow) private var openWindow
     let count: Int
     let isRunning: Bool
 
@@ -24,6 +26,12 @@ struct MenuBarLabel: View {
         }
         // A bare symbol or a bare number says nothing in the menu bar.
         .accessibilityLabel(accessibilityTitle)
+        // The only view that exists while the main window is closed, so it is
+        // what reopens the window for a notification click.
+        .onChange(of: store.windowRequests) {
+            openWindow(id: WindowID.main)
+            NSApp.activate()
+        }
     }
 
     private var accessibilityTitle: String {

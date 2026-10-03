@@ -31,7 +31,7 @@
         "task": {
           "type": "download",
           "label": "ripgrep",
-          "batch": null
+          "batch_id": null
         }
       }
     },

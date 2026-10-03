@@ -1118,7 +1118,7 @@ pub struct Provenance {
 ///
 /// `sanitize_component` already knows every character that is unsafe here, so
 /// asking whether it would change the value is the whole check.
-fn usable_file_name(what: &str, value: &str) -> Result<()> {
+pub(crate) fn usable_file_name(what: &str, value: &str) -> Result<()> {
     if crate::config::sanitize_component(value) == value {
         Ok(())
     } else {
@@ -1778,7 +1778,7 @@ mod tests {
 
     #[test]
     fn committed_manifest_schema_matches_manifest() {
-        crate::config::assert_schema_current::<Manifest>("docs/manifest.schema.json");
+        crate::toml_file::assert_schema_current::<Manifest>("docs/manifest.schema.json");
     }
 
     /// The committed schema, as an editor would load it.

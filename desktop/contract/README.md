@@ -54,5 +54,10 @@ alert, and every other error is an alert with the core's wording.
 
 The macOS app's fake is `desktop/macos/Ketch/Core/FakeKetchCore.swift`
 (decoding in `ContractScenario.swift`), tested by
-`desktop/macos/KetchTests/ContractScenarioTests.swift`. The Windows and Linux
-fakes read the same directory when those apps exist.
+`desktop/macos/KetchTests/ContractScenarioTests.swift`.
+
+The Windows app's fake is `desktop/windows/Ketch.AppCore/FakeKetchCore.cs`
+(decoding in `ContractScenario.cs`), tested by
+`desktop/windows/Ketch.AppCore.Tests`. The app copies the scenarios beside its
+binary, and Settings can play one for the next install, upgrade or uninstall.
+The Linux fake reads the same directory when that app exists.

@@ -249,6 +249,31 @@ jobs:
           meson setup target/capi-meson crates/ketch-capi -Dcapi_dir="$PWD/target/debug"
           meson test -C target/capi-meson --print-errorlogs
 
+  # The Windows app: the fake core and store tested against the contract
+  # scenarios, then the WinUI 3 project built with the .NET SDK alone (the
+  # runner's Visual Studio is not used: the XAML compiler and the Windows SDK
+  # build tools come from the Microsoft.WindowsAppSDK package). The tests run
+  # on any OS; only the build needs Windows. The .NET SDK is a mise.toml pin.
+  ketch-win-app:
+    if: github.event.pull_request.draft != true
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: desktop/windows
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install_args: dotnet
+
+      - name: App core tests
+        run: dotnet test --project Ketch.AppCore.Tests
+
+      - name: Build the WinUI app
+        run: dotnet build Ketch.App/Ketch.App.csproj -c Release -p:Platform=x64
+
   # The design tokens: every generated copy (Swift, XAML, GTK CSS, DESIGN.md,
   # preview.html) is what desktop/design/build.mjs writes from tokens.json, DESIGN.md passes
   # the DESIGN.md linter, and text meets WCAG AA on its glass backgrounds.
