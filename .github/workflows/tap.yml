@@ -53,11 +53,10 @@ jobs:
           version="$(scripts/tap-release-version.sh "$TAG")"
           echo "VERSION=$version" >> "$GITHUB_ENV"
           arm="$(shasum -a 256 dist/ketch-aarch64-apple-darwin.tar.gz | cut -d' ' -f1)"
-          intel="$(shasum -a 256 dist/ketch-x86_64-apple-darwin.tar.gz | cut -d' ' -f1)"
 
           git clone "https://x-access-token:${TAP_TOKEN}@github.com/${TAP_REPO}.git" tap
           mkdir -p tap/Casks
-          scripts/cask.sh "$version" "$arm" "$intel" > tap/Casks/ketch.rb
+          scripts/cask.sh "$version" "$arm" > tap/Casks/ketch.rb
 
       - name: Lint the cask
         run: brew style tap/Casks/ketch.rb

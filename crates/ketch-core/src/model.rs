@@ -1118,7 +1118,7 @@ pub struct Provenance {
 ///
 /// `sanitize_component` already knows every character that is unsafe here, so
 /// asking whether it would change the value is the whole check.
-fn usable_file_name(what: &str, value: &str) -> Result<()> {
+pub(crate) fn usable_file_name(what: &str, value: &str) -> Result<()> {
     if crate::config::sanitize_component(value) == value {
         Ok(())
     } else {

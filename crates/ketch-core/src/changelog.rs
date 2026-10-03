@@ -21,7 +21,7 @@
 
 use crate::error::{Error, Result};
 use crate::manifest::Resolver;
-use crate::model::{InstalledPackage, Manifest, PackageSpec, VersionSpec};
+use crate::model::{InstalledPackage, Manifest, PackageSpec, Release, Version, VersionSpec};
 use crate::report::Ctx;
 use crate::source::{ListOpts, SourceRegistry};
 use std::path::{Path, PathBuf};
@@ -302,16 +302,7 @@ pub fn published(
     installed: Option<InstalledPackage>,
     latest: bool,
 ) -> Result<(String, String, Entry)> {
-    let manifest = match Resolver::new(cx)?.resolve(spec) {
-        Ok((m, _)) => m,
-        Err(e) => match &installed {
-            Some(pkg) => pkg
-                .manifest
-                .clone()
-                .unwrap_or_else(|| Manifest::inferred(pkg.source.clone())),
-            None => return Err(e),
-        },
-    };
+    let manifest = manifest_for(cx, spec, installed.as_ref())?;
     // Without `--latest` or an explicit version, the notes wanted are the ones
     // for the release that is installed, not whatever is newest.
     let want = match &spec.version {
@@ -338,6 +329,94 @@ pub fn published(
                 manifest.name
             ))
         })
+}
+
+/// How many releases a range asks a source for. A range is what an app shows
+/// between the installed version and the newest, so it reaches further back
+/// than one `latest` lookup needs.
+const RANGE_RELEASES: usize = 100;
+
+/// The notes of every release of `spec`'s package newer than `from` and no
+/// newer than `to`, newest first.
+///
+/// `from` defaults to the installed version, so the range is what an upgrade
+/// would bring; with nothing installed it has no lower end. `to` defaults to
+/// no upper end. A release that published no notes has nothing to show and is
+/// left out rather than failing the range. Returns the package name and each
+/// release's version with its entry.
+pub fn published_range(
+    cx: &Ctx<'_>,
+    spec: &PackageSpec,
+    installed: Option<InstalledPackage>,
+    from: Option<&str>,
+    to: Option<&str>,
+) -> Result<(String, Vec<(String, Entry)>)> {
+    let manifest = manifest_for(cx, spec, installed.as_ref())?;
+    let from = from
+        .map(Version::parse)
+        .or_else(|| installed.as_ref().map(|pkg| pkg.version.clone()));
+    let to = to.map(Version::parse);
+
+    let sources = SourceRegistry::load(cx);
+    let source = sources.for_ref(&manifest.source)?;
+    let opts = ListOpts {
+        include_prerelease: cx.cfg.prerelease || manifest.prerelease,
+        limit: RANGE_RELEASES,
+    };
+    let releases = source.list_releases(&manifest.source.id, &opts)?;
+    let entries = between(
+        &releases,
+        from.as_ref(),
+        to.as_ref(),
+        opts.include_prerelease,
+    )
+    .into_iter()
+    .filter_map(|release| {
+        from_release(release.notes.as_deref()).map(|entry| (release.version.to_string(), entry))
+    })
+    .collect();
+    Ok((manifest.name, entries))
+}
+
+/// The releases newer than `from` and no newer than `to`, newest first.
+///
+/// Drafts never count, and a prerelease counts only when `prerelease` allows
+/// one: a source or plugin that returns one it was not asked for must not put
+/// a prerelease's notes in front of a stable install.
+pub fn between<'a>(
+    releases: &'a [Release],
+    from: Option<&Version>,
+    to: Option<&Version>,
+    prerelease: bool,
+) -> Vec<&'a Release> {
+    let mut kept: Vec<&Release> = releases
+        .iter()
+        .filter(|r| !r.draft && (prerelease || !(r.prerelease || r.version.is_prerelease())))
+        .filter(|r| from.is_none_or(|from| r.version > *from))
+        .filter(|r| to.is_none_or(|to| r.version <= *to))
+        .collect();
+    kept.sort_by(|a, b| b.version.cmp(&a.version));
+    kept
+}
+
+/// The manifest `spec` resolves to, falling back to the one recorded when
+/// `installed` was installed, so a package the registry has since dropped
+/// still has notes.
+fn manifest_for(
+    cx: &Ctx<'_>,
+    spec: &PackageSpec,
+    installed: Option<&InstalledPackage>,
+) -> Result<Manifest> {
+    match Resolver::new(cx)?.resolve(spec) {
+        Ok((m, _)) => Ok(m),
+        Err(e) => match installed {
+            Some(pkg) => Ok(pkg
+                .manifest
+                .clone()
+                .unwrap_or_else(|| Manifest::inferred(pkg.source.clone()))),
+            None => Err(e),
+        },
+    }
 }
 
 #[cfg(test)]
@@ -573,5 +652,64 @@ ketch install demo@1.2.2
         std::fs::write(tmp.path().join("CHANGELOG.md"), "root\n").expect("write");
         std::fs::write(tmp.path().join("docs/CHANGELOG.md"), "docs\n").expect("write");
         assert_eq!(find_file(tmp.path()), Some(tmp.path().join("CHANGELOG.md")));
+    }
+
+    fn release(version: &str, prerelease: bool, draft: bool) -> Release {
+        Release {
+            version: Version::parse(version),
+            tag: format!("v{version}"),
+            prerelease,
+            draft,
+            published_at: None,
+            notes: Some(format!("notes for {version}")),
+            assets: Vec::new(),
+        }
+    }
+
+    fn versions(kept: &[&Release]) -> Vec<String> {
+        kept.iter().map(|r| r.version.to_string()).collect()
+    }
+
+    #[test]
+    fn a_range_excludes_from_includes_to_and_runs_newest_first() {
+        let releases = [
+            release("1.0.0", false, false),
+            release("1.2.0", false, false),
+            release("1.1.0", false, false),
+            release("1.3.0", false, false),
+        ];
+        let from = Version::parse("1.0.0");
+        let to = Version::parse("v1.2.0");
+        assert_eq!(
+            versions(&between(&releases, Some(&from), Some(&to), false)),
+            ["1.2.0", "1.1.0"]
+        );
+    }
+
+    #[test]
+    fn an_open_range_reaches_every_release() {
+        let releases = [
+            release("1.0.0", false, false),
+            release("2.0.0", false, false),
+        ];
+        assert_eq!(
+            versions(&between(&releases, None, None, false)),
+            ["2.0.0", "1.0.0"]
+        );
+    }
+
+    #[test]
+    fn drafts_and_unasked_for_prereleases_stay_out_of_a_range() {
+        let releases = [
+            release("1.1.0", false, true),
+            release("1.2.0-rc.1", false, false),
+            release("1.3.0", true, false),
+            release("1.0.1", false, false),
+        ];
+        assert_eq!(versions(&between(&releases, None, None, false)), ["1.0.1"]);
+        assert_eq!(
+            versions(&between(&releases, None, None, true)),
+            ["1.3.0", "1.2.0-rc.1", "1.0.1"]
+        );
     }
 }

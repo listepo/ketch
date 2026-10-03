@@ -1,0 +1,136 @@
+{
+  "name": "install-ok",
+  "description": "A clean install: every stage in order, a download with progress, then the installed package.",
+  "call": {
+    "operation": "install",
+    "specs": [
+      "ripgrep"
+    ],
+    "options": {
+      "force": false,
+      "prerelease": false,
+      "link": true,
+      "require_checksum": false,
+      "bin": null
+    }
+  },
+  "script": [
+    {
+      "type": "event",
+      "event": {
+        "type": "step",
+        "package": "ripgrep",
+        "stage": "resolving"
+      }
+    },
+    {
+      "type": "event",
+      "event": {
+        "type": "began",
+        "id": 1,
+        "task": {
+          "type": "download",
+          "label": "ripgrep",
+          "batch": null
+        }
+      }
+    },
+    {
+      "type": "event",
+      "event": {
+        "type": "sized",
+        "id": 1,
+        "name": "ripgrep-14.1.1.tar.gz",
+        "total": 2000000
+      }
+    },
+    {
+      "type": "event",
+      "event": {
+        "type": "step",
+        "package": "ripgrep",
+        "stage": "downloading"
+      }
+    },
+    {
+      "type": "event",
+      "event": {
+        "type": "progress",
+        "id": 1,
+        "done": 500000,
+        "total": 2000000
+      }
+    },
+    {
+      "type": "event",
+      "event": {
+        "type": "progress",
+        "id": 1,
+        "done": 2000000,
+        "total": 2000000
+      }
+    },
+    {
+      "type": "event",
+      "event": {
+        "type": "ended",
+        "id": 1,
+        "message": null
+      }
+    },
+    {
+      "type": "event",
+      "event": {
+        "type": "step",
+        "package": "ripgrep",
+        "stage": "verifying"
+      }
+    },
+    {
+      "type": "event",
+      "event": {
+        "type": "step",
+        "package": "ripgrep",
+        "stage": "extracting"
+      }
+    },
+    {
+      "type": "event",
+      "event": {
+        "type": "step",
+        "package": "ripgrep",
+        "stage": "installing"
+      }
+    },
+    {
+      "type": "event",
+      "event": {
+        "type": "success",
+        "verb": "installed",
+        "detail": "ripgrep 14.1.1"
+      }
+    }
+  ],
+  "outcome": {
+    "type": "ok",
+    "value": [
+      {
+        "package": {
+          "binaries": [
+            "/Users/me/.ketch/bin/ripgrep"
+          ],
+          "installed_at": 1760000000,
+          "name": "ripgrep",
+          "pinned": false,
+          "prefix": "/Users/me/.ketch/store/ripgrep/14.1.1",
+          "retained": [],
+          "source": "github:BurntSushi/ripgrep",
+          "tag": "14.1.1",
+          "trust": "checksum",
+          "version": "14.1.1"
+        },
+        "replaced": null
+      }
+    ]
+  }
+}
