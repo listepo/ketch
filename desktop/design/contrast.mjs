@@ -16,7 +16,7 @@
 // stand-in for it, which DESIGN.md -> Accessibility states as the
 // approximation it is.
 //
-// Offline and dependency-free: `node desktop/macos/design/contrast.mjs`, exit 1
+// Offline and dependency-free: `node desktop/design/contrast.mjs`, exit 1
 // on any failure. WCAG formulas: https://www.w3.org/TR/WCAG22/#dfn-contrast-ratio
 // and #dfn-relative-luminance (W3C Recommendation, checked 2026-10-01).
 

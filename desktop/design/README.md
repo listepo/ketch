@@ -1,13 +1,24 @@
-# Design tokens for the macOS app
+# Design tokens
 
 `tokens.json` is the one source of every colour, size, radius, font, shadow
-and animation the app uses. Everything else is generated from it:
+and animation the macOS app uses, and of the brand subset (accent, status
+colours, spacing, radii, type scale) the Windows and Linux apps share, with
+native surfaces of their own. Everything else is generated from it:
 
 | Output | What it is | Who reads it |
 | --- | --- | --- |
 | `generated/Tokens.swift` | `Tokens.Colors…`, `Tokens.Space…`, `Tokens.Typography…` as SwiftUI values; colours follow light, dark and Increase Contrast without an asset catalog | the app (`desktop/macos/`) |
-| `../DESIGN.md` front matter | the YAML block at the top, in the [DESIGN.md format](https://github.com/google-labs-code/design.md) | coding agents, the DESIGN.md linter |
+| `generated/KetchTokens.xaml` | a XAML `ResourceDictionary`: colours (a `Color` and a `SolidColorBrush` each) in `ThemeDictionaries` keyed `Light`, `Dark` and `HighContrast`; spacing, `CornerRadius` and type-scale sizes, weights and pixel line heights outside them. Brand tokens only | the Windows app |
+| `generated/ketch-tokens.css` | a GTK stylesheet: libadwaita's `--accent-bg-color`, `--accent-fg-color`, `--accent-color`, `--success-color`, `--warning-color`, `--error-color` and `--destructive-color` set from the brand colours, and every brand token as a `--ketch-*` custom property; dark and high-contrast values in `prefers-color-scheme` / `prefers-contrast` media queries. Brand tokens only | the Linux app |
+| `../macos/DESIGN.md` front matter | the YAML block at the top, in the [DESIGN.md format](https://github.com/google-labs-code/design.md) | coding agents, the DESIGN.md linter |
 | `preview.html`, between `BEGIN/END GENERATED TOKENS` | CSS variables and a token index | the review page |
+
+Which tokens leave macOS is the `BRAND` list in `build.mjs`. Glass, wash,
+elevation, blur, motion, the macOS layout sizes and the preset tints stay in
+Swift, the preview and DESIGN.md. Font families are not exported: each
+platform uses its own. Windows has no dark high-contrast theme (a contrast
+theme is the user's own palette), so `HighContrast` takes the `highContrast`
+values and `highContrastDark` is Swift and CSS only.
 
 The prose of `DESIGN.md` and the rest of `preview.html` are hand-written.
 
@@ -26,7 +37,7 @@ The prose of `DESIGN.md` and the rest of `preview.html` are hand-written.
      dark mode.
    - Dimensions are `{"value": 16, "unit": "px"}`; durations
      `{"value": 180, "unit": "ms"}`.
-2. Regenerate: `just design-tokens` (or `node desktop/macos/design/build.mjs`
+2. Regenerate: `just design-tokens` (or `node desktop/design/build.mjs`
    from the repository root after `just deps`).
 3. Open `preview.html` in a browser and check both themes. The switches at the
    top toggle Light / Dark, Increase contrast, Reduce transparency and Reduce
@@ -51,7 +62,7 @@ generator knows (`color`, `dimension`, `number`, `typography`, `shadow`,
   WCAG 2.2 AA (4.5:1 text, 3:1 large text and UI glyphs). The background is
   what the text really sits on: material tints composited over the canvas base,
   alone and under the wash at `opacity.washMax` (each gradient stop, plain and
-  under each hill), worst case kept. `node desktop/macos/design/contrast.mjs --verbose`
+  under each hill), worst case kept. `node desktop/design/contrast.mjs --verbose`
   prints every pair. Add a pair to `PAIRS` there when a component puts text on
   a new surface.
 - **DESIGN.md lint**: `designmd lint` from `@google/design.md`; errors fail,

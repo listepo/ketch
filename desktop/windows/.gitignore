@@ -1,0 +1,5 @@
+# Written by scripts/csharp.sh (`just csharp`); never committed.
+/KetchCore/Generated/
+bin/
+obj/
+TestResults/

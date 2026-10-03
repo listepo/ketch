@@ -65,6 +65,8 @@ All are default members, so a bare `cargo test` or `cargo clippy` at the root
 covers them; `--workspace` says so explicitly, and is what the Justfile and CI
 pass. `just xcframework` builds `ketch-ffi` into the macOS app's XCFramework
 and Swift bindings; `just ffi-test` builds a debug one and runs its Swift test.
+`just csharp-test` does the same for C#: a debug `ketch_ffi` shared library,
+its C# bindings, and the .NET test in `desktop/windows`.
 
 The Justfile wraps the same commands with `--locked`: `just fmt`, `just clippy`
 (or `just lint`), `just test`, and `just check` runs what CI runs on this
@@ -210,6 +212,8 @@ differ by orders of magnitude — the cargo home is the small one. Set
 | `crates/ketch-core/src/doctor.rs` | `ketch doctor`'s checks, shared by the command and `ketch-ffi` |
 | `crates/ketch-ffi/` | the core through UniFFI: a coarse, language-neutral surface of plain records, foreign traits for `Reporter` and `Decider` passed with a cancel token to each call, and a typed `KetchError` |
 | `scripts/xcframework.sh` | `ketch-ffi` as an XCFramework for both macOS architectures, and its generated Swift bindings; `just xcframework` |
+| `scripts/csharp.sh` | `ketch-ffi` as a shared library and the C# bindings the pinned uniffi-bindgen-cs generates from it, into `desktop/windows/KetchCore/Generated/`; `just csharp`, `just csharp-test` |
+| `desktop/windows/` | the Windows app's C# side: `KetchCore` (the generated binding as a .NET library), its MSTest project, and `uniffi.toml` for the generator |
 | `desktop/macos/KetchCore/` | the Swift package wrapping that XCFramework and bindings (both build output), and the Swift test that drives the real core through them |
 | `src/ui.rs` | all terminal output, `Terminal`: the `Reporter` that draws the core's events, and `TerminalDecider`: the `Decider` that prompts on the terminal |
 | `src/tui/` | the opt-in full-screen renderer (`tui` feature), driven by `ui.rs` |
@@ -234,7 +238,7 @@ differ by orders of magnitude — the cargo home is the small one. Set
 | `.github/dependabot.yml` | weekly `chore(deps)` pull requests for cargo, npm and GitHub Actions; not `mise.toml` |
 | `desktop/macos/` | the SwiftUI macOS app: `project.yml` (XcodeGen), `Ketch/` sources, `KetchTests/`, `KetchUITests/`; see its `README.md` |
 | `desktop/macos/DESIGN.md` | the macOS app's design system in the DESIGN.md format; its front matter is generated |
-| `desktop/macos/design/` | `tokens.json`, the one source of design tokens, and `build.mjs`, which generates `generated/Tokens.swift`, the DESIGN.md front matter and `preview.html`'s CSS (`just design-tokens`) |
+| `desktop/design/` | `tokens.json`, the one source of design tokens, and `build.mjs`, which generates `generated/Tokens.swift` (macOS), `generated/KetchTokens.xaml` (Windows), `generated/ketch-tokens.css` (Linux), the macOS DESIGN.md front matter and `preview.html`'s CSS (`just design-tokens`) |
 | `.github/workflows/desktop-release.yml` | the macOS app's release: signed, notarised `.dmg` under a `desktop-v*` tag, and its Sparkle appcast |
 | `scripts/desktop-version.sh`, `scripts/desktop-dmg.sh`, `scripts/desktop-appcast.sh` | the app release's version check, disk image and appcast, shared with `tests/desktop-appcast.sh` |
 | `desktop/cliff.toml` | the app's release notes: commits under `desktop/` and `crates/ketch-ffi/` since the last `desktop-v*` tag |
@@ -302,7 +306,7 @@ These are observed throughout; match them rather than introducing your own.
 - **A generated file says so in its first lines**, and the generator writes
   that header, not a person or a second script: `ketch lock` for `ketch.lock`,
   `site/sync-docs.py` for `site/content/docs/`, `scripts/cask.sh` for the
-  tap's `Casks/ketch.rb`, `desktop/macos/design/build.mjs` for `Tokens.swift`
+  tap's `Casks/ketch.rb`, `desktop/design/build.mjs` for `Tokens.swift`, `KetchTokens.xaml`, `ketch-tokens.css`
   and the generated blocks of `DESIGN.md` and `preview.html`. To change such a
   file, change its generator.
 - **Comments explain *why*, never *what*.** The code already says what it does.
@@ -617,7 +621,7 @@ To cut one: Actions → desktop-release → Run workflow on `main` with the
 version, or `gh workflow run desktop-release.yml --ref main -f version=X.Y.Z`.
 The version must be plain `X.Y.Z` and above the last `desktop-v*` tag
 (`scripts/desktop-version.sh`), because it is also `CFBundleVersion`, which
-Sparkle compares. The run archives a universal Release build with the
+Sparkle compares. The run archives an Apple Silicon (arm64) Release build with the
 hardened runtime, exports it for Developer ID (`desktop/macos/ExportOptions.plist`),
 notarises and staples the app, builds the `.dmg` (`scripts/desktop-dmg.sh`,
 hdiutil), signs, notarises and staples that, runs `spctl --assess` on both,
