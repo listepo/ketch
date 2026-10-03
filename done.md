@@ -1148,6 +1148,14 @@ Execution plan (Claude Code / opus-5.5):
 
 Status: done. `changelog_range` reads release notes only: the installed payload's file belongs to the old version and has no sections for the newer ones. `held_by` is always `None` for now, because `ketch sync` restores a pin without recording which `ketch.lock` it came from; recording that is a state change left for a later task. `outdated` now reports pinned packages, marked, and `upgrade` still skips them. `uninstall` reports a `removing` status and a `removed` success per package. Core gained `changelog::published_range` / `between` and `listing::fill_cached`; `published` shares its manifest fallback with the range through `manifest_for`. A breaking change to the binding (new record fields, pinned rows in `outdated`).
 
+### M16.1. The owning module, and `config.rs` through it
+
+A new `crates/ketch-core/src/toml_file.rs` owns parsing, rendering and the schema export for the TOML files ketch owns. It starts with the two calls `config.rs` needs — parse text into a `T: DeserializeOwned` naming the file in the error (`Error::parse(what, …)`), and render a `T: Serialize` pretty — and takes `assert_schema_current` from `config.rs`, with its callers (`config.rs`, `lockfile.rs`, `log.rs`, `model.rs` tests) pointed at the new path. A helper is added only with its first caller, so nothing is dead code.
+
+Done when `config.rs` imports neither `toml` nor `schemars`' drift helper, `config.toml` loads and `ketch config reset` writes byte-for-byte as before, the new module has its `//!` header and unit tests (a parse error names the file, render round-trips), and fmt, clippy and nextest are clean.
+
+Execution plan (Claude Code / opus-5.5): add `crates/ketch-core/src/toml_file.rs` with `parse` and `render` (both name the file in `Error::parse`); move `assert_schema_current` there verbatim and point its callers at it (`config.rs`, and the `lockfile.rs` and `model.rs` schema tests; `log.rs` only derives `JsonSchema` and needs no change); switch `Config::load` and `Config::default_toml` to the two calls; a row for the module in `AGENTS.md`'s layout table; verify with fmt, clippy, nextest, `ketch doctor` and `ketch config reset` against a scratch root.
+
 ### D4. Contract fixtures for every app's fake core
 
 Three apps each test against a fake core; if each fake invents its own records and event streams, they will drift from the real one and from each other. Research: section 2, "Written once".
