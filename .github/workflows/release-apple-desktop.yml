@@ -63,4 +63,6 @@ jobs:
       sparkle: true
       appcast-tag: desktop-appcast
       cliff-config: desktop/cliff.toml
-    secrets: inherit
+    # The org's own workflow, pinned by SHA, reading the pyrlyn organization
+    # secrets it declares; `secrets: inherit` is the org convention for it.
+    secrets: inherit # nosemgrep: yaml.github-actions.security.secrets-inherit.secrets-inherit
