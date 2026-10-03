@@ -4,7 +4,14 @@
 - B65. Binary selection regression test
 - R3. Cross-platform CI
 - F8. Spinner and progress bar
-- M16. One module owns config file I/O
+- M16.1. The owning module, and `config.rs` through it
+- M16.2. `registry.rs` through the module
+- M16.3. `push.rs` through the module
+- M16.4. `wizard.rs` through the module
+- M16.5. Test-only TOML in `model.rs` and `extra.rs`
+- M16.6. `manifest.rs` (`ketch.toml` user manifests)
+- M16.7. `lockfile.rs` (`ketch.lock`)
+- M16.8. A guard that only the owner imports `toml`
 - M17. `ketch import`: a package from winget, Homebrew or a Linux repository
 - R5. Workspace split: `ketch-core` library crate
 - R6. A reporter instead of the global `ui::` sink
@@ -13,12 +20,8 @@
 - F13. macOS app release pipeline
 - F14. Design system for the macOS app: `DESIGN.md` and tokens
 - F18. Figma design for macOS, Windows and Linux
-- D4. Contract fixtures for every app's fake core
-- D5. Design tokens for XAML and GTK
 - D7. macOS: update notifications
 - D8. macOS: `ketch://` links
-- D9. macOS: VoiceOver pass
-- D10. Windows: C# binding for `ketch-ffi`
 - D11. Windows: WinUI 3 app shell on a fake core
 - D12. Windows: the app on the real core
 - D13. Windows: tray icon, notifications, start at login, links

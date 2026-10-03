@@ -1,0 +1,25 @@
+{
+  "name": "install-busy",
+  "description": "Another ketch process holds the lock: nothing runs, and the app offers Retry.",
+  "call": {
+    "operation": "install",
+    "specs": [
+      "ripgrep"
+    ],
+    "options": {
+      "force": false,
+      "prerelease": false,
+      "link": true,
+      "require_checksum": false,
+      "bin": null
+    }
+  },
+  "script": [],
+  "outcome": {
+    "type": "error",
+    "error": {
+      "type": "busy",
+      "pid": 4242
+    }
+  }
+}

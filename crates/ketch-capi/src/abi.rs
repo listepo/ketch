@@ -837,7 +837,7 @@ mod tests {
         assert!(unsafe { ketch_cancel_is_cancelled(Some(&cancel)) });
         let seen = Mutex::new(Vec::new());
         let answer = install(&core, &payload(dir.path()), &seen, Some(&cancel));
-        assert_eq!(answer["error"]["kind"], "cancelled", "{answer}");
+        assert_eq!(answer["error"]["type"], "cancelled", "{answer}");
         // SAFETY: `core` is live.
         let installed = take(unsafe { ketch_installed(Some(&core)) });
         assert_eq!(installed, json!({"ok": []}));

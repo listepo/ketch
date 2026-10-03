@@ -1,0 +1,42 @@
+{
+  "name": "install-verification-failure",
+  "description": "The download does not match its published checksum.",
+  "call": {
+    "operation": "install",
+    "specs": [
+      "ripgrep"
+    ],
+    "options": {
+      "force": false,
+      "prerelease": false,
+      "link": true,
+      "require_checksum": false,
+      "bin": null
+    }
+  },
+  "script": [
+    {
+      "type": "event",
+      "event": {
+        "type": "step",
+        "package": "ripgrep",
+        "stage": "resolving"
+      }
+    },
+    {
+      "type": "event",
+      "event": {
+        "type": "step",
+        "package": "ripgrep",
+        "stage": "verifying"
+      }
+    }
+  ],
+  "outcome": {
+    "type": "error",
+    "error": {
+      "type": "verification",
+      "message": "checksum mismatch for ripgrep.tar.gz\nexpected aa11\nactual bb22"
+    }
+  }
+}

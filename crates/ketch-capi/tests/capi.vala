@@ -58,7 +58,7 @@ int main () {
     expect (cancel.is_cancelled (), "a tripped flag says so");
     var refused = envelope (core.install (specs, null, null, null, null, cancel));
     expect (refused.has_member ("error"), "a cancelled install is an error");
-    expect (refused.get_object_member ("error").get_string_member ("kind") == "cancelled",
+    expect (refused.get_object_member ("error").get_string_member ("type") == "cancelled",
             "the error is cancelled");
     expect (ok (core.installed ()).get_array ().get_length () == 0, "a cancelled install places nothing");
 

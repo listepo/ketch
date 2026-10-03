@@ -55,8 +55,14 @@ impl From<CoreStage> for Stage {
 pub enum TaskKind {
     /// Several downloads running side by side.
     Batch,
-    /// Bytes arriving for `label` (a package name, `registry`, `download`).
-    Download { label: String, batch: Option<u64> },
+    /// Bytes arriving for `label` (a package name, `registry`, `download`),
+    /// as part of the `Batch` task `batch_id` when there is one. Not `batch`:
+    /// C# makes each field a property of the variant's class, and one named
+    /// `Batch` collides with the `Batch` variant it inherits.
+    Download {
+        label: String,
+        batch_id: Option<u64>,
+    },
     /// Work of unknown length.
     Activity { message: String },
     /// Things counted one at a time: `checking 3/12 packages`.
@@ -73,7 +79,7 @@ impl From<CoreTask> for TaskKind {
             CoreTask::Batch => TaskKind::Batch,
             CoreTask::Download { label, batch } => TaskKind::Download {
                 label,
-                batch: batch.map(|id| id.get()),
+                batch_id: batch.map(|id| id.get()),
             },
             CoreTask::Activity { message } => TaskKind::Activity { message },
             CoreTask::Counter { verb, unit, total } => TaskKind::Counter { verb, unit, total },

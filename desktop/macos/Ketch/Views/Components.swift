@@ -238,10 +238,14 @@ struct SearchField: View {
 
     var body: some View {
         HStack(spacing: Tokens.Space.sm) {
-            Image(systemName: "magnifyingglass").foregroundStyle(Tokens.Colors.Text.secondary)
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(Tokens.Colors.Text.secondary)
+                .accessibilityHidden(true)
             TextField(prompt, text: $text)
                 .textFieldStyle(.plain)
                 .textStyle(Tokens.Typography.body)
+                // The prompt is only a placeholder, which VoiceOver reads as a value.
+                .accessibilityLabel(prompt)
             if !text.isEmpty {
                 Button("Clear", systemImage: "xmark.circle.fill") { text = "" }
                     .labelStyle(.iconOnly)

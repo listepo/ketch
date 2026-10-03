@@ -37,7 +37,9 @@ schema = ["dep:schemars"]
 [dependencies]
 ketch-core = { path = "../ketch-core" }
 schemars = { version = "1.2", optional = true }
-# The records also cross ketch-capi's C ABI, as JSON.
+# The derive that gives the records and events the JSON shape desktop/contract
+# publishes to the Windows and Linux fakes, and that ketch-capi sends over its
+# C ABI.
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 # Proc-macro mode: the exported surface is the Rust code itself, no UDL file.
@@ -45,6 +47,7 @@ uniffi = "0.32.2"
 
 [dev-dependencies]
 pretty_assertions = "1.4.1"
+serde_json = "1"
 tempfile = "3"
 
 # `forbid`, like the rest of the workspace, although the generated scaffolding

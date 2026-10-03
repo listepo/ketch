@@ -1085,6 +1085,53 @@ Execution plan (Claude Code / opus-5.5):
 
 Status: done. Read-only calls (`search`, `outdated`, `changelog`, `doctor`) also take an optional reporter, so their warnings keep reaching the caller; `uninstall` checks the token before each package (progress and the leftover store folder stay with D2). On macOS the Swift test runs a looping shell script as the held binary: a relocated `/bin/sleep` is killed by the OS.
 
+### D5. Design tokens for XAML and GTK
+
+`tokens.json` feeds only Swift today. The Windows and Linux apps should share ketch's brand (accent, status colours, spacing, radii, type scale) without imitating the glass. Style Dictionary has no XAML or GTK format, so it takes two custom ones. Research: section 2.
+
+Done when the token source lives in `desktop/design/`, `just design-tokens` also writes a XAML `ResourceDictionary` (Light, Dark, HighContrast theme dictionaries) and a GTK stylesheet setting libadwaita's CSS variables, glass and elevation tokens stay macOS-only, generated files say so in their first lines, and a drift check covers all outputs. Brand tokens on every platform, with native surfaces, were decided by the creator (2026-10-01, open decision 6).
+
+Execution plan:
+
+1. `git mv desktop/macos/design desktop/design`; fix every path (Justfile, `ci.yml`, `project.yml`, READMEs, DESIGN.md links, AGENTS.md, toolchain.md).
+2. `build.mjs`: a `BRAND` path list and two Style Dictionary formats, `ketch/xaml` (`ThemeDictionaries` Light, Dark, HighContrast; plain resources for spacing, radii, type scale) and `ketch/gtk` (libadwaita variables plus `--ketch-*` custom properties, dark and high contrast as media queries), both written to `desktop/design/generated/`.
+3. `just design-check` and the CI `design` job compare all five generated files, including one that is missing.
+4. Verify: `just design-check`, `xmllint` on the XAML, a deliberate edit of a generated file fails the check, `just macos-test` still builds against the moved `Tokens.swift`.
+
+Status: done. The token source moved to `desktop/design/`; `just design-tokens` now also writes `generated/KetchTokens.xaml` and `generated/ketch-tokens.css`. Brand tokens only (the `BRAND` list in `build.mjs`: accent, status colours, spacing, radii, type scale). Windows has no dark high-contrast theme, so `HighContrast` takes the `highContrast` values. The GTK file uses `@media (prefers-color-scheme)` and `(prefers-contrast)`, which GTK documents in css-properties.md (checked 2026-10-03) and AdwApplication autoloads from libadwaita 1.8. Not run: the XAML was checked for well-formedness only (no WinUI toolchain here), and the GTK CSS was not loaded in a GTK app.
+
+### D10. Windows: C# binding for `ketch-ffi`
+
+The Windows app is C# + WinUI 3 over `ketch-ffi` (creator, 2026-10-01). `uniffi-bindgen-cs` last released for UniFFI 0.31.0; `ketch-ffi` is on 0.32.2. Decided by the creator (2026-10-01, open decision 4): first try the generator built from PR #176 (UniFFI 0.32.0), pinned to commit `0fc022aa1d73fb1dda91a778b63f2824d7dca58b`; if it fails against 0.32.2, use the C ABI from D15 through `LibraryImport`. Downgrading `ketch-ffi` to UniFFI 0.31.2 is not an option. Research: section 4.
+
+Done when the chosen route generates C# for `ketch-ffi`, the generator is pinned (a commit or a version, no system install), a .NET 10 test calls `installed`, `doctor` and a cancelled install against a scratch root on Windows CI, and the route taken and why is in the research page.
+
+Execution plan (Claude Code / opus-5.5):
+
+1. Route B: pin the generator in `mise.toml` as `cargo:` from `dennisameling/uniffi-bindgen-cs` at `0fc022aa1d73fb1dda91a778b63f2824d7dca58b`, and the .NET 10 SDK beside it, so nothing is installed system-wide.
+2. `scripts/csharp.sh` (`just csharp`): build `ketch-ffi`'s shared library, generate `ketch_ffi.cs` from it with `desktop/windows/uniffi.toml` (public types, a `Ketch.Ffi` namespace), and put both in `desktop/windows/KetchCore/Generated/`, which is not committed, as the Swift bindings are not.
+3. `desktop/windows/KetchCore` (a `net10.0` class library over the generated file and the native library) and `desktop/windows/KetchCore.Tests` (MSTest): `installed` on a scratch root, `doctor`, and a cancelled install that throws `Cancelled` and places nothing.
+4. CI: a `ketch-cs` job on `windows-latest` that installs the pins through mise and runs `just csharp-test`'s steps.
+5. Research page section 4: the route taken and why; `toolchain.md` and the AGENTS.md layout rows.
+6. If the generator fails against 0.32.2: fall back to D15's C ABI through `LibraryImport`, and say so in the research page.
+
+Status: done. Route B, the generator from PR #176 at the pinned commit, works against `ketch-ffi` on UniFFI 0.32.2 without a change to the generator; routes C and D were not needed. Three adjustments, recorded in the research page: `TaskKind::Download`'s `batch` field became `batch_id`, because a C# property named `Batch` clashes with the inherited `Batch` variant (a breaking change to the binding); `desktop/windows/uniffi.toml` makes the generated types public; and `scripts/csharp.sh` uses the mise install of the generator and checks its version, because an older `uniffi-bindgen-cs` in `~/.cargo/bin` shadows it on `PATH`. The MSTest project also covers `ketch_version` and an install reported to a C# `Reporter`.
+
+### D9. macOS: VoiceOver pass
+
+The macOS app's accessibility was only checked on the fake core. F14 keeps its own Accessibility Inspector pass on the real glass; this task covers labels. Localisation is not needed for now (creator, 2026-10-01, open decision 7), so no String Catalog. Research: section 1.
+
+Done when every icon-only control has an accessibility label, and a VoiceOver walk through the nine screens finds no unlabeled control.
+
+Execution plan:
+
+1. Read every view for symbol-only controls and bare text fields; the existing icon-only buttons already name themselves through their title.
+2. `KetchUITests`: one test visits the nine screens (Installed, Discover, Updates, Activity, Doctor, General and Appearance settings, package detail, uninstall sheet) and runs `performAccessibilityAudit(for: [.sufficientElementDescription, .elementDetection])`, ignoring layout containers; it also looks up by label the controls a quiet screen does not show (colour wells, the running operation's Cancel button, the menu-bar extra).
+3. Fix what it finds: the search field, the colour wells, the wash slider, the menu-bar label.
+4. Verify: `just macos-test`.
+
+Status: done. No manual VoiceOver walk was possible, so the automated audit stands in for it; it finds elements with no description but cannot judge whether a label reads well. Fixed: the search field (its prompt was only a placeholder, now labelled, glyph hidden), the two colour wells (labelled "Custom tint" and "Custom accent" instead of both "Custom"), the wash slider (label and percentage value), and the menu-bar extra ("Ketch, 2 updates available"). The symbol-only Clear, Dismiss and Cancel buttons already carry their titles; Cancel is checked in the test, Clear (needs typed text, which XCUITest could not enter here) and Dismiss (needs a held lock) are not. The Touch Bar, layout containers and a slider thumb are excluded from the audit.
+
 ### D2. `ketch-ffi`: records and operations the apps need
 
 The macOS app's protocol needs things `ketch-ffi` does not give: a changelog across a version range, pinned packages in `outdated` with what holds them, `latest` in search results, and an `uninstall` that can be cancelled, reports progress and removes a leftover store folder for a name with no record, as the CLI does. Research: section 3a, gaps G2–G5.
@@ -1125,12 +1172,28 @@ Done when `crates/ketch-capi` exports the contract over `extern "C"` with a cbin
 
 Execution plan (Claude Code / opus-5.5):
 
-1. `crates/ketch-ffi`: `serde::Serialize` on every record, event, holder and `KetchError` (snake_case, enums tagged by `type`/`kind`), `Deserialize` on `InstallOptions`, and `schemars::JsonSchema` behind a `schema` feature only the capi tests enable. The C ABI reuses `ketch_ffi::KetchCore`, so both bindings run the same calls.
-2. `crates/ketch-capi` (new): `ketch.h`-facing `extern "C"` functions over an opaque `KetchCore` and `KetchCancel` (`Box`), one per `KetchCore` method. Every call returns a malloc'd JSON envelope, `{"ok": …}` or `{"error": {"kind": …, "message": …}}`, freed with `ketch_string_free` (or `g_free`, which is `free`). Callbacks are a function pointer plus `user_data` each, so a Vala delegate's target maps onto them. Panics are caught at the boundary. `[lints.rust] unsafe_code = "deny"` with the `allow` on the one `abi` module, a `SAFETY` comment on each unsafe block, and `clippy::undocumented_unsafe_blocks` on.
+1. `crates/ketch-ffi`: `serde::Serialize` on every record, event, holder and `KetchError` (snake_case, data enums tagged by `type`, as D4's contract scenarios publish them), `Deserialize` on `InstallOptions`, and `schemars::JsonSchema` behind a `schema` feature only the capi tests enable. The C ABI reuses `ketch_ffi::KetchCore`, so both bindings run the same calls.
+2. `crates/ketch-capi` (new): `ketch.h`-facing `extern "C"` functions over an opaque `KetchCore` and `KetchCancel` (`Box`), one per `KetchCore` method. Every call returns a malloc'd JSON envelope, `{"ok": …}` or `{"error": {"type": …, "message": …}}`, freed with `ketch_string_free` (or `g_free`, which is `free`). Callbacks are a function pointer plus `user_data` each, so a Vala delegate's target maps onto them. Panics are caught at the boundary. `[lints.rust] unsafe_code = "deny"` with the `allow` on the one `abi` module, a `SAFETY` comment on each unsafe block, and `clippy::undocumented_unsafe_blocks` on.
 3. `include/ketch.h` generated by cbindgen 0.29.4 (dev-dependency), a drift test that fails when it is stale; `schema/payloads.schema.json` from the `schema` feature, with the same drift test (`KETCH_BLESS=1` rewrites both).
 4. `vapi/ketch.vapi` by hand; `meson.build` and `tests/capi.vala` a Meson project whose test calls `installed`, `doctor` and a cancelled install against a scratch root, parsing the envelopes with json-glib.
 5. CI: a `ketch-capi` job on `ubuntu-latest` (valac, meson, json-glib from apt) that builds the crate and runs `meson test`; `just capi-test` runs the same.
 6. Docs: `toolchain.md` and `rust.md` rows for cbindgen and libc, the AGENTS.md layout row.
 7. Verify: `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo nextest run --workspace`, `just ffi-test`; the Vala test on Linux CI.
 
-Status: done. `crates/ketch-capi` wraps `ketch_ffi::KetchCore` one function per method, from `installed` to `config`, so the C ABI and the UniFFI bindings run the same calls. The Vala test also runs a real install with a closure reporter. Linux CI installs valac, Meson and json-glib from apt; nothing is pinned in `mise.toml` for them, because mise has no backend for them. The `rust.md` rows for cbindgen and libc were not written here: that file lives outside this repository.
+Status: done. `crates/ketch-capi` wraps `ketch_ffi::KetchCore` one function per method, from `installed` to `config`, so the C ABI and the UniFFI bindings run the same calls. The Vala test also runs a real install with a closure reporter. The error envelope is tagged `type`, not the `kind` first planned, because D4's contract scenarios already publish `KetchError` that way and one wire shape serves every fake. Linux CI installs valac, Meson and json-glib from apt; nothing is pinned in `mise.toml` for them, because mise has no backend for them. The `rust.md` rows for cbindgen and libc were not written here: that file lives outside this repository.
+
+### D4. Contract fixtures for every app's fake core
+
+Three apps each test against a fake core; if each fake invents its own records and event streams, they will drift from the real one and from each other. Research: section 2, "Written once".
+
+Done when a set of language-neutral JSON scenarios (records, event streams with progress and `Abandoned`, `Busy`, `Cancelled`, decisions) is generated from the Rust types by a test that fails on drift, and the macOS app's fake core reads them; the Windows and Linux fakes read the same files when they exist.
+
+Execution plan:
+
+1. `ketch-ffi`: derive `serde::Serialize` on the exported records, `Event`, `TaskKind`, `Stage`, `Holder` and `KetchError` (internally tagged by `type`, snake_case), so the wire shape is the Rust shape.
+2. `crates/ketch-ffi/tests/contract.rs` builds each scenario from those Rust values (a call, an ordered script of events and decisions, an outcome) and compares the JSON with `desktop/contract/scenarios/*.json`; `KETCH_BLESS=1` rewrites them, as the schema drift tests do. Scenarios: every read, install (progress, `Abandoned`, binary choice), upgrade (stopping processes), uninstall, and each error (`Busy` with and without a pid, `Cancelled`, `NotFound`, `Network`, `Verification`, `Other`).
+3. macOS: `Ketch/Core/ContractScenario.swift` decodes them and maps events and records to the app's types; `FakeKetchCore` replays a scenario for reads and for install, upgrade and uninstall. Store tests run Busy, Cancelled, a network failure, a binary choice and a normal install from the files, and every file must decode.
+4. `desktop/contract/README.md` states the file format for the Windows and Linux fakes, which read the same files once they exist.
+5. Verify: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo nextest run`, `just ffi-test`, `just macos-test`, `swift-format lint --strict`.
+
+Status: done.

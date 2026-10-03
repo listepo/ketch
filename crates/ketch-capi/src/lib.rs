@@ -14,7 +14,7 @@
 //! Records cross as JSON rather than C structs: about two dozen functions and
 //! no struct layout to keep in step on both sides. Every call answers with one
 //! string, an envelope that is either `{"ok": <value>}` or
-//! `{"error": {"kind": …, "message": …}}`; `schema/payloads.schema.json`
+//! `{"error": {"type": …, "message": …}}`; `schema/payloads.schema.json`
 //! describes every value. The string is `malloc`ed: free it with
 //! `ketch_string_free`, or with `g_free`, which is `free`.
 //!
@@ -85,7 +85,7 @@ fn respond<T: Serialize>(call: impl FnOnce() -> Result<T, KetchError>) -> String
     // renders; the fallback only keeps a broken invariant from being silent.
     serde_json::to_string(&envelope).unwrap_or_else(|e| {
         let message = serde_json::to_string(&e.to_string()).unwrap_or_else(|_| "\"\"".into());
-        format!(r#"{{"error":{{"kind":"other","message":{message}}}}}"#)
+        format!(r#"{{"error":{{"type":"other","message":{message}}}}}"#)
     })
 }
 
@@ -135,11 +135,11 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn an_error_carries_its_kind_its_fields_and_a_sentence() {
+    fn an_error_carries_its_type_its_fields_and_a_sentence() {
         let rendered = respond::<()>(|| Err(KetchError::NotFound { name: "jq".into() }));
         assert_eq!(
             serde_json::from_str::<Value>(&rendered).unwrap(),
-            json!({"error": {"kind": "not_found", "name": "jq", "message": "`jq` not found"}})
+            json!({"error": {"type": "not_found", "name": "jq", "message": "`jq` not found"}})
         );
     }
 
@@ -147,7 +147,7 @@ pub(crate) mod tests {
     fn a_panic_becomes_an_other_error() {
         let rendered = respond::<()>(|| panic!("boom"));
         let value: Value = serde_json::from_str(&rendered).unwrap();
-        assert_eq!(value["error"]["kind"], "other");
+        assert_eq!(value["error"]["type"], "other");
     }
 
     #[test]

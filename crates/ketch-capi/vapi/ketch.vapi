@@ -6,7 +6,7 @@
  * ketch-capi for Vala: include/ketch.h, bound by hand.
  *
  * Every call answers with one JSON string, {"ok": <value>} or
- * {"error": {"kind": ..., "message": ...}}; parse it with json-glib.
+ * {"error": {"type": ..., "message": ...}}; parse it with json-glib.
  * schema/payloads.schema.json describes each value, and the comment on each
  * function in include/ketch.h names which one `ok` holds. The answer is
  * malloc'ed, so Vala's g_free is the right way to release it.

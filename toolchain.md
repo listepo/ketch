@@ -17,7 +17,7 @@ Project programs and direct packages from manifests.
 | git-cliff | mise | Writes the `CHANGELOG.md` entry from `cliff.toml` (`scripts/release.sh`), and the macOS app's release notes from `desktop/cliff.toml` | https://github.com/orhun/git-cliff |
 | xcodegen | mise | Generates `desktop/macos/Ketch.xcodeproj` from `project.yml` (`just macos-app`, `just macos-test`) | https://github.com/yonaskolb/XcodeGen |
 | Xcode | global (App Store / developer.apple.com) | Builds and tests the macOS app (`xcodebuild`); 26 or later | https://developer.apple.com/xcode/ |
-| rust-std aarch64/x86_64-apple-darwin | rustup (`scripts/xcframework.sh` adds the missing one to the pinned toolchain) | Both architectures of `ketch-ffi`'s XCFramework (`just xcframework`) | https://github.com/rust-lang/rust |
+| rust-std aarch64-apple-darwin | rustup (`scripts/xcframework.sh` adds it to the pinned toolchain when missing) | `ketch-ffi`'s arm64 XCFramework (`just xcframework`) | https://github.com/rust-lang/rust |
 | swift-format | with Xcode (`xcrun swift-format`) | Formats and lints the macOS app's Swift | https://github.com/swiftlang/swift-format |
 | notarytool, stapler | with Xcode (`xcrun`) | Notarise and staple the macOS app and its `.dmg` (`desktop-release.yml`) | https://developer.apple.com/documentation/security/customizing-the-notarization-workflow |
 | hdiutil, codesign, spctl | with macOS | Build the app's `.dmg` (`scripts/desktop-dmg.sh`), sign it, and assess what Gatekeeper will decide | https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution |
@@ -28,6 +28,8 @@ Project programs and direct packages from manifests.
 | ketch | see its README | Installs swarfr | https://github.com/pyrlyn/ketch |
 | swarfr | `ketch` | Lossless cleanup of `target/` after tests | https://github.com/listepo/swarfr |
 | mandoc | ships with macOS; `apt install mandoc` on Linux | `just lint-man` checks the generated man pages | https://mandoc.bsd.lv |
+| uniffi-bindgen-cs | mise (`cargo:` from git, PR #176's commit) | C# bindings for `ketch-ffi` (`just csharp`); no release supports UniFFI 0.32 yet | https://github.com/NordSecurity/uniffi-bindgen-cs |
+| .NET SDK | mise | Builds and runs the C# binding's test (`just csharp-test`) | https://github.com/dotnet/sdk |
 | valac, Meson, Ninja, json-glib | the distribution's packages (`apt install valac meson ninja-build libjson-glib-dev`); mise has no valac | `just capi-test`: builds and runs `ketch-capi`'s Vala test; Linux CI only | https://vala.dev |
 
 ## cargo
@@ -91,8 +93,14 @@ Project programs and direct packages from manifests.
 | --- | --- | --- | --- |
 | @commitlint/cli | local | https://www.npmjs.com/package/@commitlint/cli | Commit messages |
 | @commitlint/config-conventional | local | https://www.npmjs.com/package/@commitlint/config-conventional | Commit rules |
-| style-dictionary | local | https://github.com/style-dictionary/style-dictionary | Generates the macOS app's `Tokens.swift`, the DESIGN.md front matter and the preview CSS from `desktop/macos/design/tokens.json` (`just design-tokens`) |
+| style-dictionary | local | https://github.com/style-dictionary/style-dictionary | Generates the Swift, XAML and GTK token files, the macOS DESIGN.md front matter and the preview CSS from `desktop/design/tokens.json` (`just design-tokens`) |
 | @google/design.md | local | https://github.com/google-labs-code/design.md | Lints `desktop/macos/DESIGN.md` against the DESIGN.md format (`just design-check`) |
+
+## NuGet
+
+| Package | Where | Source | Why here |
+| --- | --- | --- | --- |
+| MSTest.Sdk | local (`desktop/windows/KetchCore.Tests`, 4.4.1) | https://github.com/microsoft/testfx | Test framework and runner for the C# binding's test |
 
 ## SwiftPM
 
