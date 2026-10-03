@@ -1085,6 +1085,21 @@ Execution plan (Claude Code / opus-5.5):
 
 Status: done. Read-only calls (`search`, `outdated`, `changelog`, `doctor`) also take an optional reporter, so their warnings keep reaching the caller; `uninstall` checks the token before each package (progress and the leftover store folder stay with D2). On macOS the Swift test runs a looping shell script as the held binary: a relocated `/bin/sleep` is killed by the OS.
 
+### D5. Design tokens for XAML and GTK
+
+`tokens.json` feeds only Swift today. The Windows and Linux apps should share ketch's brand (accent, status colours, spacing, radii, type scale) without imitating the glass. Style Dictionary has no XAML or GTK format, so it takes two custom ones. Research: section 2.
+
+Done when the token source lives in `desktop/design/`, `just design-tokens` also writes a XAML `ResourceDictionary` (Light, Dark, HighContrast theme dictionaries) and a GTK stylesheet setting libadwaita's CSS variables, glass and elevation tokens stay macOS-only, generated files say so in their first lines, and a drift check covers all outputs. Brand tokens on every platform, with native surfaces, were decided by the creator (2026-10-01, open decision 6).
+
+Execution plan:
+
+1. `git mv desktop/macos/design desktop/design`; fix every path (Justfile, `ci.yml`, `project.yml`, READMEs, DESIGN.md links, AGENTS.md, toolchain.md).
+2. `build.mjs`: a `BRAND` path list and two Style Dictionary formats, `ketch/xaml` (`ThemeDictionaries` Light, Dark, HighContrast; plain resources for spacing, radii, type scale) and `ketch/gtk` (libadwaita variables plus `--ketch-*` custom properties, dark and high contrast as media queries), both written to `desktop/design/generated/`.
+3. `just design-check` and the CI `design` job compare all five generated files, including one that is missing.
+4. Verify: `just design-check`, `xmllint` on the XAML, a deliberate edit of a generated file fails the check, `just macos-test` still builds against the moved `Tokens.swift`.
+
+Status: done. The token source moved to `desktop/design/`; `just design-tokens` now also writes `generated/KetchTokens.xaml` and `generated/ketch-tokens.css`. Brand tokens only (the `BRAND` list in `build.mjs`: accent, status colours, spacing, radii, type scale). Windows has no dark high-contrast theme, so `HighContrast` takes the `highContrast` values. The GTK file uses `@media (prefers-color-scheme)` and `(prefers-contrast)`, which GTK documents in css-properties.md (checked 2026-10-03) and AdwApplication autoloads from libadwaita 1.8. Not run: the XAML was checked for well-formedness only (no WinUI toolchain here), and the GTK CSS was not loaded in a GTK app.
+
 ### D10. Windows: C# binding for `ketch-ffi`
 
 The Windows app is C# + WinUI 3 over `ketch-ffi` (creator, 2026-10-01). `uniffi-bindgen-cs` last released for UniFFI 0.31.0; `ketch-ffi` is on 0.32.2. Decided by the creator (2026-10-01, open decision 4): first try the generator built from PR #176 (UniFFI 0.32.0), pinned to commit `0fc022aa1d73fb1dda91a778b63f2824d7dca58b`; if it fails against 0.32.2, use the C ABI from D15 through `LibraryImport`. Downgrading `ketch-ffi` to UniFFI 0.31.2 is not an option. Research: section 4.
@@ -1154,5 +1169,18 @@ Execution plan:
 3. macOS: `Ketch/Core/ContractScenario.swift` decodes them and maps events and records to the app's types; `FakeKetchCore` replays a scenario for reads and for install, upgrade and uninstall. Store tests run Busy, Cancelled, a network failure, a binary choice and a normal install from the files, and every file must decode.
 4. `desktop/contract/README.md` states the file format for the Windows and Linux fakes, which read the same files once they exist.
 5. Verify: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo nextest run`, `just ffi-test`, `just macos-test`, `swift-format lint --strict`.
+
+### D8. macOS: `ketch://` links
+
+A link on a web page or in the registry could open a package in the app. Whatever a link carries is untrusted input, so it is validated by the core. A link only opens a package page and never starts an install (creator, 2026-10-01, open decision 10). Research: section 1, "Deep links".
+
+Done when `CFBundleURLTypes` registers `ketch`, `onOpenURL` opens the package page a valid link names, through the core's validation, any other action is refused, and tests cover malformed and hostile links.
+
+Execution plan:
+
+1. Core: `crates/ketch-core/src/link.rs`, `package_name(raw) -> Result<String>`. The one accepted shape is `ketch://package/<name>`: ASCII only, no query, fragment, userinfo, port or percent-escapes, at most 512 bytes; any other host (an install, uninstall or upgrade "action") is refused by name. The name must pass the existing `usable_file_name` guard (`config::sanitize_component` unchanged) and a stricter ASCII charset, then goes through `normalize_name` like any typed name. Rust tests: a table of valid, malformed and hostile links.
+2. FFI: one free function `package_for_link` next to `ketch_version`; Swift binding test through `just ffi-test`.
+3. App: `packageName(forLink:)` on `KetchCoreProtocol` (the fake only tells a package page from anything else; the grammar and its test table stay in the core), `CFBundleURLTypes` for `ketch` in `Ketch/Info.plist`, `onOpenURL` in the main window handing the URL to `KetchStore`, which asks the core, then looks the package up (installed or registry) before opening its page; a refused or unknown link shows the error alert and opens nothing. It never calls `install`.
+4. Verify: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo nextest run`, `just ffi-test`, `just macos-test`, and the registered scheme opened through `open ketch://package/ripgrep` against the built app.
 
 Status: done.

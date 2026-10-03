@@ -220,8 +220,8 @@ jobs:
         working-directory: desktop/windows
         run: dotnet test --project KetchCore.Tests
 
-  # The macOS app's design tokens: every generated copy is what
-  # desktop/macos/design/build.mjs writes from tokens.json, DESIGN.md passes
+  # The design tokens: every generated copy (Swift, XAML, GTK CSS, DESIGN.md,
+  # preview.html) is what desktop/design/build.mjs writes from tokens.json, DESIGN.md passes
   # the DESIGN.md linter, and text meets WCAG AA on its glass backgrounds.
   # Offline after npm ci; the same steps as `just design-check`.
   design:
@@ -244,10 +244,11 @@ jobs:
       - name: Design tokens
         run: |
           npm ci
-          node desktop/macos/design/build.mjs
-          git diff --exit-code -- desktop/macos \
-              || { echo "design tokens are stale: run just design-tokens and commit" >&2; exit 1; }
-          node desktop/macos/design/contrast.mjs
+          node desktop/design/build.mjs
+          # status, not diff: a generated file nobody committed is untracked.
+          [ -z "$(git status --porcelain -- desktop)" ] \
+              || { git status --porcelain -- desktop; echo "design tokens are stale: run just design-tokens and commit" >&2; exit 1; }
+          node desktop/design/contrast.mjs
           npx --no-install designmd lint desktop/macos/DESIGN.md > lint.json \
               || { cat lint.json; exit 1; }
 

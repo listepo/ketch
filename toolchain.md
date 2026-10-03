@@ -90,7 +90,7 @@ Project programs and direct packages from manifests.
 | --- | --- | --- | --- |
 | @commitlint/cli | local | https://www.npmjs.com/package/@commitlint/cli | Commit messages |
 | @commitlint/config-conventional | local | https://www.npmjs.com/package/@commitlint/config-conventional | Commit rules |
-| style-dictionary | local | https://github.com/style-dictionary/style-dictionary | Generates the macOS app's `Tokens.swift`, the DESIGN.md front matter and the preview CSS from `desktop/macos/design/tokens.json` (`just design-tokens`) |
+| style-dictionary | local | https://github.com/style-dictionary/style-dictionary | Generates the Swift, XAML and GTK token files, the macOS DESIGN.md front matter and the preview CSS from `desktop/design/tokens.json` (`just design-tokens`) |
 | @google/design.md | local | https://github.com/google-labs-code/design.md | Lints `desktop/macos/DESIGN.md` against the DESIGN.md format (`just design-check`) |
 
 ## NuGet

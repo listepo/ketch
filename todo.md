@@ -20,9 +20,7 @@
 - F14. Design system for the macOS app: `DESIGN.md` and tokens
 - F18. Figma design for macOS, Windows and Linux
 - D3. `ketch-ffi`: the remaining CLI operations
-- D5. Design tokens for XAML and GTK
 - D7. macOS: update notifications
-- D8. macOS: `ketch://` links
 - D11. Windows: WinUI 3 app shell on a fake core
 - D12. Windows: the app on the real core
 - D13. Windows: tray icon, notifications, start at login, links

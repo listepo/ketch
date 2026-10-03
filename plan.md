@@ -24,9 +24,7 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | F14 | in progress | P2 | 3 | 90% | Claude Code / opus-5.5 |
 | F18 | in progress | P2 | 4 | 90% | Claude Code / opus-5.5 |
 | D3 | todo | P3 | 3 | 0% | |
-| D5 | todo | P3 | 3 | 0% | |
 | D7 | todo | P3 | 2 | 0% | |
-| D8 | todo | P3 | 2 | 0% | |
 | D11 | todo | P3 | 5 | 0% | |
 | D12 | todo | P3 | 4 | 0% | |
 | D13 | todo | P3 | 3 | 0% | |
@@ -314,7 +312,7 @@ Execution plan:
 
 Status: the Figma work is done — shared pages, macOS synced with F17 plus ten new frames,
 Windows (Fluent) and Linux (libadwaita, per R11) pages in light and dark, prototype flows on
-every page. `figma.md` stays in `desktop/macos/design/` until D5 moves it. Left: the creator's
+every page. `figma.md` lives in `desktop/design/`. Left: the creator's
 review of the file and the merge of the PR.
 
 ### Config file I/O in one module (M16.x)
@@ -377,24 +375,12 @@ Screens the apps already draw (Activity history, package info, pin, rollback, Do
 
 Done when history (`stats.db`), info, pin/unpin, rollback, prune, registry refresh, `path` status and install, a doctor fix action and reading ketch's config are exported as thin calls into existing core code, each with a test; `registry push` stays out (it owns a tokio runtime).
 
-### D5. Design tokens for XAML and GTK
-
-`tokens.json` feeds only Swift today. The Windows and Linux apps should share ketch's brand (accent, status colours, spacing, radii, type scale) without imitating the glass. Style Dictionary has no XAML or GTK format, so it takes two custom ones. Research: section 2.
-
-Done when the token source lives in `desktop/design/`, `just design-tokens` also writes a XAML `ResourceDictionary` (Light, Dark, HighContrast theme dictionaries) and a GTK stylesheet setting libadwaita's CSS variables, glass and elevation tokens stay macOS-only, generated files say so in their first lines, and a drift check covers all outputs. Brand tokens on every platform, with native surfaces, were decided by the creator (2026-10-01, open decision 6).
 
 ### D7. macOS: update notifications
 
 The macOS app checks for updates on a timer (F12) but tells nobody unless the window or menu-bar panel is open. Builds on F12's live core; F12's remaining work (the `LiveKetchCore` adapter and the manual checks) stays in F12. Research: section 1.
 
 Done when new upgrades since the last notice post one `UNUserNotificationCenter` notification, authorisation is asked only when the user turns notifications on in Settings, clicking it opens Updates, and a unit test covers which upgrades count as new.
-
-### D8. macOS: `ketch://` links
-
-A link on a web page or in the registry could open a package in the app. Whatever a link carries is untrusted input, so it is validated by the core. A link only opens a package page and never starts an install (creator, 2026-10-01, open decision 10). Research: section 1, "Deep links".
-
-Done when `CFBundleURLTypes` registers `ketch`, `onOpenURL` opens the package page a valid link names, through the core's validation, any other action is refused, and tests cover malformed and hostile links.
-
 
 ### D11. Windows: WinUI 3 app shell on a fake core
 
