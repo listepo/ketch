@@ -145,8 +145,7 @@ lint-cask:
         exit 0
     fi
     mkdir -p cask/Casks
-    scripts/cask.sh 0.0.0 "$(printf '%064d' 0)" "$(printf '%064d' 1)" \
-        > cask/Casks/ketch.rb
+    scripts/cask.sh 0.0.0 "$(printf '%064d' 0)" > cask/Casks/ketch.rb
     brew style cask/Casks/ketch.rb
 
 # every generated man page through `mandoc -Tlint` at warning level; the
@@ -250,9 +249,9 @@ macos-project:
     mkdir -p {{macos_dir}}/build
     printf 'Signature: 8a477f597d28d172789f06886806bc55\n# xcodebuild output for the macOS app; safe to delete.\n' > {{macos_dir}}/build/CACHEDIR.TAG
 
-# universal (arm64 + x86_64) Debug build of Ketch.app
+# Apple Silicon (arm64) Debug build of Ketch.app
 macos-app: macos-project
-    {{macos_build}} -configuration Debug -destination 'generic/platform=macOS' ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO -quiet build
+    {{macos_build}} -configuration Debug -destination 'generic/platform=macOS' ARCHS=arm64 ONLY_ACTIVE_ARCH=NO -quiet build
 
 # Swift Testing unit tests on the fake core, then the UI smoke test
 macos-test: macos-project

@@ -20,7 +20,6 @@
 - F13. macOS app release pipeline
 - F14. Design system for the macOS app: `DESIGN.md` and tokens
 - F18. Figma design for macOS, Windows and Linux
-- D2. `ketch-ffi`: records and operations the apps need
 - D3. `ketch-ffi`: the remaining CLI operations
 - D4. Contract fixtures for every app's fake core
 - D7. macOS: update notifications

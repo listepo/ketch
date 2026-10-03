@@ -17,7 +17,7 @@ Project programs and direct packages from manifests.
 | git-cliff | mise | Writes the `CHANGELOG.md` entry from `cliff.toml` (`scripts/release.sh`), and the macOS app's release notes from `desktop/cliff.toml` | https://github.com/orhun/git-cliff |
 | xcodegen | mise | Generates `desktop/macos/Ketch.xcodeproj` from `project.yml` (`just macos-app`, `just macos-test`) | https://github.com/yonaskolb/XcodeGen |
 | Xcode | global (App Store / developer.apple.com) | Builds and tests the macOS app (`xcodebuild`); 26 or later | https://developer.apple.com/xcode/ |
-| rust-std aarch64/x86_64-apple-darwin | rustup (`scripts/xcframework.sh` adds the missing one to the pinned toolchain) | Both architectures of `ketch-ffi`'s XCFramework (`just xcframework`) | https://github.com/rust-lang/rust |
+| rust-std aarch64-apple-darwin | rustup (`scripts/xcframework.sh` adds it to the pinned toolchain when missing) | `ketch-ffi`'s arm64 XCFramework (`just xcframework`) | https://github.com/rust-lang/rust |
 | swift-format | with Xcode (`xcrun swift-format`) | Formats and lints the macOS app's Swift | https://github.com/swiftlang/swift-format |
 | notarytool, stapler | with Xcode (`xcrun`) | Notarise and staple the macOS app and its `.dmg` (`desktop-release.yml`) | https://developer.apple.com/documentation/security/customizing-the-notarization-workflow |
 | hdiutil, codesign, spctl | with macOS | Build the app's `.dmg` (`scripts/desktop-dmg.sh`), sign it, and assess what Gatekeeper will decide | https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution |

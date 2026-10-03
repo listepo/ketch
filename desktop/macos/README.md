@@ -21,7 +21,7 @@ progress. The real core arrives with `ketch-ffi` (R9); see
 From the repository root:
 
 ```bash
-just macos-app    # generate Ketch.xcodeproj, build a universal (arm64 + x86_64) Debug app
+just macos-app    # generate Ketch.xcodeproj, build an Apple Silicon (arm64) Debug app
 just macos-test   # Swift Testing unit tests, then the UI smoke test
 open desktop/macos/build/Build/Products/Debug/Ketch.app
 ```
@@ -119,7 +119,7 @@ hand with a version:
 gh workflow run desktop-release.yml --ref main -f version=0.1.0
 ```
 
-It builds a universal Release app, signs it with the Developer ID
+It builds an Apple Silicon (arm64) Release app, signs it with the Developer ID
 certificate and the hardened runtime, notarises and staples it, packs it into
 `Ketch-X.Y.Z.dmg` (hdiutil, with an `/Applications` link), signs, notarises
 and staples the image, checks both with `spctl`, and publishes the image, its

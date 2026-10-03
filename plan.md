@@ -24,7 +24,6 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | F13 | in progress | P3 | 4 | 80% | Claude Code / opus-5.5 |
 | F14 | in progress | P2 | 3 | 90% | Claude Code / opus-5.5 |
 | F18 | in progress | P2 | 4 | 90% | Claude Code / opus-5.5 |
-| D2 | todo | P2 | 3 | 0% | |
 | D3 | todo | P3 | 3 | 0% | |
 | D4 | todo | P3 | 2 | 0% | |
 | D7 | todo | P3 | 2 | 0% | |
@@ -380,12 +379,6 @@ Not to be started before the creator picks A or B. Done when `lockfile.rs` impor
 A test in the owning module scans the Rust sources of every workspace crate (`src/`, `crates/*/src/`) and fails when a file other than the owner names `toml::`, `toml_edit` or `use toml`. Until M16.6 and M16.7 land, `manifest.rs` and `lockfile.rs` sit on an explicit allow-list in that test, each with a comment naming the subtask that removes it.
 
 Done when the test fails on a deliberate `toml::` use in another module (checked once by hand, not committed), passes on the tree, and the allow-list holds only the files of subtasks still open.
-
-### D2. `ketch-ffi`: records and operations the apps need
-
-The macOS app's protocol needs things `ketch-ffi` does not give: a changelog across a version range, pinned packages in `outdated` with what holds them, `latest` in search results, and an `uninstall` that can be cancelled, reports progress and removes a leftover store folder for a name with no record, as the CLI does. Research: section 3a, gaps G2–G5.
-
-Done when `changelog_range(package, from, to)`, `Upgrade.pinned` (and the lock that holds it, when known), `RegistryPackage.latest` and the new `uninstall` exist with unit tests, the Swift binding test exercises each, and D4's fixtures can model them.
 
 ### D3. `ketch-ffi`: the remaining CLI operations
 
