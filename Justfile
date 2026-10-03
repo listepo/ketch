@@ -286,6 +286,11 @@ csharp-test:
     scripts/csharp.sh --debug
     cd desktop/windows && dotnet test --project KetchCore.Tests
 
+# The Windows app's fake core and store against the contract scenarios; runs on any OS.
+# The WinUI project itself (desktop/windows/Ketch.App) only builds on Windows: the ketch-win-app job.
+windows-app-test:
+    cd desktop/windows && dotnet test --project Ketch.AppCore.Tests
+
 # libFuzzer targets in fuzz/ (fuzz/README.md), on nightly and never part of `check`.
 # `just fuzz` lists them, `just fuzz <target> [secs]` runs one, `just fuzz all [secs]` each in turn.
 fuzz target="" secs="60":
