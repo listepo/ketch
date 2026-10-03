@@ -104,11 +104,21 @@ struct Scratch: ~Copyable {
             }
             releases.append(
                 #"{"version":"\#(version)","tag":"v\#(version)","prerelease":false,"draft":false,"#
+                    + #""notes":"notes for \#(version)","#
                     + #""assets":[{"name":"\#(tarball.lastPathComponent)","url":"\#(tarball.path(percentEncoded: false))"}]}"#
             )
         }
         try Data("[\(releases.joined(separator: ","))]".utf8)
             .write(to: assets.appending(path: "sleeper.releases.json"))
+    }
+
+    /// A user manifest naming the `test:` plugin's `sleeper`, so a search
+    /// knows it by name.
+    func describeSleeper() throws {
+        let manifests = dir.appending(path: "root/manifests")
+        try FileManager.default.createDirectory(at: manifests, withIntermediateDirectories: true)
+        try Data("name = \"sleeper\"\nsource = \"test:sleeper\"\n".utf8)
+            .write(to: manifests.appending(path: "sleeper.toml"))
     }
 }
 
@@ -227,4 +237,62 @@ func run(_ program: String, _ arguments: String...) throws -> String {
     #expect(throws: KetchError.NotFound(name: "nope")) {
         try core.uninstall(names: ["nope"], reporter: nil, decider: nil, cancel: nil)
     }
+}
+
+@Test func anUpgradeOnOfferCarriesItsHoldAChangelogRangeAndASearchLatest() throws {
+    let scratch = try Scratch()
+    let core = KetchCore(root: scratch.root)
+    try scratch.publishSleeper(["1.0.0"])
+    try scratch.describeSleeper()
+    let placed = try core.install(
+        specs: ["test:sleeper"], options: InstallOptions(),
+        reporter: nil, decider: nil, cancel: nil)
+    let name = try #require(placed.first).package.name
+
+    try scratch.publishSleeper(["1.0.0", "1.1.0", "1.2.0"])
+    let offered = try core.outdated(reporter: nil)
+    #expect(offered.map(\.latest) == ["1.2.0"])
+    #expect(offered.map(\.pinned) == [false])
+    #expect(offered.first?.heldBy == nil)
+
+    let range = try core.changelogRange(package: name, from: nil, to: nil, reporter: nil)
+    #expect(range.map(\.version) == ["1.2.0", "1.1.0"])
+    #expect(range.first?.body == "notes for 1.2.0")
+    #expect(range.first?.source == .release)
+
+    // `outdated` cached the answer, so search shows it without asking again.
+    let found = try core.search(query: "sleeper", limit: 1, reporter: nil)
+    #expect(found.known.map(\.latest) == ["1.2.0"])
+}
+
+@Test func anUninstallReportsWhatItRemovedAndTakesAnUnrecordedLeftover() throws {
+    let scratch = try Scratch()
+    let core = KetchCore(root: scratch.root)
+    let placed = try core.install(
+        specs: ["local:\(scratch.tool.path(percentEncoded: false))"],
+        options: InstallOptions(), reporter: nil, decider: nil, cancel: nil)
+    let name = try #require(placed.first).package.name
+
+    let token = CancelToken()
+    token.cancel()
+    #expect(throws: KetchError.Cancelled) {
+        try core.uninstall(names: [name], reporter: nil, decider: nil, cancel: token)
+    }
+    #expect(try core.installed().map(\.name) == [name])
+
+    let recorder = Recorder()
+    _ = try core.uninstall(names: [name], reporter: recorder, decider: nil, cancel: CancelToken())
+    #expect(
+        recorder.received.contains { event in
+            if case .success(verb: "removed", let detail) = event { detail.hasPrefix(name) } else { false }
+        })
+
+    let leftover = scratch.dir.appending(path: "root/store/ghost/1.0.0.old")
+    try FileManager.default.createDirectory(at: leftover, withIntermediateDirectories: true)
+    #expect(throws: KetchError.NotFound(name: "ghost")) {
+        try core.uninstall(names: ["ghost"], reporter: nil, decider: nil, cancel: nil)
+    }
+    #expect(
+        !FileManager.default.fileExists(
+            atPath: scratch.dir.appending(path: "root/store/ghost").path(percentEncoded: false)))
 }

@@ -14,12 +14,11 @@ ci = "github"
 # end up with a ketch that `ketch list` does not know about. The Homebrew cask
 # is published by the `./tap` job below, not by dist's formula installer.
 installers = []
-# The five targets every release has shipped. `install.sh`, `install.ps1` and
-# `ketch self upgrade` look for `ketch-<target>.tar.gz`; dropping one strips
-# the upgrade path from every copy already installed there.
+# The targets every release ships; macOS is Apple Silicon only. `install.sh`,
+# `install.ps1` and `ketch self upgrade` look for `ketch-<target>.tar.gz`;
+# dropping one strips the upgrade path from every copy already installed there.
 targets = [
   "aarch64-apple-darwin",
-  "x86_64-apple-darwin",
   "aarch64-unknown-linux-gnu",
   "x86_64-unknown-linux-gnu",
   "x86_64-pc-windows-msvc",
@@ -55,12 +54,10 @@ publish-jobs = ["./tap"]
 # The gate is the required checks of the bump pull request, which must pass
 # before bump.yml tags anything.
 
-# Runners the release has always used. dist's default for Intel macOS is a
-# macos-13 runner, which GitHub has retired; the arm64 runner cross-builds it.
-# The Linux runners are 22.04 for an older glibc floor than ubuntu-latest's.
+# Runners the release has always used. The Linux runners are 22.04 for an
+# older glibc floor than ubuntu-latest's.
 [dist.github-custom-runners]
 aarch64-apple-darwin = "macos-latest"
-x86_64-apple-darwin = "macos-latest"
 aarch64-unknown-linux-gnu = "ubuntu-22.04-arm"
 x86_64-unknown-linux-gnu = "ubuntu-22.04"
 x86_64-pc-windows-msvc = "windows-2022"
