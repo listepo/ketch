@@ -10,7 +10,7 @@
 //! lets `ketch install owner/repo` work for a repository nobody has curated.
 //!
 //! It is also the one place a user manifest is edited: [`write_bins`] records
-//! the binaries a package links, and the only module that imports `toml_edit`.
+//! the binaries a package links, through `toml_file`'s in-place edit.
 
 use crate::config::Config;
 use crate::error::{Error, Result};
@@ -35,19 +35,17 @@ struct Registry {
 }
 
 fn parse_registry(text: &str, what: &str) -> Result<Vec<Manifest>> {
-    let value: toml::Value = toml::from_str(text).map_err(|e| Error::parse(what, e.to_string()))?;
+    let doc = crate::toml_file::Document::parse(text, what)?;
     // One file may hold either a single manifest or a `[[package]]` array.
     // Which one is decided from the parsed shape, not from the source text: a
     // single manifest that merely mentions `[[package]]` — in a description, in
     // a note — is still a manifest, and sniffing for the string parsed it as an
     // array instead, which `#[serde(default)]` then turned into no packages at
     // all. The whole file disappeared without a word.
-    let manifests = if value.get("package").is_some_and(toml::Value::is_array) {
-        Registry::deserialize(value)
-            .map_err(|e| Error::parse(what, e.to_string()))?
-            .package
+    let manifests = if doc.is_array("package") {
+        doc.deserialize::<Registry>()?.package
     } else {
-        vec![Manifest::deserialize(value).map_err(|e| Error::parse(what, e.to_string()))?]
+        vec![doc.deserialize::<Manifest>()?]
     };
     // Serde has checked the shape; this checks the values it cannot judge.
     for manifest in &manifests {
@@ -257,7 +255,7 @@ pub fn user_manifest_path(cfg: &Config, name: &str) -> PathBuf {
 
 /// Serialise a manifest for a user manifest file.
 pub fn to_toml(manifest: &Manifest) -> Result<String> {
-    toml::to_string_pretty(manifest).map_err(|e| Error::parse("manifest", e.to_string()))
+    crate::toml_file::render(manifest, "manifest")
 }
 
 /// Write `bin = [{ name = "<a>" }, { name = "<b>" }, …]` for `package` into
@@ -266,7 +264,7 @@ pub fn to_toml(manifest: &Manifest) -> Result<String> {
 /// choice is only ever written where none was made.
 ///
 /// The file is the user's, so what they wrote — comments, order, spacing —
-/// survives: `toml_edit` changes the one key and renders the rest back as it
+/// survives: `toml_file` changes the one key and renders the rest back as it
 /// was read. The result is parsed as a manifest again before it replaces the
 /// file, so a write that would leave it unloadable fails instead; and it
 /// replaces the file by renaming a finished copy over it, so an interrupted
@@ -277,25 +275,23 @@ pub fn write_bins(path: &Path, package: &str, bins: &[String]) -> Result<bool> {
     let target = std::fs::canonicalize(path).map_err(|e| Error::io(path, e))?;
     let label = target.display().to_string();
     let text = std::fs::read_to_string(&target).map_err(|e| Error::io(&target, e))?;
-    let mut doc: toml_edit::DocumentMut = text
-        .parse()
-        .map_err(|e: toml_edit::TomlError| Error::parse(&label, e.to_string()))?;
-    let table = package_table(&mut doc, package).ok_or_else(|| {
-        Error::msg(format!(
-            "{label} has no `[[package]]` table named `{package}` to write `bin` into"
-        ))
-    })?;
-    if table.contains_key("bin") {
-        return Ok(false);
-    }
-    let mut list = toml_edit::Array::new();
-    for bin in bins {
-        let mut entry = toml_edit::InlineTable::new();
-        entry.insert("name", bin.as_str().into());
-        list.push(entry);
-    }
-    table.insert("bin", toml_edit::value(list));
-    let body = doc.to_string();
+    let wanted = normalize_name(package);
+    let body = match crate::toml_file::insert_inline_list(
+        &text,
+        &label,
+        |name| normalize_name(name) == wanted,
+        "bin",
+        "name",
+        bins,
+    )? {
+        crate::toml_file::ListInsert::Inserted(body) => body,
+        crate::toml_file::ListInsert::AlreadySet => return Ok(false),
+        crate::toml_file::ListInsert::NoTable => {
+            return Err(Error::msg(format!(
+                "{label} has no `[[package]]` table named `{package}` to write `bin` into"
+            )))
+        }
+    };
     parse_registry(&body, &label)?;
     replace_file(&target, &body)?;
     Ok(true)
@@ -332,29 +328,6 @@ fn replace_file(target: &Path, body: &str) -> Result<()> {
     temp.persist(target)
         .map_err(|e| Error::io(target, e.error))?;
     Ok(())
-}
-
-/// The table in a manifest file that describes `package`: the whole document
-/// for a single manifest, or the matching entry of a `[[package]]` array.
-fn package_table<'a>(
-    doc: &'a mut toml_edit::DocumentMut,
-    package: &str,
-) -> Option<&'a mut toml_edit::Table> {
-    if !doc
-        .get("package")
-        .is_some_and(toml_edit::Item::is_array_of_tables)
-    {
-        return Some(doc.as_table_mut());
-    }
-    let wanted = normalize_name(package);
-    doc.get_mut("package")?
-        .as_array_of_tables_mut()?
-        .iter_mut()
-        .find(|t| {
-            t.get("name")
-                .and_then(toml_edit::Item::as_str)
-                .is_some_and(|n| normalize_name(n) == wanted)
-        })
 }
 
 /// `parse_registry` for the `manifest_toml` fuzz target (`src/lib.rs`).

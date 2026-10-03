@@ -79,6 +79,12 @@ impl Document {
             .insert(key.to_string(), toml::Value::String(value.to_string()));
     }
 
+    /// Whether the top-level `key` is an array, as `package` is in a file
+    /// holding several manifests.
+    pub(crate) fn is_array(&self, key: &str) -> bool {
+        self.table.get(key).is_some_and(toml::Value::is_array)
+    }
+
     /// The document as JSON, for code that works on `serde_json::Value`.
     pub(crate) fn into_json(self) -> Result<serde_json::Value> {
         serde_json::to_value(toml::Value::Table(self.table))
@@ -90,6 +96,74 @@ impl Document {
         T::deserialize(toml::Value::Table(self.table))
             .map_err(|e| Error::parse(self.what, e.to_string()))
     }
+}
+
+/// What [`insert_inline_list`] did.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum ListInsert {
+    /// The key was added; the whole document, rendered.
+    Inserted(String),
+    /// The table already has the key, and nothing was changed.
+    AlreadySet,
+    /// No table describes the package.
+    NoTable,
+}
+
+/// Add `key = [{ field = "<value>" }, …]`, one entry per value, to the table
+/// that describes one package in `text`: the whole document for a single
+/// manifest, or the `[[package]]` entry whose `name` `is_package` accepts.
+///
+/// The file is someone's own, so `toml_edit` is used rather than a parse and
+/// re-render: it changes the one key and gives back every comment, blank line
+/// and key order as it was read. A key already present is never overwritten.
+pub(crate) fn insert_inline_list(
+    text: &str,
+    what: &str,
+    is_package: impl Fn(&str) -> bool,
+    key: &str,
+    field: &str,
+    values: &[String],
+) -> Result<ListInsert> {
+    let mut doc: toml_edit::DocumentMut = text
+        .parse()
+        .map_err(|e: toml_edit::TomlError| Error::parse(what, e.to_string()))?;
+    let Some(table) = package_table(&mut doc, is_package) else {
+        return Ok(ListInsert::NoTable);
+    };
+    if table.contains_key(key) {
+        return Ok(ListInsert::AlreadySet);
+    }
+    let mut list = toml_edit::Array::new();
+    for value in values {
+        let mut entry = toml_edit::InlineTable::new();
+        entry.insert(field, value.as_str().into());
+        list.push(entry);
+    }
+    table.insert(key, toml_edit::value(list));
+    Ok(ListInsert::Inserted(doc.to_string()))
+}
+
+/// The table in a manifest file that describes one package: the whole
+/// document for a single manifest, or the matching entry of a `[[package]]`
+/// array.
+fn package_table(
+    doc: &mut toml_edit::DocumentMut,
+    is_package: impl Fn(&str) -> bool,
+) -> Option<&mut toml_edit::Table> {
+    if !doc
+        .get("package")
+        .is_some_and(toml_edit::Item::is_array_of_tables)
+    {
+        return Some(doc.as_table_mut());
+    }
+    doc.get_mut("package")?
+        .as_array_of_tables_mut()?
+        .iter_mut()
+        .find(|t| {
+            t.get("name")
+                .and_then(toml_edit::Item::as_str)
+                .is_some_and(&is_package)
+        })
 }
 
 /// Fails when the JSON Schema committed at `relative` (from the repository
@@ -237,6 +311,42 @@ mod tests {
     }
 
     #[test]
+    fn an_inline_list_lands_in_the_named_package_and_nothing_else_moves() {
+        let text = "# mine\n[[package]]\nname = \"a\"  # keep\nsource = \"o/a\"\n\n[[package]]\nname = \"b\"\nsource = \"o/b\"\n";
+        let values = ["x".to_string(), "y".to_string()];
+        let out = insert_inline_list(text, "m", |n| n == "b", "bin", "name", &values).unwrap();
+        assert_eq!(
+            out,
+            ListInsert::Inserted(format!(
+                "{text}bin = [{{ name = \"x\" }}, {{ name = \"y\" }}]\n"
+            ))
+        );
+    }
+
+    #[test]
+    fn an_inline_list_is_never_written_over_a_key_already_there() {
+        let text = "name = \"a\"\nbin = []\n";
+        let out =
+            insert_inline_list(text, "m", |_| true, "bin", "name", &["x".to_string()]).unwrap();
+        assert_eq!(out, ListInsert::AlreadySet);
+    }
+
+    #[test]
+    fn an_inline_list_for_a_package_the_file_lacks_reports_no_table() {
+        let text = "[[package]]\nname = \"a\"\n";
+        let out = insert_inline_list(text, "m", |n| n == "z", "bin", "name", &[]).unwrap();
+        assert_eq!(out, ListInsert::NoTable);
+    }
+
+    #[test]
+    fn a_document_says_which_keys_are_arrays() {
+        let doc = Document::parse("package = [1]\nname = \"a\"\n", "m").unwrap();
+        assert!(doc.is_array("package"));
+        assert!(!doc.is_array("name"));
+        assert!(!doc.is_array("missing"));
+    }
+
+    #[test]
     fn a_key_that_is_not_a_string_reads_as_absent() {
         let doc = Document::parse("name = 1\n", "sample").unwrap();
         assert_eq!(doc.str("name"), None);
@@ -271,12 +381,9 @@ mod tests {
     }
 
     /// Modules that still call `toml` themselves, each until its M16 subtask
-    /// moves the calls here. Waiting for the creator's choice of how much of
-    /// each moves; whoever does it removes the entry, which this test then
-    /// insists on.
-    const NOT_YET_MOVED: [&str; 2] = [
-        // M16.6: user manifests, `builtin.toml` and the `toml_edit` edit.
-        "crates/ketch-core/src/manifest.rs",
+    /// moves the calls here; whoever does it removes the entry, which this
+    /// test then insists on.
+    const NOT_YET_MOVED: [&str; 1] = [
         // M16.7: `ketch.lock`.
         "crates/ketch-core/src/lockfile.rs",
     ];
