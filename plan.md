@@ -320,25 +320,23 @@ review of the file and the merge of the PR.
 
 `AGENTS.md`: one module owns all config loading, validation and editing, and the rest of the code does not import `toml` or `toml_edit`. Every use today is in `crates/ketch-core`: `config.rs` (`config.toml`, and the schema drift helper `assert_schema_current`), `registry.rs` (`registry.toml` update metadata and package folders), `push.rs` (a project's `ketch.toml`), `wizard.rs` (TOML string and array literals), `manifest.rs` (user manifests and `builtin.toml`, the only `toml_edit` user), `lockfile.rs` (`ketch.lock`), and tests in `model.rs` and `extra.rs`. The binary (`src/`) and `crates/ketch-ffi` import neither; `tests/` is a separate crate that writes fixtures and stays out of scope.
 
-The creator decided (2026-10-03) to split M16 into the subtasks below, one pull request each, in id order: M16.1 first, since the rest call into the module it creates; M16.8 last of the ready ones. M16.6 and M16.7 wait for the creator's choice of scope. Behaviour does not change in any subtask: same files read and written, same bytes, same error texts. The whole is done when every subtask is.
+The creator decided (2026-10-03) to split M16 into the subtasks below, one pull request each, in id order: M16.1 first, since the rest call into the module it creates; then M16.8, M16.6 and M16.7. M16.6 and M16.7 move only the TOML calls (scope B, chosen by the creator on 2026-10-03). Behaviour does not change in any subtask: same files read and written, same bytes, same error texts. The whole is done when every subtask is.
 
-### M16.6. `manifest.rs` (`ketch.toml` user manifests) — waiting for the creator's choice of scope
+### M16.6. `manifest.rs` (`ketch.toml` user manifests)
 
-`manifest.rs` parses user manifests and `builtin.toml` (`parse_registry`), renders them (`to_toml`), and edits a user manifest in place with `toml_edit` (`write_bins`, `package_table`), keeping the user's comments and order, and replaces the file atomically (`replace_file`). Two options:
+`manifest.rs` parses user manifests and `builtin.toml` (`parse_registry`), renders them (`to_toml`), and edits a user manifest in place with `toml_edit` (`write_bins`, `package_table`), keeping the user's comments and order, and replaces the file atomically (`replace_file`).
 
-- **A. Whole move.** Reading, validating, editing and atomically writing manifest files move into the owning module (or a submodule of it); `manifest.rs` keeps only resolution across the four tiers.
-- **B. TOML calls only.** `manifest.rs` keeps `parse_registry`, `write_bins`, `write_manifest` and `replace_file`; only the `toml`/`toml_edit` calls move into the module, behind an edit helper for "insert this key into the table for this package, keep the rest of the document as it was".
+Scope B chosen by the creator (2026-10-03): TOML calls only. `manifest.rs` keeps `parse_registry`, `write_bins`, `write_manifest` and `replace_file`; only the `toml`/`toml_edit` calls move into the module, behind an edit helper for "insert this key into the table for this package, keep the rest of the document as it was". `Manifest::validate` stays where it is, the single guard every manifest tier passes through.
 
-Not to be started before the creator picks A or B. Done when `manifest.rs` imports neither `toml` nor `toml_edit`, `write_bins` still leaves the rest of the file byte-for-byte, the fuzz entry point still builds, its entry is gone from `NOT_YET_MOVED` in `toml_file.rs` (M16.8's guard), and the tests pass unchanged.
+Done when `manifest.rs` imports neither `toml` nor `toml_edit`, `write_bins` still leaves the rest of the file byte-for-byte, the fuzz entry point still builds, its entry is gone from `NOT_YET_MOVED` in `toml_file.rs` (M16.8's guard), and the tests pass unchanged.
 
-### M16.7. `lockfile.rs` (`ketch.lock`) — waiting for the creator's choice of scope
+### M16.7. `lockfile.rs` (`ketch.lock`)
 
-`lockfile.rs` reads, validates and writes `ketch.lock` (`toml::from_str`, `toml::to_string_pretty`), has a fuzz entry point, and its tests parse and render TOML directly. Two options:
+`lockfile.rs` reads, validates and writes `ketch.lock` (`toml::from_str`, `toml::to_string_pretty`), has a fuzz entry point, and its tests parse and render TOML directly.
 
-- **A. Whole move.** The `Lockfile` types' loading, `validate` and writing move into the owning module (or a submodule of it); `lockfile.rs` keeps what `ketch lock` and `ketch sync` do with a lockfile.
-- **B. TOML calls only.** `lockfile.rs` keeps its types, `validate`, header and file handling; only the parse and render calls go through the module.
+Scope B chosen by the creator (2026-10-03): TOML calls only. `lockfile.rs` keeps its types, `validate`, header and file handling; only the parse and render calls go through the module.
 
-Not to be started before the creator picks A or B. Done when `lockfile.rs` imports no `toml`, `ketch.lock` is written byte-for-byte as before, `docs/LOCKFILE.md` still matches, its entry is gone from `NOT_YET_MOVED` in `toml_file.rs` (M16.8's guard), and the tests pass unchanged.
+Done when `lockfile.rs` imports no `toml`, `ketch.lock` is written byte-for-byte as before, `docs/LOCKFILE.md` still matches, its entry is gone from `NOT_YET_MOVED` in `toml_file.rs` (M16.8's guard), and the tests pass unchanged.
 
 ### D2. `ketch-ffi`: records and operations the apps need
 
