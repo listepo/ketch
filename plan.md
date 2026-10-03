@@ -8,7 +8,7 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | B65 | in progress | P0 | 2 | 0% | Cursor / grok 4.7 high |
 | R3 | in progress | P1 | 3 | 67% | Cursor / grok 4.7 high |
 | F8 | in progress | P2 | 3 | 0% | Cursor / grok 4.7 high |
-| M16.7 | todo | P2 | 3 | 0% | |
+| M16.7 | in progress | P2 | 3 | 10% | Claude Code / opus-5.5 |
 | M17 | in progress | P2 | 4 | 90% | Cursor / grok 4.7 |
 | R5 | in progress | P2 | 4 | 90% | Claude Code / opus-5.5 |
 | R6 | in progress | P2 | 4 | 90% | Claude Code / opus-5.5 |
@@ -328,6 +328,8 @@ The creator decided (2026-10-03) to split M16 into the subtasks below, one pull 
 Scope B chosen by the creator (2026-10-03): TOML calls only. `lockfile.rs` keeps its types, `validate`, header and file handling; only the parse and render calls go through the module.
 
 Done when `lockfile.rs` imports no `toml`, `ketch.lock` is written byte-for-byte as before, `docs/LOCKFILE.md` still matches, its entry is gone from `NOT_YET_MOVED` in `toml_file.rs` (M16.8's guard), and the tests pass unchanged.
+
+Execution plan (Claude Code / opus-5.5): `Lockfile::load`, `to_toml`, the fuzz entry point and the tests call `toml_file::parse`, `render` and `string_literal`, with the same file names in the errors; types, `validate`, header and file handling stay in `lockfile.rs`. With `lockfile.rs` moved the guard has no exceptions left, so its allow-list goes, and the `AGENTS.md` layout row says the module is the only one naming `toml`. fmt, clippy, nextest; `ketch lock`, `ketch lock --check` and `ketch sync` on a broken lockfile against a scratch root.
 
 ### D2. `ketch-ffi`: records and operations the apps need
 
