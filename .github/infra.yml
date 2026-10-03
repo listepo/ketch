@@ -13,6 +13,13 @@ sonarcloud:
   rust: true # llvm-tools-preview, cargo-llvm-cov, `cargo llvm-cov --locked --lcov`
   mise-install-args: rust
 
+# The dotnet job runs on Linux. Ketch.App is WinUI 3 (Windows-only) and KetchCore.Tests needs the
+# native library; ci.yml's ketch-cs and ketch-win-app jobs cover both on Windows. Here only the
+# portable app-core tests run (no native library, any OS).
+dotnet:
+  working-directory: desktop/windows
+  test-command: dotnet test --project Ketch.AppCore.Tests
+
 # Snyk is switched off (flag; snyk.yml and SNYK_TOKEN stay): the snyk job is skipped and the
 # gate counts it as passed. `enabled: true` turns it back on.
 snyk:
