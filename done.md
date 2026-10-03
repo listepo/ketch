@@ -1156,3 +1156,15 @@ Done when `manifest.rs` imports neither `toml` nor `toml_edit`, `write_bins` sti
 Execution plan (Claude Code / opus-5.5): `parse_registry` goes through `toml_file::Document` (new `is_array` for the `[[package]]` shape check, `deserialize` for both shapes, same error texts); `to_toml` through `render`; `write_bins` hands the edit to a new `toml_file::insert_inline_list`, which owns the `toml_edit` work `package_table` did and reports `Inserted`, `AlreadySet` or `NoTable`, so `manifest.rs` keeps its error text, the re-parse and `replace_file`. `Manifest::validate` stays where it is. `manifest.rs` comes off `NOT_YET_MOVED`. Tests that the edit keeps comments and order byte-for-byte, never overwrites, and reports a missing package; fmt, clippy, nextest; `ketch-core` checked with `--cfg fuzzing`.
 
 Status: done. A `--cfg fuzzing` check builds `ketch-core` (its fuzz entry points included), but the `ketch` fuzzing library itself fails on unresolved `crate::config`, `crate::error`, `crate::registry` and `crate::wizard` imports in the command modules, which this change does not touch.
+
+### M16.7. `lockfile.rs` (`ketch.lock`)
+
+`lockfile.rs` reads, validates and writes `ketch.lock` (`toml::from_str`, `toml::to_string_pretty`), has a fuzz entry point, and its tests parse and render TOML directly.
+
+Scope B chosen by the creator (2026-10-03): TOML calls only. `lockfile.rs` keeps its types, `validate`, header and file handling; only the parse and render calls go through the module.
+
+Done when `lockfile.rs` imports no `toml`, `ketch.lock` is written byte-for-byte as before, `docs/LOCKFILE.md` still matches, its entry is gone from `NOT_YET_MOVED` in `toml_file.rs` (M16.8's guard), and the tests pass unchanged.
+
+Execution plan (Claude Code / opus-5.5): `Lockfile::load`, `to_toml`, the fuzz entry point and the tests call `toml_file::parse`, `render` and `string_literal`, with the same file names in the errors; types, `validate`, header and file handling stay in `lockfile.rs`. With `lockfile.rs` moved the guard has no exceptions left, so its allow-list goes, and the `AGENTS.md` layout row says the module is the only one naming `toml`. fmt, clippy, nextest; `ketch lock`, `ketch lock --check` and `ketch sync` on a broken lockfile against a scratch root.
+
+Status: done. With it, every subtask of M16 is done: `toml_file.rs` is the only module naming `toml` or `toml_edit`.

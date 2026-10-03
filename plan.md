@@ -8,7 +8,6 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | B65 | in progress | P0 | 2 | 0% | Cursor / grok 4.7 high |
 | R3 | in progress | P1 | 3 | 67% | Cursor / grok 4.7 high |
 | F8 | in progress | P2 | 3 | 0% | Cursor / grok 4.7 high |
-| M16.7 | in progress | P2 | 3 | 10% | Claude Code / opus-5.5 |
 | M17 | in progress | P2 | 4 | 90% | Cursor / grok 4.7 |
 | R5 | in progress | P2 | 4 | 90% | Claude Code / opus-5.5 |
 | R6 | in progress | P2 | 4 | 90% | Claude Code / opus-5.5 |
@@ -314,22 +313,6 @@ Status: the Figma work is done — shared pages, macOS synced with F17 plus ten 
 Windows (Fluent) and Linux (libadwaita, per R11) pages in light and dark, prototype flows on
 every page. `figma.md` stays in `desktop/macos/design/` until D5 moves it. Left: the creator's
 review of the file and the merge of the PR.
-
-### Config file I/O in one module (M16.x)
-
-`AGENTS.md`: one module owns all config loading, validation and editing, and the rest of the code does not import `toml` or `toml_edit`. Every use today is in `crates/ketch-core`: `config.rs` (`config.toml`, and the schema drift helper `assert_schema_current`), `registry.rs` (`registry.toml` update metadata and package folders), `push.rs` (a project's `ketch.toml`), `wizard.rs` (TOML string and array literals), `manifest.rs` (user manifests and `builtin.toml`, the only `toml_edit` user), `lockfile.rs` (`ketch.lock`), and tests in `model.rs` and `extra.rs`. The binary (`src/`) and `crates/ketch-ffi` import neither; `tests/` is a separate crate that writes fixtures and stays out of scope.
-
-The creator decided (2026-10-03) to split M16 into the subtasks below, one pull request each, in id order: M16.1 first, since the rest call into the module it creates; then M16.8, M16.6 and M16.7. M16.6 and M16.7 move only the TOML calls (scope B, chosen by the creator on 2026-10-03). Behaviour does not change in any subtask: same files read and written, same bytes, same error texts. The whole is done when every subtask is.
-
-### M16.7. `lockfile.rs` (`ketch.lock`)
-
-`lockfile.rs` reads, validates and writes `ketch.lock` (`toml::from_str`, `toml::to_string_pretty`), has a fuzz entry point, and its tests parse and render TOML directly.
-
-Scope B chosen by the creator (2026-10-03): TOML calls only. `lockfile.rs` keeps its types, `validate`, header and file handling; only the parse and render calls go through the module.
-
-Done when `lockfile.rs` imports no `toml`, `ketch.lock` is written byte-for-byte as before, `docs/LOCKFILE.md` still matches, its entry is gone from `NOT_YET_MOVED` in `toml_file.rs` (M16.8's guard), and the tests pass unchanged.
-
-Execution plan (Claude Code / opus-5.5): `Lockfile::load`, `to_toml`, the fuzz entry point and the tests call `toml_file::parse`, `render` and `string_literal`, with the same file names in the errors; types, `validate`, header and file handling stay in `lockfile.rs`. With `lockfile.rs` moved the guard has no exceptions left, so its allow-list goes, and the `AGENTS.md` layout row says the module is the only one naming `toml`. fmt, clippy, nextest; `ketch lock`, `ketch lock --check` and `ketch sync` on a broken lockfile against a scratch root.
 
 ### D2. `ketch-ffi`: records and operations the apps need
 
