@@ -6,7 +6,7 @@
 # The macOS app's releases share this repository with the CLI's, and the
 # CLI's installers follow /releases/latest. This holds both sides apart:
 #
-# - desktop-release.yml is dispatch-only, creates every release with
+# - release-apple-desktop.yml is dispatch-only, creates every release with
 #   make_latest=false under a desktop-v tag, and refuses to run without its
 #   secrets or with the placeholder Sparkle key;
 # - scripts/desktop-version.sh accepts only a new, higher X.Y.Z;
@@ -14,7 +14,7 @@
 set -eu
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-wf="$ROOT/.github/workflows/desktop-release.yml"
+wf="$ROOT/.github/workflows/release-apple-desktop.yml"
 
 fail() {
     echo "desktop-release: $*" >&2
@@ -34,7 +34,7 @@ trap 'rm -rf "$tmp"' EXIT
 
 # One trigger, workflow_dispatch with a version; `on` parses as true in YAML 1.1.
 triggers="$(ruby -ryaml -e 'w = YAML.load_file(ARGV[0]); puts (w["on"] || w[true]).keys.sort.join(",")' "$wf")"
-[ "$triggers" = workflow_dispatch ] || fail "desktop-release.yml runs on '$triggers', not only workflow_dispatch"
+[ "$triggers" = workflow_dispatch ] || fail "release-apple-desktop.yml runs on '$triggers', not only workflow_dispatch"
 need "$wf" 'version:' 'the version input'
 
 # Every `gh release create`, continuation lines joined, says --latest=false,
@@ -44,7 +44,7 @@ ruby -ryaml -e '
   runs = w["jobs"].values.flat_map { |j| j["steps"] }.map { |s| s["run"].to_s }
   lines = runs.join("\n").gsub(/\\\n\s*/, " ").lines
   creates = lines.grep(/gh release create/)
-  abort "no gh release create in desktop-release.yml" if creates.empty?
+  abort "no gh release create in release-apple-desktop.yml" if creates.empty?
   creates.each { |l| abort "gh release create without --latest=false: #{l.strip}" unless l.include?("--latest=false") }
   lines.grep(/--latest(?!=false)/).each do |l|
     abort "a release marked latest: #{l.strip}" unless l =~ /gh release edit "\$before"/
@@ -66,7 +66,7 @@ order="$(ruby -ryaml -e '
     .map { |n| steps.index(n) || -1 }.join(" ")' "$wf")"
 prev=-1
 for i in $order; do
-    [ "$i" -gt "$prev" ] || fail "desktop-release.yml steps are missing or out of order ($order)"
+    [ "$i" -gt "$prev" ] || fail "release-apple-desktop.yml steps are missing or out of order ($order)"
     prev="$i"
 done
 need "$wf" 'xcrun notarytool submit' 'notarytool'

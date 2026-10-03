@@ -240,7 +240,7 @@ differ by orders of magnitude — the cargo home is the small one. Set
 | `desktop/macos/` | the SwiftUI macOS app: `project.yml` (XcodeGen), `Ketch/` sources, `KetchTests/`, `KetchUITests/`; see its `README.md` |
 | `desktop/macos/DESIGN.md` | the macOS app's design system in the DESIGN.md format; its front matter is generated |
 | `desktop/design/` | `tokens.json`, the one source of design tokens, and `build.mjs`, which generates `generated/Tokens.swift` (macOS), `generated/KetchTokens.xaml` (Windows), `generated/ketch-tokens.css` (Linux), the macOS DESIGN.md front matter and `preview.html`'s CSS (`just design-tokens`) |
-| `.github/workflows/desktop-release.yml` | the macOS app's release: signed, notarised `.dmg` under a `desktop-v*` tag, and its Sparkle appcast |
+| `.github/workflows/release-apple-desktop.yml` | the macOS app's release: signed, notarised `.dmg` under a `desktop-v*` tag, and its Sparkle appcast |
 | `scripts/desktop-version.sh`, `scripts/desktop-dmg.sh`, `scripts/desktop-appcast.sh` | the app release's version check, disk image and appcast, shared with `tests/desktop-appcast.sh` |
 | `desktop/cliff.toml` | the app's release notes: commits under `desktop/` and `crates/ketch-ffi/` since the last `desktop-v*` tag |
 
@@ -596,7 +596,7 @@ halfway through a release.
 ### macOS app releases
 
 The app in `desktop/macos/` is released from this repository too, by
-`.github/workflows/desktop-release.yml`, with a version of its own: tags are
+`.github/workflows/release-apple-desktop.yml`, with a version of its own: tags are
 `desktop-vX.Y.Z`, never `vX.Y.Z`, and the version is the workflow's input, not
 `Cargo.toml`'s or `project.yml`'s.
 
@@ -618,8 +618,8 @@ of asking for the latest (`--pre`), a tag that is not a version never
 outranks one that is (`select_release` in `src/source/mod.rs`). `tests/desktop-release.sh` (in
 `just lint-shell`) checks all of it.
 
-To cut one: Actions → desktop-release → Run workflow on `main` with the
-version, or `gh workflow run desktop-release.yml --ref main -f version=X.Y.Z`.
+To cut one: Actions → release-apple-desktop → Run workflow on `main` with the
+version, or `gh workflow run release-apple-desktop.yml --ref main -f version=X.Y.Z`.
 The version must be plain `X.Y.Z` and above the last `desktop-v*` tag
 (`scripts/desktop-version.sh`), because it is also `CFBundleVersion`, which
 Sparkle compares. The run archives an Apple Silicon (arm64) Release build with the

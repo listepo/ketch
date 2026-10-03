@@ -112,11 +112,11 @@ API names were checked against the macOS 27.0 SDK's
 
 ## Releases
 
-Releases are made by `.github/workflows/desktop-release.yml`, dispatched by
+Releases are made by `.github/workflows/release-apple-desktop.yml`, dispatched by
 hand with a version:
 
 ```bash
-gh workflow run desktop-release.yml --ref main -f version=0.1.0
+gh workflow run release-apple-desktop.yml --ref main -f version=0.1.0
 ```
 
 It builds an Apple Silicon (arm64) Release app, signs it with the Developer ID

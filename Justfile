@@ -259,7 +259,7 @@ macos-test: macos-project
     {{macos_build}} -destination 'platform=macOS' test
 
 # the release's disk image and Sparkle appcast, round-tripped with a throwaway
-# key: what desktop-release.yml runs, minus signing and notarisation
+# key: what release-apple-desktop.yml runs, minus signing and notarisation
 macos-appcast: macos-app
     sh tests/desktop-appcast.sh
 

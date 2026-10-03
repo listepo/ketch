@@ -19,7 +19,7 @@ Project programs and direct packages from manifests.
 | Xcode | global (App Store / developer.apple.com) | Builds and tests the macOS app (`xcodebuild`); 26 or later | https://developer.apple.com/xcode/ |
 | rust-std aarch64-apple-darwin | rustup (`scripts/xcframework.sh` adds it to the pinned toolchain when missing) | `ketch-ffi`'s arm64 XCFramework (`just xcframework`) | https://github.com/rust-lang/rust |
 | swift-format | with Xcode (`xcrun swift-format`) | Formats and lints the macOS app's Swift | https://github.com/swiftlang/swift-format |
-| notarytool, stapler | with Xcode (`xcrun`) | Notarise and staple the macOS app and its `.dmg` (`desktop-release.yml`) | https://developer.apple.com/documentation/security/customizing-the-notarization-workflow |
+| notarytool, stapler | with Xcode (`xcrun`) | Notarise and staple the macOS app and its `.dmg` (`release-apple-desktop.yml`) | https://developer.apple.com/documentation/security/customizing-the-notarization-workflow |
 | hdiutil, codesign, spctl | with macOS | Build the app's `.dmg` (`scripts/desktop-dmg.sh`), sign it, and assess what Gatekeeper will decide | https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution |
 | generate_appcast | with the Sparkle package (`build/SourcePackages/artifacts/sparkle/Sparkle/bin/`) | Writes and signs the macOS app's appcast (`scripts/desktop-appcast.sh`) | https://github.com/sparkle-project/Sparkle |
 | cargo-fuzz | mise | Builds and runs the libFuzzer targets in `fuzz/` (`just fuzz`) | https://github.com/rust-fuzz/cargo-fuzz |

@@ -1,10 +1,17 @@
-name: desktop-release
+# PRODUCTION / RELEASE BUILDS ONLY. This workflow needs the org signing and
+# notarisation secrets (MACOS_CERTIFICATE, MACOS_CERTIFICATE_PWD,
+# APPSTORE_CONNECT_KEY, APPSTORE_CONNECT_KEY_ID, APPSTORE_CONNECT_ISSUER_ID,
+# SPARKLE_ED_PRIVATE_KEY) and refuses to run without them. Test builds of the
+# app (CI's macos-app job, `just` on a local Mac) are unsigned / ad-hoc signed
+# and need none of these secrets; they live in ci.yml and the Justfile.
+name: release-apple-desktop
 
 # Releases the macOS app (desktop/macos): a signed, notarised, stapled
 # Ketch-X.Y.Z.dmg under the tag desktop-vX.Y.Z, and the Sparkle appcast that
 # installed copies update from. Dispatch-only, like release.yml: Actions ->
-# desktop-release -> Run workflow, or `gh workflow run desktop-release.yml
-# --ref main -f version=X.Y.Z`. AGENTS.md, "Releasing" / "macOS app".
+# release-apple-desktop -> Run workflow, or
+# `gh workflow run release-apple-desktop.yml --ref main -f version=X.Y.Z`.
+# AGENTS.md, "Releasing" / "macOS app".
 #
 # The app shares this repository with the CLI, and the CLI's installers
 # (install.sh, install.ps1, `ketch self upgrade`) all ask GitHub for
@@ -33,7 +40,7 @@ permissions:
 
 # Two releases at once would race for the one appcast.
 concurrency:
-  group: desktop-release
+  group: release-apple-desktop
   cancel-in-progress: false
 
 jobs:
