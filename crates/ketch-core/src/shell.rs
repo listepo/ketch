@@ -327,6 +327,109 @@ pub fn path_check(cfg: &Config) -> DoctorCheck {
     )
 }
 
+/// Where one shell stands with ketch's PATH block.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShellState {
+    /// Its startup file has the block for this bin dir.
+    Configured,
+    /// It is in use here, and its startup file has no block yet.
+    NotSetUp,
+    /// Nothing says it is used on this machine.
+    NotInUse,
+}
+
+/// One shell's row in [`Status`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShellStatus {
+    pub shell: Shell,
+    pub state: ShellState,
+    /// The startup file `install` would edit.
+    pub file: PathBuf,
+}
+
+/// Everything `ketch path` reports: whether the bin dir is on PATH now, and
+/// where it is or could be set up.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Status {
+    pub on_path: bool,
+    /// What the doctor's PATH check says about it.
+    pub detail: String,
+    /// Whether the Windows user PATH names the bin dir; `None` off Windows,
+    /// where there is no user environment to set.
+    pub user_path: Option<bool>,
+    /// Every shell ketch can set up, in [`Shell::ALL`] order.
+    pub shells: Vec<ShellStatus>,
+}
+
+/// The PATH setup as `ketch path` shows it. Reads startup files; writes
+/// nothing.
+pub fn status(cfg: &Config) -> Result<Status> {
+    let home = home()?;
+    let detected = detect().unwrap_or_default();
+    let configured = configured_in(cfg);
+    let shells = Shell::ALL
+        .into_iter()
+        .map(|shell| {
+            let file = shell.config_file(&home);
+            let state = if configured.contains(&file) {
+                ShellState::Configured
+            } else if detected.contains(&shell) {
+                ShellState::NotSetUp
+            } else {
+                ShellState::NotInUse
+            };
+            ShellStatus { shell, state, file }
+        })
+        .collect();
+    Ok(Status {
+        on_path: cfg.bin_dir_on_path(),
+        detail: path_check(cfg).detail,
+        user_path: cfg!(windows).then(|| user_path_configured(cfg)),
+        shells,
+    })
+}
+
+/// What one PATH setup step changed: a shell's startup file, or the Windows
+/// user PATH.
+#[derive(Debug, Clone)]
+pub enum Setup {
+    Shell(Change),
+    UserPath(Outcome),
+}
+
+/// The shells in use here, or an error saying how to choose one when none
+/// can be told apart.
+pub fn detected() -> Result<Vec<Shell>> {
+    let detected = detect()?;
+    if detected.is_empty() {
+        // Guessing here would edit a startup file the user's shell never
+        // reads, and they would have no reason to look for it.
+        return Err(Error::msg(format!(
+            "could not tell which shell you use (SHELL={}). \
+             Pass --shell bash|zsh|fish, or --all, or `ketch path install --print` \
+             for the line to add by hand.",
+            std::env::var("SHELL").unwrap_or_else(|_| "unset".to_string())
+        )));
+    }
+    Ok(detected)
+}
+
+/// `ketch path install` with no shell named: the Windows user PATH on
+/// Windows, the startup file of every shell in use elsewhere.
+pub fn install_here(cfg: &Config, dry_run: bool) -> Result<Vec<Setup>> {
+    #[cfg(windows)]
+    {
+        Ok(vec![Setup::UserPath(install_user(cfg, dry_run)?)])
+    }
+    #[cfg(not(windows))]
+    {
+        detected()?
+            .into_iter()
+            .map(|sh| install(cfg, sh, dry_run).map(Setup::Shell))
+            .collect()
+    }
+}
+
 /// The line to add by hand, for a shell ketch does not know.
 pub fn manual_line(cfg: &Config) -> Result<String> {
     let bin = bin_dir_str(cfg)?;
