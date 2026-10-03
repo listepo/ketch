@@ -403,6 +403,8 @@ Swap the Windows app's fake core for the binding. Depends on D10, D11, D1 and D2
 
 Done when the app runs every screen on `ketch-ffi` through D10's binding, work runs off the UI thread with events marshalled to the `DispatcherQueue`, cancel and `Busy` behave as in the contract, and a manual pass against a scratch root is recorded.
 
+The app ships both as an MSIX and unpackaged (D14), and an unpackaged app has no `ApplicationData`, so settings go in a file under `%LOCALAPPDATA%\ketch` that works in both.
+
 ### D13. Windows: tray icon, notifications, start at login, links
 
 The Windows counterparts of the macOS menu-bar extra, notifications, login item and URL scheme. WinUI has no tray control, so the icon is Win32's notification area. Research: sections 1 and 3c.
@@ -413,7 +415,9 @@ Done when a notification-area icon opens the tray panel, `AppNotificationManager
 
 How the Windows app reaches users and updates itself, separate from the CLI's release. R10's open decisions on distribution and the Windows App SDK licence come first.
 
-Done when CI builds an unpackaged, signed (Artifact Signing or the creator's choice) release on `desktop-windows-v*` tags without touching `/releases/latest`, updates arrive through the chosen route (Velopack or winget), and the creator's answers to R10's decisions are recorded.
+Done when CI builds, on `desktop-windows-v*` tags and without touching `/releases/latest`, both an MSIX and an unpackaged self-contained zip, signed (Artifact Signing or the creator's choice), updates arrive through the chosen route (Velopack or winget), and the creator's answers to R10's decisions are recorded. The creator chose to ship both forms. The MSIX is signed with a certificate held in repository secrets named the way the macOS ones are (`MACOS_CERTIFICATE`, `MACOS_CERTIFICATE_PWD`), and the release fails when they are missing rather than shipping unsigned.
+
+Settings persistence differs between the two: an MSIX has `ApplicationData`, an unpackaged app has none (D12 stores settings in a way that works in both).
 
 ### D15. Linux: `ketch-capi`, a C ABI and VAPI for Vala
 
