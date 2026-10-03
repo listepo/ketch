@@ -1144,3 +1144,15 @@ Done when the test fails on a deliberate `toml::` use in another module (checked
 Execution plan (Claude Code / opus-5.5): a test in `toml_file.rs` walks `src/` and `crates/*/src/` with `walkdir`, flags a line that paths through or imports `toml`/`toml_edit` (comments and file names such as `"ketch.toml"` excepted), and fails on any file but the owner; `manifest.rs` and `lockfile.rs` sit on a commented `NOT_YET_MOVED` list, and the test also fails when a listed file stops naming `toml`, so M16.6 and M16.7 must take their entry off. A unit test for the line scan; a deliberate `toml::` line in `push.rs` made the guard fail (not committed); fmt, clippy, nextest.
 
 Status: done. `manifest.rs` and `lockfile.rs` stay on the guard's `NOT_YET_MOVED` list until M16.6 and M16.7.
+
+### M16.6. `manifest.rs` (`ketch.toml` user manifests)
+
+`manifest.rs` parses user manifests and `builtin.toml` (`parse_registry`), renders them (`to_toml`), and edits a user manifest in place with `toml_edit` (`write_bins`, `package_table`), keeping the user's comments and order, and replaces the file atomically (`replace_file`).
+
+Scope B chosen by the creator (2026-10-03): TOML calls only. `manifest.rs` keeps `parse_registry`, `write_bins`, `write_manifest` and `replace_file`; only the `toml`/`toml_edit` calls move into the module, behind an edit helper for "insert this key into the table for this package, keep the rest of the document as it was". `Manifest::validate` stays where it is, the single guard every manifest tier passes through.
+
+Done when `manifest.rs` imports neither `toml` nor `toml_edit`, `write_bins` still leaves the rest of the file byte-for-byte, the fuzz entry point still builds, its entry is gone from `NOT_YET_MOVED` in `toml_file.rs` (M16.8's guard), and the tests pass unchanged.
+
+Execution plan (Claude Code / opus-5.5): `parse_registry` goes through `toml_file::Document` (new `is_array` for the `[[package]]` shape check, `deserialize` for both shapes, same error texts); `to_toml` through `render`; `write_bins` hands the edit to a new `toml_file::insert_inline_list`, which owns the `toml_edit` work `package_table` did and reports `Inserted`, `AlreadySet` or `NoTable`, so `manifest.rs` keeps its error text, the re-parse and `replace_file`. `Manifest::validate` stays where it is. `manifest.rs` comes off `NOT_YET_MOVED`. Tests that the edit keeps comments and order byte-for-byte, never overwrites, and reports a missing package; fmt, clippy, nextest; `ketch-core` checked with `--cfg fuzzing`.
+
+Status: done. A `--cfg fuzzing` check builds `ketch-core` (its fuzz entry points included), but the `ketch` fuzzing library itself fails on unresolved `crate::config`, `crate::error`, `crate::registry` and `crate::wizard` imports in the command modules, which this change does not touch.
