@@ -42,14 +42,14 @@ Repository facts used throughout (`main` at 68f9a56):
 - The macOS app runs on `FakeKetchCore`; its view of the core is
   `desktop/macos/Ketch/Core/KetchCoreProtocol.swift`, written before R9 and
   not identical to it (gaps below).
-- The design tokens live in `desktop/macos/design/tokens.json` (W3C DTCG
+- The design tokens live in `desktop/design/tokens.json` (W3C DTCG
   2025.10) and Style Dictionary 5.5.5 generates Swift, CSS for the preview and
   the `DESIGN.md` front matter through custom formats
-  (`desktop/macos/design/build.mjs`, `docs/research-design-system.md`).
+  (`desktop/design/build.mjs`, `docs/research-design-system.md`).
 - The Figma file "ketch for macOS — Liquid glass" has nine screens in Light
   and Dark: Installed, Discover, Updates, Package detail, Activity, Doctor,
   Settings · Appearance, Uninstall sheet, Menu bar extra
-  (`desktop/macos/design/figma.md`).
+  (`desktop/design/figma.md`).
 
 Sources are cited by key (`[M3]`, `[W4]`, `[L9]`, `[X1]`) and listed with
 their URL and version or date under [Sources](#sources) at the end, so the

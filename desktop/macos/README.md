@@ -60,7 +60,7 @@ from this directory; CI runs `lint --strict`.
 | `Ketch/Views/` | the window sections, the menu-bar panel, Settings, About, the glass styling |
 | `Ketch/Views/Theme.swift` | the views' spacing, radius, shadow and status-colour roles, mapped onto the generated tokens |
 | `Ketch/Views/Glass.swift` | the `appearance` environment value, `ketchAppearance()`, glass cards and the backdrop wash |
-| `design/generated/Tokens.swift` | generated from `design/tokens.json` (`just design-tokens`) and compiled into the app; see `DESIGN.md` |
+| `../design/generated/Tokens.swift` | generated from `../design/tokens.json` (`just design-tokens`) and compiled into the app; see `DESIGN.md` |
 | `KetchTests/` | Swift Testing tests of the store, settings and root on the fake core |
 | `KetchUITests/` | one XCUITest smoke test: launch against a scratch `KETCH_ROOT` |
 

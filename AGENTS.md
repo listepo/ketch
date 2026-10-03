@@ -237,7 +237,7 @@ differ by orders of magnitude — the cargo home is the small one. Set
 | `.github/dependabot.yml` | weekly `chore(deps)` pull requests for cargo, npm and GitHub Actions; not `mise.toml` |
 | `desktop/macos/` | the SwiftUI macOS app: `project.yml` (XcodeGen), `Ketch/` sources, `KetchTests/`, `KetchUITests/`; see its `README.md` |
 | `desktop/macos/DESIGN.md` | the macOS app's design system in the DESIGN.md format; its front matter is generated |
-| `desktop/macos/design/` | `tokens.json`, the one source of design tokens, and `build.mjs`, which generates `generated/Tokens.swift`, the DESIGN.md front matter and `preview.html`'s CSS (`just design-tokens`) |
+| `desktop/design/` | `tokens.json`, the one source of design tokens, and `build.mjs`, which generates `generated/Tokens.swift` (macOS), `generated/KetchTokens.xaml` (Windows), `generated/ketch-tokens.css` (Linux), the macOS DESIGN.md front matter and `preview.html`'s CSS (`just design-tokens`) |
 | `.github/workflows/desktop-release.yml` | the macOS app's release: signed, notarised `.dmg` under a `desktop-v*` tag, and its Sparkle appcast |
 | `scripts/desktop-version.sh`, `scripts/desktop-dmg.sh`, `scripts/desktop-appcast.sh` | the app release's version check, disk image and appcast, shared with `tests/desktop-appcast.sh` |
 | `desktop/cliff.toml` | the app's release notes: commits under `desktop/` and `crates/ketch-ffi/` since the last `desktop-v*` tag |
@@ -305,7 +305,7 @@ These are observed throughout; match them rather than introducing your own.
 - **A generated file says so in its first lines**, and the generator writes
   that header, not a person or a second script: `ketch lock` for `ketch.lock`,
   `site/sync-docs.py` for `site/content/docs/`, `scripts/cask.sh` for the
-  tap's `Casks/ketch.rb`, `desktop/macos/design/build.mjs` for `Tokens.swift`
+  tap's `Casks/ketch.rb`, `desktop/design/build.mjs` for `Tokens.swift`, `KetchTokens.xaml`, `ketch-tokens.css`
   and the generated blocks of `DESIGN.md` and `preview.html`. To change such a
   file, change its generator.
 - **Comments explain *why*, never *what*.** The code already says what it does.
