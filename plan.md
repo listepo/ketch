@@ -34,6 +34,7 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | D17 | todo | P3 | 4 | 0% | |
 | D18 | todo | P3 | 3 | 0% | |
 | D19 | todo | P3 | 4 | 0% | |
+| D20 | in progress | P2 | 2 | 0% | Claude Code / sonnet-5.5 |
 
 ### Ketch audit
 
@@ -435,6 +436,14 @@ Done when update notices go through `GNotification` (the Notification portal und
 How the Linux app reaches users. R10 left Flatpak against distribution packages open, and Flatpak needs home access for PATH work.
 
 Done when the creator has chosen the format, CI builds it on `desktop-linux-v*` tags without touching `/releases/latest`, the app ships AppStream metadata and a `.desktop` file that validate, and updates come from the chosen package manager.
+
+### D20. Windows: XAML `HighContrast` follows the user's contrast theme
+
+Requested by the creator (2026-10-03). `KetchTokens.xaml`'s `HighContrast` dictionary carries the tokens' `highContrast` hex values, which are macOS Increase Contrast ink tuned for a light background (AccentInk `#003A75`, StatusInstalled `#0B5A31`). Windows applies that one dictionary under all four contrast themes (Aquatic, Desert, Dusk, Night sky), three of them dark, so text becomes unreadable, and an app in a contrast theme is expected to use the user's palette rather than brand colours.
+
+Execution plan: (1) `desktop/design/build.mjs` writes the XAML `HighContrast` dictionary as references to WinUI's `SystemColor*` resources, chosen from Microsoft's contrast-themes pairings (https://learn.microsoft.com/en-us/windows/apps/design/accessibility/high-contrast-themes, checked 2026-10-03): accent fills to Highlight, text on accent to HighlightText, text, status glyphs and focus ring to WindowText, surfaces to Window; brushes use `{ThemeResource SystemColor...Color}` as the page shows. (2) Light, Dark and the GTK output stay as they are. (3) `contrast.mjs` skips these pairs, with a comment. (4) Regenerate, then `just design-check` and `xmllint` on the XAML. (5) The generated header, `DESIGN.md`, `desktop/design/README.md` and `desktop/contract/README.md` state the rule.
+
+Done when the generated `HighContrast` dictionary holds no hex values, `just design-check` passes with its drift check covering the output, and the docs say so.
 
 ### M17. `ketch import`: a package from winget, Homebrew or a Linux repository
 
