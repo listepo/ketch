@@ -8,10 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-## [0.10.0](https://github.com/listepo/ketch/releases/tag/v0.10.0) - 2026-10-01
+## [0.10.0](https://github.com/listepo/ketch/releases/tag/v0.10.0) - 2026-10-02
 
 ### Added
 
+- *(ffi)* [**breaking**] foreign traits and per-call callbacks (d1) ([#231](https://github.com/listepo/ketch/pull/231))
+- ketch import from winget, homebrew and linux (m17) ([#215](https://github.com/listepo/ketch/pull/215))
+- ketch-ffi, the core through uniffi ([#208](https://github.com/listepo/ketch/pull/208))
 - json schema for the package manifest ([#206](https://github.com/listepo/ketch/pull/206))
 - *(macos)* screens rebuilt on the liquid glass design ([#200](https://github.com/listepo/ketch/pull/200))
 - *(macos)* the Liquid glass tokens and appearance settings ([#197](https://github.com/listepo/ketch/pull/197))
@@ -22,6 +25,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Other
 
+- *(license)* add SPDX license headers to source files ([#230](https://github.com/listepo/ketch/pull/230))
+- *(license)* check license files against pyrlyn/infra and add the README license line ([#229](https://github.com/listepo/ketch/pull/229))
+- *(snyk)* switch Snyk off in .github/infra.yml (flag, code kept) ([#234](https://github.com/listepo/ketch/pull/234))
+- *(agents)* point to the org rule for merging the bump PR by rebase ([#226](https://github.com/listepo/ketch/pull/226))
+- *(agents)* drop rules duplicated by the workspace CLAUDE.md and rust.md ([#218](https://github.com/listepo/ketch/pull/218))
+- run swarfr, the renamed dunnage, after tests ([#217](https://github.com/listepo/ketch/pull/217))
+- release only through a bump pull request merged by rebase ([#216](https://github.com/listepo/ketch/pull/216))
+- close r11 in done.md ([#213](https://github.com/listepo/ketch/pull/213))
+- figma for three platforms ([#212](https://github.com/listepo/ketch/pull/212))
+- desktop research for macos, windows and linux, and the platform tasks ([#211](https://github.com/listepo/ketch/pull/211))
+- sync the plan with merged work ([#209](https://github.com/listepo/ketch/pull/209))
+- *(qa)* audit plan and findings (2026-10-01) ([#210](https://github.com/listepo/ketch/pull/210))
+- log level and format as enums in config.toml ([#203](https://github.com/listepo/ketch/pull/203))
 - toolkit research for the windows and linux desktop apps ([#205](https://github.com/listepo/ketch/pull/205))
 - liquid glass design in figma, close f15-f17 ([#207](https://github.com/listepo/ketch/pull/207))
 - binary choice through a decider, not the terminal ([#204](https://github.com/listepo/ketch/pull/204))

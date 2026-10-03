@@ -1059,6 +1059,21 @@ pub fn unlink(cx: &Ctx<'_>, state: &mut State, name: &str) -> Result<()> {
     Ok(())
 }
 
+/// Hold `name` at its installed version, or let it go again. A pinned package
+/// is never offered an update and `upgrade` leaves it alone. Changes only the
+/// record; the caller saves `state`.
+pub fn pin(state: &mut State, name: &str, pinned: bool) -> Result<InstalledPackage> {
+    let installed = state
+        .find(name)
+        .map(|p| p.name.clone())
+        .ok_or_else(|| Error::NotInstalled(name.to_string()))?;
+    let entry = state
+        .get_mut(&installed)
+        .ok_or_else(|| Error::NotInstalled(name.to_string()))?;
+    entry.pinned = pinned;
+    Ok(entry.clone())
+}
+
 /// Switch an installed package to a retained prefix already on disk.
 ///
 /// Never downloads. Preflights every destination (via `place`) before the

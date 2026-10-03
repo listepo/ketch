@@ -5,6 +5,8 @@
   Brand tokens only (accent, status colours, spacing, radii, type scale): glass, wash,
   blur and elevation stay macOS-only. Font families are left to the app's own theme;
   LineHeight and Spacing (letter spacing) are in pixels, as XAML expects.
+  HighContrast holds no hex: it references the SystemColor* resources, so the user's
+  contrast theme (Aquatic, Desert, Dusk or Night sky) decides every colour.
 -->
 <ResourceDictionary
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -75,36 +77,36 @@
       <SolidColorBrush x:Key="KetchColorStatusErrorSubtleBrush" Color="#2EFF7584" />
     </ResourceDictionary>
     <ResourceDictionary x:Key="HighContrast">
-      <Color x:Key="KetchColorAccentDefault">#FF0058BF</Color>
-      <SolidColorBrush x:Key="KetchColorAccentDefaultBrush" Color="#FF0058BF" />
-      <Color x:Key="KetchColorAccentPressed">#FF00489C</Color>
-      <SolidColorBrush x:Key="KetchColorAccentPressedBrush" Color="#FF00489C" />
-      <Color x:Key="KetchColorAccentSubtle">#330058BF</Color>
-      <SolidColorBrush x:Key="KetchColorAccentSubtleBrush" Color="#330058BF" />
-      <Color x:Key="KetchColorAccentOn">#FFFFFFFF</Color>
-      <SolidColorBrush x:Key="KetchColorAccentOnBrush" Color="#FFFFFFFF" />
-      <Color x:Key="KetchColorAccentInk">#FF003A75</Color>
-      <SolidColorBrush x:Key="KetchColorAccentInkBrush" Color="#FF003A75" />
-      <Color x:Key="KetchColorStatusInstalled">#FF0B5A31</Color>
-      <SolidColorBrush x:Key="KetchColorStatusInstalledBrush" Color="#FF0B5A31" />
-      <Color x:Key="KetchColorStatusInstalledSubtle">#381F9D57</Color>
-      <SolidColorBrush x:Key="KetchColorStatusInstalledSubtleBrush" Color="#381F9D57" />
-      <Color x:Key="KetchColorStatusUpdate">#FF8A3404</Color>
-      <SolidColorBrush x:Key="KetchColorStatusUpdateBrush" Color="#FF8A3404" />
-      <Color x:Key="KetchColorStatusUpdateSubtle">#3DF07B1F</Color>
-      <SolidColorBrush x:Key="KetchColorStatusUpdateSubtleBrush" Color="#3DF07B1F" />
-      <Color x:Key="KetchColorStatusBusy">#FF3B2CA3</Color>
-      <SolidColorBrush x:Key="KetchColorStatusBusyBrush" Color="#FF3B2CA3" />
-      <Color x:Key="KetchColorStatusBusySubtle">#386D5CE6</Color>
-      <SolidColorBrush x:Key="KetchColorStatusBusySubtleBrush" Color="#386D5CE6" />
-      <Color x:Key="KetchColorStatusWarning">#FF6B4400</Color>
-      <SolidColorBrush x:Key="KetchColorStatusWarningBrush" Color="#FF6B4400" />
-      <Color x:Key="KetchColorStatusWarningSubtle">#42E0A100</Color>
-      <SolidColorBrush x:Key="KetchColorStatusWarningSubtleBrush" Color="#42E0A100" />
-      <Color x:Key="KetchColorStatusError">#FF94142A</Color>
-      <SolidColorBrush x:Key="KetchColorStatusErrorBrush" Color="#FF94142A" />
-      <Color x:Key="KetchColorStatusErrorSubtle">#38E0314B</Color>
-      <SolidColorBrush x:Key="KetchColorStatusErrorSubtleBrush" Color="#38E0314B" />
+      <StaticResource x:Key="KetchColorAccentDefault" ResourceKey="SystemColorHighlightColor" />
+      <SolidColorBrush x:Key="KetchColorAccentDefaultBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+      <StaticResource x:Key="KetchColorAccentPressed" ResourceKey="SystemColorHighlightColor" />
+      <SolidColorBrush x:Key="KetchColorAccentPressedBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+      <StaticResource x:Key="KetchColorAccentSubtle" ResourceKey="SystemColorWindowColor" />
+      <SolidColorBrush x:Key="KetchColorAccentSubtleBrush" Color="{ThemeResource SystemColorWindowColor}" />
+      <StaticResource x:Key="KetchColorAccentOn" ResourceKey="SystemColorHighlightTextColor" />
+      <SolidColorBrush x:Key="KetchColorAccentOnBrush" Color="{ThemeResource SystemColorHighlightTextColor}" />
+      <StaticResource x:Key="KetchColorAccentInk" ResourceKey="SystemColorWindowTextColor" />
+      <SolidColorBrush x:Key="KetchColorAccentInkBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+      <StaticResource x:Key="KetchColorStatusInstalled" ResourceKey="SystemColorWindowTextColor" />
+      <SolidColorBrush x:Key="KetchColorStatusInstalledBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+      <StaticResource x:Key="KetchColorStatusInstalledSubtle" ResourceKey="SystemColorWindowColor" />
+      <SolidColorBrush x:Key="KetchColorStatusInstalledSubtleBrush" Color="{ThemeResource SystemColorWindowColor}" />
+      <StaticResource x:Key="KetchColorStatusUpdate" ResourceKey="SystemColorWindowTextColor" />
+      <SolidColorBrush x:Key="KetchColorStatusUpdateBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+      <StaticResource x:Key="KetchColorStatusUpdateSubtle" ResourceKey="SystemColorWindowColor" />
+      <SolidColorBrush x:Key="KetchColorStatusUpdateSubtleBrush" Color="{ThemeResource SystemColorWindowColor}" />
+      <StaticResource x:Key="KetchColorStatusBusy" ResourceKey="SystemColorWindowTextColor" />
+      <SolidColorBrush x:Key="KetchColorStatusBusyBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+      <StaticResource x:Key="KetchColorStatusBusySubtle" ResourceKey="SystemColorWindowColor" />
+      <SolidColorBrush x:Key="KetchColorStatusBusySubtleBrush" Color="{ThemeResource SystemColorWindowColor}" />
+      <StaticResource x:Key="KetchColorStatusWarning" ResourceKey="SystemColorWindowTextColor" />
+      <SolidColorBrush x:Key="KetchColorStatusWarningBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+      <StaticResource x:Key="KetchColorStatusWarningSubtle" ResourceKey="SystemColorWindowColor" />
+      <SolidColorBrush x:Key="KetchColorStatusWarningSubtleBrush" Color="{ThemeResource SystemColorWindowColor}" />
+      <StaticResource x:Key="KetchColorStatusError" ResourceKey="SystemColorWindowTextColor" />
+      <SolidColorBrush x:Key="KetchColorStatusErrorBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+      <StaticResource x:Key="KetchColorStatusErrorSubtle" ResourceKey="SystemColorWindowColor" />
+      <SolidColorBrush x:Key="KetchColorStatusErrorSubtleBrush" Color="{ThemeResource SystemColorWindowColor}" />
     </ResourceDictionary>
   </ResourceDictionary.ThemeDictionaries>
 

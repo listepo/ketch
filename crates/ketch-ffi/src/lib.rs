@@ -9,8 +9,11 @@
 //!
 //! The surface is coarse on purpose. One object, [`KetchCore`], with one
 //! method per thing a person does — list what is installed, search, see what
-//! is outdated, install, upgrade, uninstall, read a changelog, run the doctor —
-//! returning plain records ([`records`]). The core's types stay unannotated, so
+//! is outdated, install, upgrade, uninstall, pin, roll back, prune, read a
+//! changelog or a package's info or history, run the doctor and its fix, see
+//! and set up `PATH`, refresh the registry, read the configuration —
+//! returning plain records ([`records`]). Each is a thin call into the same
+//! core code the CLI command runs, so the two cannot drift apart. The core's types stay unannotated, so
 //! nothing here constrains how they change; the price is a conversion per
 //! record, tested in each module. What the core says while it works reaches a
 //! foreign [`Reporter`], what it asks reaches a foreign [`Decider`], and a
@@ -31,7 +34,9 @@
 //! afresh, so an edit to `config.toml` is seen by the next call. A call that
 //! changes the install tree holds `state::Lock` for its whole run; a second one
 //! from any thread or process fails at once with [`KetchError::Busy`] rather
-//! than waiting. `ketch registry push` and its tokio runtime are not exported.
+//! than waiting. `ketch registry push` is not exported: it owns a tokio
+//! runtime and blocks on it, which a caller's own async runtime would trip
+//! over.
 //!
 //! `unsafe_code` stays `forbid` here, as in the rest of the workspace. The
 //! scaffolding `uniffi::setup_scaffolding!` and `#[uniffi::export]` generate is unsafe by
@@ -53,8 +58,9 @@ pub mod records;
 pub use callbacks::{CancelToken, Decider, Event, Holder, Reporter, Stage, TaskKind};
 pub use error::KetchError;
 pub use records::{
-    Changelog, ChangelogSource, Check, CheckOutcome, InstallOptions, Installed, Package,
-    RegistryPackage, Repository, SearchResults, Upgrade,
+    Changelog, ChangelogSource, Check, CheckOutcome, HistoryEvent, InstallOptions, Installed,
+    Package, PackageInfo, PathChange, PathOutcome, PathStatus, Pruned, RegistryPackage, Repository,
+    SearchResults, Settings, ShellSetup, ShellState, Upgrade,
 };
 
 use callbacks::{ForeignDecider, ForeignReporter};
@@ -62,15 +68,19 @@ use ketch_core::cancel::Cancel;
 use ketch_core::changelog;
 use ketch_core::config::Config;
 use ketch_core::error::Error;
+use ketch_core::info;
 use ketch_core::install::{self, InstallRequest};
 use ketch_core::listing::{self, Available, Local, Row};
 use ketch_core::log;
 use ketch_core::manifest::Resolver;
 use ketch_core::model::{PackageSpec, VersionSpec};
 use ketch_core::process;
+use ketch_core::registry;
 use ketch_core::report::{Ctx, LogReporter, Report};
+use ketch_core::shell;
 use ketch_core::source::SourceRegistry;
 use ketch_core::state::{Lock, State};
+use ketch_core::stats;
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -456,9 +466,159 @@ impl KetchCore {
             .map(Check::from)
             .collect())
     }
+
+    /// What `doctor` can repair on its own, repaired: today only the PATH
+    /// setup, and only when the bin dir is on `PATH` nowhere yet. Returns
+    /// what changed; a place that could not be set up is a warning to
+    /// `reporter`. This edits shell startup files (or, on Windows, the user
+    /// `PATH`) outside the ketch root.
+    pub fn doctor_fix(&self, reporter: Option<Arc<dyn Reporter>>) -> Result<Vec<PathChange>> {
+        let op = self.operation(reporter, None)?;
+        Ok(ketch_core::doctor::fix(&op.ctx())
+            .iter()
+            .map(PathChange::from)
+            .collect())
+    }
+
+    /// What `stats.db` recorded, newest first: every package's history, or
+    /// `package`'s alone, at most `limit` events. No database yet is no
+    /// history.
+    pub fn history(&self, package: Option<String>, limit: u32) -> Result<Vec<HistoryEvent>> {
+        let op = self.operation(None, None)?;
+        let events = stats::history(&op.cfg, package.as_deref(), i64::from(limit))?;
+        Ok(events.iter().map(HistoryEvent::from).collect())
+    }
+
+    /// What `ketch info` shows about `package`, installed or not: its
+    /// manifest, what its source says about the project, and its newest
+    /// release. A source that cannot be reached leaves its part out and is a
+    /// warning to `reporter`.
+    pub fn info(
+        &self,
+        package: String,
+        reporter: Option<Arc<dyn Reporter>>,
+    ) -> Result<PackageInfo> {
+        let op = self.operation(reporter, None)?;
+        let state = State::load(&op.cfg)?;
+        let found = info::gather(&op.ctx(), &state, &package)?;
+        Ok(PackageInfo::from(&found))
+    }
+
+    /// Hold `names` at their installed versions, or every installed package
+    /// when empty: `upgrade` leaves them alone and `outdated` marks them.
+    /// Returns the records as they now stand.
+    pub fn pin(&self, names: Vec<String>) -> Result<Vec<Package>> {
+        self.set_pinned(names, true)
+    }
+
+    /// Let `names` be upgraded again, or every installed package when empty.
+    pub fn unpin(&self, names: Vec<String>) -> Result<Vec<Package>> {
+        self.set_pinned(names, false)
+    }
+
+    /// Switch `package` back to a version still on disk: `to`, or the newest
+    /// one older than what is installed. Never downloads. Which binary to
+    /// link, when that is ambiguous, is put to `decider`.
+    pub fn rollback(
+        &self,
+        package: String,
+        to: Option<String>,
+        reporter: Option<Arc<dyn Reporter>>,
+        decider: Option<Arc<dyn Decider>>,
+    ) -> Result<Installed> {
+        let op = self.operation(reporter, decider)?;
+        let cx = op.ctx();
+        let _lock = Lock::acquire(&cx)?;
+        let mut state = State::load(&op.cfg)?;
+        let out = install::rollback(&cx, &mut state, &package, to.as_deref())?;
+        state.save(&op.cfg)?;
+        Ok(Installed::from(&out))
+    }
+
+    /// Remove retained versions of `names`, or of every installed package
+    /// when empty, beyond the newest `keep`. A `keep` given here becomes the
+    /// retention setting from now on, as `ketch prune --keep` makes it.
+    pub fn prune(
+        &self,
+        names: Vec<String>,
+        keep: Option<u32>,
+        reporter: Option<Arc<dyn Reporter>>,
+    ) -> Result<Vec<Pruned>> {
+        let op = self.operation(reporter, None)?;
+        let cx = op.ctx();
+        let _lock = Lock::acquire(&cx)?;
+        let mut state = State::load(&op.cfg)?;
+        if let Some(keep) = keep {
+            state.retention.keep = keep;
+        }
+        let keep = state.retention.keep;
+        let mut pruned = Vec::new();
+        for name in selected(&state, &names)? {
+            let versions = install::prune(&cx, &mut state, &name, keep)?;
+            if !versions.is_empty() {
+                pruned.push(Pruned {
+                    name,
+                    versions: versions.iter().map(ToString::to_string).collect(),
+                });
+            }
+        }
+        state.save(&op.cfg)?;
+        Ok(pruned)
+    }
+
+    /// Fetch the package registry afresh and swap it in, as `ketch update`
+    /// does, returning how many packages it holds. A failed fetch leaves the
+    /// copy already on disk in place.
+    pub fn registry_refresh(&self, reporter: Option<Arc<dyn Reporter>>) -> Result<u64> {
+        let op = self.operation(reporter, None)?;
+        let count = registry::update(&op.ctx())?;
+        Ok(u64::try_from(count).unwrap_or(u64::MAX))
+    }
+
+    /// Whether the bin dir is on `PATH`, and for each shell whether its
+    /// startup file sets it up: what `ketch path` shows. Writes nothing.
+    pub fn path_status(&self) -> Result<PathStatus> {
+        let op = self.operation(None, None)?;
+        let status = shell::status(&op.cfg)?;
+        Ok(PathStatus::new(&op.cfg.bin_dir, status))
+    }
+
+    /// Put the bin dir on `PATH` as `ketch path install` with no shell named
+    /// does: the Windows user `PATH` on Windows, every shell in use
+    /// elsewhere. With `dry_run` nothing is written and the result says what
+    /// would change. When no shell in use can be told apart it is an error,
+    /// rather than an edit to a file nothing reads.
+    pub fn path_install(
+        &self,
+        dry_run: bool,
+        reporter: Option<Arc<dyn Reporter>>,
+    ) -> Result<Vec<PathChange>> {
+        let op = self.operation(reporter, None)?;
+        let changes = shell::install_here(&op.cfg, dry_run)?;
+        Ok(changes.iter().map(PathChange::from).collect())
+    }
+
+    /// ketch's effective configuration, as the next call will see it. Only
+    /// whether a GitHub token is set crosses, never the token.
+    pub fn config(&self) -> Result<Settings> {
+        Ok(Settings::from(&self.operation(None, None)?.cfg))
+    }
 }
 
 impl KetchCore {
+    /// `pin` and `unpin`: `pinned` says which.
+    fn set_pinned(&self, names: Vec<String>, pinned: bool) -> Result<Vec<Package>> {
+        let op = self.operation(None, None)?;
+        let _lock = Lock::acquire(&op.ctx())?;
+        let mut state = State::load(&op.cfg)?;
+        let mut changed = Vec::new();
+        for name in selected(&state, &names)? {
+            changed.push(Package::from(&install::pin(&mut state, &name, pinned)?));
+        }
+        state.save(&op.cfg)?;
+        Ok(changed)
+    }
+
     /// Configuration and log for one call, built afresh: the core keeps no
     /// configuration across operations, and neither does this.
     fn operation(
@@ -497,6 +657,15 @@ fn distinct(specs: Vec<String>) -> Vec<String> {
         .into_iter()
         .filter(|s| seen.insert(s.clone()))
         .collect()
+}
+
+/// The installed names `names` refer to, or every installed name when it is
+/// empty, as the CLI's `pin`, `unpin` and `prune` read an empty list.
+fn selected(state: &State, names: &[String]) -> Result<Vec<String>> {
+    if names.is_empty() {
+        return Ok(state.iter().map(|p| p.name.clone()).collect());
+    }
+    Ok(installed_names(state, names)?.into_iter().collect())
 }
 
 /// The installed names `names` refer to, or `NotFound` for the first that
@@ -934,5 +1103,173 @@ mod tests {
         let after = core.search("alpha".into(), 1, None).unwrap();
         assert_eq!(after.known[0].name, "alpha");
         assert_eq!(after.known[0].latest.as_deref(), Some("2.0.0"));
+    }
+
+    /// A `local:` package installed into `core`'s root, by the name it got.
+    fn installed_hello(dir: &std::path::Path, core: &KetchCore) -> String {
+        let placed = core
+            .install(
+                vec![payload(dir, "hello")],
+                InstallOptions::default(),
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        placed[0].package.name.clone()
+    }
+
+    #[test]
+    fn an_install_shows_in_the_history() {
+        let (dir, core) = scratch();
+        assert_eq!(core.history(None, 10).unwrap(), Vec::new());
+        let name = installed_hello(dir.path(), &core);
+        let events = core.history(Some(name.clone()), 10).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].package, name);
+        assert_eq!(events[0].action, "install");
+        assert_eq!(core.history(Some("other".into()), 10).unwrap(), Vec::new());
+    }
+
+    #[test]
+    fn info_on_an_installed_package_carries_its_record() {
+        let (dir, core) = scratch();
+        let name = installed_hello(dir.path(), &core);
+        let info = core.info(name.clone(), None).unwrap();
+        assert_eq!(info.name, name);
+        assert_eq!(info.installed.map(|p| p.name), Some(name));
+        assert!(info.source.starts_with("local:"), "{}", info.source);
+    }
+
+    #[test]
+    fn pin_and_unpin_set_the_flag_and_an_unknown_name_is_not_found() {
+        let (dir, core) = scratch();
+        let name = installed_hello(dir.path(), &core);
+        let pinned = core.pin(vec![name.clone()]).unwrap();
+        assert!(pinned[0].pinned);
+        assert!(core.installed().unwrap()[0].pinned);
+        assert!(!core.unpin(Vec::new()).unwrap()[0].pinned);
+        assert!(!core.installed().unwrap()[0].pinned);
+        assert_eq!(
+            core.pin(vec!["ghost".into()]),
+            Err(KetchError::NotFound {
+                name: "ghost".into()
+            })
+        );
+    }
+
+    #[test]
+    fn a_rollback_with_nothing_retained_is_refused_and_changes_nothing() {
+        let (dir, core) = scratch();
+        let name = installed_hello(dir.path(), &core);
+        let before = core.installed().unwrap();
+        assert!(core.rollback(name, None, None, None).is_err());
+        assert_eq!(core.installed().unwrap(), before);
+    }
+
+    #[test]
+    fn a_prune_keep_becomes_the_retention_setting() {
+        let (dir, core) = scratch();
+        installed_hello(dir.path(), &core);
+        assert_eq!(core.prune(Vec::new(), Some(2), None).unwrap(), Vec::new());
+        let cfg = core.operation(None, None).unwrap().cfg;
+        assert_eq!(State::load(&cfg).unwrap().retention.keep, 2);
+    }
+
+    #[test]
+    fn a_registry_that_cannot_be_reached_is_an_error() {
+        let (_dir, core) = scratch();
+        let _api = EnvVar::set("KETCH_GITHUB_API", Some("http://127.0.0.1:9"));
+        assert!(core.registry_refresh(None).is_err());
+    }
+
+    #[test]
+    fn path_status_names_every_shell_and_the_bin_dir() {
+        let (_dir, core) = scratch();
+        let status = core.path_status().unwrap();
+        assert_eq!(status.bin_dir, core.config().unwrap().bin_dir);
+        let shells: Vec<&str> = status.shells.iter().map(|s| s.shell.as_str()).collect();
+        assert_eq!(shells, ["bash", "zsh", "fish"]);
+        assert!(!status.on_path);
+        assert_eq!(status.user_path.is_some(), cfg!(windows));
+    }
+
+    #[test]
+    fn a_dry_run_path_install_writes_nothing() {
+        let (_dir, core) = scratch();
+        let before = core.path_status().unwrap();
+        // The answer depends on the shells this machine uses; a machine where
+        // none can be told apart is the documented error, not a guess.
+        match core.path_install(true, None) {
+            Ok(changes) => assert!(changes
+                .iter()
+                .all(|c| c.outcome != PathOutcome::Unchanged || c.file.is_some())),
+            Err(e) => assert!(e.to_string().contains("could not tell"), "{e}"),
+        }
+        assert_eq!(core.path_status().unwrap(), before);
+    }
+
+    #[test]
+    fn the_config_is_the_scratch_root_and_hides_the_token() {
+        let (dir, core) = scratch();
+        let settings = core.config().unwrap();
+        assert_eq!(settings.root, dir.path().join("root").display().to_string());
+        assert!(settings.jobs > 0);
+        assert!(!settings.target.is_empty());
+    }
+
+    /// Sets an environment variable for one test and puts it back after.
+    struct EnvVar {
+        key: &'static str,
+        previous: Option<std::ffi::OsString>,
+    }
+
+    impl EnvVar {
+        fn set(key: &'static str, value: Option<&str>) -> Self {
+            let previous = std::env::var_os(key);
+            match value {
+                Some(v) => std::env::set_var(key, v),
+                None => std::env::remove_var(key),
+            }
+            EnvVar { key, previous }
+        }
+    }
+
+    impl Drop for EnvVar {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(v) => std::env::set_var(self.key, v),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
+
+    /// Unix only: the shells are what it sets up there, and on Windows the
+    /// fix would write the real user `PATH`.
+    #[cfg(unix)]
+    #[test]
+    fn doctor_fix_sets_up_the_shell_in_use_once() {
+        let (dir, core) = scratch();
+        let home = dir.path().join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        let home_str = home.display().to_string();
+        // Every variable that could lead the fix to a real startup file.
+        let _env = [
+            EnvVar::set("HOME", Some(&home_str)),
+            EnvVar::set("SHELL", Some("/bin/zsh")),
+            EnvVar::set("ZDOTDIR", None),
+            EnvVar::set("XDG_CONFIG_HOME", None),
+        ];
+        let fixed = core.doctor_fix(None).unwrap();
+        assert_eq!(fixed.len(), 1, "{fixed:?}");
+        assert_eq!(fixed[0].target, "zsh");
+        assert_eq!(fixed[0].outcome, PathOutcome::Added);
+        let file = home.join(".zshrc");
+        assert_eq!(
+            fixed[0].file.as_deref(),
+            Some(file.display().to_string().as_str())
+        );
+        assert!(std::fs::read_to_string(&file).unwrap().contains("ketch"));
+        assert_eq!(core.doctor_fix(None).unwrap(), Vec::new());
     }
 }
