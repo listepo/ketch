@@ -26,7 +26,6 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | F18 | in progress | P2 | 4 | 90% | Claude Code / opus-5.5 |
 | D3 | todo | P3 | 3 | 0% | |
 | D7 | todo | P3 | 2 | 0% | |
-| D8 | todo | P3 | 2 | 0% | |
 | D11 | todo | P3 | 5 | 0% | |
 | D12 | todo | P3 | 4 | 0% | |
 | D13 | todo | P3 | 3 | 0% | |
@@ -389,13 +388,6 @@ Done when history (`stats.db`), info, pin/unpin, rollback, prune, registry refre
 The macOS app checks for updates on a timer (F12) but tells nobody unless the window or menu-bar panel is open. Builds on F12's live core; F12's remaining work (the `LiveKetchCore` adapter and the manual checks) stays in F12. Research: section 1.
 
 Done when new upgrades since the last notice post one `UNUserNotificationCenter` notification, authorisation is asked only when the user turns notifications on in Settings, clicking it opens Updates, and a unit test covers which upgrades count as new.
-
-### D8. macOS: `ketch://` links
-
-A link on a web page or in the registry could open a package in the app. Whatever a link carries is untrusted input, so it is validated by the core. A link only opens a package page and never starts an install (creator, 2026-10-01, open decision 10). Research: section 1, "Deep links".
-
-Done when `CFBundleURLTypes` registers `ketch`, `onOpenURL` opens the package page a valid link names, through the core's validation, any other action is refused, and tests cover malformed and hostile links.
-
 
 ### D11. Windows: WinUI 3 app shell on a fake core
 

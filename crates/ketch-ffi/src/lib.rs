@@ -84,6 +84,15 @@ pub fn ketch_version() -> String {
     ketch_core::self_update::display_version()
 }
 
+/// The package a `ketch://package/<name>` link opens, or the reason the link
+/// is refused. A link only ever opens a package page, never installs, and
+/// everything in it is untrusted: this is the validation a front end must
+/// pass a link through before it uses any part of it.
+#[uniffi::export]
+pub fn package_for_link(url: String) -> Result<String> {
+    Ok(ketch_core::link::package_name(&url)?)
+}
+
 /// The core, for one ketch root. Cheap to create and safe to share between
 /// threads; it holds no state between calls besides what it was created with.
 #[derive(uniffi::Object)]
@@ -590,6 +599,18 @@ mod tests {
         std::fs::create_dir_all(&payload).unwrap();
         std::fs::write(payload.join(name), "#!/bin/sh\necho hi\n").unwrap();
         format!("local:{}", payload.join(name).display())
+    }
+
+    #[test]
+    fn a_package_link_yields_its_name_and_an_install_link_is_refused() {
+        assert_eq!(
+            package_for_link("ketch://package/ripgrep".into()),
+            Ok("ripgrep".into())
+        );
+        assert!(matches!(
+            package_for_link("ketch://install/ripgrep".into()),
+            Err(KetchError::Other { .. })
+        ));
     }
 
     #[test]

@@ -29,6 +29,7 @@ pub mod hooks;
 pub(crate) mod http;
 pub mod import;
 pub mod install;
+pub mod link;
 pub mod listing;
 pub mod lockfile;
 pub mod log;
