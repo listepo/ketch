@@ -1,0 +1,46 @@
+[package]
+name = "ketch-capi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "ketch-ffi behind a C ABI with JSON records, for front ends no UniFFI generator reaches (Vala)."
+license.workspace = true
+repository.workspace = true
+# Linked into the Linux app, never released on its own.
+publish = false
+
+# dist builds the `ketch` binary only.
+[package.metadata.dist]
+dist = false
+
+[lib]
+# The shared library Vala (and, if D10 falls back to it, C#) loads.
+crate-type = ["cdylib"]
+
+[dependencies]
+# Every call goes through ketch-ffi's `KetchCore`, so the C ABI and the UniFFI
+# bindings run the same code and only the wire format differs.
+ketch-ffi = { path = "../ketch-ffi" }
+# `malloc`/`free` for the strings handed out, so GLib's `g_free` can free them.
+libc = "0.2.189"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+# The header's drift test; the library alone, without its CLI.
+cbindgen = { version = "0.29.4", default-features = false }
+ketch-ffi = { path = "../ketch-ffi", features = ["schema"] }
+# Checks real answers against the committed schema; offline without defaults.
+jsonschema = { version = "0.58", default-features = false }
+pretty_assertions = "1.4.1"
+schemars = "1.2"
+tempfile = "3"
+
+# Not the workspace's `forbid`: a C ABI is hand-written unsafe code. `deny`
+# lets the one module that needs it (`src/abi.rs`) allow it, and nothing else.
+[lints.rust]
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "deny"
+
+[lints.clippy]
+undocumented_unsafe_blocks = "deny"

@@ -23,6 +23,7 @@ use std::sync::Arc;
 
 /// A stage of the install pipeline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum, serde::Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum Stage {
     Resolving,
@@ -49,6 +50,7 @@ impl From<CoreStage> for Stage {
 /// What kind of long-running work a task id names. Not `Task`: that is a type
 /// every Swift file already has in scope.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum, serde::Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TaskKind {
     /// Several downloads running side by side.
@@ -88,6 +90,7 @@ impl From<CoreTask> for TaskKind {
 /// One thing the core reports, field for field what `report::Event` carries.
 /// Task ids are unique for the life of the process.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum, serde::Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Event {
     /// A package reached a stage of the install pipeline.
@@ -168,6 +171,7 @@ pub trait Reporter: Send + Sync {
 
 /// A process holding a file an upgrade is about to replace.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record, serde::Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Holder {
     pub pid: u32,
     /// The file it holds.

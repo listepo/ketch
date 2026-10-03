@@ -215,6 +215,35 @@ jobs:
         working-directory: desktop/windows
         run: dotnet test --project KetchCore.Tests
 
+  # ketch-capi as the Linux app will link it: the shared library, and the Vala
+  # test Meson builds against vapi/ketch.vapi and runs against a scratch root.
+  # What `just capi-test` runs. The header and schema drift tests run in the
+  # rust job with the rest of the workspace.
+  ketch-capi:
+    if: github.event.pull_request.draft != true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ./.github/actions/rust
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      # mise has no valac or json-glib, so the Vala toolchain is the
+      # distribution's, on the runner only.
+      - name: Vala toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends valac meson ninja-build libjson-glib-dev
+
+      - name: Library
+        run: cargo build --locked -p ketch-capi
+
+      - name: Vala test
+        run: |
+          meson setup target/capi-meson crates/ketch-capi -Dcapi_dir="$PWD/target/debug"
+          meson test -C target/capi-meson --print-errorlogs
+
   # The Windows app: the fake core and store tested against the contract
   # scenarios, then the WinUI 3 project built with the .NET SDK alone (the
   # runner's Visual Studio is not used: the XAML compiler and the Windows SDK

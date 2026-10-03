@@ -15,9 +15,9 @@ categories = ["command-line-utilities", "development-tools"]
 # `crates/ketch-core` holds everything the binary does besides parsing the
 # command line, so another front end can link it without clap.
 [workspace]
-members = [".", "crates/ketch-core", "crates/ketch-ffi"]
+members = [".", "crates/ketch-core", "crates/ketch-ffi", "crates/ketch-capi"]
 # A bare `cargo test` or `cargo clippy` at the root covers the core too.
-default-members = [".", "crates/ketch-core", "crates/ketch-ffi"]
+default-members = [".", "crates/ketch-core", "crates/ketch-ffi", "crates/ketch-capi"]
 
 # One version for both crates: the core reports it (user agent, `--version`,
 # the statistics database), so it can never be allowed to drift from the

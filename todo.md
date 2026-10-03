@@ -22,7 +22,6 @@
 - D12. Windows: the app on the real core
 - D13. Windows: tray icon, notifications, start at login, links
 - D14. Windows: release pipeline
-- D15. Linux: `ketch-capi`, a C ABI and VAPI for Vala
 - D16. Linux: Vala + GTK 4 app shell on a fake core
 - D17. Linux: the app on the real core
 - D18. Linux: notifications, background and autostart

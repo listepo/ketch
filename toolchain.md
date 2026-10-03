@@ -30,6 +30,7 @@ Project programs and direct packages from manifests.
 | mandoc | ships with macOS; `apt install mandoc` on Linux | `just lint-man` checks the generated man pages | https://mandoc.bsd.lv |
 | uniffi-bindgen-cs | mise (`cargo:` from git, PR #176's commit) | C# bindings for `ketch-ffi` (`just csharp`); no release supports UniFFI 0.32 yet | https://github.com/NordSecurity/uniffi-bindgen-cs |
 | .NET SDK | mise | Builds and runs the C# binding's test (`just csharp-test`), the Windows app's tests (`just windows-app-test`) and, on Windows, the WinUI app (`ketch-win-app` CI job) | https://github.com/dotnet/sdk |
+| valac, Meson, Ninja, json-glib | the distribution's packages (`apt install valac meson ninja-build libjson-glib-dev`); mise has no valac | `just capi-test`: builds and runs `ketch-capi`'s Vala test; Linux CI only | https://vala.dev |
 
 ## cargo
 
@@ -39,6 +40,7 @@ Project programs and direct packages from manifests.
 | assert_cmd | local | https://crates.io/crates/assert_cmd | Rust dependency |
 | assert_fs | local | https://crates.io/crates/assert_fs | Rust dependency |
 | bzip2 | local | https://crates.io/crates/bzip2 | Rust dependency |
+| cbindgen | local (`crates/ketch-capi`, dev) | https://github.com/mozilla/cbindgen | Generates `crates/ketch-capi/include/ketch.h`; a drift test fails when the committed header is stale |
 | clap | local | https://crates.io/crates/clap | CLI |
 | clap_complete | local | https://crates.io/crates/clap_complete | Rust dependency |
 | clap_mangen | local | https://crates.io/crates/clap_mangen | ketch's man pages, one per command (`src/man.rs`) |
@@ -53,6 +55,7 @@ Project programs and direct packages from manifests.
 | indicatif | local | https://crates.io/crates/indicatif | Rust dependency |
 | insta | local | https://crates.io/crates/insta | Reviewed snapshots |
 | jsonschema | local | https://crates.io/crates/jsonschema | Tests that the manifests ketch ships validate against `docs/manifest.schema.json` |
+| libc | local (`crates/ketch-capi`) | https://github.com/rust-lang/libc | `malloc`/`free` for the strings `ketch-capi` returns, so GLib's `g_free` can release them |
 | libsqlite3-sys | local | https://crates.io/crates/libsqlite3-sys | `bundled` compiles SQLite into the binary. Linking the system one would make ketch's single-binary promise depend on what the host happens to ship, and the release builds both macOS architectures where that answer differs. |
 | libfuzzer-sys | local (`fuzz/`) | https://crates.io/crates/libfuzzer-sys | libFuzzer targets |
 | lzma-rs | local | https://crates.io/crates/lzma-rs | Rust dependency |

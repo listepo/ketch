@@ -20,6 +20,7 @@ use ketch_core::{info, shell, stats};
 
 /// One installed package.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record, serde::Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Package {
     pub name: String,
     pub version: String,
@@ -63,6 +64,7 @@ impl From<&InstalledPackage> for Package {
 
 /// What an install or upgrade placed.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record, serde::Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Installed {
     pub package: Package,
     /// The version it replaced, for an upgrade or a reinstall.
@@ -81,7 +83,9 @@ impl From<&ketch_core::install::Installed> for Installed {
 /// How to install. The defaults are `ketch install` with no flags, except that
 /// an installed package with a newer release is updated rather than asked
 /// about: the person already chose to install it in the front end.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(default)]
 pub struct InstallOptions {
     /// Reinstall even when the resolved version is already present.
     #[uniffi(default = false)]
@@ -114,6 +118,7 @@ impl Default for InstallOptions {
 
 /// A package the registry, or the person's own manifests, know.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record, serde::Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct RegistryPackage {
     pub name: String,
     pub source: String,
@@ -136,6 +141,7 @@ impl RegistryPackage {
 
 /// A repository a source found for a search, installable by `spec`.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record, serde::Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Repository {
     /// What to pass to `install`: `github:owner/repo`.
     pub spec: String,
@@ -155,6 +161,7 @@ impl Repository {
 
 /// What a search found: curated packages first, then repositories.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record, serde::Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SearchResults {
     pub known: Vec<RegistryPackage>,
     pub repositories: Vec<Repository>,
@@ -162,6 +169,7 @@ pub struct SearchResults {
 
 /// An installed package with a newer release.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record, serde::Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Upgrade {
     pub name: String,
     pub installed: String,
@@ -204,6 +212,7 @@ impl Upgrade {
 
 /// Where a changelog came from.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum, serde::Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ChangelogSource {
     /// A file inside the installed payload.
@@ -214,6 +223,7 @@ pub enum ChangelogSource {
 
 /// What changed in one release of a package.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record, serde::Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Changelog {
     pub name: String,
     pub version: String,
@@ -243,6 +253,7 @@ impl Changelog {
 
 /// How a doctor check came out.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum, serde::Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CheckOutcome {
     Ok,
@@ -252,6 +263,7 @@ pub enum CheckOutcome {
 
 /// One line of `ketch doctor`.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record, serde::Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Check {
     pub name: String,
     pub outcome: CheckOutcome,
@@ -276,7 +288,8 @@ impl From<&DoctorCheck> for Check {
 }
 
 /// One thing that happened to a package, as `stats.db` recorded it.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record, serde::Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct HistoryEvent {
     pub package: String,
     /// `install`, `upgrade`, `uninstall`, `rollback` and the rest.
@@ -309,7 +322,8 @@ impl From<&stats::Event> for HistoryEvent {
 }
 
 /// What `ketch info` says about a package.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record, serde::Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PackageInfo {
     pub name: String,
     /// Where it comes from, as `scheme:id`.
@@ -350,14 +364,17 @@ impl From<&info::Info> for PackageInfo {
 }
 
 /// The retained versions `prune` removed from one package.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record, serde::Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Pruned {
     pub name: String,
     pub versions: Vec<String>,
 }
 
 /// Where one shell stands with ketch's PATH block.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum, serde::Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
 pub enum ShellState {
     /// Its startup file has the block for this bin dir.
     Configured,
@@ -368,7 +385,8 @@ pub enum ShellState {
 }
 
 /// One shell's row in [`PathStatus`].
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record, serde::Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ShellSetup {
     /// `bash`, `zsh` or `fish`.
     pub shell: String,
@@ -379,7 +397,8 @@ pub struct ShellSetup {
 
 /// Whether the bin dir is on `PATH`, and where it is or could be set up:
 /// what `ketch path` shows.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record, serde::Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PathStatus {
     pub bin_dir: String,
     /// On `PATH` in the environment this process was started with.
@@ -416,7 +435,9 @@ impl PathStatus {
 }
 
 /// What a PATH setup step did.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum, serde::Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
 pub enum PathOutcome {
     /// The block was written for the first time.
     Added,
@@ -429,7 +450,8 @@ pub enum PathOutcome {
 }
 
 /// One place `path_install` or `doctor_fix` set up, or would set up.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record, serde::Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PathChange {
     /// The shell's name, or `user PATH` for the Windows user environment.
     pub target: String,
@@ -463,7 +485,8 @@ impl From<&shell::Setup> for PathChange {
 
 /// ketch's effective configuration: `config.toml` and the environment over
 /// the defaults, as the next call will see it.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record, serde::Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Settings {
     pub root: String,
     pub bin_dir: String,

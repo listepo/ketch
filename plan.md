@@ -26,7 +26,6 @@ Catch releases straight from GitHub — a package manager for GitHub-released bi
 | D12 | todo | P3 | 4 | 0% | |
 | D13 | todo | P3 | 3 | 0% | |
 | D14 | todo | P3 | 4 | 0% | |
-| D15 | todo | P2 | 4 | 0% | |
 | D16 | todo | P3 | 5 | 0% | |
 | D17 | todo | P3 | 4 | 0% | |
 | D18 | todo | P3 | 3 | 0% | |
@@ -397,12 +396,6 @@ How the Windows app reaches users and updates itself, separate from the CLI's re
 Done when CI builds, on `desktop-windows-v*` tags and without touching `/releases/latest`, both an MSIX and an unpackaged self-contained zip, signed (Artifact Signing or the creator's choice), updates arrive through the chosen route (Velopack or winget), and the creator's answers to R10's decisions are recorded. The creator chose to ship both forms. The MSIX is signed with a certificate held in repository secrets named the way the macOS ones are (`MACOS_CERTIFICATE`, `MACOS_CERTIFICATE_PWD`), and the release fails when they are missing rather than shipping unsigned.
 
 Settings persistence differs between the two: an MSIX has `ApplicationData`, an unpackaged app has none (D12 stores settings in a way that works in both).
-
-### D15. Linux: `ketch-capi`, a C ABI and VAPI for Vala
-
-UniFFI has no Vala or C generator, so the Vala app needs a C ABI. R11 recommends one small crate with an opaque core handle, callbacks with user data, records as JSON strings and a hand-written VAPI; it is also the fallback C# route in D10. Depends on D1 and D2 for the per-call shape. Research: section 5.
-
-Done when `crates/ketch-capi` exports the contract over `extern "C"` with a cbindgen header checked for drift, its `unsafe_code` exception is scoped and explained, a `.vapi` binds it, a Vala test built with Meson calls `installed`, `doctor` and a cancelled install against a scratch root on Linux CI, and the JSON payloads have a schema. The creator chose JSON records and a hand-written VAPI, and allowed hand-written `unsafe` in `ketch-capi` only (2026-10-01, open decision 3): the crate sets `unsafe_code = "deny"` with a scoped `allow` and a `SAFETY` comment on each unsafe block, and the rest of the workspace keeps `forbid`.
 
 ### D16. Linux: Vala + GTK 4 app shell on a fake core
 

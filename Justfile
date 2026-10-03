@@ -278,6 +278,14 @@ csharp-test:
     scripts/csharp.sh --debug
     cd desktop/windows && dotnet test --project KetchCore.Tests
 
+# Needs valac, Meson, Ninja and json-glib; the ketch-capi CI job runs it.
+# ketch-capi as the Linux app links it: the library, then the Vala test.
+capi-test:
+    cargo build --locked -p ketch-capi
+    rm -rf target/capi-meson
+    meson setup target/capi-meson crates/ketch-capi -Dcapi_dir="$PWD/target/debug"
+    meson test -C target/capi-meson --print-errorlogs
+
 # The Windows app's fake core and store against the contract scenarios; runs on any OS.
 # The WinUI project itself (desktop/windows/Ketch.App) only builds on Windows: the ketch-win-app job.
 windows-app-test:

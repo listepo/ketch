@@ -14,6 +14,7 @@ use ketch_core::error::Error;
 
 /// Why an operation failed.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error, uniffi::Error, serde::Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum KetchError {
     /// Another operation holds the install tree's lock: a ketch process named

@@ -1,0 +1,1209 @@
+{
+  "$comment": "Generated from the Rust types by `KETCH_BLESS=1 cargo nextest run -p ketch-capi`. Do not edit.",
+  "$defs": {
+    "Changelog": {
+      "description": "What changed in one release of a package.",
+      "properties": {
+        "body": {
+          "type": "string"
+        },
+        "heading": {
+          "description": "The heading the section was found under. `None` from a file means no\nsection matched and `body` is the whole file.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/ChangelogSource"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "source",
+        "body"
+      ],
+      "type": "object"
+    },
+    "ChangelogSource": {
+      "description": "Where a changelog came from.",
+      "oneOf": [
+        {
+          "description": "A file inside the installed payload.",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "type": {
+              "const": "file",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "path"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Notes published with the release.",
+          "properties": {
+            "type": {
+              "const": "release",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Check": {
+      "description": "One line of `ketch doctor`.",
+      "properties": {
+        "detail": {
+          "type": "string"
+        },
+        "fix": {
+          "description": "What to do about it, when there is something to do.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "outcome": {
+          "$ref": "#/$defs/CheckOutcome"
+        }
+      },
+      "required": [
+        "name",
+        "outcome",
+        "detail"
+      ],
+      "type": "object"
+    },
+    "CheckOutcome": {
+      "description": "How a doctor check came out.",
+      "enum": [
+        "ok",
+        "warn",
+        "fail"
+      ],
+      "type": "string"
+    },
+    "ErrorBody": {
+      "description": "An error, with the sentence a person can be shown next to its kind.",
+      "oneOf": [
+        {
+          "description": "Another operation holds the install tree's lock: a ketch process named\nby `pid`, or this process on another thread, or (when the lock file\ncould not be read) nobody known. Retry once it finishes.",
+          "properties": {
+            "pid": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "type": {
+              "const": "busy",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The operation's `CancelToken` fired; nothing was left half-installed.",
+          "properties": {
+            "type": {
+              "const": "cancelled",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "No installed package, or no release, answers to `name`.",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "type": {
+              "const": "not_found",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "name"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A source could not be reached, or answered with an HTTP error.",
+          "properties": {
+            "message": {
+              "type": "string"
+            },
+            "type": {
+              "const": "network",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "message"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A download did not match its published or recorded checksum, or none\nwas published where one was required.",
+          "properties": {
+            "message": {
+              "type": "string"
+            },
+            "type": {
+              "const": "verification",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "message"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Anything else, worded as the CLI would word it.",
+          "properties": {
+            "message": {
+              "type": "string"
+            },
+            "type": {
+              "const": "other",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "message"
+          ],
+          "type": "object"
+        }
+      ],
+      "properties": {
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "message"
+      ],
+      "type": "object"
+    },
+    "Event": {
+      "description": "One thing the core reports, field for field what `report::Event` carries.\nTask ids are unique for the life of the process.",
+      "oneOf": [
+        {
+          "description": "A package reached a stage of the install pipeline.",
+          "properties": {
+            "package": {
+              "type": "string"
+            },
+            "stage": {
+              "$ref": "#/$defs/Stage"
+            },
+            "type": {
+              "const": "step",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "package",
+            "stage"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Work happening now.",
+          "properties": {
+            "detail": {
+              "type": "string"
+            },
+            "type": {
+              "const": "status",
+              "type": "string"
+            },
+            "verb": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "verb",
+            "detail"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Work that finished well.",
+          "properties": {
+            "detail": {
+              "type": "string"
+            },
+            "type": {
+              "const": "success",
+              "type": "string"
+            },
+            "verb": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "verb",
+            "detail"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Something worth knowing that does not stop the run.",
+          "properties": {
+            "detail": {
+              "type": "string"
+            },
+            "type": {
+              "const": "warn",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "detail"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "An aside.",
+          "properties": {
+            "detail": {
+              "type": "string"
+            },
+            "type": {
+              "const": "note",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "detail"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Detail for a verbose view and the log.",
+          "properties": {
+            "detail": {
+              "type": "string"
+            },
+            "type": {
+              "const": "debug",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "detail"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Long-running work started.",
+          "properties": {
+            "id": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "task": {
+              "$ref": "#/$defs/TaskKind"
+            },
+            "type": {
+              "const": "began",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "task"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A download learned its file name and, when known, its size.",
+          "properties": {
+            "id": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "name": {
+              "type": "string"
+            },
+            "total": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "type": {
+              "const": "sized",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "name"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Work advanced to `done` of `total`.",
+          "properties": {
+            "done": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "id": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "total": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "type": {
+              "const": "progress",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "done"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Work finished.",
+          "properties": {
+            "id": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "message": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "const": "ended",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Work stopped without finishing; take down whatever shows it.",
+          "properties": {
+            "id": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "abandoned",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "HistoryEvent": {
+      "description": "One thing that happened to a package, as `stats.db` recorded it.",
+      "properties": {
+        "action": {
+          "description": "`install`, `upgrade`, `uninstall`, `rollback` and the rest.",
+          "type": "string"
+        },
+        "at": {
+          "description": "Seconds since the Unix epoch.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "checksum_verified": {
+          "type": "boolean"
+        },
+        "duration_ms": {
+          "format": "int32",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "package": {
+          "type": "string"
+        },
+        "previous_version": {
+          "description": "The version it replaced, for an upgrade or a rollback.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "type": "string"
+        },
+        "tag": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "package",
+        "action",
+        "version",
+        "tag",
+        "source",
+        "at",
+        "checksum_verified"
+      ],
+      "type": "object"
+    },
+    "Holder": {
+      "description": "A process holding a file an upgrade is about to replace.",
+      "properties": {
+        "path": {
+          "description": "The file it holds.",
+          "type": "string"
+        },
+        "pid": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "pid",
+        "path"
+      ],
+      "type": "object"
+    },
+    "InstallOptions": {
+      "description": "How to install. The defaults are `ketch install` with no flags, except that\nan installed package with a newer release is updated rather than asked\nabout: the person already chose to install it in the front end.",
+      "properties": {
+        "bin": {
+          "default": null,
+          "description": "Which of several binaries sharing the package's name to link.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "force": {
+          "default": false,
+          "description": "Reinstall even when the resolved version is already present.",
+          "type": "boolean"
+        },
+        "link": {
+          "default": true,
+          "description": "Link the binaries onto `PATH` (and `.app`s into Applications).",
+          "type": "boolean"
+        },
+        "prerelease": {
+          "default": false,
+          "description": "Allow a prerelease to be the latest.",
+          "type": "boolean"
+        },
+        "require_checksum": {
+          "default": false,
+          "description": "Fail rather than trust a download no checksum was published for.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "Installed": {
+      "description": "What an install or upgrade placed.",
+      "properties": {
+        "package": {
+          "$ref": "#/$defs/Package"
+        },
+        "replaced": {
+          "description": "The version it replaced, for an upgrade or a reinstall.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "package"
+      ],
+      "type": "object"
+    },
+    "Package": {
+      "description": "One installed package.",
+      "properties": {
+        "binaries": {
+          "description": "The links on `PATH` (or in `/Applications`) that expose it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "installed_at": {
+          "description": "Seconds since the Unix epoch.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "pinned": {
+          "type": "boolean"
+        },
+        "prefix": {
+          "description": "The store directory holding the payload.",
+          "type": "string"
+        },
+        "retained": {
+          "description": "Older versions still on disk, oldest first.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "source": {
+          "description": "Where it came from, as `scheme:id` (`github:BurntSushi/ripgrep`).",
+          "type": "string"
+        },
+        "tag": {
+          "description": "The release tag the version came from.",
+          "type": "string"
+        },
+        "trust": {
+          "description": "How far the download is established: `signed`, `checksum` or\n`first use`.",
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "tag",
+        "source",
+        "pinned",
+        "retained",
+        "installed_at",
+        "prefix",
+        "binaries",
+        "trust"
+      ],
+      "type": "object"
+    },
+    "PackageInfo": {
+      "description": "What `ketch info` says about a package.",
+      "properties": {
+        "archived": {
+          "description": "The repository is archived: nobody maintains it any more.",
+          "type": "boolean"
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "homepage": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "installed": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Package"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The installed record, when it is installed."
+        },
+        "latest": {
+          "description": "The newest release, `None` when the source could not say.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "latest_tag": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "license": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "source": {
+          "description": "Where it comes from, as `scheme:id`.",
+          "type": "string"
+        },
+        "stars": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "url": {
+          "description": "The project's page on its forge.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "source",
+        "archived"
+      ],
+      "type": "object"
+    },
+    "PathChange": {
+      "description": "One place `path_install` or `doctor_fix` set up, or would set up.",
+      "properties": {
+        "file": {
+          "description": "The startup file, for a shell.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "outcome": {
+          "$ref": "#/$defs/PathOutcome"
+        },
+        "target": {
+          "description": "The shell's name, or `user PATH` for the Windows user environment.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target",
+        "outcome"
+      ],
+      "type": "object"
+    },
+    "PathOutcome": {
+      "description": "What a PATH setup step did.",
+      "oneOf": [
+        {
+          "const": "added",
+          "description": "The block was written for the first time.",
+          "type": "string"
+        },
+        {
+          "const": "updated",
+          "description": "A block naming another directory was rewritten.",
+          "type": "string"
+        },
+        {
+          "const": "removed",
+          "description": "The block was taken out.",
+          "type": "string"
+        },
+        {
+          "const": "unchanged",
+          "description": "Nothing to do: already right, or set up by hand.",
+          "type": "string"
+        }
+      ]
+    },
+    "PathStatus": {
+      "description": "Whether the bin dir is on `PATH`, and where it is or could be set up:\nwhat `ketch path` shows.",
+      "properties": {
+        "bin_dir": {
+          "type": "string"
+        },
+        "detail": {
+          "description": "The doctor's PATH check, in words.",
+          "type": "string"
+        },
+        "on_path": {
+          "description": "On `PATH` in the environment this process was started with.",
+          "type": "boolean"
+        },
+        "shells": {
+          "items": {
+            "$ref": "#/$defs/ShellSetup"
+          },
+          "type": "array"
+        },
+        "user_path": {
+          "description": "Whether the Windows user PATH names the bin dir; `None` off Windows.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "bin_dir",
+        "on_path",
+        "detail",
+        "shells"
+      ],
+      "type": "object"
+    },
+    "Pruned": {
+      "description": "The retained versions `prune` removed from one package.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "versions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "versions"
+      ],
+      "type": "object"
+    },
+    "RegistryPackage": {
+      "description": "A package the registry, or the person's own manifests, know.",
+      "properties": {
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "latest": {
+          "description": "The newest version an earlier listing found, `None` when no fresh\nanswer is cached. A search asks no source for it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "source"
+      ],
+      "type": "object"
+    },
+    "Repository": {
+      "description": "A repository a source found for a search, installable by `spec`.",
+      "properties": {
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "spec": {
+          "description": "What to pass to `install`: `github:owner/repo`.",
+          "type": "string"
+        },
+        "stars": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "spec"
+      ],
+      "type": "object"
+    },
+    "SearchResults": {
+      "description": "What a search found: curated packages first, then repositories.",
+      "properties": {
+        "known": {
+          "items": {
+            "$ref": "#/$defs/RegistryPackage"
+          },
+          "type": "array"
+        },
+        "repositories": {
+          "items": {
+            "$ref": "#/$defs/Repository"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "known",
+        "repositories"
+      ],
+      "type": "object"
+    },
+    "Settings": {
+      "description": "ketch's effective configuration: `config.toml` and the environment over\nthe defaults, as the next call will see it.",
+      "properties": {
+        "allow_emulation": {
+          "type": "boolean"
+        },
+        "apps_dir": {
+          "description": "Where `.app` bundles are linked.",
+          "type": "string"
+        },
+        "auto_update": {
+          "type": "boolean"
+        },
+        "bin_dir": {
+          "type": "string"
+        },
+        "config_file": {
+          "type": "string"
+        },
+        "github_token": {
+          "description": "Whether a GitHub token is set. The token itself never crosses.",
+          "type": "boolean"
+        },
+        "jobs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "link_apps": {
+          "type": "boolean"
+        },
+        "log_file": {
+          "type": "string"
+        },
+        "log_level": {
+          "type": "string"
+        },
+        "prerelease": {
+          "type": "boolean"
+        },
+        "registry": {
+          "description": "`owner/repo` of the package registry.",
+          "type": "string"
+        },
+        "require_checksums": {
+          "type": "boolean"
+        },
+        "root": {
+          "type": "string"
+        },
+        "store_dir": {
+          "type": "string"
+        },
+        "strip_quarantine": {
+          "type": "boolean"
+        },
+        "target": {
+          "description": "The target releases are picked for, such as `aarch64-apple-darwin`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "root",
+        "bin_dir",
+        "store_dir",
+        "apps_dir",
+        "config_file",
+        "log_file",
+        "registry",
+        "target",
+        "jobs",
+        "prerelease",
+        "allow_emulation",
+        "link_apps",
+        "require_checksums",
+        "strip_quarantine",
+        "auto_update",
+        "github_token",
+        "log_level"
+      ],
+      "type": "object"
+    },
+    "ShellSetup": {
+      "description": "One shell's row in [`PathStatus`].",
+      "properties": {
+        "file": {
+          "description": "The startup file `path_install` would edit.",
+          "type": "string"
+        },
+        "shell": {
+          "description": "`bash`, `zsh` or `fish`.",
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/ShellState"
+        }
+      },
+      "required": [
+        "shell",
+        "state",
+        "file"
+      ],
+      "type": "object"
+    },
+    "ShellState": {
+      "description": "Where one shell stands with ketch's PATH block.",
+      "oneOf": [
+        {
+          "const": "configured",
+          "description": "Its startup file has the block for this bin dir.",
+          "type": "string"
+        },
+        {
+          "const": "not_set_up",
+          "description": "It is in use here and not set up yet.",
+          "type": "string"
+        },
+        {
+          "const": "not_in_use",
+          "description": "Nothing says it is used on this machine.",
+          "type": "string"
+        }
+      ]
+    },
+    "Stage": {
+      "description": "A stage of the install pipeline.",
+      "enum": [
+        "resolving",
+        "downloading",
+        "verifying",
+        "extracting",
+        "trusting",
+        "installing"
+      ],
+      "type": "string"
+    },
+    "TaskKind": {
+      "description": "What kind of long-running work a task id names. Not `Task`: that is a type\nevery Swift file already has in scope.",
+      "oneOf": [
+        {
+          "description": "Several downloads running side by side.",
+          "properties": {
+            "type": {
+              "const": "batch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Bytes arriving for `label` (a package name, `registry`, `download`),\nas part of the `Batch` task `batch_id` when there is one. Not `batch`:\nC# makes each field a property of the variant's class, and one named\n`Batch` collides with the `Batch` variant it inherits.",
+          "properties": {
+            "batch_id": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "label": {
+              "type": "string"
+            },
+            "type": {
+              "const": "download",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "label"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Work of unknown length.",
+          "properties": {
+            "message": {
+              "type": "string"
+            },
+            "type": {
+              "const": "activity",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "message"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Things counted one at a time: `checking 3/12 packages`.",
+          "properties": {
+            "total": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "counter",
+              "type": "string"
+            },
+            "unit": {
+              "type": "string"
+            },
+            "verb": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "verb",
+            "unit",
+            "total"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Upgrade": {
+      "description": "An installed package with a newer release.",
+      "properties": {
+        "held_by": {
+          "description": "The `ketch.lock` that holds the pin, when ketch knows one. `ketch\nsync` restores a pin without recording which file it came from, so\ntoday this is always `None`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "installed": {
+          "type": "string"
+        },
+        "latest": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "pinned": {
+          "description": "Held at `installed` by a pin: `upgrade` leaves it alone until it is\nunpinned.",
+          "type": "boolean"
+        },
+        "tag": {
+          "description": "The release tag `upgrade` installs.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "installed",
+        "latest",
+        "tag",
+        "pinned"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "The envelope every ketch-capi call returns. `ok` holds the value named in that function's comment in include/ketch.h; event, choose and stop callbacks receive an `Event`, a JSON array of strings and an array of `Holder`.",
+  "oneOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "ok": true
+      },
+      "required": [
+        "ok"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "error": {
+          "$ref": "#/$defs/ErrorBody"
+        }
+      },
+      "required": [
+        "error"
+      ],
+      "type": "object"
+    }
+  ],
+  "title": "ketch-capi payloads"
+}
