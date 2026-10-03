@@ -109,10 +109,6 @@
         {
           "description": "Another operation holds the install tree's lock: a ketch process named\nby `pid`, or this process on another thread, or (when the lock file\ncould not be read) nobody known. Retry once it finishes.",
           "properties": {
-            "kind": {
-              "const": "busy",
-              "type": "string"
-            },
             "pid": {
               "format": "uint32",
               "minimum": 0,
@@ -120,39 +116,43 @@
                 "integer",
                 "null"
               ]
+            },
+            "type": {
+              "const": "busy",
+              "type": "string"
             }
           },
           "required": [
-            "kind"
+            "type"
           ],
           "type": "object"
         },
         {
           "description": "The operation's `CancelToken` fired; nothing was left half-installed.",
           "properties": {
-            "kind": {
+            "type": {
               "const": "cancelled",
               "type": "string"
             }
           },
           "required": [
-            "kind"
+            "type"
           ],
           "type": "object"
         },
         {
           "description": "No installed package, or no release, answers to `name`.",
           "properties": {
-            "kind": {
-              "const": "not_found",
+            "name": {
               "type": "string"
             },
-            "name": {
+            "type": {
+              "const": "not_found",
               "type": "string"
             }
           },
           "required": [
-            "kind",
+            "type",
             "name"
           ],
           "type": "object"
@@ -160,16 +160,16 @@
         {
           "description": "A source could not be reached, or answered with an HTTP error.",
           "properties": {
-            "kind": {
-              "const": "network",
+            "message": {
               "type": "string"
             },
-            "message": {
+            "type": {
+              "const": "network",
               "type": "string"
             }
           },
           "required": [
-            "kind",
+            "type",
             "message"
           ],
           "type": "object"
@@ -177,16 +177,16 @@
         {
           "description": "A download did not match its published or recorded checksum, or none\nwas published where one was required.",
           "properties": {
-            "kind": {
-              "const": "verification",
+            "message": {
               "type": "string"
             },
-            "message": {
+            "type": {
+              "const": "verification",
               "type": "string"
             }
           },
           "required": [
-            "kind",
+            "type",
             "message"
           ],
           "type": "object"
@@ -194,16 +194,16 @@
         {
           "description": "Anything else, worded as the CLI would word it.",
           "properties": {
-            "kind": {
-              "const": "other",
+            "message": {
               "type": "string"
             },
-            "message": {
+            "type": {
+              "const": "other",
               "type": "string"
             }
           },
           "required": [
-            "kind",
+            "type",
             "message"
           ],
           "type": "object"
@@ -1071,9 +1071,9 @@
           "type": "object"
         },
         {
-          "description": "Bytes arriving for `label` (a package name, `registry`, `download`).",
+          "description": "Bytes arriving for `label` (a package name, `registry`, `download`),\nas part of the `Batch` task `batch_id` when there is one. Not `batch`:\nC# makes each field a property of the variant's class, and one named\n`Batch` collides with the `Batch` variant it inherits.",
           "properties": {
-            "batch": {
+            "batch_id": {
               "format": "uint64",
               "minimum": 0,
               "type": [
