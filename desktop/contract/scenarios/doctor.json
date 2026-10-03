@@ -1,0 +1,31 @@
+{
+  "name": "doctor",
+  "description": "One check of each outcome; a warning carries the fix to offer.",
+  "call": {
+    "operation": "doctor"
+  },
+  "script": [],
+  "outcome": {
+    "type": "ok",
+    "value": [
+      {
+        "detail": "/Users/me/.ketch/bin is on PATH",
+        "fix": null,
+        "name": "path",
+        "outcome": "ok"
+      },
+      {
+        "detail": "1 broken link: /Users/me/.ketch/bin/old",
+        "fix": "ketch doctor --fix",
+        "name": "links",
+        "outcome": "warn"
+      },
+      {
+        "detail": "state.json is not readable",
+        "fix": null,
+        "name": "state",
+        "outcome": "fail"
+      }
+    ]
+  }
+}

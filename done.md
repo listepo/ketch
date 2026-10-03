@@ -1102,6 +1102,21 @@ Execution plan (Claude Code / opus-5.5):
 
 Status: done. Route B, the generator from PR #176 at the pinned commit, works against `ketch-ffi` on UniFFI 0.32.2 without a change to the generator; routes C and D were not needed. Three adjustments, recorded in the research page: `TaskKind::Download`'s `batch` field became `batch_id`, because a C# property named `Batch` clashes with the inherited `Batch` variant (a breaking change to the binding); `desktop/windows/uniffi.toml` makes the generated types public; and `scripts/csharp.sh` uses the mise install of the generator and checks its version, because an older `uniffi-bindgen-cs` in `~/.cargo/bin` shadows it on `PATH`. The MSTest project also covers `ketch_version` and an install reported to a C# `Reporter`.
 
+### D9. macOS: VoiceOver pass
+
+The macOS app's accessibility was only checked on the fake core. F14 keeps its own Accessibility Inspector pass on the real glass; this task covers labels. Localisation is not needed for now (creator, 2026-10-01, open decision 7), so no String Catalog. Research: section 1.
+
+Done when every icon-only control has an accessibility label, and a VoiceOver walk through the nine screens finds no unlabeled control.
+
+Execution plan:
+
+1. Read every view for symbol-only controls and bare text fields; the existing icon-only buttons already name themselves through their title.
+2. `KetchUITests`: one test visits the nine screens (Installed, Discover, Updates, Activity, Doctor, General and Appearance settings, package detail, uninstall sheet) and runs `performAccessibilityAudit(for: [.sufficientElementDescription, .elementDetection])`, ignoring layout containers; it also looks up by label the controls a quiet screen does not show (colour wells, the running operation's Cancel button, the menu-bar extra).
+3. Fix what it finds: the search field, the colour wells, the wash slider, the menu-bar label.
+4. Verify: `just macos-test`.
+
+Status: done. No manual VoiceOver walk was possible, so the automated audit stands in for it; it finds elements with no description but cannot judge whether a label reads well. Fixed: the search field (its prompt was only a placeholder, now labelled, glyph hidden), the two colour wells (labelled "Custom tint" and "Custom accent" instead of both "Custom"), the wash slider (label and percentage value), and the menu-bar extra ("Ketch, 2 updates available"). The symbol-only Clear, Dismiss and Cancel buttons already carry their titles; Cancel is checked in the test, Clear (needs typed text, which XCUITest could not enter here) and Dismiss (needs a held lock) are not. The Touch Bar, layout containers and a slider thumb are excluded from the audit.
+
 ### D2. `ketch-ffi`: records and operations the apps need
 
 The macOS app's protocol needs things `ketch-ffi` does not give: a changelog across a version range, pinned packages in `outdated` with what holds them, `latest` in search results, and an `uninstall` that can be cancelled, reports progress and removes a leftover store folder for a name with no record, as the CLI does. Research: section 3a, gaps G2–G5.
@@ -1117,3 +1132,19 @@ Execution plan (Claude Code / opus-5.5):
 5. Verify: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo nextest run`, `just ffi-test`.
 
 Status: done. `changelog_range` reads release notes only: the installed payload's file belongs to the old version and has no sections for the newer ones. `held_by` is always `None` for now, because `ketch sync` restores a pin without recording which `ketch.lock` it came from; recording that is a state change left for a later task. `outdated` now reports pinned packages, marked, and `upgrade` still skips them. `uninstall` reports a `removing` status and a `removed` success per package. Core gained `changelog::published_range` / `between` and `listing::fill_cached`; `published` shares its manifest fallback with the range through `manifest_for`. A breaking change to the binding (new record fields, pinned rows in `outdated`).
+
+### D4. Contract fixtures for every app's fake core
+
+Three apps each test against a fake core; if each fake invents its own records and event streams, they will drift from the real one and from each other. Research: section 2, "Written once".
+
+Done when a set of language-neutral JSON scenarios (records, event streams with progress and `Abandoned`, `Busy`, `Cancelled`, decisions) is generated from the Rust types by a test that fails on drift, and the macOS app's fake core reads them; the Windows and Linux fakes read the same files when they exist.
+
+Execution plan:
+
+1. `ketch-ffi`: derive `serde::Serialize` on the exported records, `Event`, `TaskKind`, `Stage`, `Holder` and `KetchError` (internally tagged by `type`, snake_case), so the wire shape is the Rust shape.
+2. `crates/ketch-ffi/tests/contract.rs` builds each scenario from those Rust values (a call, an ordered script of events and decisions, an outcome) and compares the JSON with `desktop/contract/scenarios/*.json`; `KETCH_BLESS=1` rewrites them, as the schema drift tests do. Scenarios: every read, install (progress, `Abandoned`, binary choice), upgrade (stopping processes), uninstall, and each error (`Busy` with and without a pid, `Cancelled`, `NotFound`, `Network`, `Verification`, `Other`).
+3. macOS: `Ketch/Core/ContractScenario.swift` decodes them and maps events and records to the app's types; `FakeKetchCore` replays a scenario for reads and for install, upgrade and uninstall. Store tests run Busy, Cancelled, a network failure, a binary choice and a normal install from the files, and every file must decode.
+4. `desktop/contract/README.md` states the file format for the Windows and Linux fakes, which read the same files once they exist.
+5. Verify: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo nextest run`, `just ffi-test`, `just macos-test`, `swift-format lint --strict`.
+
+Status: done.

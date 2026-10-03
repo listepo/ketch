@@ -1,0 +1,66 @@
+{
+  "name": "upgrade-stops-processes",
+  "description": "A running process holds a file the upgrade replaces: the core asks whether to stop it and the app says yes.",
+  "call": {
+    "operation": "upgrade",
+    "names": [
+      "ripgrep"
+    ]
+  },
+  "script": [
+    {
+      "type": "event",
+      "event": {
+        "type": "step",
+        "package": "ripgrep",
+        "stage": "resolving"
+      }
+    },
+    {
+      "type": "ask",
+      "question": {
+        "type": "stop_processes",
+        "holders": [
+          {
+            "pid": 5150,
+            "path": "/Users/me/.ketch/bin/rg"
+          }
+        ]
+      },
+      "answer": {
+        "type": "confirm",
+        "confirmed": true
+      }
+    },
+    {
+      "type": "event",
+      "event": {
+        "type": "success",
+        "verb": "upgraded",
+        "detail": "ripgrep 14.1.0 -> 14.1.1"
+      }
+    }
+  ],
+  "outcome": {
+    "type": "ok",
+    "value": [
+      {
+        "package": {
+          "binaries": [
+            "/Users/me/.ketch/bin/ripgrep"
+          ],
+          "installed_at": 1760000000,
+          "name": "ripgrep",
+          "pinned": false,
+          "prefix": "/Users/me/.ketch/store/ripgrep/14.1.1",
+          "retained": [],
+          "source": "github:BurntSushi/ripgrep",
+          "tag": "14.1.1",
+          "trust": "checksum",
+          "version": "14.1.1"
+        },
+        "replaced": "14.1.0"
+      }
+    ]
+  }
+}
